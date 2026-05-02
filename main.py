@@ -17,7 +17,6 @@ load_dotenv()
 GITHUB_PAT = os.getenv("GH_PAT")
 
 TOPICS = ["frontend"]
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_REPO_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "ComRev_Data"))
 
@@ -120,7 +119,7 @@ async def main():
 
     repo = ensure_git_repo()
 
-    repos = await fetch_repos(TOPICS)
+    repos = await fetch_repos()
     print(f"📦 Fetched {len(repos)} repos")
 
     if not repos:

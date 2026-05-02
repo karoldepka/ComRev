@@ -6,6 +6,7 @@ TOPICS = [
     "functional",
     "reactive",
     "event-driven",
+    "fullstack",
 
     # frontend ecosystem
     "frontend",
