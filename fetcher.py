@@ -1,6 +1,6 @@
 import httpx
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from models import Repo
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -30,10 +30,13 @@ async def fetch_page(client: httpx.AsyncClient, query: str, page: int):
     return r.json()
 
 
-async def fetch_repos(topics: list[str]) -> list[Repo]:
-    headers = {}
+async def fetch_repos(topics: List[str]) -> List[Repo]:
+    headers = {
+        # Needed to reliably get topics
+        "Accept": "application/vnd.github.mercy-preview+json"
+    }
 
-    token = None  # optional: os.getenv("GITHUB_TOKEN")
+    token: Optional[str] = None  # optional: os.getenv("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
@@ -43,7 +46,7 @@ async def fetch_repos(topics: list[str]) -> list[Repo]:
         for topic in topics:
             query = f"topic:{topic}"
 
-            for page in range(1, 3):  # keep lightweight for Termux
+            for page in range(1, 2):  # keep lightweight for Termux
                 data = await fetch_page(client, query, page)
                 items = data.get("items", [])
 
@@ -59,6 +62,7 @@ async def fetch_repos(topics: list[str]) -> list[Repo]:
                     found_recent = True
 
                     repos[r["id"]] = Repo(
+                        # --- core ---
                         id=r["id"],
                         name=r["full_name"],
                         url=r["html_url"],
@@ -66,10 +70,42 @@ async def fetch_repos(topics: list[str]) -> list[Repo]:
                         pushed_at=r["pushed_at"],
                         description=r.get("description"),
                         language=r.get("language"),
+
+                        # --- engagement ---
+                        forks=r.get("forks_count", 0),
+                        open_issues=r.get("open_issues_count", 0),
+                        watchers=r.get("watchers_count", 0),
+
+                        # --- owner ---
+                        owner_login=r.get("owner", {}).get("login"),
+                        owner_avatar=r.get("owner", {}).get("avatar_url"),
+                        owner_url=r.get("owner", {}).get("html_url"),
+
+                        # --- metadata ---
+                        topics=r.get("topics", []),
+                        license=(r.get("license") or {}).get("spdx_id"),
+                        homepage=r.get("homepage"),
+                        default_branch=r.get("default_branch", "main"),
+
+                        # --- status ---
+                        archived=r.get("archived", False),
+                        disabled=r.get("disabled", False),
+
+                        # --- timestamps ---
+                        created_at=r.get("created_at"),
+                        updated_at=r.get("updated_at"),
+
+                        # --- extra useful ---
+                        size=r.get("size"),
+                        visibility=r.get("visibility"),
+                        has_issues=r.get("has_issues", True),
+                        has_projects=r.get("has_projects", True),
+                        has_wiki=r.get("has_wiki", True),
+                        has_pages=r.get("has_pages", False),
+                        has_downloads=r.get("has_downloads", True),
                     )
 
                 if not found_recent:
                     break
 
     return sorted(repos.values(), key=lambda x: x.stars, reverse=True)
-
