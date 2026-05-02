@@ -12,6 +12,7 @@ from storage_yaml import save_yaml
 
 load_dotenv()
 
+
 GITHUB_PAT = os.getenv("GH_PAT")
 
 TOPICS = ["frontend"]
