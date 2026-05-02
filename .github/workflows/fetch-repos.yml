@@ -1,6 +1,7 @@
 name: Fetch GitHub Repos Pipeline (Poetry)
 
 on:
+  push:
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch: {}
