@@ -19,7 +19,54 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 
-TOPICS = ["frontend" , "backend", "android"]
+TOPICS = [
+    # core dev
+    "frontend",
+    "backend",
+    "fullstack",
+    "api",
+    "microservices",
+
+    # mobile
+    "android",
+    "ios",
+    "react-native",
+    "flutter",
+
+    # low-code / no-code
+    "nocode",
+    "lowcode",
+    "automation",
+    "workflow",
+
+    # data / AI
+    "machine-learning",
+    "ai",
+    "llm",
+    "vector-database",
+    "data-engineering",
+
+    # infra / devops
+    "devops",
+    "kubernetes",
+    "docker",
+    "ci-cd",
+    "terraform",
+
+    # web ecosystem
+    "nextjs",
+    "react",
+    "vue",
+    "svelte",
+
+    # emerging / indie dev
+    "indie-hacking",
+    "saas",
+    "boilerplate",
+    "starter-template",
+    
+    
+]
 
 # Nested git repo config
 DATA_REPO_DIR = "data-repo"
