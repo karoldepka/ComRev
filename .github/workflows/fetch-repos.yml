@@ -39,7 +39,7 @@ jobs:
           poetry run python main.py
 
       - name: Commit updated data repo
-        working-directory: data-repo
+        working-directory: ../ComRev_Data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
