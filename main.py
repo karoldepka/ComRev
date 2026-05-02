@@ -12,7 +12,7 @@ from storage_yaml import save_yaml
 
 load_dotenv()
 
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_PAT = os.getenv("GITHUB_PAT")
 
 TOPICS = ["frontend"]
 
@@ -28,42 +28,47 @@ YAML_PATH = os.path.join(DATA_REPO_DIR, "repos.yaml")
 # BUILD AUTH URL
 # =========================
 def build_auth_repo_url():
-    if not GITHUB_TOKEN:
-        raise RuntimeError("GITHUB_TOKEN is required")
+    if not GITHUB_PAT:
+        raise RuntimeError("GITHUB_PAT is required")
 
-    ret = REPO_HTTPS.replace(
+    return REPO_HTTPS.replace(
         "https://",
-        f"https://x-access-token:{GITHUB_TOKEN}@",
-    )    
-    print(f"ret:{ret}")
-    return ret
+        f"https://x-access-token:{GITHUB_PAT}@",
+    )
+
 
 # =========================
 # CLONE / LOAD REPO
 # =========================
 def ensure_git_repo() -> Repo:
-    try:
-        auth_url = build_auth_repo_url()
+    repo_url = build_auth_repo_url()
 
+    try:
         if not os.path.exists(DATA_REPO_DIR):
-            print("📥 Cloning repo...")
-            repo = Repo.clone_from(auth_url, DATA_REPO_DIR)
-            print("✅ Repo cloned")
-            return repo
+            print(f"📥 Cloning repo → {DATA_REPO_DIR}")
+            return Repo.clone_from(repo_url, DATA_REPO_DIR)
 
         if not os.path.exists(os.path.join(DATA_REPO_DIR, ".git")):
-            raise RuntimeError("Directory exists but is not a git repo")
+            raise RuntimeError(
+                f"{DATA_REPO_DIR} exists but is not a git repository"
+            )
 
         print("📁 Using existing repo")
         repo = Repo(DATA_REPO_DIR)
 
-        # ensure remote uses token
-        repo.remotes.origin.set_url(auth_url)
+        # enforce authenticated remote
+        repo.remotes.origin.set_url(repo_url)
 
         return repo
 
-    except Exception as e:
-        raise RuntimeError(f"Git setup failed: {e}")
+    except GitCommandError as e:
+        print("❌ Git command failed during setup")
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        raise
+
+    except Exception:
+        raise
 
 
 # =========================
@@ -85,17 +90,24 @@ def git_commit_and_push(repo: Repo, file_path: str, count: int):
 
         # avoid CI conflicts
         try:
+            print("🔄 Pulling latest changes (rebase)...")
             repo.git.pull("--rebase")
-        except Exception:
-            print("ℹ️ Pull skipped or failed")
+        except GitCommandError as e:
+            print("⚠️ Pull failed (continuing)")
+            print("STDERR:", e.stderr)
 
+        print("🚀 Pushing changes...")
         repo.remotes.origin.push()
-        print("🚀 Git push complete")
+        print("✅ Git push complete")
 
     except GitCommandError as e:
-        print(f"⚠️ Git command failed: {e}")
-    except Exception as e:
-        print(f"⚠️ Git operation failed: {e}")
+        print("❌ Git command failed during commit/push")
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        raise
+
+    except Exception:
+        raise
 
 
 # =========================
@@ -118,7 +130,9 @@ async def main():
     save_yaml(data, YAML_PATH)
     print(f"💾 YAML saved → {YAML_PATH}")
 
-    await asyncio.to_thread(git_commit_and_push, repo, YAML_PATH, len(data))
+    await asyncio.to_thread(
+        git_commit_and_push, repo, YAML_PATH, len(data)
+    )
 
     print("✅ Pipeline complete")
 
