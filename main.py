@@ -21,57 +21,46 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TOPICS = ["frontend"]
 
 TOPICS2 = [
-    # core dev
     "frontend",
     "backend",
     "fullstack",
     "api",
     "microservices",
-
-    # mobile
     "android",
     "ios",
     "react-native",
     "flutter",
-
-    # low-code / no-code
     "nocode",
     "lowcode",
     "automation",
     "workflow",
-
-    # data / AI
     "machine-learning",
     "ai",
     "llm",
     "vector-database",
     "data-engineering",
-
-    # infra / devops
     "devops",
     "kubernetes",
     "docker",
     "ci-cd",
     "terraform",
-
-    # web ecosystem
     "nextjs",
     "react",
     "vue",
     "svelte",
-
-    # emerging / indie dev
     "indie-hacking",
     "saas",
     "boilerplate",
     "starter-template",
-    
-    
 ]
 
-# Nested git repo config
-DATA_REPO_DIR = "data-repo"
-DATA_REPO_GIT = "data-repo/.git"
+# =========================
+# SIBLING DATA REPO CONFIG
+# =========================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_REPO_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "ComRev_Data"))
+DATA_REPO_GIT = os.path.join(DATA_REPO_DIR, ".git")
 
 YAML_PATH = os.path.join(DATA_REPO_DIR, "repos.yaml")
 
@@ -133,7 +122,7 @@ async def main():
     # Convert dataclasses → dict
     data = [asdict(r) for r in repos]
 
-    # Save YAML snapshot
+    # Save YAML snapshot into sibling repo
     save_yaml(data, YAML_PATH)
     print(f"💾 YAML saved → {YAML_PATH}")
 
@@ -142,8 +131,8 @@ async def main():
 
     # Push to Supabase (if configured)
     if SUPABASE_URL and SUPABASE_KEY:
-        upsert_repos(repos)
-        print("📡 Uploaded to Supabase")
+        #upsert_repos(repos)
+        print("📡 not Uploaded to Supabase")
     else:
         print("⚠️ Supabase not configured, skipping upload")
 
@@ -152,3 +141,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
