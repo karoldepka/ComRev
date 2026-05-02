@@ -250,14 +250,14 @@
 - id: 1162099055
   name: Leonxlnx/taste-skill
   url: https://github.com/Leonxlnx/taste-skill
-  stars: 14409
+  stars: 14411
   pushed_at: '2026-04-30T15:21:38Z'
   description: 'Taste-Skill - gives your AI good taste. stops the AI from generating
     boring, generic slop '
   language: Shell
   forks: 1260
   open_issues: 10
-  watchers: 14409
+  watchers: 14411
   owner_login: Leonxlnx
   owner_avatar: https://avatars.githubusercontent.com/u/219127460?v=4
   owner_url: https://github.com/Leonxlnx
@@ -281,7 +281,7 @@
   archived: false
   disabled: false
   created_at: '2026-02-19T21:44:05Z'
-  updated_at: '2026-05-02T07:16:46Z'
+  updated_at: '2026-05-02T07:21:01Z'
   size: 2675
   visibility: public
   has_issues: true
