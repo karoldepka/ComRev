@@ -1,8 +1,9 @@
 [tool.poetry]
-name = "package-tracker"
+package-mode = false
 version = "0.1.0"
 description = ""
 authors = ["you"]
+
 
 [tool.poetry.dependencies]
 python = "^3.13"
