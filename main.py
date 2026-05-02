@@ -1,4 +1,5 @@
-#!/data/data/com.termux/files/usr/bin/python
+#!/usr/bin/env python3
+
 import asyncio
 import os
 from dataclasses import asdict
