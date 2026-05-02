@@ -106,6 +106,33 @@ files = [
 all = ["mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2)"]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.2"
+description = "Read key-value pairs from a .env file and set them as environment variables"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a"},
+    {file = "python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3"},
+]
+
+[package.extras]
+cli = ["click (>=5.0)"]
+
+[[package]]
+name = "python-env"
+version = "1.0.0"
+description = "Get and Set environment variables using .env file"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "python-env-1.0.0.tar.gz", hash = "sha256:3582e82b2d49d45a612c19c16fa5a6cd061d0230b2f46671d47485e5ac103477"},
+    {file = "python_env-1.0.0-py2-none-any.whl", hash = "sha256:28d4244d7129c4e3237b5bcb788cb5e93d88e86a68406de96846ddc54adcaba3"},
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 description = "YAML parser and emitter for Python"
@@ -219,4 +246,4 @@ test = ["pytest", "tornado (>=4.5)", "typeguard"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "153e97090514be6d378427087d50d4a7f4c9d28560e707c6fe6296f3d0df9e21"
+content-hash = "eee76caff5883b31419948302e5767ca9f190d914b5f2da75b9d1f6831b07420"

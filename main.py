@@ -1,26 +1,51 @@
+#!/data/data/com.termux/files/usr/bin/python
 import asyncio
+import os
 import subprocess
 from dataclasses import asdict
+
+from dotenv import load_dotenv
 
 from fetcher import fetch_repos
 from storage import upsert_repos
 from storage_yaml import save_yaml
 
 
-TOPICS = ["frontend"]  # , "backend", "android"]
+# Load secrets from .env (if present)
+load_dotenv()
 
-YAML_PATH = "data-repo/repos.yaml"
-COMMIT_MESSAGE = "chore: update repo snapshot"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 
-def git_commit_and_push(file_path: str):
+TOPICS = ["frontend" , "backend", "android"]
+
+# Nested git repo config
+DATA_REPO_DIR = "data-repo"
+DATA_REPO_GIT = "data-repo/.git"
+
+YAML_PATH = os.path.join(DATA_REPO_DIR, "repos.yaml")
+
+
+def git_commit_and_push(file_path: str, count: int):
     try:
-        # Add file
-        subprocess.run(["git", "add", file_path], check=True)
+        rel_path = os.path.relpath(file_path, DATA_REPO_DIR)
 
-        # Commit (will fail if no changes)
+        base_cmd = [
+            "git",
+            f"--git-dir={DATA_REPO_GIT}",
+            f"--work-tree={DATA_REPO_DIR}",
+        ]
+
+        commit_message = f"chore: update repos ({count} items)"
+
+        # Add file
+        subprocess.run(base_cmd + ["add", rel_path], check=True)
+
+        # Commit
         result = subprocess.run(
-            ["git", "commit", "-m", COMMIT_MESSAGE],
+            base_cmd + ["commit", "-m", commit_message],
             capture_output=True,
             text=True,
         )
@@ -35,7 +60,7 @@ def git_commit_and_push(file_path: str):
         print("📝 Git commit created")
 
         # Push
-        subprocess.run(["git", "push"], check=True)
+        subprocess.run(base_cmd + ["push"], check=True)
         print("🚀 Git push complete")
 
     except Exception as e:
@@ -45,6 +70,9 @@ def git_commit_and_push(file_path: str):
 async def main():
     print("🚀 Starting GitHub fetch pipeline...")
     print("🔍 Topics:", ", ".join(TOPICS))
+
+    if not GITHUB_TOKEN:
+        print("⚠️ Warning: GITHUB_TOKEN not set (rate limits may apply)")
 
     repos = await fetch_repos(TOPICS)
 
@@ -61,12 +89,15 @@ async def main():
     save_yaml(data, YAML_PATH)
     print(f"💾 YAML saved → {YAML_PATH}")
 
-    # Commit + push YAML
-    git_commit_and_push(YAML_PATH)
+    # Git commit + push (non-blocking)
+    await asyncio.to_thread(git_commit_and_push, YAML_PATH, len(data))
 
-    # Upload to Supabase
-    upsert_repos(repos)
-    print("📡 Uploaded to Supabase")
+    # Push to Supabase (if configured)
+    if SUPABASE_URL and SUPABASE_KEY:
+        upsert_repos(repos)
+        print("📡 Uploaded to Supabase")
+    else:
+        print("⚠️ Supabase not configured, skipping upload")
 
     print("✅ Pipeline complete")
 
