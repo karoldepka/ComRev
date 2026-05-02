@@ -1,13 +1,13 @@
 - id: 257485422
   name: vitejs/vite
   url: https://github.com/vitejs/vite
-  stars: 80344
+  stars: 80343
   pushed_at: '2026-05-01T17:58:11Z'
   description: Next generation frontend tooling. It's fast!
   language: TypeScript
   forks: 8119
   open_issues: 742
-  watchers: 80344
+  watchers: 80343
   owner_login: vitejs
   owner_avatar: https://avatars.githubusercontent.com/u/65625612?v=4
   owner_url: https://github.com/vitejs
@@ -23,7 +23,7 @@
   archived: false
   disabled: false
   created_at: '2020-04-21T05:03:57Z'
-  updated_at: '2026-05-02T05:39:14Z'
+  updated_at: '2026-05-02T07:16:11Z'
   size: 68919
   visibility: public
   has_issues: true
@@ -81,14 +81,14 @@
 - id: 65750241
   name: expo/expo
   url: https://github.com/expo/expo
-  stars: 49147
+  stars: 49148
   pushed_at: '2026-05-02T06:39:35Z'
   description: An open-source framework for making universal native apps with React.
     Expo runs on Android, iOS, and the web.
   language: TypeScript
   forks: 12031
   open_issues: 894
-  watchers: 49147
+  watchers: 49148
   owner_login: expo
   owner_avatar: https://avatars.githubusercontent.com/u/12504344?v=4
   owner_url: https://github.com/expo
@@ -115,8 +115,8 @@
   archived: false
   disabled: false
   created_at: '2016-08-15T17:14:25Z'
-  updated_at: '2026-05-02T06:39:41Z'
-  size: 3583387
+  updated_at: '2026-05-02T07:11:42Z'
+  size: 3583389
   visibility: public
   has_issues: true
   has_projects: false
@@ -126,13 +126,13 @@
 - id: 788847937
   name: Dokploy/dokploy
   url: https://github.com/Dokploy/dokploy
-  stars: 33662
+  stars: 33663
   pushed_at: '2026-05-01T19:15:49Z'
   description: Open Source Alternative to Vercel, Netlify and Heroku.
   language: TypeScript
-  forks: 2421
+  forks: 2422
   open_issues: 512
-  watchers: 33662
+  watchers: 33663
   owner_login: Dokploy
   owner_avatar: https://avatars.githubusercontent.com/u/156882017?v=4
   owner_url: https://github.com/Dokploy
@@ -157,7 +157,7 @@
   archived: false
   disabled: false
   created_at: '2024-04-19T07:49:30Z'
-  updated_at: '2026-05-02T06:35:06Z'
+  updated_at: '2026-05-02T07:05:00Z'
   size: 29630
   visibility: public
   has_issues: true
@@ -250,14 +250,14 @@
 - id: 1162099055
   name: Leonxlnx/taste-skill
   url: https://github.com/Leonxlnx/taste-skill
-  stars: 14405
+  stars: 14409
   pushed_at: '2026-04-30T15:21:38Z'
   description: 'Taste-Skill - gives your AI good taste. stops the AI from generating
     boring, generic slop '
   language: Shell
   forks: 1260
   open_issues: 10
-  watchers: 14405
+  watchers: 14409
   owner_login: Leonxlnx
   owner_avatar: https://avatars.githubusercontent.com/u/219127460?v=4
   owner_url: https://github.com/Leonxlnx
@@ -281,7 +281,7 @@
   archived: false
   disabled: false
   created_at: '2026-02-19T21:44:05Z'
-  updated_at: '2026-05-02T06:44:49Z'
+  updated_at: '2026-05-02T07:16:46Z'
   size: 2675
   visibility: public
   has_issues: true
@@ -329,14 +329,14 @@
 - id: 814882742
   name: iib0011/omni-tools
   url: https://github.com/iib0011/omni-tools
-  stars: 9429
+  stars: 9430
   pushed_at: '2026-05-01T01:23:46Z'
   description: Self-hosted collection of powerful web-based tools for everyday tasks.
     No ads, no tracking, just fast, accessible utilities right from your browser!
   language: TypeScript
   forks: 630
   open_issues: 86
-  watchers: 9429
+  watchers: 9430
   owner_login: iib0011
   owner_avatar: https://avatars.githubusercontent.com/u/58892076?v=4
   owner_url: https://github.com/iib0011
@@ -367,7 +367,7 @@
   archived: false
   disabled: false
   created_at: '2024-06-13T23:06:42Z'
-  updated_at: '2026-05-02T05:21:11Z'
+  updated_at: '2026-05-02T07:00:14Z'
   size: 5059
   visibility: public
   has_issues: true
