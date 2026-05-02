@@ -12,6 +12,7 @@ pyyaml = "^6.0"
 tenacity = "^8.3"
 # supabase = 
 python-dotenv = "^1.2.2"
+gitpython = "^3.1.49"
 
 [tool.poetry.group.dev.dependencies]
 # ruff = "^0.6"
