@@ -84,7 +84,7 @@ async def github_request(client: httpx.AsyncClient, query: str, page: int):
             "q": query,
             "sort": "stars",
             "order": "desc",
-            "per_page": 50,
+            "per_page": 100,
             "page": page,
         },
     )
@@ -189,7 +189,7 @@ async def fetch_repos(topics: List[str] = TOPICS) -> List[Repo]:
 
             query = build_query(topic)
 
-            for page in range(1, 2):
+            for page in range(1, 3):
                 try:
                     data = await fetch_page(client, query, page)
                 except RuntimeError:
