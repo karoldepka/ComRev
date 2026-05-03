@@ -40,7 +40,7 @@ def load_yaml_from_commit(repo: Repo, commit, file_path: str) -> List[dict]:
 def find_commit_n_hours_ago(repo: Repo, hours: int):
     target_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    for commit in repo.iter_commits("main"):
+    for commit in repo.iter_commits("master"):
         commit_time = datetime.fromtimestamp(commit.committed_date, tz=timezone.utc)
 
         if commit_time <= target_time:
