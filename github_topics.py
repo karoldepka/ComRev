@@ -1,5 +1,18 @@
 
 TOPICS = [
+    "nocode",
+    "lowcode",
+    "rust",
+    "modern",
+    "react-native",
+    "ionic",
+    "mobile",
+    "mobile-first",
+    "offline-first",
+    "journal",
+    "notes",
+  
+    
     # architecture / paradigms
     "declarative",
     "imperative",
