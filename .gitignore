@@ -1,2 +1,67 @@
 .env
 __pycache__
+
+
+# dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Expo
+.expo/
+.expo-shared/
+expo-env.d.ts
+
+# Native builds
+ios/build/
+ios/Pods/
+android/app/build/
+android/.gradle/
+android/build/
+
+# Xcode / iOS
+ios/DerivedData/
+ios/*.xcworkspace
+ios/*.xcodeproj/project.xcworkspace/
+*.xcuserstate
+
+# Android / Gradle
+.gradle/
+local.properties
+
+# Metro
+.metro-health-check*
+
+# Environment variables
+.env
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Misc
+*.pem
+*.jks
+
+# Expo web
+web-build/
+
+# EAS
+.eas/
+
+# Cache
+.cache/
+

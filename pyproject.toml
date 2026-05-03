@@ -1,20 +1,20 @@
-[tool.poetry]
-package-mode = false
-name = "comrev"
+[project]
+name = "be"
 version = "0.1.0"
-description = ""
-authors = ["you"]
+description = "FastAPI backend for Vercel"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
 
-[tool.poetry.dependencies]
-python = "^3.13"
-httpx = "^0.27"
-pyyaml = "^6.0"
-tenacity = "^8.3"
-python-dotenv = "^1.2.2"
-gitpython = "^3.1.49"
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
 
-[tool.poetry.group.dev.dependencies]
+[project.scripts]
+app = "app.main:app"
 
-# Optional local CLI entrypoint (NOT used by Vercel runtime)
-[tool.poetry.scripts]
-app = "comrev.main:app"
+[tool.uv]
+dev-dependencies = []
