@@ -1,20 +1,25 @@
 [project]
-name = "be"
+name = "comrev"
 version = "0.1.0"
-description = "FastAPI backend for Vercel"
-requires-python = ">=3.11"
+description = ""
+authors = [
+  { name = "you" }
+]
+requires-python = ">=3.13"
+
 dependencies = [
-    "fastapi",
-    "uvicorn",
+  "httpx>=0.27,<1.0",
+  "pyyaml>=6.0,<7.0",
+  "tenacity>=8.3,<9.0",
+  "python-dotenv>=1.2.2,<2.0",
+  "gitpython>=3.1.49,<4.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-]
-
+# Optional CLI entrypoint
 [project.scripts]
-app = "app.main:app"
+app = "comrev.main:app"
 
-[tool.uv]
-dev-dependencies = []
+# Build system (required)
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
