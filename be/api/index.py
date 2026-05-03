@@ -2,10 +2,21 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 # Import your core app (recommended structure)
-from core.app import app as fastapi_app
+# from core.app import app as fastapi_app
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "API is running"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+    
 
 # Vercel expects a variable called `app`
-app = fastapi_app
+#app = fastapi_app
 
 
 # --- Optional: direct fallback routes (if you don't want core/app.py yet) ---
