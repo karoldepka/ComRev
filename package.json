@@ -1,0 +1,12 @@
+{
+  "name": "repo",
+  "private": true,
+  "scripts": {
+    "dev": "./scripts/dev.sh",
+    "gen:api": "./scripts/gen-api.sh"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.0.0",
+    "concurrently": "^9.0.0"
+  }
+}
