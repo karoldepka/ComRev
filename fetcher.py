@@ -143,7 +143,7 @@ def parse_repo(r: dict) -> Repo:
 
 def is_recent_repo(r: dict) -> bool:
     dt = datetime.fromisoformat(r["pushed_at"].replace("Z", "+00:00"))
-    return datetime.now(timezone.utc) - dt <= timedelta(hours=48)
+    return datetime.now(timezone.utc) - dt <= timedelta(hours=48*30)
 
 
 # =========================
