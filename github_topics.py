@@ -20,10 +20,20 @@ TOPICS = [
     "reactive",
     "event-driven",
     "fullstack",
+    
+    "kotlin",
+    "crossplatform",
+    "cross-platform",
+    
+    "table",
+    "treetable",
+    "tree-table",
+    
 
     # frontend ecosystem
     "frontend",
     "ui",
+    "ui-components",
     "web",
     "javascript",
     "typescript",
@@ -38,6 +48,12 @@ TOPICS = [
     "responsive-design",
     "design-system",
     "component-library",
+    "expo",
+    "flutter",
+    "react",
+    
+
+    
 
     # backend ecosystem
     "backend",
