@@ -3,18 +3,24 @@ name = "be"
 version = "0.1.0"
 description = "FastAPI backend for Vercel"
 requires-python = ">=3.11"
+
 dependencies = [
-    "fastapi",
-    "uvicorn",
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+    "pydantic>=2.7.0,<3.0.0",
+    "pydantic-settings>=2.3.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
+    "pytest>=8.0.0,<9.0.0",
+    "ruff>=0.6.0,<1.0.0",
 ]
 
-[project.scripts]
-app = "app.main:app"
+# ❌ REMOVE project.scripts completely
 
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0"
+]
