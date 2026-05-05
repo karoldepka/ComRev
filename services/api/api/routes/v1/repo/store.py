@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List
 from .schema import Repo
 
-DATA_PATH = Path(__file__).parent.parent.parent / "ComRev_Data" / "repos.yaml"
+DATA_PATH = Path(__file__).parent.parent.parent.parent.parent.parent.parent.parent / "ComRev_Data" / "repos.yaml"
 
 
 def load_repos() -> List[Repo]:
