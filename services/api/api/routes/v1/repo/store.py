@@ -1,7 +1,7 @@
 import yaml
 from pathlib import Path
 from typing import List
-from .models import Repo
+from .schema import Repo
 
 DATA_PATH = Path(__file__).parent.parent.parent / "ComRev_Data" / "repos.yaml"
 

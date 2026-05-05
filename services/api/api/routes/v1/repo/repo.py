@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 from typing import List, Optional
-from  import load_repos
-from .repo.store import Repo
+from .store import load_repos
+from .schema import Repo
 
 router = APIRouter(prefix="/repo", tags=["repos"])
 

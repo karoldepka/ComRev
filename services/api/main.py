@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.routes.v1.repo import router as repos_router
+from api.routes.v1.repo.repo import router as repos_router
 
 app = FastAPI(
     title="YAML Repo API",
