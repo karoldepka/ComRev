@@ -1,9 +1,0 @@
-README.md
-pyproject.toml
-api/index.py
-api/core/app.py
-be.egg-info/PKG-INFO
-be.egg-info/SOURCES.txt
-be.egg-info/dependency_links.txt
-be.egg-info/requires.txt
-be.egg-info/top_level.txt

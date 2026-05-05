@@ -1,6 +1,7 @@
 {
   "name": "repo",
   "private": true,
+  "packageManager": "pnpm@9.0.0",
   "scripts": {
     "dev": "./scripts/dev.sh",
     "gen:api": "./scripts/gen-api.sh"

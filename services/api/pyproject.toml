@@ -1,5 +1,5 @@
 [project]
-name = "be"
+name = "comrev-be"
 version = "0.1.0"
 description = "FastAPI backend for Vercel"
 requires-python = ">=3.11"
@@ -17,10 +17,8 @@ dev = [
     "ruff>=0.6.0,<1.0.0",
 ]
 
-# ❌ REMOVE project.scripts completely
-
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "ruff>=0.6.0"
 ]
