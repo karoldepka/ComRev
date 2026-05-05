@@ -3,13 +3,19 @@ from mangum import Mangum
 
 app = FastAPI()
 
-@app.get("/")
-def root():
-    return {"message": "API is running 🚀"}
+# 👉 All routes are now under /api/*
+api = FastAPI()
 
-@app.get("/health")
+@api.get("/")
+def root():
+    return {"message": "API root working"}
+
+@api.get("/health")
 def health():
     return {"status": "ok"}
 
-# Required for Vercel serverless deployment
+# Mount under /api
+app.mount("/api", api)
+
+# Vercel handler
 handler = Mangum(app)
