@@ -24,6 +24,25 @@ TOPICS = [
     "pwa",
     "progressive-web-app",
 
+    "wasm",
+    "desktop",
+    "ssr",
+    "operating-systems",
+    "software-development",
+    "user-interface",
+    "react",
+    "css",
+    "html", 
+    "rust",
+    "golang",
+    "php",
+    "csharp",
+    "c#",
+    "c++",
+    "cplusplus",
+    "native", 
+    "virtualdom"
+
     # content / personal tools
     "journal",
     "notes",

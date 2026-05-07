@@ -26,7 +26,7 @@ wheels = [
 [[package]]
 name = "comrev"
 version = "0.1.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "gitpython" },
     { name = "httpx" },

@@ -6,7 +6,6 @@ from datetime import datetime, timezone, timedelta
 from git import Repo
 from typing import Dict, List
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_REPO_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "ComRev_Data"))
 
@@ -15,12 +14,27 @@ OUTPUT_YAML = os.path.join(DATA_REPO_DIR, "repos_diff.yaml")
 
 
 # =========================
+# CONFIG: TIME WINDOWS
+# =========================
+TIME_WINDOWS = {
+    "6h": timedelta(hours=6),
+    "12h": timedelta(hours=12),
+    "24h": timedelta(hours=24),
+    "48h": timedelta(hours=48),
+    "5d": timedelta(days=5),
+    "7d": timedelta(days=7),
+    "14d": timedelta(days=14),
+}
+
+
+# =========================
 # LOAD YAML
 # =========================
 def load_yaml_from_file(path: str) -> List[dict]:
     if not os.path.exists(path):
         return []
-    with open(path, "r") as f:
+
+    with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or []
 
 
@@ -35,62 +49,87 @@ def load_yaml_from_commit(repo: Repo, commit, file_path: str) -> List[dict]:
 
 
 # =========================
-# FIND OLD COMMIT
+# FIND COMMIT BEFORE DELTA
 # =========================
-def find_commit_n_hours_ago(repo: Repo, hours: int):
-    target_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+def find_commit_before(repo: Repo, delta: timedelta):
+    target_time = datetime.now(timezone.utc) - delta
 
     for commit in repo.iter_commits("master"):
-        commit_time = datetime.fromtimestamp(commit.committed_date, tz=timezone.utc)
+        commit_time = datetime.fromtimestamp(
+            commit.committed_date, tz=timezone.utc
+        )
 
         if commit_time <= target_time:
-            print(f"⏪ Found commit from {commit_time.isoformat()}")
+            print(f"⏪ Found commit ({delta}) → {commit_time.isoformat()}")
             return commit
 
-    print("⚠️ No commit old enough found")
+    print(f"⚠️ No commit found for window {delta}")
     return None
 
 
 # =========================
-# BUILD INDEX
+# INDEX
 # =========================
 def index_by_id(repos: List[dict]) -> Dict[int, dict]:
     return {r["id"]: r for r in repos if "id" in r}
 
 
 # =========================
-# COMPUTE DIFF
+# COMPUTE ALL DIFFS
 # =========================
-def compute_star_diff(old: List[dict], new: List[dict]) -> List[dict]:
-    old_index = index_by_id(old)
-    new_index = index_by_id(new)
+def compute_all_diffs(repo: Repo, new_data: List[dict]) -> List[dict]:
+    new_index = index_by_id(new_data)
+
+    # preload snapshots for each window
+    old_snapshots: Dict[str, Dict[int, dict]] = {}
+
+    for label, delta in TIME_WINDOWS.items():
+        commit = find_commit_before(repo, delta)
+
+        if not commit:
+            old_snapshots[label] = {}
+            continue
+
+        old_data = load_yaml_from_commit(repo, commit, CURRENT_YAML)
+        old_snapshots[label] = index_by_id(old_data)
 
     result = []
 
     for repo_id, new_repo in new_index.items():
-        old_repo = old_index.get(repo_id)
+        stars_now = new_repo.get("stars", 0)
 
-        old_stars = old_repo["stars"] if old_repo else 0
-        new_stars = new_repo["stars"]
+        diffs = {}
+        has_change = False
 
-        diff = new_stars - old_stars
+        for label in TIME_WINDOWS.keys():
+            old_repo = old_snapshots[label].get(repo_id)
+            old_stars = old_repo["stars"] if old_repo else 0
 
-        if diff == 0:
+            diff = stars_now - old_stars
+            diffs[label] = diff
+
+            if diff != 0:
+                has_change = True
+
+        # skip repos with no changes at all
+        if not has_change:
             continue
 
         item = {
-            "id": repo_id,
-            "name": new_repo.get("name"),
-            "url": new_repo.get("url"),
-            "stars_before": old_stars,
-            "stars_now": new_stars,
-            "stars_diff": diff,
+            # full repo metadata
+            **new_repo,
+
+            # normalized fields
+            "stars_now": stars_now,
+
+            # diffs per period
+            "stars_diff": diffs,
         }
 
         result.append(item)
 
-    # sort by growth descending
-    result.sort(key=lambda x: x["stars_diff"], reverse=True)
+    # sort by strongest short-term growth (6h)
+    result.sort(key=lambda x: x["stars_diff"]["6h"], reverse=True)
 
     return result
 
@@ -99,35 +138,33 @@ def compute_star_diff(old: List[dict], new: List[dict]) -> List[dict]:
 # SAVE YAML
 # =========================
 def save_yaml(data: List[dict], path: str):
-    with open(path, "w") as f:
-        yaml.dump(data, f, sort_keys=False)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(
+            data,
+            f,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
 
 # =========================
 # MAIN
 # =========================
-def generate_diff(hours: int = 6):
-    print(f"📊 Generating star diff for last {hours} hours")
+def generate_multi_diff():
+    print("📊 Generating multi-window star diffs")
 
     repo = Repo(DATA_REPO_DIR)
 
-    old_commit = find_commit_n_hours_ago(repo, hours)
-    if not old_commit:
-        return
-
-    old_data = load_yaml_from_commit(repo, old_commit, CURRENT_YAML)
     new_data = load_yaml_from_file(CURRENT_YAML)
+    print(f"📦 Current repos: {len(new_data)}")
 
-    print(f"📦 Old repos: {len(old_data)}")
-    print(f"📦 New repos: {len(new_data)}")
+    result = compute_all_diffs(repo, new_data)
 
-    diff = compute_star_diff(old_data, new_data)
+    print(f"🔥 {len(result)} repos changed")
 
-    print(f"🔥 {len(diff)} repos changed")
-
-    save_yaml(diff, OUTPUT_YAML)
-    print(f"💾 Saved diff → {OUTPUT_YAML}")
+    save_yaml(result, OUTPUT_YAML)
+    print(f"💾 Saved → {OUTPUT_YAML}")
 
 
 if __name__ == "__main__":
-    generate_diff(hours=6)
+    generate_multi_diff()
