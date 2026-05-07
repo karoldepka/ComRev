@@ -14,6 +14,7 @@ TOPICS_RAW = [
     "productivity",
     "automation",
     "assistant",
+    "personal-assistant",
     "devin",
 
     # mobile / apps
