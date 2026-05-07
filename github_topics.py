@@ -13,6 +13,8 @@ TOPICS_RAW = [
     "saas",
     "productivity",
     "automation",
+    "assistant",
+    "devin",
 
     # mobile / apps
     "mobile",
