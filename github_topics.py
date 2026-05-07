@@ -1,4 +1,7 @@
-TOPICS = [
+from collections import Counter
+
+
+TOPICS_RAW = [
     # general / trends
     "nocode",
     "lowcode",
@@ -23,6 +26,8 @@ TOPICS = [
     "ios",
     "pwa",
     "progressive-web-app",
+    "isomorphic",
+    "webassembly",
 
     "wasm",
     "desktop",
@@ -35,6 +40,7 @@ TOPICS = [
     "html", 
     "rust",
     "golang",
+    "go",
     "php",
     "csharp",
     "c#",
@@ -55,6 +61,7 @@ TOPICS = [
     "declarative",
     "imperative",
     "functional",
+    "functional-programming",
     "oop",
     "reactive",
     "event-driven",
@@ -263,3 +270,22 @@ TOPICS = [
     "awesome-list",
     "scaffold",
 ]
+
+# --- Duplicate detection ---
+counts = Counter(TOPICS_RAW)
+duplicates = [item for item, count in counts.items() if count > 1]
+
+if duplicates:
+    print("⚠️ Duplicate topics detected:", duplicates)
+
+# --- Deduplication while preserving order ---
+TOPICS = list(dict.fromkeys(TOPICS_RAW))# --- Duplicate detection ---
+counts = Counter(TOPICS_RAW)
+duplicates = [item for item, count in counts.items() if count > 1]
+
+if duplicates:
+    print("⚠️ Duplicate topics detected:", duplicates)
+
+# --- Deduplication while preserving order ---
+TOPICS = list(dict.fromkeys(TOPICS_RAW))
+
