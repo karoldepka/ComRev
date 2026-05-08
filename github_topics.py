@@ -200,11 +200,16 @@ TOPICS_RAW = [
     "huggingface",
     "pytorch",
     "tensorflow",
+    "openai",
+    "artificial-intelligence",
+    "claude-ai",
     "openai-api",
     "multimodal",
     "speech-to-text",
     "text-to-speech",
     "computer-vision",
+
+    "developer-tools",
 
     # smart home / iot
     "smart-home",
