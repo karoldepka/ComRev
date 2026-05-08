@@ -5,6 +5,13 @@ TOPICS_RAW = [
     # general / trends
     "nocode",
     "lowcode",
+    "low-code",
+    "low-code-platform", # budibase
+    
+    "no-code-platform",
+    "low-code-no-code",
+    
+
     "modern",
     "web3",
     "blockchain",
