@@ -21,10 +21,8 @@ TOPICS_RAW = [
     "mcp",
     "gpt",
     "chat",
+    "chatbot",
     "chatgpt",
-
-
-
 
     # mobile / apps
     "mobile",
