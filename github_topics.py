@@ -16,6 +16,15 @@ TOPICS_RAW = [
     "assistant",
     "personal-assistant",
     "devin",
+    "awesome",
+    "awesome-list",
+    "mcp",
+    "gpt",
+    "chat",
+    "chatgpt",
+
+
+
 
     # mobile / apps
     "mobile",
