@@ -210,6 +210,8 @@ TOPICS_RAW = [
     "computer-vision",
 
     "developer-tools",
+    "coderabbit",
+    "coderabbitai",
 
     # smart home / iot
     "smart-home",
