@@ -10,7 +10,11 @@ TOPICS_RAW = [
     
     "no-code-platform",
     "low-code-no-code",
-    
+    "airtable",
+    "airtable-replacement",
+    "spreadsheet",
+    "self-hosted",
+    "budibase",
 
     "modern",
     "web3",
