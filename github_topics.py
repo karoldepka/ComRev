@@ -15,6 +15,7 @@ TOPICS_RAW = [
     "spreadsheet",
     "self-hosted",
     "budibase",
+    "langchain",
 
     "modern",
     "web3",
@@ -200,6 +201,7 @@ TOPICS_RAW = [
     "generative-ai",
     "ai-agents",
     "autonomous-agents",
+    "agents",
     "transformer",
     "embeddings",
     "rag",
@@ -219,6 +221,7 @@ TOPICS_RAW = [
     "speech-to-text",
     "text-to-speech",
     "computer-vision",
+    "autogen",
 
     "developer-tools",
     "coderabbit",
