@@ -222,6 +222,10 @@ TOPICS_RAW = [
     "text-to-speech",
     "computer-vision",
     "autogen",
+    "agent-framework",
+    "agentic-ai",
+
+
 
     "developer-tools",
     "coderabbit",
