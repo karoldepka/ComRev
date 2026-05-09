@@ -10,7 +10,7 @@ TOPICS_RAW = [
 
     *"blog documentation wiki project-management content-management note-taking flutter task-management content-services team-collaboration notion-alternative confluence-alternative".split(" "),
     *"electron editor markdown rust app wiki notes table rust-language workspace whiteboard tableview rust-lang crdt knowledge-base notion miro notion-alternative".split(),
-    
+    *"react javascript typescript chatbot artificial-intelligence openai multiagent-systems agents workflow-automation low-code no-code rag large-language-models chatgpt langchain agentic-workflow agentic-ai".split(),
 
     "no-code-platform",
     "low-code-no-code",
