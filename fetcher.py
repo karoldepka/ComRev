@@ -14,14 +14,6 @@ GITHUB_API = "https://api.github.com/search/repositories"
 
 
 # =========================
-# Time filtering
-# =========================
-def within_48h(ts: str) -> bool:
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return datetime.now(timezone.utc) - dt <= timedelta(hours=48)
-
-
-# =========================
 # Rate limit handling
 # =========================
 def print_rate_limit(headers: httpx.Headers):

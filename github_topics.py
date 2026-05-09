@@ -7,7 +7,11 @@ TOPICS_RAW = [
     "lowcode",
     "low-code",
     "low-code-platform", # budibase
+
+    *"blog documentation wiki project-management content-management note-taking flutter task-management content-services team-collaboration notion-alternative confluence-alternative".split(" "),
+    *"electron editor markdown rust app wiki notes table rust-language workspace whiteboard tableview rust-lang crdt knowledge-base notion miro notion-alternative",
     
+
     "no-code-platform",
     "low-code-no-code",
     "airtable",
@@ -69,7 +73,7 @@ TOPICS_RAW = [
     "c++",
     "cplusplus",
     "native", 
-    "virtualdom"
+    "virtualdom",
 
     # content / personal tools
     "journal",
@@ -224,6 +228,8 @@ TOPICS_RAW = [
     "autogen",
     "agent-framework",
     "agentic-ai",
+    "a2a",
+    "a2a-protocol",
 
 
 
