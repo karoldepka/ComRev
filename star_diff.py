@@ -129,8 +129,14 @@ def compute_all_diffs(repo: Repo, new_data: List[dict]) -> List[dict]:
         result.append(item)
 
     # sort by strongest short-term growth (6h)
-    result.sort(key=lambda x: x["stars_diff"]["6h"], reverse=True)
-
+    result.sort(
+    key=lambda x: (
+        x["stars_diff"]["48h"],
+        x["stars_diff"]["24h"],
+        x["stars_now"],
+    ),
+    reverse=True,
+)
     return result
 
 
