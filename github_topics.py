@@ -203,7 +203,7 @@ TOPICS_RAW = [
     "firebase-alternative",
     "firestore",
     "firestore-replacement",
-    "firestore-alternative,
+    "firestore-alternative",
 
     # AI / ML / LLM ecosystem
     "ai",
