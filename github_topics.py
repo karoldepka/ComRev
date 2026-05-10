@@ -199,6 +199,11 @@ TOPICS_RAW = [
     "vector-database",
     "supabase",
     "firebase",
+    "firebase-replacement",
+    "firebase-alternative",
+    "firestore",
+    "firestore-replacement",
+    "firestore-alternative,
 
     # AI / ML / LLM ecosystem
     "ai",
