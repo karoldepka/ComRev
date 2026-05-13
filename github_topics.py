@@ -51,6 +51,8 @@ TOPICS_RAW = [
     "offline-first",
     "react-native",
     "ionic",
+    "capacitor",
+    "stencil",
     "flutter",
     "expo",
     "android",
