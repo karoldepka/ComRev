@@ -1,14 +1,14 @@
-import React, { useRef, useEffect } from 'react';
-import { GLView } from 'expo-gl';
-import { Renderer } from 'expo-three';
-import * as THREE from 'three';
+import { GLView } from "expo-gl";
+import { Renderer } from "expo-three";
+import React, { useEffect, useRef } from "react";
+import * as THREE from "three";
 
 interface ThreeDTextProps {
   text: string;
 }
 
 export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
-  const animationIdRef = useRef<number>();
+  const animationIdRef = useRef<number | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
@@ -37,7 +37,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
         meshRef.current.geometry.dispose();
       }
       if (Array.isArray(meshRef.current.material)) {
-        meshRef.current.material.forEach(m => m.dispose());
+        meshRef.current.material.forEach((m: any) => m.dispose());
       } else if (meshRef.current.material) {
         meshRef.current.material.dispose();
       }
@@ -101,17 +101,18 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
       75,
       gl.drawingBufferWidth / gl.drawingBufferHeight,
       0.1,
-      1000
+      1000,
     );
     camera.position.z = 8;
     cameraRef.current = camera;
 
     // Renderer setup
     const renderer = new Renderer({ gl });
-    renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
-    renderer.setPixelRatio(1);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1;
+    const webglRenderer = renderer as any; // Cast to access WebGLRenderer methods
+    webglRenderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
+    webglRenderer.setPixelRatio(1);
+    webglRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    webglRenderer.toneMappingExposure = 1;
     rendererRef.current = renderer;
 
     // Lighting setup
@@ -133,28 +134,35 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
 
     // Create environment map for reflections using canvas
     const createEnvironmentMap = () => {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = 512;
       canvas.height = 512;
-      const ctx = canvas.getContext('2d')!;
+      const ctx = canvas.getContext("2d")!;
 
       // Create radial gradient
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
       const radius = Math.max(centerX, centerY);
 
-      const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-      gradient.addColorStop(0, '#ffffff');
-      gradient.addColorStop(0.3, '#00ff88');
-      gradient.addColorStop(0.6, '#0088ff');
-      gradient.addColorStop(1, '#1a1a1a');
+      const gradient = ctx.createRadialGradient(
+        centerX,
+        centerY,
+        0,
+        centerX,
+        centerY,
+        radius,
+      );
+      gradient.addColorStop(0, "#ffffff");
+      gradient.addColorStop(0.3, "#00ff88");
+      gradient.addColorStop(0.6, "#0088ff");
+      gradient.addColorStop(1, "#1a1a1a");
 
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Add some pattern
       ctx.globalAlpha = 0.3;
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
       for (let i = 0; i < 5; i++) {
         ctx.beginPath();
@@ -184,17 +192,12 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
         meshRef.current.rotation.z += 0.002;
       }
 
-      renderer.render(scene, camera);
+      webglRenderer.render(scene, camera);
       gl.endFrameEXP();
     };
 
     animate();
   };
 
-  return (
-    <GLView
-      style={{ flex: 1 }}
-      onContextCreate={onContextCreate}
-    />
-  );
+  return <GLView style={{ flex: 1, pointerEvents: 'auto' }} onContextCreate={onContextCreate} />;
 };
