@@ -10,13 +10,15 @@ interface ThreeDTextProps {
   equalizeLineWidths?: boolean;
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
+  lineSpacing?: number;
 }
 
 export const ThreeDText: React.FC<ThreeDTextProps> = ({
   text,
   equalizeLineWidths = false,
   equalizationMethod = 'fontSize',
-  targetWidth = 20
+  targetWidth = 20,
+  lineSpacing,
 }) => {
   const animationIdRef = useRef<number | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -38,7 +40,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
     if (sceneRef.current && envMapRef.current) {
       updateTextMesh(text);
     }
-  }, [text, equalizeLineWidths, equalizationMethod, targetWidth]);
+  }, [text, equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
 
   // Cleanup animation frame on unmount
   useEffect(() => {
@@ -103,6 +105,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
         equalizeLineWidths,
         equalizationMethod,
         targetWidth,
+        lineSpacing,
       });
 
       // A newer updateTextMesh call was made — discard this result

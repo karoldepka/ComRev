@@ -18,6 +18,7 @@ export default function ThreeDTextScreen() {
   const [equalizeLineWidths, setEqualizeLineWidths] = useState(false);
   const [equalizationMethod, setEqualizationMethod] = useState<'spacing' | 'fontSize'>('fontSize');
   const [targetWidth, setTargetWidth] = useState(20);
+  const [lineSpacing, setLineSpacing] = useState(1.5);
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
 
@@ -32,6 +33,7 @@ export default function ThreeDTextScreen() {
             equalizeLineWidths={equalizeLineWidths}
             equalizationMethod={equalizationMethod}
             targetWidth={targetWidth}
+            lineSpacing={lineSpacing}
           />
         </View>
 
@@ -83,27 +85,37 @@ export default function ThreeDTextScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.controlRow}>
+              <View style={styles.sliderRow}>
                 <Text style={[styles.label, { color: colors.text }]}>
-                  Target Width: {targetWidth}
+                  Target Width: {targetWidth.toFixed(1)}
                 </Text>
-                <View style={styles.widthControls}>
-                  <TouchableOpacity
-                    style={[styles.widthButton, { borderColor: colors.tint }]}
-                    onPress={() => setTargetWidth(Math.max(5, targetWidth - 1))}
-                  >
-                    <Text style={[styles.buttonText, { color: colors.tint }]}>-</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.widthButton, { borderColor: colors.tint }]}
-                    onPress={() => setTargetWidth(Math.min(20, targetWidth + 1))}
-                  >
-                    <Text style={[styles.buttonText, { color: colors.tint }]}>+</Text>
-                  </TouchableOpacity>
-                </View>
+                <input
+                  type="range"
+                  min="5"
+                  max="40"
+                  step="0.1"
+                  value={targetWidth}
+                  onChange={(e: any) => setTargetWidth(parseFloat(e.target.value))}
+                  style={{ flex: 1, marginLeft: 12 }}
+                />
               </View>
             </>
           )}
+
+          <View style={styles.sliderRow}>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Line Spacing: {lineSpacing.toFixed(1)}
+            </Text>
+            <input
+              type="range"
+              min="0.5"
+              max="4"
+              step="0.01"
+              value={lineSpacing}
+              onChange={(e: any) => setLineSpacing(parseFloat(e.target.value))}
+              style={{ flex: 1, marginLeft: 12 }}
+            />
+          </View>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -140,6 +152,11 @@ const styles = StyleSheet.create({
   controlRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sliderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
   },

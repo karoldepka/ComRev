@@ -20,6 +20,7 @@ export interface TextGeometryOptions {
   equalizeLineWidths?: boolean;
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
+  lineSpacing?: number;
 }
 
 const defaultOptions: Partial<TextGeometryOptions> = {
@@ -37,6 +38,7 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   equalizeLineWidths: false,
   equalizationMethod: 'fontSize',
   targetWidth: 20,
+  lineSpacing: 1.5,
 };
 
 let fontCache: Font | null = null;
@@ -86,9 +88,8 @@ export async function createTextGeometry(
   geometry: TextGeometry | THREE.Group;
   material: THREE.MeshStandardMaterial;
 }> {
-  const mergedOptions = { ...defaultOptions, ...options };
+  const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
   const lines = mergedOptions.text!.split('\n');
-  const lineHeight = mergedOptions.size! * 1.5; // Vertical spacing between lines
 
   try {
     const font = await loadFont();
@@ -118,25 +119,23 @@ export async function createTextGeometry(
 
     // Calculate equalization factors
     if (mergedOptions.equalizeLineWidths!) {
-      const maxWidth = Math.max(...lineWidths);
-
       for (let i = 0; i < lineWidths.length; i++) {
         const width = lineWidths[i] || 1;
-        equalizationFactors[i] = maxWidth / width;
+        equalizationFactors[i] = mergedOptions.targetWidth! / width;
       }
     }
 
     // Create the main group for all lines
     const mainGroup = new THREE.Group();
+    const lineGeometries: { geometry: TextGeometry; height: number }[] = [];
 
     // Second pass: create geometries with equalization
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       const factor = equalizationFactors[lineIndex];
 
-      let lineGeometry: TextGeometry;
-      if (mergedOptions.equalizationMethod === 'fontSize') {
-        lineGeometry = new TextGeometry(line, {
+      if (mergedOptions.equalizationMethod === 'fontSize' || !mergedOptions.equalizeLineWidths) {
+        const lineGeometry = new TextGeometry(line, {
           font: font as any,
           size: mergedOptions.size! * factor,
           height: mergedOptions.height,
@@ -147,44 +146,83 @@ export async function createTextGeometry(
           bevelOffset: mergedOptions.bevelOffset,
           bevelSegments: mergedOptions.bevelSegments,
         } as any);
-      } else {
-        // Use normal font size, will adjust spacing later
-        lineGeometry = new TextGeometry(line, {
-          font: font as any,
-          size: mergedOptions.size,
-          height: mergedOptions.height,
-          curveSegments: mergedOptions.curveSegments,
-          bevelEnabled: mergedOptions.bevelEnabled,
-          bevelThickness: mergedOptions.bevelThickness,
-          bevelSize: mergedOptions.bevelSize,
-          bevelOffset: mergedOptions.bevelOffset,
-          bevelSegments: mergedOptions.bevelSegments,
-        } as any);
-      }
 
-      // Center horizontally
-      lineGeometry.computeBoundingBox();
-      let lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
-      let offsetX = -lineWidth / 2;
-
-      // If using spacing equalization, scale the geometry
-      if (mergedOptions.equalizeLineWidths! && mergedOptions.equalizationMethod === 'spacing') {
-        lineGeometry.scale(factor, 1, 1);
-        // Recalculate bounding box after scaling
         lineGeometry.computeBoundingBox();
-        lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
-        offsetX = -lineWidth / 2;
+        const lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
+        const lineHeight = (lineGeometry.boundingBox!.max.y - lineGeometry.boundingBox!.min.y) * mergedOptions.lineSpacing!;
+        lineGeometry.translate(-lineWidth / 2, 0, 0);
+        lineGeometries.push({ geometry: lineGeometry, height: lineHeight });
+      } else {
+        // Spacing mode: create per-character geometries with extra gaps
+        const naturalWidth = lineWidths[lineIndex];
+        const extraSpace = (mergedOptions.targetWidth! - naturalWidth) / Math.max(1, line.length - 1);
+        const lineGroup = new THREE.Group();
+        let cursorX = 0;
+        let maxCharHeight = 0;
+
+        for (let charIndex = 0; charIndex < line.length; charIndex++) {
+          const char = line[charIndex];
+          if (char === ' ') {
+            const spaceGeo = new TextGeometry(' ', {
+              font: font as any,
+              size: mergedOptions.size,
+            } as any);
+            spaceGeo.computeBoundingBox();
+            cursorX += (spaceGeo.boundingBox!.max.x - spaceGeo.boundingBox!.min.x) + extraSpace;
+            spaceGeo.dispose();
+            continue;
+          }
+
+          const charGeometry = new TextGeometry(char, {
+            font: font as any,
+            size: mergedOptions.size,
+            height: mergedOptions.height,
+            curveSegments: mergedOptions.curveSegments,
+            bevelEnabled: mergedOptions.bevelEnabled,
+            bevelThickness: mergedOptions.bevelThickness,
+            bevelSize: mergedOptions.bevelSize,
+            bevelOffset: mergedOptions.bevelOffset,
+            bevelSegments: mergedOptions.bevelSegments,
+          } as any);
+
+          charGeometry.computeBoundingBox();
+          const charWidth = charGeometry.boundingBox!.max.x - charGeometry.boundingBox!.min.x;
+          const charHeight = charGeometry.boundingBox!.max.y - charGeometry.boundingBox!.min.y;
+          maxCharHeight = Math.max(maxCharHeight, charHeight);
+
+          charGeometry.translate(cursorX, 0, 0);
+          const charMesh = new THREE.Mesh(charGeometry);
+          lineGroup.add(charMesh);
+
+          cursorX += charWidth + extraSpace;
+        }
+
+        // Center the line group horizontally
+        const box = new THREE.Box3().setFromObject(lineGroup);
+        const centerX = (box.max.x + box.min.x) / 2;
+        lineGroup.position.x = -centerX;
+
+        const lineHeight = maxCharHeight * mergedOptions.lineSpacing!;
+        lineGeometries.push({ geometry: lineGroup as any, height: lineHeight });
       }
+    }
 
-      lineGeometry.translate(offsetX, 0, 0);
+    // Position lines vertically using actual heights
+    const totalHeight = lineGeometries.reduce((sum: number, l) => sum + l.height, 0);
+    let yPos = totalHeight / 2;
 
-      // Position vertically (top to bottom)
-      const yOffset = (lines.length - 1) * lineHeight / 2 - lineIndex * lineHeight;
-      lineGeometry.translate(0, yOffset, 0);
+    for (const { geometry: lineGeometry, height } of lineGeometries) {
+      yPos -= height;
+      const yOffset = yPos + height / 2;
 
-      // Create mesh and add to main group
-      const lineMesh = new THREE.Mesh(lineGeometry);
-      mainGroup.add(lineMesh);
+      if (lineGeometry instanceof THREE.Group) {
+        lineGeometry.position.y = yOffset;
+        mainGroup.add(lineGeometry);
+      } else {
+        lineGeometry.translate(0, yOffset, 0);
+        const lineMesh = new THREE.Mesh(lineGeometry);
+        mainGroup.add(lineMesh);
+      }
     }
 
     const color =
