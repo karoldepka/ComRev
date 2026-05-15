@@ -14,7 +14,7 @@ interface ThreeDTextProps {
 export const ThreeDText: React.FC<ThreeDTextProps> = ({
   text,
   equalizeLineWidths = false,
-  equalizationMethod = 'spacing',
+  equalizationMethod = 'fontSize',
   targetWidth = 20
 }) => {
   const animationIdRef = useRef<number | null>(null);

@@ -35,7 +35,7 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   roughness: 0.15,
   envMapIntensity: 1.5,
   equalizeLineWidths: false,
-  equalizationMethod: 'spacing',
+  equalizationMethod: 'fontSize',
   targetWidth: 20,
 };
 
@@ -136,14 +136,13 @@ export async function createTextGeometry(
 
       let lineGeometry: TextGeometry;
       if (mergedOptions.equalizationMethod === 'fontSize') {
-        // Scale font size
         lineGeometry = new TextGeometry(line, {
           font: font as any,
           size: mergedOptions.size! * factor,
-          height: mergedOptions.height! * factor,
+          height: mergedOptions.height,
           curveSegments: mergedOptions.curveSegments,
           bevelEnabled: mergedOptions.bevelEnabled,
-          bevelThickness: mergedOptions.bevelThickness! * factor,
+          bevelThickness: mergedOptions.bevelThickness,
           bevelSize: mergedOptions.bevelSize! * factor,
           bevelOffset: mergedOptions.bevelOffset,
           bevelSegments: mergedOptions.bevelSegments,
