@@ -25,6 +25,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   const meshRef = useRef<THREE.Mesh | THREE.Group | null>(null);
   const envMapRef = useRef<THREE.Texture | null>(null);
   const currentTextRef = useRef<string>(text);
+  const updateIdRef = useRef(0);
 
   // Mouse/Touch drag state
   const isDraggingRef = useRef(false);
@@ -48,31 +49,17 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
     };
   }, []);
 
-  const updateTextMesh = async (textContent: string) => {
-    if (!sceneRef.current || !envMapRef.current) {
-      console.log("updateTextMesh: scene or envMap not ready");
-      return;
-    }
-
-    const scene = sceneRef.current;
-    const envMap = envMapRef.current;
-
-    console.log("updateTextMesh: removing old mesh, current meshRef:", meshRef.current);
-
-    // Remove old mesh if it exists
+  const removeMeshFromScene = (scene: THREE.Scene) => {
     if (meshRef.current) {
       scene.remove(meshRef.current);
       if (meshRef.current instanceof THREE.Mesh) {
-        if (meshRef.current.geometry) {
-          meshRef.current.geometry.dispose();
-        }
+        if (meshRef.current.geometry) meshRef.current.geometry.dispose();
         if (Array.isArray(meshRef.current.material)) {
           meshRef.current.material.forEach((m: any) => m.dispose());
         } else if (meshRef.current.material) {
           meshRef.current.material.dispose();
         }
       } else if (meshRef.current instanceof THREE.Group) {
-        // Dispose of all geometries and materials in the group
         meshRef.current.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             if (child.geometry) child.geometry.dispose();
@@ -86,11 +73,9 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
           }
         });
       }
-      meshRef.current = null; // Clear the reference
-      console.log("updateTextMesh: old mesh removed and disposed");
+      meshRef.current = null;
     }
-
-    // Also clear any other meshes that might be in the scene (safety check)
+    // Clear any stray non-light objects
     const meshesToRemove: THREE.Object3D[] = [];
     scene.traverse((child) => {
       if (child !== scene && child !== cameraRef.current && !(child instanceof THREE.Light)) {
@@ -98,11 +83,20 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
       }
     });
     meshesToRemove.forEach(mesh => scene.remove(mesh));
-    console.log("updateTextMesh: cleared any leftover objects from scene");
+  };
+
+  const updateTextMesh = async (textContent: string) => {
+    if (!sceneRef.current || !envMapRef.current) {
+      return;
+    }
+
+    const scene = sceneRef.current;
+    const envMap = envMapRef.current;
+    const thisUpdateId = ++updateIdRef.current;
+
+    removeMeshFromScene(scene);
 
     try {
-      console.log("Creating text geometry for:", textContent);
-      // Create text geometry using the utility
       const { geometry, material } = await createTextGeometry({
         text: textContent,
         envMap: envMap,
@@ -111,7 +105,9 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
         targetWidth,
       });
 
-      console.log("Geometry created:", geometry);
+      // A newer updateTextMesh call was made — discard this result
+      if (thisUpdateId !== updateIdRef.current) return;
+
       let mesh: THREE.Mesh | THREE.Group;
       if (geometry instanceof THREE.Group) {
         mesh = geometry;
@@ -128,10 +124,9 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
         mesh.castShadow = true;
         mesh.receiveShadow = true;
       }
-      console.log("Adding mesh to scene");
+      removeMeshFromScene(scene);
       scene.add(mesh);
       meshRef.current = mesh;
-      console.log("Mesh added successfully, new meshRef:", meshRef.current);
     } catch (error) {
       console.error("Failed to create text geometry:", error);
     }
@@ -183,6 +178,10 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
     const webglRenderer = renderer as any; // Cast to access WebGLRenderer methods
     webglRenderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
     webglRenderer.setPixelRatio(1);
+    webglRenderer.autoClear = true;
+    webglRenderer.autoClearColor = true;
+    webglRenderer.autoClearDepth = true;
+    webglRenderer.autoClearStencil = true;
     webglRenderer.toneMapping = THREE.ACESFilmicToneMapping;
     webglRenderer.toneMappingExposure = 1;
     rendererRef.current = renderer;
@@ -276,7 +275,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
         meshRef.current.rotation.y = rotationRef.current.y;
       }
 
-      webglRenderer.clear(); // Clear the renderer before rendering
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
       webglRenderer.render(scene, camera);
       gl.endFrameEXP();
     };
