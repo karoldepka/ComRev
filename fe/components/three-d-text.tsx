@@ -1,7 +1,8 @@
 import { createTextGeometry } from "@/utils/three-text-geometry";
 import { GLView } from "expo-gl";
 import { Renderer } from "expo-three";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
+import { View } from "react-native";
 import * as THREE from "three";
 
 interface ThreeDTextProps {
@@ -26,7 +27,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   const currentTextRef = useRef<string>(text);
 
   // Mouse/Touch drag state
-  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
   const lastMousePosition = useRef({ x: 0, y: 0 });
   const rotationRef = useRef({ x: 0, y: 0 });
 
@@ -137,28 +138,25 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   };
 
   // Touch event handlers for drag rotation
-  const handleTouchStart = (event: any) => {
-    setIsDragging(true);
-    const touch = event.nativeEvent.touches[0];
-    lastMousePosition.current = { x: touch.pageX, y: touch.pageY };
+  const handlePointerDown = (event: any) => {
+    isDraggingRef.current = true;
+    lastMousePosition.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
   };
 
-  const handleTouchMove = (event: any) => {
-    if (!isDragging) return;
+  const handlePointerMove = (event: any) => {
+    if (!isDraggingRef.current) return;
 
-    const touch = event.nativeEvent.touches[0];
-    const deltaX = touch.pageX - lastMousePosition.current.x;
-    const deltaY = touch.pageY - lastMousePosition.current.y;
+    const deltaX = event.nativeEvent.pageX - lastMousePosition.current.x;
+    const deltaY = event.nativeEvent.pageY - lastMousePosition.current.y;
 
-    // Update rotation based on drag
     rotationRef.current.y += deltaX * 0.01;
     rotationRef.current.x += deltaY * 0.01;
 
-    lastMousePosition.current = { x: touch.pageX, y: touch.pageY };
+    lastMousePosition.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
   };
 
-  const handleTouchEnd = () => {
-    setIsDragging(false);
+  const handlePointerUp = () => {
+    isDraggingRef.current = false;
   };
 
   const onContextCreate = async (gl: any) => {
@@ -288,9 +286,16 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   };
 
   return (
-    <GLView
-      style={{ flex: 1, pointerEvents: "auto" }}
-      onContextCreate={onContextCreate}
-    />
+    <View
+      style={{ flex: 1 }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
+      <GLView
+        style={{ flex: 1 }}
+        onContextCreate={onContextCreate}
+      />
+    </View>
   );
 };
