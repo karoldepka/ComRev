@@ -1,14 +1,22 @@
 import { createTextGeometry } from "@/utils/three-text-geometry";
 import { GLView } from "expo-gl";
 import { Renderer } from "expo-three";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 interface ThreeDTextProps {
   text: string;
+  equalizeLineWidths?: boolean;
+  equalizationMethod?: 'spacing' | 'fontSize';
+  targetWidth?: number;
 }
 
-export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
+export const ThreeDText: React.FC<ThreeDTextProps> = ({
+  text,
+  equalizeLineWidths = false,
+  equalizationMethod = 'spacing',
+  targetWidth = 20
+}) => {
   const animationIdRef = useRef<number | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -17,19 +25,38 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
   const envMapRef = useRef<THREE.Texture | null>(null);
   const currentTextRef = useRef<string>(text);
 
+  // Mouse/Touch drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const lastMousePosition = useRef({ x: 0, y: 0 });
+  const rotationRef = useRef({ x: 0, y: 0 });
+
   // Update text when prop changes
   useEffect(() => {
     currentTextRef.current = text;
     if (sceneRef.current && envMapRef.current) {
       updateTextMesh(text);
     }
-  }, [text]);
+  }, [text, equalizeLineWidths, equalizationMethod, targetWidth]);
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+      }
+    };
+  }, []);
 
   const updateTextMesh = async (textContent: string) => {
-    if (!sceneRef.current || !envMapRef.current) return;
+    if (!sceneRef.current || !envMapRef.current) {
+      console.log("updateTextMesh: scene or envMap not ready");
+      return;
+    }
 
     const scene = sceneRef.current;
     const envMap = envMapRef.current;
+
+    console.log("updateTextMesh: removing old mesh, current meshRef:", meshRef.current);
 
     // Remove old mesh if it exists
     if (meshRef.current) {
@@ -58,7 +85,19 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
           }
         });
       }
+      meshRef.current = null; // Clear the reference
+      console.log("updateTextMesh: old mesh removed and disposed");
     }
+
+    // Also clear any other meshes that might be in the scene (safety check)
+    const meshesToRemove: THREE.Object3D[] = [];
+    scene.traverse((child) => {
+      if (child !== scene && child !== cameraRef.current && !(child instanceof THREE.Light)) {
+        meshesToRemove.push(child);
+      }
+    });
+    meshesToRemove.forEach(mesh => scene.remove(mesh));
+    console.log("updateTextMesh: cleared any leftover objects from scene");
 
     try {
       console.log("Creating text geometry for:", textContent);
@@ -66,6 +105,9 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
       const { geometry, material } = await createTextGeometry({
         text: textContent,
         envMap: envMap,
+        equalizeLineWidths,
+        equalizationMethod,
+        targetWidth,
       });
 
       console.log("Geometry created:", geometry);
@@ -88,10 +130,35 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
       console.log("Adding mesh to scene");
       scene.add(mesh);
       meshRef.current = mesh;
-      console.log("Mesh added successfully");
+      console.log("Mesh added successfully, new meshRef:", meshRef.current);
     } catch (error) {
       console.error("Failed to create text geometry:", error);
     }
+  };
+
+  // Touch event handlers for drag rotation
+  const handleTouchStart = (event: any) => {
+    setIsDragging(true);
+    const touch = event.nativeEvent.touches[0];
+    lastMousePosition.current = { x: touch.pageX, y: touch.pageY };
+  };
+
+  const handleTouchMove = (event: any) => {
+    if (!isDragging) return;
+
+    const touch = event.nativeEvent.touches[0];
+    const deltaX = touch.pageX - lastMousePosition.current.x;
+    const deltaY = touch.pageY - lastMousePosition.current.y;
+
+    // Update rotation based on drag
+    rotationRef.current.y += deltaX * 0.01;
+    rotationRef.current.x += deltaY * 0.01;
+
+    lastMousePosition.current = { x: touch.pageX, y: touch.pageY };
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
   };
 
   const onContextCreate = async (gl: any) => {
@@ -109,7 +176,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
       0.1,
       1000,
     );
-    camera.position.z = 8;
+    camera.position.z = 15; // Increased distance to fit more text
     cameraRef.current = camera;
     console.log("Camera setup complete");
 
@@ -206,11 +273,12 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({ text }) => {
       animationIdRef.current = requestAnimationFrame(animate);
 
       if (meshRef.current) {
-        meshRef.current.rotation.x += 0.003;
-        meshRef.current.rotation.y += 0.008;
-        meshRef.current.rotation.z += 0.002;
+        // Use drag rotation instead of automatic rotation
+        meshRef.current.rotation.x = rotationRef.current.x;
+        meshRef.current.rotation.y = rotationRef.current.y;
       }
 
+      webglRenderer.clear(); // Clear the renderer before rendering
       webglRenderer.render(scene, camera);
       gl.endFrameEXP();
     };

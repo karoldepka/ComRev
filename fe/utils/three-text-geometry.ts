@@ -17,6 +17,9 @@ export interface TextGeometryOptions {
   roughness?: number;
   envMap?: THREE.Texture | null;
   envMapIntensity?: number;
+  equalizeLineWidths?: boolean;
+  equalizationMethod?: 'spacing' | 'fontSize';
+  targetWidth?: number;
 }
 
 const defaultOptions: Partial<TextGeometryOptions> = {
@@ -31,6 +34,9 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   metalness: 0.95,
   roughness: 0.15,
   envMapIntensity: 1.5,
+  equalizeLineWidths: false,
+  equalizationMethod: 'spacing',
+  targetWidth: 20,
 };
 
 let fontCache: Font | null = null;
@@ -81,23 +87,106 @@ export async function createTextGeometry(
   material: THREE.MeshStandardMaterial;
 }> {
   const mergedOptions = { ...defaultOptions, ...options };
+  const lines = mergedOptions.text!.split('\n');
+  const lineHeight = mergedOptions.size! * 1.5; // Vertical spacing between lines
 
   try {
     const font = await loadFont();
 
-    const geometry = new TextGeometry(mergedOptions.text!, {
-      font: font as any,
-      size: mergedOptions.size,
-      height: mergedOptions.height,
-      curveSegments: mergedOptions.curveSegments,
-      bevelEnabled: mergedOptions.bevelEnabled,
-      bevelThickness: mergedOptions.bevelThickness,
-      bevelSize: mergedOptions.bevelSize,
-      bevelOffset: mergedOptions.bevelOffset,
-      bevelSegments: mergedOptions.bevelSegments,
-    } as any);
+    // Calculate line widths and equalization factors
+    const lineWidths: number[] = [];
+    const equalizationFactors: number[] = lines.map(() => 1);
 
-    geometry.center();
+    // First pass: calculate natural widths
+    for (const line of lines) {
+      const geometry = new TextGeometry(line, {
+        font: font as any,
+        size: mergedOptions.size,
+        height: mergedOptions.height,
+        curveSegments: mergedOptions.curveSegments,
+        bevelEnabled: mergedOptions.bevelEnabled,
+        bevelThickness: mergedOptions.bevelThickness,
+        bevelSize: mergedOptions.bevelSize,
+        bevelOffset: mergedOptions.bevelOffset,
+        bevelSegments: mergedOptions.bevelSegments,
+      } as any);
+
+      geometry.computeBoundingBox();
+      const width = geometry.boundingBox!.max.x - geometry.boundingBox!.min.x;
+      lineWidths.push(width);
+    }
+
+    // Calculate equalization factors
+    if (mergedOptions.equalizeLineWidths!) {
+      const maxWidth = Math.max(...lineWidths);
+
+      for (let i = 0; i < lineWidths.length; i++) {
+        const width = lineWidths[i] || 1;
+        equalizationFactors[i] = maxWidth / width;
+      }
+    }
+
+    // Create the main group for all lines
+    const mainGroup = new THREE.Group();
+
+    // Second pass: create geometries with equalization
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const factor = equalizationFactors[lineIndex];
+
+      let lineGeometry: TextGeometry;
+      if (mergedOptions.equalizationMethod === 'fontSize') {
+        // Scale font size
+        lineGeometry = new TextGeometry(line, {
+          font: font as any,
+          size: mergedOptions.size! * factor,
+          height: mergedOptions.height! * factor,
+          curveSegments: mergedOptions.curveSegments,
+          bevelEnabled: mergedOptions.bevelEnabled,
+          bevelThickness: mergedOptions.bevelThickness! * factor,
+          bevelSize: mergedOptions.bevelSize! * factor,
+          bevelOffset: mergedOptions.bevelOffset,
+          bevelSegments: mergedOptions.bevelSegments,
+        } as any);
+      } else {
+        // Use normal font size, will adjust spacing later
+        lineGeometry = new TextGeometry(line, {
+          font: font as any,
+          size: mergedOptions.size,
+          height: mergedOptions.height,
+          curveSegments: mergedOptions.curveSegments,
+          bevelEnabled: mergedOptions.bevelEnabled,
+          bevelThickness: mergedOptions.bevelThickness,
+          bevelSize: mergedOptions.bevelSize,
+          bevelOffset: mergedOptions.bevelOffset,
+          bevelSegments: mergedOptions.bevelSegments,
+        } as any);
+      }
+
+      // Center horizontally
+      lineGeometry.computeBoundingBox();
+      let lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
+      let offsetX = -lineWidth / 2;
+
+      // If using spacing equalization, scale the geometry
+      if (mergedOptions.equalizeLineWidths! && mergedOptions.equalizationMethod === 'spacing') {
+        lineGeometry.scale(factor, 1, 1);
+        // Recalculate bounding box after scaling
+        lineGeometry.computeBoundingBox();
+        lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
+        offsetX = -lineWidth / 2;
+      }
+
+      lineGeometry.translate(offsetX, 0, 0);
+
+      // Position vertically (top to bottom)
+      const yOffset = (lines.length - 1) * lineHeight / 2 - lineIndex * lineHeight;
+      lineGeometry.translate(0, yOffset, 0);
+
+      // Create mesh and add to main group
+      const lineMesh = new THREE.Mesh(lineGeometry);
+      mainGroup.add(lineMesh);
+    }
 
     const color =
       mergedOptions.color || new THREE.Color().setHSL(Math.random(), 0.8, 0.5);
@@ -110,40 +199,91 @@ export async function createTextGeometry(
       envMapIntensity: mergedOptions.envMapIntensity,
     });
 
-    return { geometry, material };
+    return { geometry: mainGroup, material };
   } catch (error) {
     console.error("Failed to load font, creating fallback geometry:", error);
 
     // Fallback: create simple extruded text using basic shapes
-    const group = new THREE.Group();
-    const letterSpacing = mergedOptions.size! * 0.8;
-    let currentX = 0;
+    const mainGroup = new THREE.Group();
+    const baseLetterSpacing = mergedOptions.size! * 0.8;
+    const lineSpacing = mergedOptions.size! * 1.5;
 
-    for (let i = 0; i < mergedOptions.text!.length; i++) {
-      const char = mergedOptions.text![i];
-      if (char === " ") {
-        currentX += letterSpacing * 0.5;
-        continue;
+    // Calculate line widths for equalization
+    const lineWidths: number[] = [];
+    const equalizationFactors: number[] = lines.map(() => 1);
+
+    // First pass: calculate natural widths
+    for (const line of lines) {
+      let width = 0;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] !== ' ') {
+          width += baseLetterSpacing;
+        } else {
+          width += baseLetterSpacing * 0.5;
+        }
       }
-
-      // Create a simple box for each character
-      const charGeometry = new THREE.BoxGeometry(
-        mergedOptions.size! * 0.6,
-        mergedOptions.size!,
-        mergedOptions.height!,
-      );
-
-      const charMesh = new THREE.Mesh(charGeometry);
-      charMesh.position.x = currentX;
-      group.add(charMesh);
-
-      currentX += letterSpacing;
+      lineWidths.push(width);
     }
 
-    // Center the group
-    const box = new THREE.Box3().setFromObject(group);
-    const center = box.getCenter(new THREE.Vector3());
-    group.position.sub(center);
+    // Calculate equalization factors
+    if (mergedOptions.equalizeLineWidths!) {
+      const maxWidth = Math.max(...lineWidths);
+      const targetWidth = mergedOptions.targetWidth!;
+
+      for (let i = 0; i < lineWidths.length; i++) {
+        const width = lineWidths[i] || 1;
+        const factor = targetWidth / width;
+        equalizationFactors[i] = factor;
+      }
+    }
+
+    // Second pass: create geometries
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const factor = equalizationFactors[lineIndex];
+      const lineGroup = new THREE.Group();
+
+      let currentX = 0;
+      const letterSpacing = mergedOptions.equalizationMethod === 'spacing'
+        ? baseLetterSpacing * factor
+        : baseLetterSpacing;
+
+      const charSize = mergedOptions.equalizationMethod === 'fontSize'
+        ? mergedOptions.size! * factor
+        : mergedOptions.size!;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === " ") {
+          currentX += letterSpacing * 0.5;
+          continue;
+        }
+
+        // Create a simple box for each character
+        const charGeometry = new THREE.BoxGeometry(
+          charSize * 0.6,
+          charSize,
+          mergedOptions.height!,
+        );
+
+        const charMesh = new THREE.Mesh(charGeometry);
+        charMesh.position.x = currentX;
+        lineGroup.add(charMesh);
+
+        currentX += letterSpacing;
+      }
+
+      // Center the line horizontally
+      const box = new THREE.Box3().setFromObject(lineGroup);
+      const center = box.getCenter(new THREE.Vector3());
+      lineGroup.position.x = -center.x;
+
+      // Position vertically
+      const yOffset = (lines.length - 1) * lineSpacing / 2 - lineIndex * lineSpacing;
+      lineGroup.position.y = yOffset;
+
+      mainGroup.add(lineGroup);
+    }
 
     const color =
       mergedOptions.color || new THREE.Color().setHSL(Math.random(), 0.8, 0.5);
@@ -156,7 +296,7 @@ export async function createTextGeometry(
       envMapIntensity: mergedOptions.envMapIntensity,
     });
 
-    return { geometry: group, material };
+    return { geometry: mainGroup, material };
   }
 }
 
