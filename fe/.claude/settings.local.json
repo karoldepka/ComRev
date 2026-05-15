@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo *)",
+      "Bash(node -e \"console.log\\(process.env.PATH\\)\")",
+      "Bash(which npm *)",
+      "Read(//c/Users/karol/AppData/Roaming/**)",
+      "Read(//c/Program Files/**)"
+    ]
+  }
+}
