@@ -1,11 +1,13 @@
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use git2::{Oid, Repository};
+use log::{debug, error, info, trace, warn};
+use env_logger;
 use serde_yaml::{Mapping, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 const MISSING_AS_ZERO: bool = true;
 
@@ -14,14 +16,18 @@ fn data_repo_dir() -> Result<PathBuf> {
     // assume repo root contains this folder; mirror Python: ../ComRev_Data
     let base = cwd;
     let data = base.join("..").join("..").join("ComRev_Data");
-    Ok(data.canonicalize().unwrap_or(data))
+    let resolved = data.canonicalize().unwrap_or(data);
+    debug!("data_repo_dir -> {}", resolved.display());
+    Ok(resolved)
 }
 
 fn load_yaml_from_file(path: &Path) -> Result<Vec<Value>> {
     if !path.exists() {
         return Ok(vec![]);
     }
+    debug!("Reading YAML file: {}", path.display());
     let s = fs::read_to_string(path)?;
+    debug!("Read {} bytes from {}", s.len(), path.display());
     let v: Vec<Value> = serde_yaml::from_str(&s).unwrap_or_default();
     Ok(v)
 }
@@ -75,6 +81,7 @@ fn load_yaml_from_commit(repo: &Repository, commit_oid: Oid, rel_path: &Path) ->
     };
     let blob = repo.find_blob(entry.id())?;
     let content = std::str::from_utf8(blob.content())?;
+    trace!("Loaded blob {} ({} bytes) from commit {} for {}", entry.id(), content.len(), commit_oid, rel_path.display());
     let v: Vec<Value> = serde_yaml::from_str(content).unwrap_or_default();
     Ok(v)
 }
@@ -87,6 +94,7 @@ fn find_commit_before(repo: &Repository, branch: &str, target_ts: i64) -> Result
         let commit = repo.find_commit(oid)?;
         let commit_time = commit.time().seconds();
         if commit_time <= target_ts {
+            trace!("find_commit_before: chosen commit {} at {} (target {})", oid, commit_time, target_ts);
             return Ok(Some(oid));
         }
     }
@@ -108,7 +116,7 @@ fn compute_star_diff(stars_now: i64, old_repo: Option<&Value>) -> i64 {
 fn build_repo_diffs(repo_id: i64, stars_now: i64, snapshots: &HashMap<String, HashMap<i64, Value>>) -> Mapping {
     let mut m = Mapping::new();
     for label in ["6h","12h","24h","48h","5d","7d","10d","14d"].iter() {
-        let old_repo = snapshots.get(&label.to_string()).and_then(|s| s.get(&repo_id));
+        let old_repo: Option<&Value> = snapshots.get(&label.to_string()).and_then(|s| s.get(&repo_id));
         let diff = compute_star_diff(stars_now, old_repo);
         m.insert(Value::from(*label), Value::from(diff));
     }
@@ -147,7 +155,12 @@ fn sort_repos(repos: &mut Vec<Value>) {
 }
 
 fn main() -> Result<()> {
-    println!("📊 Generating multi-window star diffs (Rust)");
+    // initialize logger (respect RUST_LOG or default to info)
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    info!("📊 Generating multi-window star diffs (Rust)");
+
+    let start_all = Instant::now();
 
     let data_dir = data_repo_dir()?;
     let current_yaml = data_dir.join("repos.yaml");
@@ -155,8 +168,9 @@ fn main() -> Result<()> {
 
     let repo = Repository::open(&data_dir).context("opening data repo")?;
 
+    let t0 = Instant::now();
     let new_data = load_yaml_from_file(&current_yaml)?;
-    println!("📦 Current repos: {}", new_data.len());
+    info!("📦 Current repos: {} (loaded in {:?})", new_data.len(), t0.elapsed());
 
     // Build snapshots
     let now = Utc::now();
@@ -173,20 +187,24 @@ fn main() -> Result<()> {
 
     let mut snapshots: HashMap<String, HashMap<i64, Value>> = HashMap::new();
     for (label, ts) in windows.iter() {
+        let tw = Instant::now();
         match find_commit_before(&repo, "master", *ts)? {
             Some(oid) => {
-                println!("⏪ Found commit ({}) → {}", label, Utc.timestamp(*ts, 0));
+                info!("⏪ Found commit ({}) → {} (target {})", label, Utc.timestamp(*ts, 0), ts);
                 let v = load_yaml_from_commit(&repo, oid, Path::new("repos.yaml"))?;
+                debug!("Loaded snapshot {} entries for {} in {:?}", v.len(), label, tw.elapsed());
                 snapshots.insert(label.clone(), parse_yaml_to_index(&v));
             }
             None => {
-                println!("⚠️ No commit found for window {}", label);
+                warn!("⚠️ No commit found for window {}", label);
                 snapshots.insert(label.clone(), HashMap::new());
             }
         }
     }
+    debug!("Finished loading snapshots");
 
     // Compute diffs
+    let t1 = Instant::now();
     let new_index = parse_yaml_to_index(&new_data);
     let mut result: Vec<Value> = Vec::new();
 
@@ -202,11 +220,14 @@ fn main() -> Result<()> {
     sort_repos(&mut result);
 
     // Save result
+    let t2 = Instant::now();
+    // Save result
     let s = serde_yaml::to_string(&result)?;
     fs::write(&output_yaml, s)?;
 
-    println!("🔥 {} repos changed", result.len());
-    println!("💾 Saved → {}", output_yaml.display());
+    info!("🔥 {} repos changed (diff compute {:?})", result.len(), t1.elapsed());
+    info!("💾 Saved → {} (write {:?})", output_yaml.display(), t2.elapsed());
+    info!("Total run time: {:?}", start_all.elapsed());
 
     Ok(())
 }

@@ -48,6 +48,7 @@ def load_yaml_from_file(path: str) -> List[dict]:
         return yaml.safe_load(f) or []
 
 
+@measure_time
 def load_yaml_from_commit(
     commit,
     file_path: str,
