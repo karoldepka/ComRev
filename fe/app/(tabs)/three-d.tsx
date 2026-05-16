@@ -19,6 +19,12 @@ export default function ThreeDTextScreen() {
   const [equalizationMethod, setEqualizationMethod] = useState<'spacing' | 'fontSize'>('fontSize');
   const [targetWidth, setTargetWidth] = useState(20);
   const [lineSpacing, setLineSpacing] = useState(1.5);
+  const [rays, setRays] = useState(true);
+  const [rayMode, setRayMode] = useState<'radial' | 'spaghetti' | 'chip'>('radial');
+  const [rayCount, setRayCount] = useState(24);
+  const [rayThickness, setRayThickness] = useState(0.08);
+  const [rayInnerMargin, setRayInnerMargin] = useState(2);
+  const [rayOuterMargin, setRayOuterMargin] = useState(6);
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
 
@@ -34,6 +40,12 @@ export default function ThreeDTextScreen() {
             equalizationMethod={equalizationMethod}
             targetWidth={targetWidth}
             lineSpacing={lineSpacing}
+            rays={rays}
+            rayMode={rayMode}
+            rayCount={rayCount}
+            rayThickness={rayThickness}
+            rayInnerMargin={rayInnerMargin}
+            rayOuterMargin={rayOuterMargin}
           />
         </View>
 
@@ -116,6 +128,92 @@ export default function ThreeDTextScreen() {
               style={{ flex: 1, marginLeft: 12 }}
             />
           </View>
+
+          <View style={styles.controlRow}>
+            <Text style={[styles.label, { color: colors.text }]}>Rays</Text>
+            <Switch
+              value={rays}
+              onValueChange={setRays}
+              trackColor={{ false: '#767577', true: colors.tint }}
+              thumbColor={rays ? colors.tint : '#f4f3f4'}
+            />
+          </View>
+
+          {rays && (
+            <>
+              <View style={styles.controlRow}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Mode: {rayMode}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.methodButton, { borderColor: colors.tint }]}
+                  onPress={() => setRayMode(
+                    rayMode === 'radial' ? 'spaghetti' : rayMode === 'spaghetti' ? 'chip' : 'radial'
+                  )}
+                >
+                  <Text style={[styles.buttonText, { color: colors.tint }]}>
+                    Next
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.sliderRow}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Count: {rayCount}
+                </Text>
+                <input
+                  type="range"
+                  min="4"
+                  max="64"
+                  step="1"
+                  value={rayCount}
+                  onChange={(e: any) => setRayCount(parseInt(e.target.value))}
+                  style={{ flex: 1, marginLeft: 12 }}
+                />
+              </View>
+              <View style={styles.sliderRow}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Thickness: {rayThickness.toFixed(2)}
+                </Text>
+                <input
+                  type="range"
+                  min="0.01"
+                  max="0.5"
+                  step="0.01"
+                  value={rayThickness}
+                  onChange={(e: any) => setRayThickness(parseFloat(e.target.value))}
+                  style={{ flex: 1, marginLeft: 12 }}
+                />
+              </View>
+              <View style={styles.sliderRow}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Inner Margin: {rayInnerMargin.toFixed(1)}
+                </Text>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="0.1"
+                  value={rayInnerMargin}
+                  onChange={(e: any) => setRayInnerMargin(parseFloat(e.target.value))}
+                  style={{ flex: 1, marginLeft: 12 }}
+                />
+              </View>
+              <View style={styles.sliderRow}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Outer Margin: {rayOuterMargin.toFixed(1)}
+                </Text>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  step="0.1"
+                  value={rayOuterMargin}
+                  onChange={(e: any) => setRayOuterMargin(parseFloat(e.target.value))}
+                  style={{ flex: 1, marginLeft: 12 }}
+                />
+              </View>
+            </>
+          )}
         </ScrollView>
       </View>
     </SafeAreaView>

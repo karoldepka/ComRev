@@ -11,6 +11,12 @@ interface ThreeDTextProps {
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
   lineSpacing?: number;
+  rays?: boolean;
+  rayMode?: 'radial' | 'spaghetti' | 'chip';
+  rayCount?: number;
+  rayInnerMargin?: number;
+  rayOuterMargin?: number;
+  rayThickness?: number;
 }
 
 export const ThreeDText: React.FC<ThreeDTextProps> = ({
@@ -19,6 +25,12 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   equalizationMethod = 'fontSize',
   targetWidth = 20,
   lineSpacing,
+  rays,
+  rayMode,
+  rayCount,
+  rayInnerMargin,
+  rayOuterMargin,
+  rayThickness,
 }) => {
   const animationIdRef = useRef<number | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -40,7 +52,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
     if (sceneRef.current && envMapRef.current) {
       updateTextMesh(text);
     }
-  }, [text, equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
+  }, [text, equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing, rays, rayMode, rayCount, rayInnerMargin, rayOuterMargin, rayThickness]);
 
   // Cleanup animation frame on unmount
   useEffect(() => {
@@ -106,6 +118,12 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
         equalizationMethod,
         targetWidth,
         lineSpacing,
+        rays,
+        rayMode,
+        rayCount,
+        rayInnerMargin,
+        rayOuterMargin,
+        rayThickness,
       });
 
       // A newer updateTextMesh call was made — discard this result
