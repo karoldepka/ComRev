@@ -19,9 +19,14 @@ GITHUB_API = "https://api.github.com/search/repositories"
 def print_rate_limit(headers: httpx.Headers):
     remaining = headers.get("X-RateLimit-Remaining")
     limit = headers.get("X-RateLimit-Limit")
+    reset = headers.get("X-RateLimit-Reset")
 
     if remaining and limit:
-        print(f"[RateLimit] {remaining}/{limit}")
+        output = f"[RateLimit] {remaining}/{limit}"
+        if reset:
+            reset_time = datetime.fromtimestamp(int(reset), tz=timezone.utc)
+            output += f" reset={reset_time.isoformat()}"
+        print(output)
 
 
 def handle_rate_limit(headers: httpx.Headers):
@@ -32,13 +37,6 @@ def handle_rate_limit(headers: httpx.Headers):
         print("[RateLimit] Exhausted")
         sleep_until_reset(reset)
         raise RuntimeError("Rate limit hit")
-
-
-def print_reset_time(headers: httpx.Headers):
-    reset = headers.get("X-RateLimit-Reset")
-    if reset:
-        reset_time = datetime.fromtimestamp(int(reset), tz=timezone.utc)
-        print(f"[RateLimit Reset] {reset_time.isoformat()}")
 
 
 def sleep_until_reset(reset_ts: Optional[str]):
@@ -80,7 +78,6 @@ async def github_request(client: httpx.AsyncClient, query: str, page: int):
     )
 
     print_rate_limit(r.headers)
-    print_reset_time(r.headers)
     handle_rate_limit(r.headers)
 
     if r.status_code != 200:

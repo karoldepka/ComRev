@@ -50,9 +50,11 @@ TOPICS_RAW = [
     "mobile-first",
     "offline-first",
     "react-native",
+
     "ionic",
     "capacitor",
     "stencil",
+
     "flutter",
     "expo",
     "android",

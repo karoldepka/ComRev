@@ -31,6 +31,7 @@ TIME_WINDOWS = {
     "48h": timedelta(hours=48),
     "5d": timedelta(days=5),
     "7d": timedelta(days=7),
+    "10d": timedelta(days=10),
     "14d": timedelta(days=14),
 }
 
