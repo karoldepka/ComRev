@@ -61,6 +61,30 @@ enum Platform {
     Gradle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Clone,
+    Build,
+    Check,
+    Test,
+    Run,
+    Dev,
+}
+
+impl Mode {
+    fn from_str(value: &str) -> Option<Self> {
+        match value.to_lowercase().as_str() {
+            "clone" => Some(Mode::Clone),
+            "build" => Some(Mode::Build),
+            "check" => Some(Mode::Check),
+            "test" => Some(Mode::Test),
+            "run" => Some(Mode::Run),
+            "dev" => Some(Mode::Dev),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct PlatformDefinition {
     platform: Platform,
@@ -297,7 +321,15 @@ impl Platform {
 }
 
 fn print_usage() {
-    println!("Usage: repo-dman [OPTIONS] [REPO...]");
+    println!("Usage: repo-dman <action> [OPTIONS] [REPO...]");
+    println!();
+    println!("Actions:");
+    println!("  clone   Clone repositories and scan for projects");
+    println!("  build   Clone repositories and install dependencies");
+    println!("  check   Clone repositories and install dependencies");
+    println!("  test    Clone repositories and install dependencies");
+    println!("  run     Clone repositories and install dependencies");
+    println!("  dev     Clone repositories and install dependencies");
     println!();
     println!("Accepts repository identifiers in multiple formats:");
     println!("  owner/repo");
@@ -309,10 +341,12 @@ fn print_usage() {
     println!("Options:");
     println!("  -h, --help          Show this help message");
     println!("  -f, --file <path>   Read repo list from a file (one repo per line)");
+    println!("\nIf no repositories are specified, the current directory is scanned recursively.");
 }
 
 fn parse_repo_spec(spec: &str) -> Option<String> {
     let spec = spec.trim();
+
     if spec.is_empty() {
         return None;
     }
@@ -343,7 +377,10 @@ fn parse_repo_spec(spec: &str) -> Option<String> {
         return None;
     }
 
-    Some(format!("https://github.com/{}", normalized))
+    Some(format!(
+        "https://github.com/{}",
+        normalized
+    ))
 }
 
 async fn parse_repos_from_args(
@@ -358,48 +395,92 @@ async fn parse_repos_from_args(
                 print_usage();
                 std::process::exit(0);
             }
+
             "-f" | "--file" => {
                 index += 1;
+
                 if index >= args.len() {
-                    anyhow::bail!("Missing path after {}", args[index - 1]);
+                    anyhow::bail!(
+                        "Missing path after {}",
+                        args[index - 1]
+                    );
                 }
 
-                let file_path = Path::new(&args[index]);
-                let contents = fs::read_to_string(file_path).await?;
+                let file_path =
+                    Path::new(&args[index]);
+
+                let contents =
+                    fs::read_to_string(file_path)
+                        .await?;
 
                 for line in contents.lines() {
                     let line = line.trim();
-                    if line.is_empty() || line.starts_with('#') {
+
+                    if line.is_empty()
+                        || line.starts_with('#')
+                    {
                         continue;
                     }
 
-                    let url = parse_repo_spec(line).ok_or_else(|| {
-                        anyhow::anyhow!("Invalid repository format in file: {}", line)
-                    })?;
-                    repos.push(RepoJob { url });
+                    let url =
+                        parse_repo_spec(line)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Invalid repository format in file: {}",
+                                    line
+                                )
+                            })?;
+
+                    repos.push(RepoJob {
+                        url,
+                    });
                 }
             }
+
             arg => {
                 if arg.starts_with('@') {
-                    let file_path = Path::new(&arg[1..]);
-                    let contents = fs::read_to_string(file_path).await?;
+                    let file_path =
+                        Path::new(&arg[1..]);
+
+                    let contents =
+                        fs::read_to_string(file_path)
+                            .await?;
 
                     for line in contents.lines() {
                         let line = line.trim();
-                        if line.is_empty() || line.starts_with('#') {
+
+                        if line.is_empty()
+                            || line.starts_with('#')
+                        {
                             continue;
                         }
 
-                        let url = parse_repo_spec(line).ok_or_else(|| {
-                            anyhow::anyhow!("Invalid repository format in file: {}", line)
-                        })?;
-                        repos.push(RepoJob { url });
+                        let url =
+                            parse_repo_spec(line)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "Invalid repository format in file: {}",
+                                        line
+                                    )
+                                })?;
+
+                        repos.push(RepoJob {
+                            url,
+                        });
                     }
                 } else {
-                    let url = parse_repo_spec(arg).ok_or_else(|| {
-                        anyhow::anyhow!("Invalid repository format: {}", arg)
-                    })?;
-                    repos.push(RepoJob { url });
+                    let url =
+                        parse_repo_spec(arg)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Invalid repository format: {}",
+                                    arg
+                                )
+                            })?;
+
+                    repos.push(RepoJob {
+                        url,
+                    });
                 }
             }
         }
@@ -407,11 +488,88 @@ async fn parse_repos_from_args(
         index += 1;
     }
 
-    if repos.is_empty() {
-        anyhow::bail!("No repositories specified");
+    Ok(repos)
+}
+
+async fn parse_args(
+    args: &[String],
+) -> Result<(Mode, Vec<RepoJob>)> {
+    if args.is_empty() {
+        anyhow::bail!(
+            "No action specified"
+        );
     }
 
-    Ok(repos)
+    if args[0] == "-h"
+        || args[0] == "--help"
+    {
+        print_usage();
+        std::process::exit(0);
+    }
+
+    let mode =
+        Mode::from_str(&args[0])
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Unknown action: {}. Expected clone, build, check, test, run, or dev",
+                    args[0]
+                )
+            })?;
+
+    let repos =
+        parse_repos_from_args(&args[1..])
+            .await?;
+
+    Ok((mode, repos))
+}
+
+async fn scan_local_workspace(
+    root: &Path,
+    tx: Option<mpsc::Sender<InstallTask>>,
+    multi: Arc<MultiProgress>,
+) -> Result<()> {
+    let root = root
+        .canonicalize()
+        .unwrap_or_else(|_| root.to_path_buf());
+    let root_display = root.display().to_string();
+
+    let pb = multi.add(make_spinner());
+    pb.set_message(format!(
+        "Scanning local workspace {}",
+        root_display
+    ));
+
+    let projects =
+        find_projects_recursively(&root)?;
+
+    for project_path in projects {
+        let platforms =
+            detect_platforms(&project_path)
+                .await?;
+
+        let repo_name = project_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root_display.clone());
+
+        for platform in platforms {
+            if let Some(tx) = &tx {
+                tx.send(InstallTask {
+                    repo_name: repo_name.clone(),
+                    path: project_path.clone(),
+                    platform,
+                })
+                .await?;
+            }
+        }
+    }
+
+    pb.finish_with_message(format!(
+        "Scanned local workspace {}",
+        root_display
+    ));
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -422,13 +580,24 @@ async fn main() -> Result<()> {
     // Repositories
     //
 
-    let args: Vec<String> = env::args().skip(1).collect();
-    let repos = if args.is_empty() {
+    let args: Vec<String> =
+        env::args().skip(1).collect();
+
+    let (mode, repos) =
+        if args.is_empty() {
+            print_usage();
+
+            anyhow::bail!(
+                "No action specified"
+            );
+        } else {
+            parse_args(&args).await?
+        };
+
+    if mode == Mode::Clone && repos.is_empty() {
         print_usage();
-        anyhow::bail!("No repositories specified");
-    } else {
-        parse_repos_from_args(&args).await?
-    };
+        anyhow::bail!("Clone mode requires at least one repository URL");
+    }
 
     //
     // Check tools
@@ -457,8 +626,17 @@ async fn main() -> Result<()> {
     // Queue
     //
 
-    let (tx, mut rx) =
-        mpsc::channel::<InstallTask>(100);
+    let (tx, rx) =
+        if mode == Mode::Clone {
+            (None, None)
+        } else {
+            let (tx, rx) =
+                mpsc::channel::<InstallTask>(
+                    100,
+                );
+
+            (Some(tx), Some(rx))
+        };
 
     //
     // Clone concurrency
@@ -471,64 +649,31 @@ async fn main() -> Result<()> {
     // Clone jobs
     //
 
-    let mut clone_handles = Vec::new();
+    let mut clone_handles =
+        Vec::new();
 
-    for repo in repos {
-        let tx = tx.clone();
+    if repos.is_empty() {
+        if let Some(tx) = &tx {
+            scan_local_workspace(
+                &workspace_dir,
+                Some(tx.clone()),
+                multi.clone(),
+            )
+            .await?;
+        }
+    } else {
+        for repo in repos {
+            let tx = tx.clone();
 
-        let workspace_dir =
-            workspace_dir.clone();
+            let workspace_dir =
+                workspace_dir.clone();
 
-        let multi = multi.clone();
+            let multi = multi.clone();
 
-        let semaphore =
-            clone_semaphore.clone();
+            let semaphore =
+                clone_semaphore.clone();
 
-        let handle =
-            tokio::spawn(async move {
-                let _permit = semaphore
-                    .acquire()
-                    .await
-                    .unwrap();
-
-                if let Err(err) =
-                    clone_and_scan(
-                        repo,
-                        workspace_dir,
-                        tx,
-                        multi,
-                    )
-                    .await
-                {
-                    error!("{:#}", err);
-                }
-            });
-
-        clone_handles.push(handle);
-    }
-
-    drop(tx);
-
-    //
-    // Install worker manager
-    //
-
-    let install_multi = multi.clone();
-
-    let install_handle =
-        tokio::spawn(async move {
-            let install_semaphore =
-                Arc::new(Semaphore::new(6));
-
-            while let Some(task) =
-                rx.recv().await
-            {
-                let semaphore =
-                    install_semaphore.clone();
-
-                let multi =
-                    install_multi.clone();
-
+            let handle =
                 tokio::spawn(async move {
                     let _permit =
                         semaphore
@@ -537,8 +682,10 @@ async fn main() -> Result<()> {
                             .unwrap();
 
                     if let Err(err) =
-                        install_dependencies(
-                            task,
+                        clone_and_scan(
+                            repo,
+                            workspace_dir,
+                            tx,
                             multi,
                         )
                         .await
@@ -546,8 +693,70 @@ async fn main() -> Result<()> {
                         error!("{:#}", err);
                     }
                 });
-            }
-        });
+
+            clone_handles.push(handle);
+        }
+
+        if let Some(tx) = tx {
+            drop(tx);
+        }
+    }
+
+    //
+    // Install worker manager
+    //
+
+    let install_handle =
+        if let Some(mut rx) = rx {
+            let install_multi =
+                multi.clone();
+
+            Some(tokio::spawn(
+                async move {
+                    let install_semaphore =
+                        Arc::new(
+                            Semaphore::new(6),
+                        );
+
+                    while let Some(task) =
+                        rx.recv().await
+                    {
+                        let semaphore =
+                            install_semaphore
+                                .clone();
+
+                        let multi =
+                            install_multi
+                                .clone();
+
+                        tokio::spawn(
+                            async move {
+                                let _permit =
+                                    semaphore
+                                        .acquire()
+                                        .await
+                                        .unwrap();
+
+                                if let Err(err) =
+                                    install_dependencies(
+                                        task,
+                                        multi,
+                                    )
+                                    .await
+                                {
+                                    error!(
+                                        "{:#}",
+                                        err
+                                    );
+                                }
+                            },
+                        );
+                    }
+                },
+            ))
+        } else {
+            None
+        };
 
     //
     // Wait for clones
@@ -561,7 +770,11 @@ async fn main() -> Result<()> {
     // Wait for installs
     //
 
-    install_handle.await?;
+    if let Some(handle) =
+        install_handle
+    {
+        handle.await?;
+    }
 
     info!("All operations completed");
 
@@ -571,7 +784,7 @@ async fn main() -> Result<()> {
 async fn clone_and_scan(
     repo: RepoJob,
     workspace_dir: PathBuf,
-    tx: mpsc::Sender<InstallTask>,
+    tx: Option<mpsc::Sender<InstallTask>>,
     multi: Arc<MultiProgress>,
 ) -> Result<()> {
     let repo_name = repo
@@ -597,15 +810,29 @@ async fn clone_and_scan(
     //
 
     if !repo_path.exists() {
-        let repo_path_str = repo_path.to_string_lossy().to_string();
-        let status = run_command_with_prefix(
-            "git",
-            &["clone", &repo.url, &repo_path_str],
-            None,
-            &format!("[{}] git", repo_name),
-        )
-        .await
-        .context("failed to execute git clone")?;
+        let repo_path_str =
+            repo_path
+                .to_string_lossy()
+                .to_string();
+
+        let status =
+            run_command_with_prefix(
+                "git",
+                &[
+                    "clone",
+                    &repo.url,
+                    &repo_path_str,
+                ],
+                None,
+                &format!(
+                    "[{}] git",
+                    repo_name
+                ),
+            )
+            .await
+            .context(
+                "failed to execute git clone",
+            )?;
 
         if !status.success() {
             anyhow::bail!(
@@ -627,7 +854,7 @@ async fn clone_and_scan(
 
     let projects =
         find_projects_recursively(
-            &repo_path
+            &repo_path,
         )?;
 
     //
@@ -637,21 +864,23 @@ async fn clone_and_scan(
     for project_path in projects {
         let platforms =
             detect_platforms(
-                &project_path
+                &project_path,
             )
             .await?;
 
         for platform in platforms {
-            tx.send(InstallTask {
-                repo_name:
-                    repo_name.clone(),
+            if let Some(tx) = &tx {
+                tx.send(InstallTask {
+                    repo_name:
+                        repo_name.clone(),
 
-                path:
-                    project_path.clone(),
+                    path:
+                        project_path.clone(),
 
-                platform,
-            })
-            .await?;
+                    platform,
+                })
+                .await?;
+            }
         }
     }
 
@@ -724,8 +953,9 @@ fn find_projects_recursively(
             });
 
         if is_project {
-            projects
-                .push(path.to_path_buf());
+            projects.push(
+                path.to_path_buf(),
+            );
         }
     }
 
@@ -793,7 +1023,7 @@ async fn install_dependencies(
         Platform::Uv
     ) {
         prepare_uv_environment(
-            &task.path
+            &task.path,
         )
         .await?;
     }
@@ -805,19 +1035,25 @@ async fn install_dependencies(
     let (cmd, args) =
         task.platform.install_command();
 
-    let status = run_command_with_prefix(
-        cmd,
-        args,
-        Some(&task.path),
-        &format!("[{}] {}", task.repo_name, task.platform.display_name()),
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "failed to run {}",
-            cmd
+    let status =
+        run_command_with_prefix(
+            cmd,
+            args,
+            Some(&task.path),
+            &format!(
+                "[{}] {}",
+                task.repo_name,
+                task.platform
+                    .display_name()
+            ),
         )
-    })?;
+        .await
+        .with_context(|| {
+            format!(
+                "failed to run {}",
+                cmd
+            )
+        })?;
 
     if !status.success() {
         warn!(
@@ -869,13 +1105,17 @@ async fn prepare_uv_environment(
         return Ok(());
     }
 
-    let status = run_command_with_prefix(
-        "uv",
-        &["venv"],
-        Some(path),
-        &format!("[uv] {}", path.display()),
-    )
-    .await?;
+    let status =
+        run_command_with_prefix(
+            "uv",
+            &["venv"],
+            Some(path),
+            &format!(
+                "[uv] {}",
+                path.display()
+            ),
+        )
+        .await?;
 
     if !status.success() {
         anyhow::bail!(
@@ -916,11 +1156,31 @@ async fn check_required_tools() {
 async fn command_exists(
     cmd: &str,
 ) -> bool {
-    Command::new(cmd)
-        .arg("--version")
-        .output()
-        .await
-        .is_ok()
+    let mut direct =
+        Command::new(cmd);
+
+    direct.arg("--version");
+
+    if direct.output().await.is_ok() {
+        return true;
+    }
+
+    if cfg!(windows) {
+        let mut fallback =
+            Command::new("cmd");
+
+        fallback
+            .arg("/C")
+            .arg(cmd)
+            .arg("--version");
+
+        return fallback
+            .output()
+            .await
+            .is_ok();
+    }
+
+    false
 }
 
 async fn run_command_with_prefix(
@@ -928,47 +1188,116 @@ async fn run_command_with_prefix(
     args: &[&str],
     cwd: Option<&Path>,
     prefix: &str,
-) -> Result<std::process::ExitStatus> {
-    let mut command = Command::new(cmd);
+) -> Result<std::process::ExitStatus>
+{
+    let mut command =
+        Command::new(cmd);
+
     command.args(args);
+
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let mut child = command.spawn()?;
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    let mut stdout = BufReader::new(
-        child
-            .stdout
-            .take()
-            .expect("stdout piped"),
-    )
-    .lines();
-    let mut stderr = BufReader::new(
-        child
-            .stderr
-            .take()
-            .expect("stderr piped"),
-    )
-    .lines();
+    let mut child =
+        match command.spawn() {
+            Ok(child) => child,
 
-    let prefix_stdout = prefix.to_string();
-    let prefix_stderr = prefix.to_string();
+            Err(err) if cfg!(windows) => {
+                let mut fallback =
+                    Command::new("cmd");
 
-    let stdout_handle = tokio::spawn(async move {
-        while let Ok(Some(line)) = stdout.next_line().await {
-            println!("{} [stdout] {}", prefix_stdout, line);
-        }
-    });
+                fallback
+                    .arg("/C")
+                    .arg(cmd)
+                    .args(args);
 
-    let stderr_handle = tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr.next_line().await {
-            eprintln!("{} [stderr] {}", prefix_stderr, line);
-        }
-    });
+                if let Some(cwd) = cwd {
+                    fallback.current_dir(cwd);
+                }
 
-    let status = child.wait().await?;
+                fallback
+                    .stdout(
+                        Stdio::piped(),
+                    )
+                    .stderr(
+                        Stdio::piped(),
+                    );
+
+                fallback
+                    .spawn()
+                    .with_context(|| {
+                        format!(
+                            "failed to spawn fallback Windows shell for command {}",
+                            cmd
+                        )
+                    })?
+            }
+
+            Err(err) => {
+                return Err(err).context(
+                    format!(
+                        "failed to spawn {}",
+                        cmd
+                    ),
+                );
+            }
+        };
+
+    let stdout = child
+        .stdout
+        .take()
+        .expect("stdout piped");
+
+    let stderr = child
+        .stderr
+        .take()
+        .expect("stderr piped");
+
+    let mut stdout =
+        BufReader::new(stdout).lines();
+
+    let mut stderr =
+        BufReader::new(stderr).lines();
+
+    let prefix_stdout =
+        prefix.to_string();
+
+    let prefix_stderr =
+        prefix.to_string();
+
+    let stdout_handle =
+        tokio::spawn(async move {
+            while let Ok(Some(line)) =
+                stdout.next_line().await
+            {
+                println!(
+                    "{} [stdout] {}",
+                    prefix_stdout,
+                    line
+                );
+            }
+        });
+
+    let stderr_handle =
+        tokio::spawn(async move {
+            while let Ok(Some(line)) =
+                stderr.next_line().await
+            {
+                eprintln!(
+                    "{} [stderr] {}",
+                    prefix_stderr,
+                    line
+                );
+            }
+        });
+
+    let status =
+        child.wait().await?;
 
     let _ = stdout_handle.await;
     let _ = stderr_handle.await;
