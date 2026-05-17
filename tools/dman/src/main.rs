@@ -548,6 +548,7 @@ async fn scan_local_workspace(
 
     let projects =
         find_projects_recursively(&root)?;
+    let project_count = projects.len();
 
     for project_path in projects {
         let platforms =
@@ -572,9 +573,10 @@ async fn scan_local_workspace(
     }
 
     pb.finish_with_message(format!(
-        "Scanned local workspace {} in {:.2?}",
+        "Scanned local workspace {} in {:.2?} ({} projects found)",
         root_display,
-        scan_start.elapsed()
+        scan_start.elapsed(),
+        project_count
     ));
 
     Ok(())
@@ -619,19 +621,39 @@ async fn main() -> Result<()> {
         let print_start = Instant::now();
 
         if repos.is_empty() {
-            print_metadata_recursively(&PathBuf::from("."))?;
+            let (metadata_count, node_modules_count) =
+                print_metadata_recursively(&PathBuf::from("."))?;
+            info!(
+                "Summary: {} metadata files, {} node_modules directories",
+                metadata_count,
+                node_modules_count
+            );
         } else {
-            for repo in repos {
+            let mut total_metadata = 0;
+            let mut total_node_modules = 0;
+
+            for repo in &repos {
                 let repo_path =
-                    clone_repo_if_missing(&repo, &PathBuf::from(".")).await?;
+                    clone_repo_if_missing(repo, &PathBuf::from(".")).await?;
 
                 println!(
                     "Metadata for {}:",
                     repo_path.display()
                 );
 
-                print_metadata_recursively(&repo_path)?;
+                let (metadata_count, node_modules_count) =
+                    print_metadata_recursively(&repo_path)?;
+
+                total_metadata += metadata_count;
+                total_node_modules += node_modules_count;
             }
+
+            info!(
+                "Summary: {} metadata files, {} node_modules directories across {} repos",
+                total_metadata,
+                total_node_modules,
+                repos.len()
+            );
         }
 
         info!(
@@ -897,6 +919,7 @@ async fn clone_and_scan(
         find_projects_recursively(
             &repo_path,
         )?;
+    let project_count = projects.len();
 
     //
     // Queue installs
@@ -926,9 +949,10 @@ async fn clone_and_scan(
     }
 
     pb.finish_with_message(format!(
-        "Scanned {} in {:.2?}",
+        "Scanned {} in {:.2?} ({} projects found)",
         repo_name,
-        start.elapsed()
+        start.elapsed(),
+        project_count
     ));
 
     Ok(())
@@ -1239,8 +1263,10 @@ fn is_metadata_file(path: &Path) -> bool {
 
 fn print_metadata_recursively(
     root: &Path,
-) -> Result<()> {
+) -> Result<(usize, usize)> {
     let start = Instant::now();
+    let mut metadata_count = 0;
+    let mut node_modules_count = 0;
     let mut queue = VecDeque::new();
     queue.push_back(root.to_path_buf());
 
@@ -1264,6 +1290,7 @@ fn print_metadata_recursively(
             if path.is_dir() {
                 if name == "node_modules" {
                     println!("{}", path.display());
+                    node_modules_count += 1;
                     continue;
                 }
 
@@ -1283,6 +1310,7 @@ fn print_metadata_recursively(
                 queue.push_back(path);
             } else if is_metadata_file(&path) {
                 println!("{}", path.display());
+                metadata_count += 1;
             }
         }
     }
@@ -1291,8 +1319,13 @@ fn print_metadata_recursively(
         "Metadata scan completed in {:.2?}",
         start.elapsed()
     );
+    println!(
+        "Found {} metadata files and {} node_modules directories",
+        metadata_count,
+        node_modules_count
+    );
 
-    Ok(())
+    Ok((metadata_count, node_modules_count))
 }
 
 async fn check_required_tools() {
