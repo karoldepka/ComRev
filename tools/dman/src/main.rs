@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
+    collections::VecDeque,
     env,
+    fs as stdfs,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
+    time::Instant,
 };
 use tokio::{
     fs,
@@ -69,6 +72,7 @@ enum Mode {
     Test,
     Run,
     Dev,
+    Print,
 }
 
 impl Mode {
@@ -80,6 +84,7 @@ impl Mode {
             "test" => Some(Mode::Test),
             "run" => Some(Mode::Run),
             "dev" => Some(Mode::Dev),
+            "print" => Some(Mode::Print),
             _ => None,
         }
     }
@@ -328,6 +333,7 @@ fn print_usage() {
     println!("  build   Clone repositories and install dependencies");
     println!("  check   Clone repositories and install dependencies");
     println!("  test    Clone repositories and install dependencies");
+    println!("  print   Print project metadata files recursively (breadth-first)");
     println!("  run     Clone repositories and install dependencies");
     println!("  dev     Clone repositories and install dependencies");
     println!();
@@ -533,6 +539,7 @@ async fn scan_local_workspace(
         .unwrap_or_else(|_| root.to_path_buf());
     let root_display = root.display().to_string();
 
+    let scan_start = Instant::now();
     let pb = multi.add(make_spinner());
     pb.set_message(format!(
         "Scanning local workspace {}",
@@ -565,8 +572,9 @@ async fn scan_local_workspace(
     }
 
     pb.finish_with_message(format!(
-        "Scanned local workspace {}",
-        root_display
+        "Scanned local workspace {} in {:.2?}",
+        root_display,
+        scan_start.elapsed()
     ));
 
     Ok(())
@@ -599,11 +607,40 @@ async fn main() -> Result<()> {
         anyhow::bail!("Clone mode requires at least one repository URL");
     }
 
+    let overall_start = Instant::now();
+
     //
     // Check tools
     //
 
     check_required_tools().await;
+
+    if mode == Mode::Print {
+        let print_start = Instant::now();
+
+        if repos.is_empty() {
+            print_metadata_recursively(&PathBuf::from("."))?;
+        } else {
+            for repo in repos {
+                let repo_path =
+                    clone_repo_if_missing(&repo, &PathBuf::from(".")).await?;
+
+                println!(
+                    "Metadata for {}:",
+                    repo_path.display()
+                );
+
+                print_metadata_recursively(&repo_path)?;
+            }
+        }
+
+        info!(
+            "Print operation completed in {:.2?}",
+            print_start.elapsed()
+        );
+
+        return Ok(());
+    }
 
     //
     // Workspace
@@ -776,7 +813,10 @@ async fn main() -> Result<()> {
         handle.await?;
     }
 
-    info!("All operations completed");
+    info!(
+        "All operations completed in {:.2?}",
+        overall_start.elapsed()
+    );
 
     Ok(())
 }
@@ -797,6 +837,7 @@ async fn clone_and_scan(
     let repo_path =
         workspace_dir.join(&repo_name);
 
+    let start = Instant::now();
     let pb = multi.add(make_spinner());
 
     pb.set_message(format!(
@@ -885,8 +926,9 @@ async fn clone_and_scan(
     }
 
     pb.finish_with_message(format!(
-        "Scanned {}",
-        repo_name
+        "Scanned {} in {:.2?}",
+        repo_name,
+        start.elapsed()
     ));
 
     Ok(())
@@ -987,6 +1029,7 @@ async fn install_dependencies(
     task: InstallTask,
     multi: Arc<MultiProgress>,
 ) -> Result<()> {
+    let install_start = Instant::now();
     let pb = multi.add(make_spinner());
 
     pb.set_message(format!(
@@ -1065,20 +1108,22 @@ async fn install_dependencies(
         );
 
         pb.finish_with_message(format!(
-            "[{}] {} failed",
+            "[{}] {} failed after {:.2?}",
             task.repo_name,
             task.platform
-                .display_name()
+                .display_name(),
+            install_start.elapsed()
         ));
 
         return Ok(());
     }
 
     pb.finish_with_message(format!(
-        "[{}] {} installed at {}",
+        "[{}] {} installed at {} in {:.2?}",
         task.repo_name,
         task.platform.display_name(),
-        task.path.display()
+        task.path.display(),
+        install_start.elapsed()
     ));
 
     Ok(())
@@ -1123,6 +1168,129 @@ async fn prepare_uv_environment(
             status
         );
     }
+
+    Ok(())
+}
+
+async fn clone_repo_if_missing(
+    repo: &RepoJob,
+    workspace_dir: &Path,
+) -> Result<PathBuf> {
+    let repo_name = repo
+        .url
+        .split('/')
+        .last()
+        .unwrap()
+        .replace(".git", "");
+
+    let repo_path = workspace_dir.join(&repo_name);
+
+    if repo_path.exists() {
+        return Ok(repo_path);
+    }
+
+    let repo_path_str = repo_path
+        .to_string_lossy()
+        .to_string();
+
+    let status = run_command_with_prefix(
+        "git",
+        &["clone", &repo.url, &repo_path_str],
+        None,
+        &format!("[{}] git", repo_name),
+    )
+    .await?;
+
+    if !status.success() {
+        anyhow::bail!(
+            "git clone failed with status {}",
+            status
+        );
+    }
+
+    Ok(repo_path)
+}
+
+fn is_metadata_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    match path
+        .file_name()
+        .and_then(|name| name.to_str())
+    {
+        Some("package-lock.json")
+        | Some("pnpm-lock.yaml")
+        | Some("yarn.lock")
+        | Some("bun.lock")
+        | Some("bun.lockb")
+        | Some("package.json")
+        | Some("Cargo.toml")
+        | Some("pyproject.toml")
+        | Some("requirements.txt")
+        | Some("go.mod")
+        | Some("pom.xml")
+        | Some("build.gradle")
+        | Some("build.gradle.kts") => true,
+        _ => false,
+    }
+}
+
+fn print_metadata_recursively(
+    root: &Path,
+) -> Result<()> {
+    let start = Instant::now();
+    let mut queue = VecDeque::new();
+    queue.push_back(root.to_path_buf());
+
+    while let Some(dir) = queue.pop_front() {
+        let read_dir = stdfs::read_dir(&dir)
+            .with_context(|| {
+                format!(
+                    "failed to read directory {}",
+                    dir.display()
+                )
+            })?;
+
+        for entry in read_dir {
+            let entry = entry?;
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+
+            if path.is_dir() {
+                if name == "node_modules" {
+                    println!("{}", path.display());
+                    continue;
+                }
+
+                if matches!(
+                    name,
+                    ".git"
+                        | "target"
+                        | "dist"
+                        | "build"
+                        | ".next"
+                        | ".venv"
+                        | "__pycache__"
+                ) {
+                    continue;
+                }
+
+                queue.push_back(path);
+            } else if is_metadata_file(&path) {
+                println!("{}", path.display());
+            }
+        }
+    }
+
+    println!(
+        "Metadata scan completed in {:.2?}",
+        start.elapsed()
+    );
 
     Ok(())
 }
@@ -1203,11 +1371,12 @@ async fn run_command_with_prefix(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    let start = Instant::now();
     let mut child =
         match command.spawn() {
             Ok(child) => child,
 
-            Err(err) if cfg!(windows) => {
+            Err(_err) if cfg!(windows) => {
                 let mut fallback =
                     Command::new("cmd");
 
@@ -1301,6 +1470,12 @@ async fn run_command_with_prefix(
 
     let _ = stdout_handle.await;
     let _ = stderr_handle.await;
+
+    println!(
+        "{} [info] command completed in {:.2?}",
+        prefix,
+        start.elapsed()
+    );
 
     Ok(status)
 }
