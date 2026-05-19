@@ -133,7 +133,7 @@ fn load_yaml_from_commit(repo: &Repository, commit_oid: Oid, rel_path: &Path) ->
     Ok(v)
 }
 
-fn find_commit_before(repo: &Repository, branch: &str, target_ts: i64) -> Result<Option<Oid>> {
+fn find_commit_before(repo: &Repository, branch: &str, target_ts: i64) -> Result<Option<(Oid, i64)>> {
     let mut revwalk = repo.revwalk()?;
     revwalk.push_ref(format!("refs/heads/{}", branch).as_str()).ok();
     for oid_res in revwalk {
@@ -141,8 +141,8 @@ fn find_commit_before(repo: &Repository, branch: &str, target_ts: i64) -> Result
         let commit = repo.find_commit(oid)?;
         let commit_time = commit.time().seconds();
         if commit_time <= target_ts {
-            trace!("find_commit_before: chosen commit {} at {} (target {})", oid, Utc.timestamp_opt(commit_time, 0).single().unwrap_or_default(), Utc.timestamp_opt(target_ts, 0).single().unwrap_or_default());
-            return Ok(Some(oid));
+            trace!("find_commit_before: chosen commit {} at {}", oid, Utc.timestamp_opt(commit_time, 0).single().unwrap_or_default());
+            return Ok(Some((oid, commit_time)));
         }
     }
     Ok(None)
@@ -239,7 +239,7 @@ fn main() -> Result<()> {
 
     let t0 = Instant::now();
     let new_data = load_yaml_from_file(&current_yaml)?;
-    info!("📦 Current repos: {} (loaded in {:?})", new_data.len(), t0.elapsed());
+    info!("📦 {:>10?}  Current repos: {}", t0.elapsed(), new_data.len());
 
     // Build snapshots
     let now = Utc::now();
@@ -250,10 +250,19 @@ fn main() -> Result<()> {
         let ts = now_ts - w.duration.as_secs() as i64;
         let tw = Instant::now();
         match find_commit_before(&repo, "master", ts)? {
-            Some(oid) => {
-                info!("⏪ Found commit ({}) → target {}", w.label, Utc.timestamp_opt(ts, 0).single().unwrap_or_default());
+            Some((oid, commit_time)) => {
                 let v = load_yaml_from_commit(&repo, oid, Path::new("repos.yaml"))?;
-                debug!("Loaded snapshot {} entries for {} in {:?}", v.len(), w.label, tw.elapsed());
+                let delta_secs = ts - commit_time;
+                let delta_str = {
+                    let (d, rem) = (delta_secs / 86400, delta_secs % 86400);
+                    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+                    if d > 0 { format!("{}d{}h", d, h) } else if h > 0 { format!("{}h{}m", h, m) } else { format!("{}m{}s", m, s) }
+                };
+                info!("⏪ {:>10?}  ({}) target {} → actual {} [Δ-{}] — {} entries",
+                    tw.elapsed(), w.label,
+                    Utc.timestamp_opt(ts, 0).single().unwrap_or_default(),
+                    Utc.timestamp_opt(commit_time, 0).single().unwrap_or_default(),
+                    delta_str, v.len());
                 snapshots.insert(w.label.to_string(), parse_yaml_to_index(&v));
             }
             None => {
@@ -287,7 +296,7 @@ fn main() -> Result<()> {
         ($path:expr, $data:expr) => {{
             let t = Instant::now();
             fs::write(&$path, $data)?;
-            info!("💾 {} ({:?})", $path.file_name().unwrap().to_string_lossy(), t.elapsed());
+            info!("💾 {:>12?}  {}", t.elapsed(), $path.file_name().unwrap().to_string_lossy());
         }};
     }
     timed_write!(output_yaml,        serde_yaml::to_string(&result)?);

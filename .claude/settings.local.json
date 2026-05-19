@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm add *)",
+      "Bash(npm install *)",
+      "Bash(where.exe pnpm *)",
+      "Bash(where.exe npm *)",
+      "Bash(where.exe yarn *)",
+      "Bash(where.exe npx *)",
+      "Bash(cmd.exe /c \"where pnpm 2>nul || where npm 2>nul || where yarn 2>nul\")",
+      "Bash(cmd.exe /c \"pnpm --version\")",
+      "Bash(export PATH=\"/c/Program Files/nodejs:/c/Users/karol/AppData/Roaming/npm:$PATH\")",
+      "Bash(npm --version)",
+      "Read(//c/Users/karol/scoop/shims/**)",
+      "Read(//c/Users/karol/scoop/apps/**)",
+      "Read(//c/Users/karol/scoop/**)",
+      "Bash(find \"/c/Users/karol/AppData\" -name \"npm.cmd\" 2>/dev/null | head -5; find \"/c/Program Files\" -name \"npm.cmd\" 2>/dev/null | head -5)",
+      "Read(//c/Users/karol/AppData/**)",
+      "Read(//c/Program Files/**)",
+      "Bash(export PATH=\"/c/Users/karol/AppData/Roaming/fnm/node-versions/v22.15.0/installation:$PATH\")",
+      "Bash(cargo build *)",
+      "Bash(cargo check *)"
+    ]
+  }
+}
