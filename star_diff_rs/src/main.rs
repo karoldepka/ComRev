@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
+use bson;
 use chrono::{TimeZone, Utc};
 use git2::{Oid, Repository};
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 use env_logger;
 use regex::Regex;
 use serde_json;
@@ -10,7 +11,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 const MISSING_AS_ZERO: bool = true;
 
@@ -188,6 +189,24 @@ fn build_output_repo(mut repo_data: Value, stars_now: i64, diffs: Mapping) -> Va
     repo_data
 }
 
+fn result_to_csv(result: &[Value]) -> Result<Vec<u8>> {
+    let mut wtr = csv::Writer::from_writer(vec![]);
+    let window_labels: Vec<&str> = windows().iter().map(|w| w.label).collect();
+    let mut headers = vec!["name", "stars_now"];
+    headers.extend_from_slice(&window_labels);
+    wtr.write_record(&headers)?;
+    for repo in result {
+        let name = repo.get("full_name").and_then(|v| v.as_str()).unwrap_or("");
+        let stars_now = get_i64_field(repo, "stars_now").unwrap_or(0).to_string();
+        let mut row = vec![name.to_string(), stars_now];
+        for label in &window_labels {
+            row.push(get_nested_i64(repo, &["stars_diff", label]).unwrap_or(0).to_string());
+        }
+        wtr.write_record(&row)?;
+    }
+    Ok(wtr.into_inner().map_err(|e| anyhow::anyhow!("csv flush: {e}"))?)
+}
+
 fn sort_repos(repos: &mut Vec<Value>) {
     repos.sort_by(|a, b| {
         sort_keys().iter().fold(std::cmp::Ordering::Equal, |ord, key| {
@@ -209,9 +228,12 @@ fn main() -> Result<()> {
 
     let data_dir = data_repo_dir()?;
     let current_yaml = data_dir.join("repos.yaml");
-    let output_yaml  = data_dir.join("repos_diff.yaml");
-    let output_json  = data_dir.join("repos_diff.json");
-    let output_json5 = data_dir.join("repos_diff.json5");
+    let output_yaml        = data_dir.join("repos_diff.yaml");
+    let output_json        = data_dir.join("repos_diff.json");
+    let output_json_pretty = data_dir.join("repos_diff.pretty.json");
+    let output_json5       = data_dir.join("repos_diff.json5");
+    let output_bson        = data_dir.join("repos_diff.bson");
+    let output_csv         = data_dir.join("repos_diff.csv");
 
     let repo = Repository::open(&data_dir).context("opening data repo")?;
 
@@ -258,14 +280,22 @@ fn main() -> Result<()> {
 
     sort_repos(&mut result);
 
-    // Save result
-    let t2 = Instant::now();
-    fs::write(&output_yaml,  serde_yaml::to_string(&result)?)?;
-    fs::write(&output_json,  serde_json::to_string_pretty(&result)?)?;
-    fs::write(&output_json5, json5::to_string(&result)?)?;
-
     info!("🔥 {} repos changed (diff compute {:?})", result.len(), t1.elapsed());
-    info!("💾 Saved → {}, .json, .json5 (write {:?})", output_yaml.display(), t2.elapsed());
+
+    // Save result — timed per format
+    macro_rules! timed_write {
+        ($path:expr, $data:expr) => {{
+            let t = Instant::now();
+            fs::write(&$path, $data)?;
+            info!("💾 {} ({:?})", $path.file_name().unwrap().to_string_lossy(), t.elapsed());
+        }};
+    }
+    timed_write!(output_yaml,        serde_yaml::to_string(&result)?);
+    timed_write!(output_json,        serde_json::to_string(&result)?);
+    timed_write!(output_json_pretty, serde_json::to_string_pretty(&result)?);
+    timed_write!(output_json5,       json5::to_string(&result)?);
+    timed_write!(output_bson,        bson::to_vec(&bson::doc! { "repos": bson::to_bson(&result)? })?);
+    timed_write!(output_csv,         result_to_csv(&result)?);
     info!("Total run time: {:?}", start_all.elapsed());
 
     Ok(())
