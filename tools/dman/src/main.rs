@@ -73,6 +73,7 @@ enum Mode {
     Run,
     Dev,
     Print,
+    Open,
 }
 
 impl Mode {
@@ -82,9 +83,10 @@ impl Mode {
             "build" => Some(Mode::Build),
             "check" => Some(Mode::Check),
             "test" => Some(Mode::Test),
-            "run" => Some(Mode::Run),
+            "run" | "start" => Some(Mode::Run),
             "dev" => Some(Mode::Dev),
             "print" => Some(Mode::Print),
+            "open" => Some(Mode::Open),
             _ => None,
         }
     }
@@ -334,7 +336,9 @@ fn print_usage() {
     println!("  check   Clone repositories and install dependencies");
     println!("  test    Clone repositories and install dependencies");
     println!("  print   Print project metadata files recursively (breadth-first)");
+    println!("  open    Clone repositories and open project roots in VS Code");
     println!("  run     Clone repositories and install dependencies");
+    println!("  start   Alias for run");
     println!("  dev     Clone repositories and install dependencies");
     println!();
     println!("Accepts repository identifiers in multiple formats:");
@@ -347,6 +351,11 @@ fn print_usage() {
     println!("Options:");
     println!("  -h, --help          Show this help message");
     println!("  -f, --file <path>   Read repo list from a file (one repo per line)");
+    println!("  --depth <N>         Pass --depth <N> to git clone (shallow clone)");
+    println!();
+    println!("Environment variables:");
+    println!("  GIT_ARGS            Extra arguments appended to every git clone call");
+    println!("                      (e.g. GIT_ARGS=\"--depth 1\" dman clone owner/repo)");
     println!("\nIf no repositories are specified, the current directory is scanned recursively.");
 }
 
@@ -391,8 +400,9 @@ fn parse_repo_spec(spec: &str) -> Option<String> {
 
 async fn parse_repos_from_args(
     args: &[String],
-) -> Result<Vec<RepoJob>> {
+) -> Result<(Vec<RepoJob>, Vec<String>)> {
     let mut repos = Vec::new();
+    let mut extra_git_args: Vec<String> = Vec::new();
     let mut index = 0;
 
     while index < args.len() {
@@ -443,8 +453,22 @@ async fn parse_repos_from_args(
                 }
             }
 
+            "--depth" => {
+                index += 1;
+
+                if index >= args.len() {
+                    anyhow::bail!("Missing value after --depth");
+                }
+
+                extra_git_args.push("--depth".to_string());
+                extra_git_args.push(args[index].clone());
+            }
+
             arg => {
-                if arg.starts_with('@') {
+                if let Some(val) = arg.strip_prefix("--depth=") {
+                    extra_git_args.push("--depth".to_string());
+                    extra_git_args.push(val.to_string());
+                } else if arg.starts_with('@') {
                     let file_path =
                         Path::new(&arg[1..]);
 
@@ -494,12 +518,12 @@ async fn parse_repos_from_args(
         index += 1;
     }
 
-    Ok(repos)
+    Ok((repos, extra_git_args))
 }
 
 async fn parse_args(
     args: &[String],
-) -> Result<(Mode, Vec<RepoJob>)> {
+) -> Result<(Mode, Vec<RepoJob>, Vec<String>)> {
     if args.is_empty() {
         anyhow::bail!(
             "No action specified"
@@ -517,16 +541,16 @@ async fn parse_args(
         Mode::from_str(&args[0])
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Unknown action: {}. Expected clone, build, check, test, run, or dev",
+                    "Unknown action: {}. Expected clone, build, check, test, run, start, open, print, or dev",
                     args[0]
                 )
             })?;
 
-    let repos =
+    let (repos, cli_git_args) =
         parse_repos_from_args(&args[1..])
             .await?;
 
-    Ok((mode, repos))
+    Ok((mode, repos, cli_git_args))
 }
 
 async fn scan_local_workspace(
@@ -593,7 +617,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> =
         env::args().skip(1).collect();
 
-    let (mode, repos) =
+    let (mode, repos, cli_git_args) =
         if args.is_empty() {
             print_usage();
 
@@ -603,6 +627,17 @@ async fn main() -> Result<()> {
         } else {
             parse_args(&args).await?
         };
+
+    // GIT_ARGS env var provides defaults; CLI --depth etc. appended after (last wins in git)
+    let extra_git_args: Vec<String> = {
+        let mut v: Vec<String> = env::var("GIT_ARGS")
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        v.extend(cli_git_args);
+        v
+    };
 
     if mode == Mode::Clone && repos.is_empty() {
         print_usage();
@@ -634,7 +669,7 @@ async fn main() -> Result<()> {
 
             for repo in &repos {
                 let repo_path =
-                    clone_repo_if_missing(repo, &PathBuf::from(".")).await?;
+                    clone_repo_if_missing(repo, &PathBuf::from("."), &extra_git_args).await?;
 
                 println!(
                     "Metadata for {}:",
@@ -660,6 +695,26 @@ async fn main() -> Result<()> {
             "Print operation completed in {:.2?}",
             print_start.elapsed()
         );
+
+        return Ok(());
+    }
+
+    if mode == Mode::Open {
+        if repos.is_empty() {
+            let roots = shallowest_project_roots(
+                &find_projects_recursively(&PathBuf::from("."))?,
+                &PathBuf::from("."),
+            );
+            open_in_vscode(&roots).await?;
+        } else {
+            for repo in &repos {
+                let repo_path =
+                    clone_repo_if_missing(repo, &PathBuf::from("."), &extra_git_args).await?;
+                let projects = find_projects_recursively(&repo_path)?;
+                let roots = shallowest_project_roots(&projects, &repo_path);
+                open_in_vscode(&roots).await?;
+            }
+        }
 
         return Ok(());
     }
@@ -732,6 +787,9 @@ async fn main() -> Result<()> {
             let semaphore =
                 clone_semaphore.clone();
 
+            let extra_git_args =
+                extra_git_args.clone();
+
             let handle =
                 tokio::spawn(async move {
                     let _permit =
@@ -746,6 +804,7 @@ async fn main() -> Result<()> {
                             workspace_dir,
                             tx,
                             multi,
+                            extra_git_args,
                         )
                         .await
                     {
@@ -848,6 +907,7 @@ async fn clone_and_scan(
     workspace_dir: PathBuf,
     tx: Option<mpsc::Sender<InstallTask>>,
     multi: Arc<MultiProgress>,
+    extra_git_args: Vec<String>,
 ) -> Result<()> {
     let repo_name = repo
         .url
@@ -878,14 +938,18 @@ async fn clone_and_scan(
                 .to_string_lossy()
                 .to_string();
 
+        let mut clone_args: Vec<String> =
+            vec!["clone".to_string()];
+        clone_args.extend(extra_git_args);
+        clone_args.push(repo.url.clone());
+        clone_args.push(repo_path_str);
+        let clone_args_ref: Vec<&str> =
+            clone_args.iter().map(|s| s.as_str()).collect();
+
         let status =
             run_command_with_prefix(
                 "git",
-                &[
-                    "clone",
-                    &repo.url,
-                    &repo_path_str,
-                ],
+                &clone_args_ref,
                 None,
                 &format!(
                     "[{}] git",
@@ -1199,6 +1263,7 @@ async fn prepare_uv_environment(
 async fn clone_repo_if_missing(
     repo: &RepoJob,
     workspace_dir: &Path,
+    extra_git_args: &[String],
 ) -> Result<PathBuf> {
     let repo_name = repo
         .url
@@ -1217,9 +1282,17 @@ async fn clone_repo_if_missing(
         .to_string_lossy()
         .to_string();
 
+    let mut clone_args: Vec<String> =
+        vec!["clone".to_string()];
+    clone_args.extend(extra_git_args.iter().cloned());
+    clone_args.push(repo.url.clone());
+    clone_args.push(repo_path_str);
+    let clone_args_ref: Vec<&str> =
+        clone_args.iter().map(|s| s.as_str()).collect();
+
     let status = run_command_with_prefix(
         "git",
-        &["clone", &repo.url, &repo_path_str],
+        &clone_args_ref,
         None,
         &format!("[{}] git", repo_name),
     )
@@ -1511,6 +1584,67 @@ async fn run_command_with_prefix(
     );
 
     Ok(status)
+}
+
+// Returns the shallowest project roots — drops any path whose ancestor is already in the set.
+fn shallowest_project_roots(
+    projects: &[PathBuf],
+    repo_root: &Path,
+) -> Vec<PathBuf> {
+    // If the repo root itself is a project, just return it — nothing more specific needed.
+    if projects.iter().any(|p| p == repo_root) {
+        return vec![repo_root.to_path_buf()];
+    }
+
+    let mut roots: Vec<PathBuf> = Vec::new();
+
+    // Sort by component count so shallower paths are processed first.
+    let mut sorted = projects.to_vec();
+    sorted.sort_by_key(|p| p.components().count());
+
+    'outer: for path in sorted {
+        for existing in &roots {
+            if path.starts_with(existing) {
+                continue 'outer;
+            }
+        }
+        roots.push(path);
+    }
+
+    if roots.is_empty() {
+        roots.push(repo_root.to_path_buf());
+    }
+
+    roots
+}
+
+async fn open_in_vscode(paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        info!("Opening {} in VS Code", path.display());
+
+        let path_str = path.to_string_lossy().to_string();
+
+        let status = Command::new("code")
+            .arg(&path_str)
+            .status()
+            .await;
+
+        if status.is_err() && cfg!(windows) {
+            Command::new("cmd")
+                .args(["/C", "code", &path_str])
+                .status()
+                .await
+                .with_context(|| {
+                    format!("failed to open VS Code for {}", path.display())
+                })?;
+        } else {
+            status.with_context(|| {
+                format!("failed to open VS Code for {}", path.display())
+            })?;
+        }
+    }
+
+    Ok(())
 }
 
 fn make_spinner() -> ProgressBar {
