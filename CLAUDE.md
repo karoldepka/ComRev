@@ -164,3 +164,6 @@ FastAPI service at `services/api/app/main.py`:
 - `expo-three`: Three.js integration for Expo
 - `three`: 3D rendering library
 - `react-native-worklets`: Performance optimizations
+
+## Coding/arch
+Prefer declarative version (dict/list) over `match` or switch-case.

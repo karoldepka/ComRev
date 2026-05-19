@@ -142,6 +142,7 @@ TOPICS_RAW = [
     # tables / data UI
     "table",
     "datatable",
+    "data-table",
     "grid",
     "treetable",
     "tree-table",
@@ -197,6 +198,7 @@ TOPICS_RAW = [
     "prisma",
     "drizzle",
     "postgres",
+    "postgresql",
     "mysql",
     "sqlite",
     "mongodb",
