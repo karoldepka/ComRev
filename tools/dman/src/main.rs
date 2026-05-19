@@ -17,6 +17,7 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 use walkdir::WalkDir;
+use shlex::Shlex;
 
 #[derive(Debug, Clone)]
 struct RepoJob {
@@ -453,22 +454,26 @@ async fn parse_repos_from_args(
                 }
             }
 
-            "--depth" => {
-                index += 1;
+            arg if arg.starts_with('-') => {
+                // Forward any unrecognized flag to git clone.
+                // If the flag has no '=' and the next token isn't another
+                // flag or a repo spec, consume it as the flag's value
+                // (e.g. --depth 1, --branch main, --filter blob:none).
+                extra_git_args.push(arg.to_string());
 
-                if index >= args.len() {
-                    anyhow::bail!("Missing value after --depth");
+                if !arg.contains('=') {
+                    let next_is_value = args.get(index + 1).is_some_and(|n| {
+                        !n.starts_with('-') && parse_repo_spec(n).is_none()
+                    });
+                    if next_is_value {
+                        index += 1;
+                        extra_git_args.push(args[index].clone());
+                    }
                 }
-
-                extra_git_args.push("--depth".to_string());
-                extra_git_args.push(args[index].clone());
             }
 
             arg => {
-                if let Some(val) = arg.strip_prefix("--depth=") {
-                    extra_git_args.push("--depth".to_string());
-                    extra_git_args.push(val.to_string());
-                } else if arg.starts_with('@') {
+                if arg.starts_with('@') {
                     let file_path =
                         Path::new(&arg[1..]);
 
@@ -628,13 +633,12 @@ async fn main() -> Result<()> {
             parse_args(&args).await?
         };
 
-    // GIT_ARGS env var provides defaults; CLI --depth etc. appended after (last wins in git)
+    // GIT_ARGS env var provides defaults; CLI flags appended after (last wins in git).
+    // Parsed with shell quoting so GIT_ARGS='--config "http.proxy=http://p:8080"' works.
     let extra_git_args: Vec<String> = {
         let mut v: Vec<String> = env::var("GIT_ARGS")
-            .unwrap_or_default()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+            .map(|s| Shlex::new(&s).collect())
+            .unwrap_or_default();
         v.extend(cli_git_args);
         v
     };
