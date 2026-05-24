@@ -85,8 +85,10 @@ pub struct RepoQuery {
     pub archived: Option<bool>,
     pub disabled: Option<bool>,
 
-    // ── topics: CSV, matches repos with ANY of the given topics ─────────────
+    // ── topics: CSV, matches repos with ANY of the given topics (exact) ─────
     pub topics: Option<String>,
+    // ── topics_like: CSV substrings, matches if ANY topic contains ANY term ──
+    pub topics_like: Option<String>,
 
     // ── timestamp ranges ─────────────────────────────────────────────────────
     pub pushed_after:   Option<DateTime<Utc>>,
@@ -154,6 +156,16 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RepoQuery) {
             .split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect();
         if !vals.is_empty() {
             qb.push(" AND topics && ").push_bind(vals);
+        }
+    }
+
+    if let Some(ref csv) = p.topics_like {
+        let patterns: Vec<String> = csv
+            .split(',').map(|s| format!("%{}%", s.trim())).filter(|s| s != "%%").collect();
+        if !patterns.is_empty() {
+            qb.push(" AND EXISTS (SELECT 1 FROM unnest(topics) t WHERE t ILIKE ANY(")
+              .push_bind(patterns)
+              .push("))");
         }
     }
 
