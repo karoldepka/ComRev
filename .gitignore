@@ -66,4 +66,17 @@ web-build/
 # Cache
 .cache/
 
+# Supabase CLI temp files
+**/supabase/.temp/
+**/supabase/.branches/
+
 .vs
+
+# Next.js
+web/.next/
+web/out/
+web/next-env.d.ts
+
+# Python virtualenvs
+**/.venv/
+backend/.venv/

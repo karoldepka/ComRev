@@ -2,26 +2,27 @@
 
 set -e
 
-REPO_ROOT="."
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "🚀 Starting backend..."
-
-cd $REPO_ROOT/services/api
-PYTHONPATH=. uv run uvicorn app.main:app --reload &
+echo "Starting ComRev backend..."
+cd "$REPO_ROOT/backend"
+uv run uvicorn app.main:app --reload --port 8000 &
 BE_PID=$!
 
-echo "⏳ Waiting for backend health..."
-until curl -s http://localhost:8000/openapi.json > openapi.json; do
+echo "Waiting for backend health..."
+until curl -sf http://localhost:8000/health > /dev/null; do
   sleep 1
 done
+echo "Backend ready."
 
-echo "🔁 Generating API types..."
-cd $REPO_ROOT
-pnpm gen:api
+echo "Starting Next.js web..."
+cd "$REPO_ROOT/web"
+pnpm dev &
+WEB_PID=$!
 
-echo "📱 Starting frontend..."
-cd $REPO_ROOT/apps/mobile
-npx expo start --port 8082 &
+echo "Starting Expo..."
+cd "$REPO_ROOT/fe"
+pnpm start &
 FE_PID=$!
 
-wait $BE_PID $FE_PID
+wait $BE_PID $WEB_PID $FE_PID

@@ -4,10 +4,15 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "dev": "./scripts/dev.sh",
-    "gen:api": "./scripts/gen-api.sh"
+    "gen:api": "./scripts/gen-api.sh",
+    "gen:gql": "pnpm --filter @comrev/graphql codegen",
+    "web": "pnpm --filter web",
+    "fe": "pnpm --filter fe"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.106.1",
+    "concurrently": "^9.0.0",
     "openapi-typescript": "^7.0.0",
-    "concurrently": "^9.0.0"
+    "supabase": "^2.101.0"
   }
 }

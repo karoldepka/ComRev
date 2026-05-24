@@ -68,6 +68,7 @@ enum Platform {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Clone,
+    Install,
     Build,
     Check,
     Test,
@@ -81,6 +82,7 @@ impl Mode {
     fn from_str(value: &str) -> Option<Self> {
         match value.to_lowercase().as_str() {
             "clone" => Some(Mode::Clone),
+            "install" => Some(Mode::Install),
             "build" => Some(Mode::Build),
             "check" => Some(Mode::Check),
             "test" => Some(Mode::Test),
@@ -333,6 +335,7 @@ fn print_usage() {
     println!();
     println!("Actions:");
     println!("  clone   Clone repositories and scan for projects");
+    println!("  install Clone repositories and install dependencies");
     println!("  build   Clone repositories and install dependencies");
     println!("  check   Clone repositories and install dependencies");
     println!("  test    Clone repositories and install dependencies");
@@ -546,7 +549,7 @@ async fn parse_args(
         Mode::from_str(&args[0])
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Unknown action: {}. Expected clone, build, check, test, run, start, open, print, or dev",
+                    "Unknown action: {}. Expected clone, install, build, check, test, run, start, open, print, or dev",
                     args[0]
                 )
             })?;

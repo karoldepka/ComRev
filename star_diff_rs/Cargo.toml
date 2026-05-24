@@ -3,6 +3,14 @@ name = "star_diff_rs"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "star_diff"
+path = "src/main.rs"
+
+[[bin]]
+name = "upload_supabase"
+path = "src/upload_supabase.rs"
+
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
@@ -16,3 +24,6 @@ json5 = "0.4"
 regex = "1"
 csv = "1"
 bson = { version = "2", features = ["serde_with"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+dotenvy = "0.15"

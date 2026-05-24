@@ -189,16 +189,45 @@ fn build_output_repo(mut repo_data: Value, stars_now: i64, diffs: Mapping) -> Va
     repo_data
 }
 
+fn yaml_to_csv_str(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.clone(),
+        _ => serde_json::to_string(v).unwrap_or_default(),
+    }
+}
+
 fn result_to_csv(result: &[Value]) -> Result<Vec<u8>> {
     let mut wtr = csv::Writer::from_writer(vec![]);
     let window_labels: Vec<&str> = windows().iter().map(|w| w.label).collect();
-    let mut headers = vec!["name", "stars_now"];
-    headers.extend_from_slice(&window_labels);
-    wtr.write_record(&headers)?;
+
+    // Collect metadata keys in first-seen order, excluding stars_diff
+    let mut meta_keys: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for repo in result {
-        let name = repo.get("full_name").and_then(|v| v.as_str()).unwrap_or("");
-        let stars_now = get_i64_field(repo, "stars_now").unwrap_or(0).to_string();
-        let mut row = vec![name.to_string(), stars_now];
+        if let Value::Mapping(m) = repo {
+            for (k, _) in m.iter() {
+                if let Some(s) = k.as_str() {
+                    if s != "stars_diff" && seen.insert(s.to_string()) {
+                        meta_keys.push(s.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut headers: Vec<String> = meta_keys.clone();
+    for label in &window_labels {
+        headers.push(format!("stars_{}", label));
+    }
+    wtr.write_record(&headers)?;
+
+    for repo in result {
+        let mut row: Vec<String> = meta_keys.iter()
+            .map(|k| repo.get(k.as_str()).map(yaml_to_csv_str).unwrap_or_default())
+            .collect();
         for label in &window_labels {
             row.push(get_nested_i64(repo, &["stars_diff", label]).unwrap_or(0).to_string());
         }
@@ -299,12 +328,12 @@ fn main() -> Result<()> {
             info!("💾 {:>12?}  {}", t.elapsed(), $path.file_name().unwrap().to_string_lossy());
         }};
     }
+    timed_write!(output_csv,         result_to_csv(&result)?);
     timed_write!(output_yaml,        serde_yaml::to_string(&result)?);
     timed_write!(output_json,        serde_json::to_string(&result)?);
     timed_write!(output_json_pretty, serde_json::to_string_pretty(&result)?);
     timed_write!(output_json5,       json5::to_string(&result)?);
     timed_write!(output_bson,        bson::to_vec(&bson::doc! { "repos": bson::to_bson(&result)? })?);
-    timed_write!(output_csv,         result_to_csv(&result)?);
     info!("Total run time: {:?}", start_all.elapsed());
 
     Ok(())
