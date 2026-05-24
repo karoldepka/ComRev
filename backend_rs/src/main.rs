@@ -1,8 +1,9 @@
 mod repo;
 
 use axum::{routing::get, Router};
+use repo::{AppState, fetch_sortable_cols};
 use sqlx::postgres::PgPoolOptions;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tower_http::cors::CorsLayer;
 
 #[tokio::main]
@@ -24,16 +25,25 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
+    let sortable_cols = fetch_sortable_cols(&pool).await?;
+    tracing::info!("{} sortable columns loaded from schema", sortable_cols.len());
+
+    let state = AppState {
+        pool,
+        sortable_cols: Arc::new(sortable_cols),
+    };
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/repos", get(repo::list_repos))
-        .with_state(pool)
+        .with_state(state)
         .layer(CorsLayer::permissive());
 
     let addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("listening on {addr}");
     axum::serve(listener, app).await?;
+    tracing::info!("after listening on {addr}");
     Ok(())
 }
 
