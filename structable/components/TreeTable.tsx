@@ -179,6 +179,14 @@ function formatCell(value: unknown, columnId: string): string {
   return String(value);
 }
 
+const FLAG_COLORS = [
+  { id: 'blue',   label: 'Uncertain',   bg: '#2563eb' },
+  { id: 'green',  label: 'Good',        bg: '#16a34a' },
+  { id: 'yellow', label: 'Warning',     bg: '#d97706' },
+  { id: 'orange', label: 'Investigate', bg: '#ea580c' },
+  { id: 'red',    label: 'Bad',         bg: '#dc2626' },
+] as const;
+
 function keyToCursor(key: string, leafCols: Column[]): { row: number; col: number } | null {
   if (key.startsWith('header:')) {
     const colId = key.split(':')[1];
@@ -237,17 +245,18 @@ export default function TreeTable() {
   const [newColId, setNewColId] = useState('');
   const [newColExpr, setNewColExpr] = useState('');
 
-  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; rowKey: string; colId: string } | null>(null);
-  const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment'>('menu');
+  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; repoId: number; colId: string } | null>(null);
+  const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment' | 'flag'>('menu');
   const [draftText, setDraftText] = useState('');
   const [cellNotes, setCellNotes] = useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem('structable:cell-notes') ?? '{}'); } catch { return {}; }
   });
-  const [cellComments, setCellComments] = useState<Record<string, string>>(() => {
+  const [cellFlags, setCellFlags] = useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem('structable:cell-comments') ?? '{}'); } catch { return {}; }
+    try { return JSON.parse(localStorage.getItem('structable:cell-flags') ?? '{}'); } catch { return {}; }
   });
+  const [cellComments, setCellComments] = useState<Record<string, { id: number; body: string }>>({});
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
 
@@ -334,8 +343,37 @@ export default function TreeTable() {
   }, [cellNotes]);
 
   useEffect(() => {
-    localStorage.setItem('structable:cell-comments', JSON.stringify(cellComments));
-  }, [cellComments]);
+    localStorage.setItem('structable:cell-flags', JSON.stringify(cellFlags));
+  }, [cellFlags]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/comments`)
+      .then((r) => r.json() as Promise<{ id: number; repo_id: number; column_id: string; body: string }[]>)
+      .then((list) => {
+        const map: Record<string, { id: number; body: string }> = {};
+        for (const c of list) map[`${c.repo_id}:${c.column_id}`] = { id: c.id, body: c.body };
+        setCellComments(map);
+      })
+      .catch(console.error);
+  }, []);
+
+  const saveComment = async (repoId: number, colId: string, body: string) => {
+    const key = `${repoId}:${colId}`;
+    if (!body.trim()) {
+      const existing = cellComments[key];
+      if (!existing) return;
+      await fetch(`${API_BASE}/comments/${existing.id}`, { method: 'DELETE' }).catch(console.error);
+      setCellComments((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+    } else {
+      const res = await fetch(`${API_BASE}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo_id: repoId, column_id: colId, body: body.trim() }),
+      });
+      const saved = await res.json() as { id: number; repo_id: number; column_id: string; body: string };
+      setCellComments((prev) => ({ ...prev, [key]: { id: saved.id, body: saved.body } }));
+    }
+  };
 
   useEffect(() => {
     if (!cellMenu) return;
@@ -588,7 +626,7 @@ export default function TreeTable() {
                     colSpan={colSpan}
                     rowSpan={rowSpan}
                     data-key={headerKey}
-                    className={[isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''), isSticky ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
+                    className={[isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''), isSticky ? 'sticky-col' : '', cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : ''].filter(Boolean).join(' ') || undefined}
                     onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey)}
                     onContextMenu={(e) => {
                       if (!showMenu) return;
@@ -678,6 +716,15 @@ export default function TreeTable() {
                                       </button>
                                     </>)}
                                   </>)}
+                                  <div className="menu-divider" />
+                                  <div className="menu-section-label">Flag</div>
+                                  <div className="menu-flag-row" onClick={(e) => e.stopPropagation()}>
+                                    {FLAG_COLORS.map(({ id, label, bg }) => {
+                                      const flagKey = `header:${column.id}`;
+                                      return <button key={id} type="button" title={label} className={`flag-swatch${cellFlags[flagKey] === id ? ' flag-swatch-active' : ''}`} style={{ background: bg }} onClick={(e) => { e.stopPropagation(); setCellFlags((prev) => prev[flagKey] === id ? (({ [flagKey]: _, ...r }) => r)(prev) : { ...prev, [flagKey]: id }); setOpenMenuColumn(null); setMenuAnchor(null); }} />;
+                                    })}
+                                    {cellFlags[`header:${column.id}`] && <button type="button" className="flag-clear" onClick={(e) => { e.stopPropagation(); setCellFlags((prev) => { const { [`header:${column.id}`]: _, ...r } = prev; return r; }); setOpenMenuColumn(null); setMenuAnchor(null); }}>×</button>}
+                                  </div>
                                 </div>,
                                 document.body,
                               )
@@ -702,9 +749,9 @@ export default function TreeTable() {
             <tr key={rowIndex}>
               {visibleLeafColumns.map((col: Column) => {
                 const bodyKey = `cell:${rowIndex}:${col.id}`;
-                const noteKey = `${String(row[PINNED_COL] ?? rowIndex)}:${col.id}`;
+                const noteKey = `${Number(row['github_id'] ?? 0)}:${col.id}`;
                 const hasNote = !!cellNotes[noteKey];
-                const hasComment = !!cellComments[noteKey];
+                const hasComment = !!cellComments[noteKey]?.body;
                 return (
                   <td
                     key={bodyKey}
@@ -712,12 +759,13 @@ export default function TreeTable() {
                     className={[
                       selectedSet.has(bodyKey) ? 'cell-selected' : [selectedRows.has(String(rowIndex)) ? 'row-highlight' : '', selectedCols.has(col.id) ? 'col-highlight' : ''].filter(Boolean).join(' '),
                       col.id === PINNED_COL ? 'sticky-col' : '',
+                      cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
                     ].filter(Boolean).join(' ') || undefined}
                     onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, rowKey: String(row[PINNED_COL] ?? rowIndex), colId: col.id });
+                      setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, repoId: Number(row['github_id'] ?? 0), colId: col.id });
                       setCellMenuMode('menu');
                       setDraftText('');
                     }}
@@ -777,11 +825,11 @@ export default function TreeTable() {
         style={{ position: 'absolute', top: cellMenu.anchor.top, left: cellMenu.anchor.left }}
       >
         {cellMenuMode === 'menu' && (<>
-          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
-            {cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit note' : 'Add note'}
+          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(cellNotes[`${cellMenu.repoId}:${cellMenu.colId}`] ?? ''); }}>
+            {cellNotes[`${cellMenu.repoId}:${cellMenu.colId}`] ? 'Edit note' : 'Add note'}
           </button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
-            {cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
+          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.repoId}:${cellMenu.colId}`]?.body ?? ''); }}>
+            {cellComments[`${cellMenu.repoId}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
           </button>
         </>)}
         {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
@@ -796,15 +844,15 @@ export default function TreeTable() {
             <div className="menu-add-col-actions">
               <button type="button" onClick={(e) => {
                 e.stopPropagation();
-                const key = `${cellMenu.rowKey}:${cellMenu.colId}`;
+                const { repoId, colId } = cellMenu;
+                const key = `${repoId}:${colId}`;
                 if (cellMenuMode === 'note') {
                   if (draftText.trim()) setCellNotes((prev) => ({ ...prev, [key]: draftText.trim() }));
                   else setCellNotes((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+                  setCellMenu(null);
                 } else {
-                  if (draftText.trim()) setCellComments((prev) => ({ ...prev, [key]: draftText.trim() }));
-                  else setCellComments((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+                  saveComment(repoId, colId, draftText).then(() => setCellMenu(null));
                 }
-                setCellMenu(null);
               }}>Save</button>
               <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
             </div>

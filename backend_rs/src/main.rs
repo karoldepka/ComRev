@@ -1,3 +1,4 @@
+mod comment;
 mod custom_column;
 mod repo;
 
@@ -28,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     custom_column::ensure_table(&pool).await?;
+    comment::ensure_table(&pool).await?;
 
     let sortable_cols = fetch_sortable_cols(&pool).await?;
     tracing::info!("{} sortable columns loaded from schema", sortable_cols.len());
@@ -42,6 +44,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/repos", get(repo::list_repos))
         .route("/custom-columns", get(custom_column::list).post(custom_column::create))
         .route("/custom-columns/:id", delete(custom_column::delete))
+        .route("/comments", get(comment::list).post(comment::upsert))
+        .route("/comments/:id", delete(comment::delete))
         .with_state(state)
         .layer(CorsLayer::permissive());
 
