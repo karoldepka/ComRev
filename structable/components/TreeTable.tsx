@@ -3,6 +3,42 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+type ColumnMeta = {
+  width?: number;
+};
+
+const COLUMNS: Record<string, ColumnMeta> = {
+  name:            { width: 200 },
+  description:     { width: 320 },
+  owner_login:     { width: 130 },
+  language:        { width: 120 },
+  license:         { width: 120 },
+  stars:           { width: 90 },
+  forks:           { width: 80 },
+  open_issues:     { width: 80 },
+  size:            { width: 80 },
+  stars_now:       { width: 90 },
+  stars_diff_6h:   { width: 80 },
+  stars_diff_12h:  { width: 80 },
+  stars_diff_24h:  { width: 80 },
+  stars_diff_48h:  { width: 80 },
+  stars_diff_5d:   { width: 80 },
+  stars_diff_7d:   { width: 80 },
+  stars_diff_10d:  { width: 80 },
+  stars_diff_14d:  { width: 80 },
+  stars_diff_20d:  { width: 80 },
+  stars_diff_30d:  { width: 80 },
+  pushed_at:       { width: 170 },
+  created_at:      { width: 170 },
+  updated_at:      { width: 170 },
+  visibility:      { width: 100 },
+  archived:        { width: 80 },
+  disabled:        { width: 80 },
+  topics:          { width: 200 },
+};
+
 type Column = {
   id: string;
   label: string;
@@ -24,130 +60,31 @@ type HeaderTraversalResult = {
   visible: boolean;
 };
 
-const columns: Column[] = [
-  {
-    id: 'personal',
-    label: 'Personal',
-    subColumns: [
-      {
-        id: 'identity',
-        label: 'Identity',
-        subColumns: [
-          { id: 'firstName', label: 'First Name', width: 170, minWidth: 120 },
-          { id: 'lastName', label: 'Last Name', width: 170, minWidth: 120 },
-        ],
-      },
-      {
-        id: 'contact',
-        label: 'Contact',
-        subColumns: [
-          { id: 'email', label: 'Email', width: 260, minWidth: 160 },
-          { id: 'phone', label: 'Phone', width: 150, minWidth: 120 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'work',
-    label: 'Work',
-    subColumns: [
-      {
-        id: 'position',
-        label: 'Position',
-        width: 200,
-        minWidth: 140,
-      },
-      {
-        id: 'department',
-        label: 'Department',
-        width: 180,
-        minWidth: 140,
-      },
-    ],
-  },
-  {
-    id: 'performance',
-    label: 'Performance',
-    subColumns: [
-      {
-        id: 'scoreGroup',
-        label: 'Scores',
-        subColumns: [
-          { id: 'score', label: 'Score', width: 110, minWidth: 90 },
-          { id: 'rank', label: 'Rank', width: 100, minWidth: 90 },
-        ],
-      },
-      {
-        id: 'trend',
-        label: 'Trend',
-        width: 120,
-        minWidth: 90,
-      },
-    ],
-  },
-];
+type RepoRow = Record<string, unknown>;
 
-const rows = [
-  {
-    firstName: 'Avery',
-    lastName: 'Taylor',
-    email: 'avery.taylor@example.com',
-    phone: '+1 (415) 555-0123',
-    position: 'Product Lead',
-    department: 'Design',
-    score: '93',
-    rank: '1',
-    trend: '↗',
-  },
-  {
-    firstName: 'Jordan',
-    lastName: 'Reese',
-    email: 'jordan.reese@example.com',
-    phone: '+1 (212) 555-0145',
-    position: 'Lead Engineer',
-    department: 'Platform',
-    score: '88',
-    rank: '3',
-    trend: '→',
-  },
-  {
-    firstName: 'Mina',
-    lastName: 'Cho',
-    email: 'mina.cho@example.com',
-    phone: '+1 (646) 555-0192',
-    position: 'Analytics Manager',
-    department: 'Data',
-    score: '90',
-    rank: '2',
-    trend: '↗',
-  },
-  {
-    firstName: 'Noah',
-    lastName: 'Jackson',
-    email: 'noah.jackson@example.com',
-    phone: '+1 (323) 555-0176',
-    position: 'Sales Director',
-    department: 'Revenue',
-    score: '81',
-    rank: '5',
-    trend: '↘',
-  },
-  {
-    firstName: 'Layla',
-    lastName: 'Patel',
-    email: 'layla.patel@example.com',
-    phone: '+1 (503) 555-0114',
-    position: 'Finance Analyst',
-    department: 'Operations',
-    score: '85',
-    rank: '4',
-    trend: '→',
-  },
-];
+type PagedResponse = {
+  data: RepoRow[];
+  total: number;
+  page: number;
+  per_page: number;
+};
+
+function labelFor(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function deriveColumns(row: RepoRow): Column[] {
+  return Object.keys(row).map((key) => ({
+    id: key,
+    label: labelFor(key),
+    width: COLUMNS[key]?.width ?? 120,
+    minWidth: 60,
+  }));
+}
 
 function getLeafColumns(columnList: Column[]): Column[] {
-  return columnList.flatMap((column) =>
-    column.subColumns ? getLeafColumns(column.subColumns) : [column],
+  return columnList.flatMap((col) =>
+    col.subColumns ? getLeafColumns(col.subColumns) : [col],
   );
 }
 
@@ -159,11 +96,9 @@ function getVisibleLeafColumns(column: Column, hiddenSet: Set<string>): Column[]
 }
 
 function getColumnDepth(columnList: Column[]): number {
-  return columnList.reduce((depth, column) => {
-    if (!column.subColumns) {
-      return Math.max(depth, 1);
-    }
-    return Math.max(depth, 1 + getColumnDepth(column.subColumns));
+  return columnList.reduce((depth, col) => {
+    if (!col.subColumns) return Math.max(depth, 1);
+    return Math.max(depth, 1 + getColumnDepth(col.subColumns));
   }, 0);
 }
 
@@ -172,170 +107,171 @@ function buildHeaderRows(columnList: Column[], maxDepth: number, hiddenSet: Set<
 
   function traverse(column: Column, depth: number): HeaderTraversalResult {
     const isLeaf = !column.subColumns || column.subColumns.length === 0;
-
     if (isLeaf) {
-      if (hiddenSet.has(column.id)) {
-        return { colSpan: 0, rowSpan: 0, visible: false };
-      }
+      if (hiddenSet.has(column.id)) return { colSpan: 0, rowSpan: 0, visible: false };
       const rowSpan = maxDepth - depth + 1;
       rows[depth - 1].push({ column, colSpan: 1, rowSpan, depth });
       return { colSpan: 1, rowSpan, visible: true };
     }
-
     const childResults = column.subColumns!.map((child) => traverse(child, depth + 1));
-    const colSpan = childResults.reduce((sum, result) => sum + (result.visible ? result.colSpan : 0), 0);
-
-    if (colSpan === 0) {
-      return { colSpan: 0, rowSpan: 0, visible: false };
-    }
-
+    const colSpan = childResults.reduce((sum, r) => sum + (r.visible ? r.colSpan : 0), 0);
+    if (colSpan === 0) return { colSpan: 0, rowSpan: 0, visible: false };
     rows[depth - 1].push({ column, colSpan, rowSpan: 1, depth });
     return { colSpan, rowSpan: 1, visible: true };
   }
 
-  columnList.forEach((column) => traverse(column, 1));
+  columnList.forEach((col) => traverse(col, 1));
   return rows.map((row) => row.filter((cell) => cell.colSpan > 0));
 }
 
+function formatCell(value: unknown, columnId: string): string {
+  if (value === null || value === undefined) return '-';
+  if (columnId.endsWith('_at')) {
+    const d = new Date(value as string);
+    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
+  }
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return String(value);
+}
+
 export default function TreeTable() {
+  const [rows, setRows] = useState<RepoRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
-    const widths: Record<string, number> = {};
-    getLeafColumns(columns).forEach((column) => {
-      widths[column.id] = column.width ?? 130;
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+
+  const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
+
+  const perPage = 50;
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetch(`${API_BASE}/repos?page=${page}&per_page=${perPage}&sort=stars_diff_24h:desc,stars:desc`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<PagedResponse>;
+      })
+      .then((payload) => {
+        setRows(payload.data);
+        setTotal(payload.total);
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [page]);
+
+  const columns = useMemo<Column[]>(
+    () => (rows.length > 0 ? deriveColumns(rows[0]) : []),
+    [rows],
+  );
+
+  useEffect(() => {
+    if (columns.length === 0) return;
+    setColumnWidths((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const col of columns) {
+        if (!(col.id in next)) {
+          next[col.id] = col.width ?? 120;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
-    return widths;
-  });
+  }, [columns]);
 
   const hiddenSet = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
-  const lastSelectedRef = useRef<string | null>(null);
-  const resizingRef = useRef<{
-    id: string;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
 
-  const allLeafColumns = useMemo<Column[]>(() => getLeafColumns(columns), []);
+  const allLeafColumns = useMemo(() => getLeafColumns(columns), [columns]);
   const visibleLeafColumns = useMemo(
-    () => allLeafColumns.filter((column) => !hiddenSet.has(column.id)),
+    () => allLeafColumns.filter((col) => !hiddenSet.has(col.id)),
     [allLeafColumns, hiddenSet],
   );
-  const headerRows = useMemo<HeaderCell[][]>(
+  const headerRows = useMemo(
     () => buildHeaderRows(columns, getColumnDepth(columns), hiddenSet),
-    [hiddenSet],
+    [columns, hiddenSet],
   );
   const resizerTargetByColumn = useMemo(() => {
     const map = new Map<string, string>();
     function traverse(column: Column) {
-      const visibleLeaves = getVisibleLeafColumns(column, hiddenSet);
-      if (visibleLeaves.length > 0) {
-        map.set(column.id, visibleLeaves[visibleLeaves.length - 1].id);
-      }
+      const leaves = getVisibleLeafColumns(column, hiddenSet);
+      if (leaves.length > 0) map.set(column.id, leaves[leaves.length - 1].id);
       column.subColumns?.forEach(traverse);
     }
     columns.forEach(traverse);
     return map;
-  }, [hiddenSet]);
+  }, [columns, hiddenSet]);
 
-  const showColumn = (columnId: string) => {
-    setHiddenColumns((prev) => prev.filter((id) => id !== columnId));
-  };
+  const showColumn = (id: string) => setHiddenColumns((prev) => prev.filter((c) => c !== id));
+  const showAllColumns = () => { setHiddenColumns([]); setOpenMenuColumn(null); };
 
-  const showAllColumns = () => {
-    setHiddenColumns([]);
-    setOpenMenuColumn(null);
-  };
-
-  const handleResizerPointerDown = (
-    event: React.PointerEvent<HTMLDivElement>,
-    columnId: string,
-  ) => {
+  const handleResizerPointerDown = (event: React.PointerEvent<HTMLDivElement>, columnId: string) => {
     event.preventDefault();
     event.stopPropagation();
-    resizingRef.current = {
-      id: columnId,
-      startX: event.clientX,
-      startWidth: columnWidths[columnId],
-    };
+    resizingRef.current = { id: columnId, startX: event.clientX, startWidth: columnWidths[columnId] ?? 120 };
 
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      if (!resizingRef.current) {
-        return;
-      }
+    const onMove = (e: PointerEvent) => {
+      if (!resizingRef.current) return;
       const { id, startX, startWidth } = resizingRef.current;
-      const delta = moveEvent.clientX - startX;
-      setColumnWidths((prev) => {
-        const next = Math.max(startWidth + delta, 8);
-        return { ...prev, [id]: next };
-      });
+      setColumnWidths((prev) => ({ ...prev, [id]: Math.max(startWidth + e.clientX - startX, 8) }));
     };
-
-    const handlePointerUp = () => {
+    const onUp = () => {
       resizingRef.current = null;
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
     };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
   };
 
   useEffect(() => {
-    if (!openMenuColumn) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('.column-menu') && !target.closest('.column-action-button')) {
+    if (!openMenuColumn) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('.column-menu') && !t.closest('.column-action-button')) {
         setOpenMenuColumn(null);
         setMenuAnchor(null);
       }
     };
-
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown);
-    };
+    window.addEventListener('pointerdown', onDown);
+    return () => window.removeEventListener('pointerdown', onDown);
   }, [openMenuColumn]);
 
   const toggleSelection = (key: string, event: React.MouseEvent<HTMLTableCellElement>) => {
     setSelectedKeys((prev) => {
-      const isSelected = prev.includes(key);
-      const shouldKeepMultiple = event.metaKey || event.ctrlKey;
-      const next = shouldKeepMultiple ? [...prev] : [];
-
-      if (shouldKeepMultiple) {
-        if (isSelected) {
-          return next.filter((item) => item !== key);
-        }
-        return [...next, key];
-      }
-
-      return isSelected ? [] : [key];
+      const multi = event.metaKey || event.ctrlKey;
+      const has = prev.includes(key);
+      if (multi) return has ? prev.filter((k) => k !== key) : [...prev, key];
+      return has ? [] : [key];
     });
-    lastSelectedRef.current = key;
   };
+
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  if (loading) return <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>;
+  if (error) return <div style={{ padding: '1rem', color: 'red' }}>Error: {error}</div>;
 
   return (
     <div className="tree-table-wrap">
       <table className="tree-table">
         <colgroup>
-          {visibleLeafColumns.map((column) => (
-            <col
-              key={column.id}
-              style={{ width: `${columnWidths[column.id]}px`, minWidth: '8px' }}
-            />
+          {visibleLeafColumns.map((col) => (
+            <col key={col.id} style={{ width: `${columnWidths[col.id] ?? 120}px`, minWidth: '8px' }} />
           ))}
         </colgroup>
         <thead>
           {headerRows.map((row, rowIndex) => (
             <tr key={rowIndex}>
-              {row.map(({ column, colSpan, rowSpan, depth }, cellIndex) => {
+              {row.map(({ column, colSpan, rowSpan, depth }: HeaderCell, cellIndex: number) => {
                 const headerKey = `header:${column.id}:${depth}`;
                 const isHeaderSelected = selectedSet.has(headerKey);
                 const resizerTargetId = resizerTargetByColumn.get(column.id);
@@ -352,7 +288,7 @@ export default function TreeTable() {
                     colSpan={colSpan}
                     rowSpan={rowSpan}
                     className={[isHeaderSelected ? 'header-selected' : '', isSticky ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
-                    onClick={(event) => toggleSelection(headerKey, event)}
+                    onClick={(e) => toggleSelection(headerKey, e)}
                   >
                     <div className="column-group">
                       {column.label}
@@ -361,13 +297,13 @@ export default function TreeTable() {
                           <button
                             type="button"
                             className="column-action-button"
-                            onClick={(event) => {
-                              event.stopPropagation();
+                            onClick={(e) => {
+                              e.stopPropagation();
                               if (openMenuColumn === column.id) {
                                 setOpenMenuColumn(null);
                                 setMenuAnchor(null);
                               } else {
-                                const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                                 setMenuAnchor({ top: rect.bottom + window.scrollY + 6, left: rect.right + window.scrollX });
                                 setOpenMenuColumn(column.id);
                               }
@@ -378,18 +314,12 @@ export default function TreeTable() {
                           </button>
                           {openMenuColumn === column.id && menuAnchor
                             ? createPortal(
-                                <div
-                                  className="column-menu"
-                                  style={{ position: 'absolute', top: menuAnchor.top, left: menuAnchor.left, transform: 'translateX(-100%)' }}
-                                >
+                                <div className="column-menu" style={{ position: 'absolute', top: menuAnchor.top, left: menuAnchor.left, transform: 'translateX(-100%)' }}>
                                   <button
                                     type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setHiddenColumns((prev) => [
-                                        ...prev,
-                                        ...leafIdsToHide.filter((id) => !prev.includes(id)),
-                                      ]);
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setHiddenColumns((prev) => [...prev, ...leafIdsToHide.filter((id) => !prev.includes(id))]);
                                       setOpenMenuColumn(null);
                                       setMenuAnchor(null);
                                     }}
@@ -406,10 +336,7 @@ export default function TreeTable() {
                     {resizerTargetId ? (
                       <div
                         className="resizer"
-                        onPointerDown={(event) => {
-                          event.stopPropagation();
-                          handleResizerPointerDown(event, resizerTargetId);
-                        }}
+                        onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, resizerTargetId); }}
                       />
                     ) : null}
                   </th>
@@ -419,25 +346,20 @@ export default function TreeTable() {
           ))}
         </thead>
         <tbody>
-          {rows.map((row, rowIndex) => (
+          {rows.map((row: RepoRow, rowIndex: number) => (
             <tr key={rowIndex}>
-              {visibleLeafColumns.map((column, colIndex) => {
-                const bodyKey = `cell:${rowIndex}:${column.id}`;
-                const isSelected = selectedSet.has(bodyKey);
-                const isSticky = colIndex === 0;
+              {visibleLeafColumns.map((col: Column, colIndex: number) => {
+                const bodyKey = `cell:${rowIndex}:${col.id}`;
                 return (
                   <td
                     key={bodyKey}
-                    className={[isSelected ? 'cell-selected' : '', isSticky ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
-                    onClick={(event) => toggleSelection(bodyKey, event)}
+                    className={[selectedSet.has(bodyKey) ? 'cell-selected' : '', colIndex === 0 ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
+                    onClick={(e) => toggleSelection(bodyKey, e)}
                   >
-                    {row[column.id as keyof typeof row] ?? '-'}
+                    {formatCell(row[col.id], col.id)}
                     <div
                       className="resizer"
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        handleResizerPointerDown(event, column.id);
-                      }}
+                      onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, col.id); }}
                     />
                   </td>
                 );
@@ -447,21 +369,24 @@ export default function TreeTable() {
         </tbody>
       </table>
       <div className="table-note">
-        Tip: Ctrl/Cmd + click to select multiple cells, including header groups.
+        <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
+        <span style={{ marginLeft: '1rem' }}>
+          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
+          {' '}
+          <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
+        </span>
         {hiddenColumns.length > 0 ? (
           <span className="hidden-columns-controls">
             Hidden:{' '}
-            {hiddenColumns.map((id) => {
-              const col = allLeafColumns.find((c) => c.id === id);
+            {hiddenColumns.map((id: string) => {
+              const col = allLeafColumns.find((c: Column) => c.id === id);
               return (
                 <button key={id} type="button" className="show-column-button" onClick={() => showColumn(id)}>
                   {col?.label ?? id}
                 </button>
               );
             })}
-            <button type="button" className="show-all-button" onClick={showAllColumns}>
-              Show all
-            </button>
+            <button type="button" className="show-all-button" onClick={showAllColumns}>Show all</button>
           </span>
         ) : null}
       </div>
