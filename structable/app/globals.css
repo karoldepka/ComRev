@@ -109,9 +109,14 @@ p {
 }
 
 .tree-table th {
-  background: #f8fafc;
+  background: rgba(248, 250, 252, 0.7);
+  backdrop-filter: blur(4px);
   font-weight: 700;
   color: #111827;
+}
+
+.tree-table th.col-highlight {
+  background: rgba(219, 234, 254, 0.7) !important;
 }
 
 .tree-table td {
@@ -130,7 +135,7 @@ p {
 
 .tree-table th.sticky-col {
   z-index: 2;
-  background: #f8fafc;
+  background: rgba(248, 250, 252, 0.7);
   box-shadow: 2px 0 6px -2px rgba(15, 23, 42, 0.08);
 }
 
@@ -139,6 +144,18 @@ p {
   background: rgba(255, 255, 255, 0.7) !important;
   backdrop-filter: blur(4px);
   box-shadow: 2px 0 6px -2px rgba(15, 23, 42, 0.08);
+}
+
+.tree-table td.sticky-col.row-highlight {
+  background: linear-gradient(rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.08)), rgba(255, 255, 255, 0.7) !important;
+}
+
+.tree-table td.sticky-col.col-highlight {
+  background: linear-gradient(rgba(59, 130, 246, 0.09), rgba(59, 130, 246, 0.09)), rgba(255, 255, 255, 0.7) !important;
+}
+
+.tree-table td.sticky-col.row-highlight.col-highlight {
+  background: linear-gradient(rgba(59, 130, 246, 0.14), rgba(59, 130, 246, 0.14)), rgba(255, 255, 255, 0.7) !important;
 }
 
 .cell-selected {
@@ -308,7 +325,14 @@ p {
 }
 
 .table-note {
-  margin-top: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid #e5e7eb;
+  background: #f8fafc;
   color: #475569;
   font-size: 0.855rem;
 }
@@ -345,8 +369,13 @@ p {
   }
 
   .tree-table th {
-    background: #1e293b;
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(4px);
     color: #f1f5f9;
+  }
+
+  .tree-table th.col-highlight {
+    background: rgba(30, 58, 138, 0.7) !important;
   }
 
   .tree-table td {
@@ -354,7 +383,7 @@ p {
   }
 
   .tree-table th.sticky-col {
-    background: #1e293b;
+    background: rgba(30, 41, 59, 0.7);
     box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.4);
   }
 
@@ -362,6 +391,18 @@ p {
     background: rgba(15, 23, 42, 0.7) !important;
     backdrop-filter: blur(4px);
     box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.4);
+  }
+
+  .tree-table td.sticky-col.row-highlight {
+    background: linear-gradient(rgba(96, 165, 250, 0.1), rgba(96, 165, 250, 0.1)), rgba(15, 23, 42, 0.7) !important;
+  }
+
+  .tree-table td.sticky-col.col-highlight {
+    background: linear-gradient(rgba(96, 165, 250, 0.11), rgba(96, 165, 250, 0.11)), rgba(15, 23, 42, 0.7) !important;
+  }
+
+  .tree-table td.sticky-col.row-highlight.col-highlight {
+    background: linear-gradient(rgba(96, 165, 250, 0.18), rgba(96, 165, 250, 0.18)), rgba(15, 23, 42, 0.7) !important;
   }
 
   .cell-selected {
@@ -448,6 +489,8 @@ p {
   }
 
   .table-note {
+    border-top-color: #334155;
+    background: #1e293b;
     color: #64748b;
   }
 }

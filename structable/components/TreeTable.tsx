@@ -179,6 +179,35 @@ function formatCell(value: unknown, columnId: string): string {
   return String(value);
 }
 
+function keyToCursor(key: string, leafCols: Column[]): { row: number; col: number } | null {
+  if (key.startsWith('header:')) {
+    const colId = key.split(':')[1];
+    const idx = leafCols.findIndex((c) => c.id === colId);
+    return idx >= 0 ? { row: -1, col: idx } : null;
+  }
+  if (key.startsWith('cell:')) {
+    const parts = key.split(':');
+    const rowIdx = parseInt(parts[1], 10);
+    const colId = parts[2];
+    const idx = leafCols.findIndex((c) => c.id === colId);
+    return idx >= 0 ? { row: rowIdx, col: idx } : null;
+  }
+  return null;
+}
+
+function cursorToKey(
+  pos: { row: number; col: number },
+  leafCols: Column[],
+  leafHeaderKey: Map<string, string>,
+  numBodyRows: number,
+): string | null {
+  if (pos.col < 0 || pos.col >= leafCols.length) return null;
+  const col = leafCols[pos.col];
+  if (pos.row === -1) return leafHeaderKey.get(col.id) ?? null;
+  if (pos.row < 0 || pos.row >= numBodyRows) return null;
+  return `cell:${pos.row}:${col.id}`;
+}
+
 export default function TreeTable() {
   const [rows, setRows] = useState<RepoRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -187,6 +216,8 @@ export default function TreeTable() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [cursorPos, setCursorPos] = useState<{ row: number; col: number } | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try { return JSON.parse(localStorage.getItem('structable:hidden-columns') ?? '[]'); } catch { return []; }
@@ -347,6 +378,18 @@ export default function TreeTable() {
     return map;
   }, [columns, hiddenSet]);
 
+  const leafHeaderKey = useMemo(() => {
+    const map = new Map<string, string>();
+    headerRows.forEach((row) => {
+      row.forEach(({ column, depth }) => {
+        if ((!column.subColumns || column.subColumns.length === 0) && !map.has(column.id)) {
+          map.set(column.id, `header:${column.id}:${depth}`);
+        }
+      });
+    });
+    return map;
+  }, [headerRows]);
+
   // Sync filter draft value when a column menu opens
   useEffect(() => {
     if (!openMenuColumn) return;
@@ -474,14 +517,41 @@ export default function TreeTable() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [openMenuColumn]);
 
-  const toggleSelection = (key: string, event: React.MouseEvent<HTMLTableCellElement>) => {
+  const selectKey = (key: string, multi: boolean) => {
     setSelectedKeys((prev) => {
-      const multi = event.metaKey || event.ctrlKey;
       const has = prev.includes(key);
       if (multi) return has ? prev.filter((k) => k !== key) : [...prev, key];
       return has ? [] : [key];
     });
+    const pos = keyToCursor(key, visibleLeafColumns);
+    setCursorPos(pos);
+    wrapperRef.current?.focus();
   };
+
+  const handleTableKeyDown = (e: React.KeyboardEvent) => {
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const cur = cursorPos ?? (rows.length > 0 && visibleLeafColumns.length > 0 ? { row: 0, col: 0 } : null);
+    if (!cur) return;
+    let { row, col } = cur;
+    if (e.key === 'ArrowUp')    { if (row > 0) row--; else if (row === 0) row = -1; }
+    if (e.key === 'ArrowDown')  { if (row === -1) row = 0; else if (row < rows.length - 1) row++; }
+    if (e.key === 'ArrowLeft')  { if (col > 0) col--; }
+    if (e.key === 'ArrowRight') { if (col < visibleLeafColumns.length - 1) col++; }
+    const newPos = { row, col };
+    setCursorPos(newPos);
+    const key = cursorToKey(newPos, visibleLeafColumns, leafHeaderKey, rows.length);
+    if (key) setSelectedKeys([key]);
+  };
+
+  // Scroll the focused cell into view after cursor moves
+  useEffect(() => {
+    if (!cursorPos) return;
+    const key = cursorToKey(cursorPos, visibleLeafColumns, leafHeaderKey, rows.length);
+    if (!key) return;
+    const el = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`);
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [cursorPos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
@@ -489,7 +559,8 @@ export default function TreeTable() {
   if (error) return <div style={{ padding: '1rem', color: 'red' }}>Error: {error}</div>;
 
   return (
-    <div className="tree-table-wrap">
+    <>
+    <div ref={wrapperRef} className="tree-table-wrap" tabIndex={0} onKeyDown={handleTableKeyDown} style={{ outline: 'none' }}>
       <table className="tree-table">
         <colgroup>
           {visibleLeafColumns.map((col) => (
@@ -516,8 +587,9 @@ export default function TreeTable() {
                     key={headerKey}
                     colSpan={colSpan}
                     rowSpan={rowSpan}
+                    data-key={headerKey}
                     className={[isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''), isSticky ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
-                    onClick={(e) => toggleSelection(headerKey, e)}
+                    onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey)}
                     onContextMenu={(e) => {
                       if (!showMenu) return;
                       e.preventDefault();
@@ -636,11 +708,12 @@ export default function TreeTable() {
                 return (
                   <td
                     key={bodyKey}
+                    data-key={bodyKey}
                     className={[
                       selectedSet.has(bodyKey) ? 'cell-selected' : [selectedRows.has(String(rowIndex)) ? 'row-highlight' : '', selectedCols.has(col.id) ? 'col-highlight' : ''].filter(Boolean).join(' '),
                       col.id === PINNED_COL ? 'sticky-col' : '',
                     ].filter(Boolean).join(' ') || undefined}
-                    onClick={(e) => toggleSelection(bodyKey, e)}
+                    onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -649,13 +722,15 @@ export default function TreeTable() {
                       setDraftText('');
                     }}
                   >
-                    {col.id.startsWith('custom:')
-                      ? (() => {
-                          const fn = compiledExprs.get(col.id);
-                          if (!fn) return '-';
-                          try { const v = fn(row); return v != null ? String(v) : '-'; } catch { return '#ERR'; }
-                        })()
-                      : formatCell(row[col.id], col.id)}
+                    {col.id === PINNED_COL
+                      ? <a href={`https://github.com/${String(row[col.id])}`} target="_blank" rel="noopener noreferrer">{String(row[col.id] ?? '-')}</a>
+                      : col.id.startsWith('custom:')
+                        ? (() => {
+                            const fn = compiledExprs.get(col.id);
+                            if (!fn) return '-';
+                            try { const v = fn(row); return v != null ? String(v) : '-'; } catch { return '#ERR'; }
+                          })()
+                        : formatCell(row[col.id], col.id)}
                     {(hasNote || hasComment) && (
                       <span
                         className="cell-dot"
@@ -673,70 +748,71 @@ export default function TreeTable() {
           ))}
         </tbody>
       </table>
-      <div className="table-note">
-        <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
-        <span style={{ marginLeft: '1rem' }}>
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
-          {' '}
-          <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
-        </span>
-        {hiddenColumns.length > 0 ? (
-          <span className="hidden-columns-controls">
-            Hidden:{' '}
-            {hiddenColumns.map((id: string) => {
-              const col = allLeafColumns.find((c: Column) => c.id === id);
-              return (
-                <button key={id} type="button" className="show-column-button" onClick={() => showColumn(id)}>
-                  {col?.label ?? id}
-                </button>
-              );
-            })}
-            <button type="button" className="show-all-button" onClick={showAllColumns}>Show all</button>
-          </span>
-        ) : null}
-      </div>
-      {cellMenu && createPortal(
-        <div
-          className="column-menu cell-context-menu"
-          style={{ position: 'absolute', top: cellMenu.anchor.top, left: cellMenu.anchor.left }}
-        >
-          {cellMenuMode === 'menu' && (<>
-            <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
-              {cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit note' : 'Add note'}
-            </button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
-              {cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
-            </button>
-          </>)}
-          {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
-            <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
-              <textarea
-                autoFocus
-                rows={3}
-                placeholder={cellMenuMode === 'note' ? 'Note…' : 'Comment…'}
-                value={draftText}
-                onChange={(e) => setDraftText(e.target.value)}
-              />
-              <div className="menu-add-col-actions">
-                <button type="button" onClick={(e) => {
-                  e.stopPropagation();
-                  const key = `${cellMenu.rowKey}:${cellMenu.colId}`;
-                  if (cellMenuMode === 'note') {
-                    if (draftText.trim()) setCellNotes((prev) => ({ ...prev, [key]: draftText.trim() }));
-                    else setCellNotes((prev) => { const { [key]: _, ...rest } = prev; return rest; });
-                  } else {
-                    if (draftText.trim()) setCellComments((prev) => ({ ...prev, [key]: draftText.trim() }));
-                    else setCellComments((prev) => { const { [key]: _, ...rest } = prev; return rest; });
-                  }
-                  setCellMenu(null);
-                }}>Save</button>
-                <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
-              </div>
-            </div>
-          )}
-        </div>,
-        document.body,
-      )}
     </div>
+    <div className="table-note">
+      <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
+      <span style={{ marginLeft: '1rem' }}>
+        <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
+        {' '}
+        <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
+      </span>
+      {hiddenColumns.length > 0 ? (
+        <span className="hidden-columns-controls">
+          Hidden:{' '}
+          {hiddenColumns.map((id: string) => {
+            const col = allLeafColumns.find((c: Column) => c.id === id);
+            return (
+              <button key={id} type="button" className="show-column-button" onClick={() => showColumn(id)}>
+                {col?.label ?? id}
+              </button>
+            );
+          })}
+          <button type="button" className="show-all-button" onClick={showAllColumns}>Show all</button>
+        </span>
+      ) : null}
+    </div>
+    {cellMenu && createPortal(
+      <div
+        className="column-menu cell-context-menu"
+        style={{ position: 'absolute', top: cellMenu.anchor.top, left: cellMenu.anchor.left }}
+      >
+        {cellMenuMode === 'menu' && (<>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
+            {cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit note' : 'Add note'}
+          </button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
+            {cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
+          </button>
+        </>)}
+        {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
+          <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
+            <textarea
+              autoFocus
+              rows={3}
+              placeholder={cellMenuMode === 'note' ? 'Note…' : 'Comment…'}
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+            />
+            <div className="menu-add-col-actions">
+              <button type="button" onClick={(e) => {
+                e.stopPropagation();
+                const key = `${cellMenu.rowKey}:${cellMenu.colId}`;
+                if (cellMenuMode === 'note') {
+                  if (draftText.trim()) setCellNotes((prev) => ({ ...prev, [key]: draftText.trim() }));
+                  else setCellNotes((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+                } else {
+                  if (draftText.trim()) setCellComments((prev) => ({ ...prev, [key]: draftText.trim() }));
+                  else setCellComments((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+                }
+                setCellMenu(null);
+              }}>Save</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
+            </div>
+          </div>
+        )}
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }
