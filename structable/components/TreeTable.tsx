@@ -5,12 +5,15 @@ import { createPortal } from 'react-dom';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+const PINNED_COL = 'name';
+
 type ColumnMeta = {
   width?: number;
+  label?: string;
 };
 
 const COLUMNS: Record<string, ColumnMeta> = {
-  name:            { width: 200 },
+  name:            { width: 220, label: 'Repo' },
   description:     { width: 320 },
   owner_login:     { width: 130 },
   language:        { width: 120 },
@@ -69,14 +72,55 @@ type PagedResponse = {
   per_page: number;
 };
 
+type CustomColumnDef = {
+  id: number;
+  name: string;
+  label: string | null;
+  expression: string | null;
+  position_after: string | null;
+};
+
+type ColType = 'numeric' | 'text' | 'categorical' | 'boolean';
+
+function colType(key: string): ColType | null {
+  if (key.endsWith('_at') || key === 'id' || key === 'gh_id') return null;
+  if (key === 'archived' || key === 'disabled') return 'boolean';
+  if (['name', 'description'].includes(key)) return 'text';
+  if (['language', 'license', 'visibility', 'owner_login'].includes(key)) return 'categorical';
+  if (key === 'stars' || key === 'forks' || key === 'open_issues' || key === 'size' ||
+      key === 'stars_now' || key.startsWith('stars_diff_')) return 'numeric';
+  return null;
+}
+
+function colFilterParam(key: string): string | null {
+  const t = colType(key);
+  if (t === 'text') return 'q';
+  if (t === 'numeric') return `${key}_min`;
+  if (t === 'categorical' || t === 'boolean') return key;
+  return null;
+}
+
+function colFilterPlaceholder(key: string): string {
+  const t = colType(key);
+  if (t === 'numeric') return 'Min value…';
+  if (t === 'text') return 'Search name / description…';
+  if (t === 'categorical') return 'Exact value (comma = OR)…';
+  return 'Value…';
+}
+
 function labelFor(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function deriveColumns(row: RepoRow): Column[] {
-  return Object.keys(row).map((key) => ({
+  const keys = Object.keys(row);
+  const sorted = [
+    ...(keys.includes(PINNED_COL) ? [PINNED_COL] : []),
+    ...keys.filter((k) => k !== PINNED_COL),
+  ];
+  return sorted.map((key) => ({
     id: key,
-    label: labelFor(key),
+    label: COLUMNS[key]?.label ?? labelFor(key),
     width: COLUMNS[key]?.width ?? 120,
     minWidth: 60,
   }));
@@ -153,6 +197,26 @@ export default function TreeTable() {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem('structable:column-widths') ?? '{}'); } catch { return {}; }
   });
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'stars_diff_14d', dir: 'desc' });
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
+  const [customColumns, setCustomColumns] = useState<CustomColumnDef[]>([]);
+  const [addingColAfter, setAddingColAfter] = useState<string | null>(null);
+  const [newColName, setNewColName] = useState('');
+  const [newColId, setNewColId] = useState('');
+  const [newColExpr, setNewColExpr] = useState('');
+
+  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; rowKey: string; colId: string } | null>(null);
+  const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment'>('menu');
+  const [draftText, setDraftText] = useState('');
+  const [cellNotes, setCellNotes] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem('structable:cell-notes') ?? '{}'); } catch { return {}; }
+  });
+  const [cellComments, setCellComments] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem('structable:cell-comments') ?? '{}'); } catch { return {}; }
+  });
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
 
@@ -161,7 +225,9 @@ export default function TreeTable() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/repos?page=${page}&per_page=${perPage}&sort=stars_diff_14d:desc,stars:desc`)
+    const params = new URLSearchParams({ page: String(page), per_page: String(perPage), sort: `${sort.col}:${sort.dir}` });
+    Object.entries(filters).forEach(([k, v]) => params.set(k, v));
+    fetch(`${API_BASE}/repos?${params}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<PagedResponse>;
@@ -172,12 +238,41 @@ export default function TreeTable() {
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [page]);
+  }, [page, sort, filters]);
 
-  const columns = useMemo<Column[]>(
-    () => (rows.length > 0 ? deriveColumns(rows[0]) : []),
-    [rows],
-  );
+  // Fetch custom column definitions once on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/custom-columns`)
+      .then((r) => r.json() as Promise<CustomColumnDef[]>)
+      .then(setCustomColumns)
+      .catch(console.error);
+  }, []);
+
+  // Reset add-column form when the menu closes
+  useEffect(() => {
+    if (!openMenuColumn) {
+      setAddingColAfter(null);
+      setNewColName('');
+      setNewColId('');
+      setNewColExpr('');
+    }
+  }, [openMenuColumn]);
+
+  const columns = useMemo<Column[]>(() => {
+    if (rows.length === 0) return [];
+    const base = deriveColumns(rows[0]);
+    const result = [...base];
+    for (const cc of customColumns) {
+      const afterIdx = cc.position_after ? result.findIndex((c) => c.id === cc.position_after) : -1;
+      result.splice(afterIdx >= 0 ? afterIdx + 1 : result.length, 0, {
+        id: `custom:${cc.id}`,
+        label: cc.label ?? cc.name,
+        width: 150,
+        minWidth: 60,
+      });
+    }
+    return result;
+  }, [rows, customColumns]);
 
   useEffect(() => {
     if (columns.length === 0) return;
@@ -203,6 +298,23 @@ export default function TreeTable() {
     localStorage.setItem('structable:column-widths', JSON.stringify(columnWidths));
   }, [columnWidths]);
 
+  useEffect(() => {
+    localStorage.setItem('structable:cell-notes', JSON.stringify(cellNotes));
+  }, [cellNotes]);
+
+  useEffect(() => {
+    localStorage.setItem('structable:cell-comments', JSON.stringify(cellComments));
+  }, [cellComments]);
+
+  useEffect(() => {
+    if (!cellMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest('.cell-context-menu')) setCellMenu(null);
+    };
+    window.addEventListener('pointerdown', onDown);
+    return () => window.removeEventListener('pointerdown', onDown);
+  }, [cellMenu]);
+
   const hiddenSet = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
 
@@ -210,9 +322,10 @@ export default function TreeTable() {
     selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[1]),
   ), [selectedKeys]);
 
-  const selectedCols = useMemo(() => new Set(
-    selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[2]),
-  ), [selectedKeys]);
+  const selectedCols = useMemo(() => new Set([
+    ...selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[2]),
+    ...selectedKeys.filter((k) => k.startsWith('header:')).map((k) => k.split(':')[1]),
+  ]), [selectedKeys]);
 
   const allLeafColumns = useMemo(() => getLeafColumns(columns), [columns]);
   const visibleLeafColumns = useMemo(
@@ -233,6 +346,98 @@ export default function TreeTable() {
     columns.forEach(traverse);
     return map;
   }, [columns, hiddenSet]);
+
+  // Sync filter draft value when a column menu opens
+  useEffect(() => {
+    if (!openMenuColumn) return;
+    const param = colFilterParam(openMenuColumn);
+    if (param) setFilterDraft((prev) => ({ ...prev, [openMenuColumn]: filters[param] ?? '' }));
+  }, [openMenuColumn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSort = (col: string, dir: 'asc' | 'desc') => {
+    setSort({ col, dir });
+    setPage(1);
+    setOpenMenuColumn(null);
+    setMenuAnchor(null);
+  };
+
+  const applyFilter = (colId: string) => {
+    const param = colFilterParam(colId);
+    if (!param) return;
+    const value = (filterDraft[colId] ?? '').trim();
+    setFilters((prev) => {
+      if (!value) { const { [param]: _, ...rest } = prev; return rest; }
+      return { ...prev, [param]: value };
+    });
+    setPage(1);
+    setOpenMenuColumn(null);
+    setMenuAnchor(null);
+  };
+
+  const clearColFilter = (colId: string) => {
+    const param = colFilterParam(colId);
+    if (!param) return;
+    setFilters((prev) => { const { [param]: _, ...rest } = prev; return rest; });
+    setFilterDraft((prev) => { const { [colId]: _, ...rest } = prev; return rest; });
+    setPage(1);
+  };
+
+  const colHasFilter = (colId: string) => {
+    const param = colFilterParam(colId);
+    return !!param && !!filters[param];
+  };
+
+  // Compile JS expressions for custom columns once; evaluate per cell
+  const compiledExprs = useMemo(() => {
+    const map = new Map<string, (row: RepoRow) => unknown>();
+    for (const cc of customColumns) {
+      if (cc.expression?.trim()) {
+        try {
+          // eslint-disable-next-line no-new-func
+          map.set(`custom:${cc.id}`, new Function('row', `"use strict"; return (${cc.expression})`) as (row: RepoRow) => unknown);
+        } catch { /* invalid expression — key absent, cell shows '-' */ }
+      }
+    }
+    return map;
+  }, [customColumns]);
+
+  const createCustomColumn = async (afterColId: string) => {
+    if (!newColName.trim()) return;
+    try {
+      const derivedId = newColName.trim().toLowerCase().replace(/\s+/g, '_');
+      const res = await fetch(`${API_BASE}/custom-columns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newColId.trim() || derivedId,
+          label: newColName.trim(),
+          expression: newColExpr.trim() || null,
+          position_after: afterColId,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const created = await res.json() as CustomColumnDef;
+      setCustomColumns((prev) => [...prev, created]);
+      setNewColName('');
+      setNewColId('');
+      setNewColExpr('');
+      setAddingColAfter(null);
+      setOpenMenuColumn(null);
+      setMenuAnchor(null);
+    } catch (err) { console.error('Failed to create custom column:', err); }
+  };
+
+  const deleteCustomColumn = async (colId: string) => {
+    const id = parseInt(colId.replace('custom:', ''), 10);
+    try {
+      const res = await fetch(`${API_BASE}/custom-columns/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setCustomColumns((prev) => prev.filter((c) => c.id !== id));
+      setHiddenColumns((prev) => prev.filter((c) => c !== colId));
+      setOpenMenuColumn(null);
+      setMenuAnchor(null);
+    } catch (err) { console.error('Failed to delete custom column:', err); }
+  };
 
   const showColumn = (id: string) => setHiddenColumns((prev) => prev.filter((c) => c !== id));
   const showAllColumns = () => { setHiddenColumns([]); setOpenMenuColumn(null); };
@@ -294,16 +499,17 @@ export default function TreeTable() {
         <thead>
           {headerRows.map((row, rowIndex) => (
             <tr key={rowIndex}>
-              {row.map(({ column, colSpan, rowSpan, depth }: HeaderCell, cellIndex: number) => {
+              {row.map(({ column, colSpan, rowSpan, depth }: HeaderCell) => {
                 const headerKey = `header:${column.id}:${depth}`;
                 const isHeaderSelected = selectedSet.has(headerKey);
                 const resizerTargetId = resizerTargetByColumn.get(column.id);
                 const isLeaf = !column.subColumns || column.subColumns.length === 0;
-                const leafIdsToHide = isLeaf
+                const leafIdsToHide = (isLeaf
                   ? (hiddenSet.has(column.id) ? [] : [column.id])
-                  : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id);
-                const showMenu = leafIdsToHide.length > 0;
-                const isSticky = cellIndex === 0;
+                  : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
+                ).filter((id) => id !== PINNED_COL);
+                const showMenu = leafIdsToHide.length > 0 || isLeaf;
+                const isSticky = column.id === PINNED_COL;
 
                 return (
                   <th
@@ -321,7 +527,15 @@ export default function TreeTable() {
                     }}
                   >
                     <div className="column-group">
-                      {column.label}
+                      <span className="col-label">
+                        {column.label}
+                        {sort.col === column.id && (
+                          <span className="sort-indicator">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span>
+                        )}
+                        {isLeaf && colHasFilter(column.id) && (
+                          <span className="filter-indicator" title="Filtered">●</span>
+                        )}
+                      </span>
                       {showMenu ? (
                         <span className="header-actions">
                           <button
@@ -345,17 +559,53 @@ export default function TreeTable() {
                           {openMenuColumn === column.id && menuAnchor
                             ? createPortal(
                                 <div className="column-menu" style={{ position: 'absolute', top: menuAnchor.top, left: menuAnchor.left, transform: 'translateX(-100%)' }}>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setHiddenColumns((prev) => [...prev, ...leafIdsToHide.filter((id) => !prev.includes(id))]);
-                                      setOpenMenuColumn(null);
-                                      setMenuAnchor(null);
-                                    }}
-                                  >
-                                    {isLeaf ? 'Hide column' : 'Hide group'}
-                                  </button>
+                                  {!column.id.startsWith('custom:') && (<>
+                                    <div className="menu-section-label">Sort</div>
+                                    <button type="button" className={sort.col === column.id && sort.dir === 'asc' ? 'menu-active' : ''} onClick={(e) => { e.stopPropagation(); handleSort(column.id, 'asc'); }}>↑ Ascending</button>
+                                    <button type="button" className={sort.col === column.id && sort.dir === 'desc' ? 'menu-active' : ''} onClick={(e) => { e.stopPropagation(); handleSort(column.id, 'desc'); }}>↓ Descending</button>
+                                    {isLeaf && colFilterParam(column.id) && (<>
+                                      <div className="menu-divider" />
+                                      <div className="menu-section-label">Filter</div>
+                                      <div className="menu-filter">
+                                        <input
+                                          type={colType(column.id) === 'numeric' ? 'number' : 'text'}
+                                          placeholder={colFilterPlaceholder(column.id)}
+                                          value={filterDraft[column.id] ?? ''}
+                                          onChange={(e) => setFilterDraft((prev) => ({ ...prev, [column.id]: e.target.value }))}
+                                          onKeyDown={(e) => { if (e.key === 'Enter') applyFilter(column.id); }}
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); applyFilter(column.id); }}>Apply</button>
+                                      </div>
+                                      {colHasFilter(column.id) && (
+                                        <button type="button" className="menu-clear-filter" onClick={(e) => { e.stopPropagation(); clearColFilter(column.id); }}>✕ Clear filter</button>
+                                      )}
+                                    </>)}
+                                  </>)}
+                                  <div className="menu-divider" />
+                                  {column.id.startsWith('custom:') ? (
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); deleteCustomColumn(column.id); }}>Delete column</button>
+                                  ) : (<>
+                                    {addingColAfter === column.id ? (
+                                      <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
+                                        <input autoFocus placeholder="Column label…" value={newColName} onChange={(e) => setNewColName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); if (e.key === 'Escape') setAddingColAfter(null); }} />
+                                        <input placeholder={`ID (default: ${newColName.trim().toLowerCase().replace(/\s+/g, '_') || 'auto'})`} value={newColId} onChange={(e) => setNewColId(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); if (e.key === 'Escape') setAddingColAfter(null); }} />
+                                        <input placeholder="JS expression (optional, e.g. row.stars/row.forks)…" value={newColExpr} onChange={(e) => setNewColExpr(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); }} />
+                                        <div className="menu-add-col-actions">
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); createCustomColumn(column.id); }}>Create</button>
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); setAddingColAfter(null); setNewColName(''); setNewColId(''); setNewColExpr(''); }}>Cancel</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); setAddingColAfter(column.id); }}>+ Add column to the right</button>
+                                    )}
+                                    {leafIdsToHide.length > 0 && (<>
+                                      <div className="menu-divider" />
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); setHiddenColumns((prev) => [...prev, ...leafIdsToHide.filter((id) => !prev.includes(id))]); setOpenMenuColumn(null); setMenuAnchor(null); }}>
+                                        {isLeaf ? 'Hide column' : 'Hide group'}
+                                      </button>
+                                    </>)}
+                                  </>)}
                                 </div>,
                                 document.body,
                               )
@@ -378,18 +628,40 @@ export default function TreeTable() {
         <tbody>
           {rows.map((row: RepoRow, rowIndex: number) => (
             <tr key={rowIndex}>
-              {visibleLeafColumns.map((col: Column, colIndex: number) => {
+              {visibleLeafColumns.map((col: Column) => {
                 const bodyKey = `cell:${rowIndex}:${col.id}`;
+                const noteKey = `${String(row[PINNED_COL] ?? rowIndex)}:${col.id}`;
+                const hasNote = !!cellNotes[noteKey];
+                const hasComment = !!cellComments[noteKey];
                 return (
                   <td
                     key={bodyKey}
                     className={[
                       selectedSet.has(bodyKey) ? 'cell-selected' : [selectedRows.has(String(rowIndex)) ? 'row-highlight' : '', selectedCols.has(col.id) ? 'col-highlight' : ''].filter(Boolean).join(' '),
-                      colIndex === 0 ? 'sticky-col' : '',
+                      col.id === PINNED_COL ? 'sticky-col' : '',
                     ].filter(Boolean).join(' ') || undefined}
                     onClick={(e) => toggleSelection(bodyKey, e)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, rowKey: String(row[PINNED_COL] ?? rowIndex), colId: col.id });
+                      setCellMenuMode('menu');
+                      setDraftText('');
+                    }}
                   >
-                    {formatCell(row[col.id], col.id)}
+                    {col.id.startsWith('custom:')
+                      ? (() => {
+                          const fn = compiledExprs.get(col.id);
+                          if (!fn) return '-';
+                          try { const v = fn(row); return v != null ? String(v) : '-'; } catch { return '#ERR'; }
+                        })()
+                      : formatCell(row[col.id], col.id)}
+                    {(hasNote || hasComment) && (
+                      <span
+                        className="cell-dot"
+                        title={[hasNote && 'Note', hasComment && 'Comment'].filter(Boolean).join(' · ')}
+                      />
+                    )}
                     <div
                       className="resizer"
                       onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, col.id); }}
@@ -423,6 +695,48 @@ export default function TreeTable() {
           </span>
         ) : null}
       </div>
+      {cellMenu && createPortal(
+        <div
+          className="column-menu cell-context-menu"
+          style={{ position: 'absolute', top: cellMenu.anchor.top, left: cellMenu.anchor.left }}
+        >
+          {cellMenuMode === 'menu' && (<>
+            <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
+              {cellNotes[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit note' : 'Add note'}
+            </button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ?? ''); }}>
+              {cellComments[`${cellMenu.rowKey}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
+            </button>
+          </>)}
+          {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
+            <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
+              <textarea
+                autoFocus
+                rows={3}
+                placeholder={cellMenuMode === 'note' ? 'Note…' : 'Comment…'}
+                value={draftText}
+                onChange={(e) => setDraftText(e.target.value)}
+              />
+              <div className="menu-add-col-actions">
+                <button type="button" onClick={(e) => {
+                  e.stopPropagation();
+                  const key = `${cellMenu.rowKey}:${cellMenu.colId}`;
+                  if (cellMenuMode === 'note') {
+                    if (draftText.trim()) setCellNotes((prev) => ({ ...prev, [key]: draftText.trim() }));
+                    else setCellNotes((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+                  } else {
+                    if (draftText.trim()) setCellComments((prev) => ({ ...prev, [key]: draftText.trim() }));
+                    else setCellComments((prev) => { const { [key]: _, ...rest } = prev; return rest; });
+                  }
+                  setCellMenu(null);
+                }}>Save</button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
+              </div>
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

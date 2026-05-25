@@ -1,6 +1,8 @@
+mod custom_column;
 mod repo;
 
 use axum::{routing::get, Router};
+use axum::routing::delete;
 use repo::{AppState, fetch_sortable_cols};
 use sqlx::postgres::PgPoolOptions;
 use std::{sync::Arc, time::Duration};
@@ -25,6 +27,8 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
+    custom_column::ensure_table(&pool).await?;
+
     let sortable_cols = fetch_sortable_cols(&pool).await?;
     tracing::info!("{} sortable columns loaded from schema", sortable_cols.len());
 
@@ -36,6 +40,8 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/repos", get(repo::list_repos))
+        .route("/custom-columns", get(custom_column::list).post(custom_column::create))
+        .route("/custom-columns/:id", delete(custom_column::delete))
         .with_state(state)
         .layer(CorsLayer::permissive());
 
