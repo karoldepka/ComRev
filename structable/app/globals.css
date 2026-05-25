@@ -295,6 +295,48 @@ p {
   font-weight: 500;
 }
 
+.flag-blue   { background: rgba(37,  99,  235, 0.10) !important; box-shadow: inset 3px 0 0 #2563eb; }
+.flag-green  { background: rgba(22,  163, 74,  0.10) !important; box-shadow: inset 3px 0 0 #16a34a; }
+.flag-yellow { background: rgba(217, 119, 6,   0.10) !important; box-shadow: inset 3px 0 0 #d97706; }
+.flag-orange { background: rgba(234, 88,  12,  0.10) !important; box-shadow: inset 3px 0 0 #ea580c; }
+.flag-red    { background: rgba(220, 38,  38,  0.10) !important; box-shadow: inset 3px 0 0 #dc2626; }
+
+.menu-flag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  flex-wrap: wrap;
+}
+
+.flag-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.flag-swatch-active {
+  border-color: #111827;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.25);
+}
+
+.flag-clear {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 0.81rem;
+  padding: 2px 6px;
+}
+
+.flag-clear:hover {
+  color: #111827;
+}
+
 .cell-dot {
   display: inline-block;
   width: 5px;
@@ -476,6 +518,18 @@ p {
   .show-column-button:hover,
   .show-all-button:hover {
     background: #334155;
+  }
+
+  .flag-swatch-active {
+    border-color: #f1f5f9;
+  }
+
+  .flag-clear {
+    color: #94a3b8;
+  }
+
+  .flag-clear:hover {
+    color: #f1f5f9;
   }
 
   .menu-add-col textarea {

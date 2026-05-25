@@ -831,7 +831,23 @@ export default function TreeTable() {
           <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.repoId}:${cellMenu.colId}`]?.body ?? ''); }}>
             {cellComments[`${cellMenu.repoId}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
           </button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('flag'); }}>
+            {cellFlags[`${cellMenu.repoId}:${cellMenu.colId}`] ? `Flag: ${cellFlags[`${cellMenu.repoId}:${cellMenu.colId}`]}` : 'Flag cell'}
+          </button>
         </>)}
+        {cellMenuMode === 'flag' && (
+          <div className="menu-flag-row" onClick={(e) => e.stopPropagation()}>
+            {FLAG_COLORS.map(({ id, label, bg }) => {
+              const flagKey = `${cellMenu.repoId}:${cellMenu.colId}`;
+              const active = cellFlags[flagKey] === id;
+              return <button key={id} type="button" title={label} className={`flag-swatch${active ? ' flag-swatch-active' : ''}`} style={{ background: bg }} onClick={(e) => { e.stopPropagation(); setCellFlags((prev) => active ? (({ [flagKey]: _, ...r }) => r)(prev) : { ...prev, [flagKey]: id }); setCellMenu(null); }} />;
+            })}
+            {cellFlags[`${cellMenu.repoId}:${cellMenu.colId}`] && (
+              <button type="button" className="flag-clear" onClick={(e) => { e.stopPropagation(); const flagKey = `${cellMenu.repoId}:${cellMenu.colId}`; setCellFlags((prev) => { const { [flagKey]: _, ...r } = prev; return r; }); setCellMenu(null); }}>Clear</button>
+            )}
+            <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
+          </div>
+        )}
         {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
           <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
             <textarea
