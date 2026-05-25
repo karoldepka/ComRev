@@ -80,3 +80,5 @@ web/next-env.d.ts
 # Python virtualenvs
 **/.venv/
 backend/.venv/
+
+my-project

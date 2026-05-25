@@ -216,6 +216,58 @@ function cursorToKey(
   return `cell:${pos.row}:${col.id}`;
 }
 
+type FlagSubmenuProps = {
+  flagKeys: string[];
+  cellFlags: Record<string, string>;
+  setCellFlags: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  onClose: () => void;
+  onBack: () => void;
+};
+
+function FlagSubmenu({ flagKeys, cellFlags, setCellFlags, onClose, onBack }: FlagSubmenuProps) {
+  return (
+    <div className="menu-flag-col" onClick={(e) => e.stopPropagation()}>
+      {FLAG_COLORS.map(({ id, label, bg }) => {
+        const active = flagKeys.every((k) => cellFlags[k] === id);
+        return (
+          <button
+            key={id}
+            type="button"
+            className={`flag-swatch-row${active ? ' flag-swatch-active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setCellFlags((prev) => {
+                const next = { ...prev };
+                flagKeys.forEach((k) => { if (active) delete next[k]; else next[k] = id; });
+                return next;
+              });
+              onClose();
+            }}
+          >
+            <span className="flag-swatch-dot" style={{ background: bg }} />
+            <span>{label}</span>
+            <span className="flag-color-name">{id}</span>
+          </button>
+        );
+      })}
+      {flagKeys.some((k) => cellFlags[k]) && (
+        <button
+          type="button"
+          className="flag-clear"
+          onClick={(e) => {
+            e.stopPropagation();
+            setCellFlags((prev) => { const next = { ...prev }; flagKeys.forEach((k) => delete next[k]); return next; });
+            onClose();
+          }}
+        >
+          Clear flag
+        </button>
+      )}
+      <button type="button" onClick={(e) => { e.stopPropagation(); onBack(); }}>Back</button>
+    </div>
+  );
+}
+
 export default function TreeTable() {
   const [rows, setRows] = useState<RepoRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -225,6 +277,8 @@ export default function TreeTable() {
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [cursorPos, setCursorPos] = useState<{ row: number; col: number } | null>(null);
+  const anchorPosRef = useRef<{ row: number; col: number } | null>(null);
+  const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag'>('menu');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -245,7 +299,8 @@ export default function TreeTable() {
   const [newColId, setNewColId] = useState('');
   const [newColExpr, setNewColExpr] = useState('');
 
-  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; repoId: number; colId: string } | null>(null);
+  type CellTarget = { repoId: number; colId: string };
+  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; targets: CellTarget[] } | null>(null);
   const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment' | 'flag'>('menu');
   const [draftText, setDraftText] = useState('');
   const [cellNotes, setCellNotes] = useState<Record<string, string>>(() => {
@@ -296,6 +351,7 @@ export default function TreeTable() {
       setNewColId('');
       setNewColExpr('');
     }
+    setHeaderMenuMode('menu');
   }, [openMenuColumn]);
 
   const columns = useMemo<Column[]>(() => {
@@ -555,14 +611,32 @@ export default function TreeTable() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [openMenuColumn]);
 
-  const selectKey = (key: string, multi: boolean) => {
-    setSelectedKeys((prev) => {
-      const has = prev.includes(key);
-      if (multi) return has ? prev.filter((k) => k !== key) : [...prev, key];
-      return has ? [] : [key];
-    });
+  const selectKey = (key: string, multi: boolean, shift?: boolean) => {
     const pos = keyToCursor(key, visibleLeafColumns);
-    setCursorPos(pos);
+    if (shift && anchorPosRef.current && pos) {
+      const anchor = anchorPosRef.current;
+      const minRow = Math.min(anchor.row, pos.row);
+      const maxRow = Math.max(anchor.row, pos.row);
+      const minCol = Math.min(anchor.col, pos.col);
+      const maxCol = Math.max(anchor.col, pos.col);
+      const newKeys: string[] = [];
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          const k = cursorToKey({ row: r, col: c }, visibleLeafColumns, leafHeaderKey, rows.length);
+          if (k) newKeys.push(k);
+        }
+      }
+      setSelectedKeys(newKeys);
+      setCursorPos(pos);
+    } else {
+      setSelectedKeys((prev) => {
+        const has = prev.includes(key);
+        if (multi) return has ? prev.filter((k) => k !== key) : [...prev, key];
+        return has ? [] : [key];
+      });
+      if (!multi) anchorPosRef.current = pos;
+      setCursorPos(pos);
+    }
     wrapperRef.current?.focus();
   };
 
@@ -617,6 +691,11 @@ export default function TreeTable() {
                   ? (hiddenSet.has(column.id) ? [] : [column.id])
                   : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
                 ).filter((id) => id !== PINNED_COL);
+                const selectedHeaderLeafIds = selectedKeys
+                  .filter((k) => k.startsWith('header:'))
+                  .map((k) => k.split(':')[1])
+                  .filter((id) => id !== PINNED_COL && !hiddenSet.has(id) && allLeafColumns.some((c) => c.id === id));
+                const allColsToHide = [...new Set([...leafIdsToHide, ...selectedHeaderLeafIds])];
                 const showMenu = leafIdsToHide.length > 0 || isLeaf;
                 const isSticky = column.id === PINNED_COL;
 
@@ -627,7 +706,7 @@ export default function TreeTable() {
                     rowSpan={rowSpan}
                     data-key={headerKey}
                     className={[isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''), isSticky ? 'sticky-col' : '', cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : ''].filter(Boolean).join(' ') || undefined}
-                    onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey)}
+                    onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                     onContextMenu={(e) => {
                       if (!showMenu) return;
                       e.preventDefault();
@@ -669,62 +748,67 @@ export default function TreeTable() {
                           {openMenuColumn === column.id && menuAnchor
                             ? createPortal(
                                 <div className="column-menu" style={{ position: 'absolute', top: menuAnchor.top, left: menuAnchor.left, transform: 'translateX(-100%)' }}>
-                                  {!column.id.startsWith('custom:') && (<>
-                                    <div className="menu-section-label">Sort</div>
-                                    <button type="button" className={sort.col === column.id && sort.dir === 'asc' ? 'menu-active' : ''} onClick={(e) => { e.stopPropagation(); handleSort(column.id, 'asc'); }}>↑ Ascending</button>
-                                    <button type="button" className={sort.col === column.id && sort.dir === 'desc' ? 'menu-active' : ''} onClick={(e) => { e.stopPropagation(); handleSort(column.id, 'desc'); }}>↓ Descending</button>
-                                    {isLeaf && colFilterParam(column.id) && (<>
-                                      <div className="menu-divider" />
-                                      <div className="menu-section-label">Filter</div>
-                                      <div className="menu-filter">
-                                        <input
-                                          type={colType(column.id) === 'numeric' ? 'number' : 'text'}
-                                          placeholder={colFilterPlaceholder(column.id)}
-                                          value={filterDraft[column.id] ?? ''}
-                                          onChange={(e) => setFilterDraft((prev) => ({ ...prev, [column.id]: e.target.value }))}
-                                          onKeyDown={(e) => { if (e.key === 'Enter') applyFilter(column.id); }}
-                                          onClick={(e) => e.stopPropagation()}
-                                        />
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); applyFilter(column.id); }}>Apply</button>
-                                      </div>
-                                      {colHasFilter(column.id) && (
-                                        <button type="button" className="menu-clear-filter" onClick={(e) => { e.stopPropagation(); clearColFilter(column.id); }}>✕ Clear filter</button>
-                                      )}
-                                    </>)}
-                                  </>)}
-                                  <div className="menu-divider" />
-                                  {column.id.startsWith('custom:') ? (
-                                    <button type="button" onClick={(e) => { e.stopPropagation(); deleteCustomColumn(column.id); }}>Delete column</button>
+                                  {headerMenuMode === 'flag' ? (
+                                    <FlagSubmenu
+                                      flagKeys={[`header:${column.id}`]}
+                                      cellFlags={cellFlags}
+                                      setCellFlags={setCellFlags}
+                                      onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
+                                      onBack={() => setHeaderMenuMode('menu')}
+                                    />
                                   ) : (<>
-                                    {addingColAfter === column.id ? (
-                                      <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
-                                        <input autoFocus placeholder="Column label…" value={newColName} onChange={(e) => setNewColName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); if (e.key === 'Escape') setAddingColAfter(null); }} />
-                                        <input placeholder={`ID (default: ${newColName.trim().toLowerCase().replace(/\s+/g, '_') || 'auto'})`} value={newColId} onChange={(e) => setNewColId(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); if (e.key === 'Escape') setAddingColAfter(null); }} />
-                                        <input placeholder="JS expression (optional, e.g. row.stars/row.forks)…" value={newColExpr} onChange={(e) => setNewColExpr(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); }} />
-                                        <div className="menu-add-col-actions">
-                                          <button type="button" onClick={(e) => { e.stopPropagation(); createCustomColumn(column.id); }}>Create</button>
-                                          <button type="button" onClick={(e) => { e.stopPropagation(); setAddingColAfter(null); setNewColName(''); setNewColId(''); setNewColExpr(''); }}>Cancel</button>
+                                    {!column.id.startsWith('custom:') && (<>
+                                      <div className="menu-section-label">Sort</div>
+                                      <button type="button" className={sort.col === column.id && sort.dir === 'asc' ? 'menu-active' : ''} onClick={(e) => { e.stopPropagation(); handleSort(column.id, 'asc'); }}>↑ Ascending</button>
+                                      <button type="button" className={sort.col === column.id && sort.dir === 'desc' ? 'menu-active' : ''} onClick={(e) => { e.stopPropagation(); handleSort(column.id, 'desc'); }}>↓ Descending</button>
+                                      {isLeaf && colFilterParam(column.id) && (<>
+                                        <div className="menu-divider" />
+                                        <div className="menu-section-label">Filter</div>
+                                        <div className="menu-filter">
+                                          <input
+                                            type={colType(column.id) === 'numeric' ? 'number' : 'text'}
+                                            placeholder={colFilterPlaceholder(column.id)}
+                                            value={filterDraft[column.id] ?? ''}
+                                            onChange={(e) => setFilterDraft((prev) => ({ ...prev, [column.id]: e.target.value }))}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') applyFilter(column.id); }}
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); applyFilter(column.id); }}>Apply</button>
                                         </div>
-                                      </div>
-                                    ) : (
-                                      <button type="button" onClick={(e) => { e.stopPropagation(); setAddingColAfter(column.id); }}>+ Add column to the right</button>
-                                    )}
-                                    {leafIdsToHide.length > 0 && (<>
-                                      <div className="menu-divider" />
-                                      <button type="button" onClick={(e) => { e.stopPropagation(); setHiddenColumns((prev) => [...prev, ...leafIdsToHide.filter((id) => !prev.includes(id))]); setOpenMenuColumn(null); setMenuAnchor(null); }}>
-                                        {isLeaf ? 'Hide column' : 'Hide group'}
-                                      </button>
+                                        {colHasFilter(column.id) && (
+                                          <button type="button" className="menu-clear-filter" onClick={(e) => { e.stopPropagation(); clearColFilter(column.id); }}>✕ Clear filter</button>
+                                        )}
+                                      </>)}
                                     </>)}
+                                    <div className="menu-divider" />
+                                    {column.id.startsWith('custom:') ? (
+                                      <button type="button" onClick={(e) => { e.stopPropagation(); deleteCustomColumn(column.id); }}>Delete column</button>
+                                    ) : (<>
+                                      {addingColAfter === column.id ? (
+                                        <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
+                                          <input autoFocus placeholder="Column label…" value={newColName} onChange={(e) => setNewColName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); if (e.key === 'Escape') setAddingColAfter(null); }} />
+                                          <input placeholder={`ID (default: ${newColName.trim().toLowerCase().replace(/\s+/g, '_') || 'auto'})`} value={newColId} onChange={(e) => setNewColId(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); if (e.key === 'Escape') setAddingColAfter(null); }} />
+                                          <input placeholder="JS expression (optional, e.g. row.stars/row.forks)…" value={newColExpr} onChange={(e) => setNewColExpr(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createCustomColumn(column.id); }} />
+                                          <div className="menu-add-col-actions">
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); createCustomColumn(column.id); }}>Create</button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setAddingColAfter(null); setNewColName(''); setNewColId(''); setNewColExpr(''); }}>Cancel</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); setAddingColAfter(column.id); }}>+ Add column to the right</button>
+                                      )}
+                                      {allColsToHide.length > 0 && (<>
+                                        <div className="menu-divider" />
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); setHiddenColumns((prev) => [...prev, ...allColsToHide.filter((id) => !prev.includes(id))]); setOpenMenuColumn(null); setMenuAnchor(null); }}>
+                                          {allColsToHide.length > 1 ? `Hide ${allColsToHide.length} columns` : (isLeaf ? 'Hide column' : 'Hide group')}
+                                        </button>
+                                      </>)}
+                                    </>)}
+                                    <div className="menu-divider" />
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); setHeaderMenuMode('flag'); }}>
+                                      {cellFlags[`header:${column.id}`] ? `Flag: ${cellFlags[`header:${column.id}`]} →` : 'Flag →'}
+                                    </button>
                                   </>)}
-                                  <div className="menu-divider" />
-                                  <div className="menu-section-label">Flag</div>
-                                  <div className="menu-flag-row" onClick={(e) => e.stopPropagation()}>
-                                    {FLAG_COLORS.map(({ id, label, bg }) => {
-                                      const flagKey = `header:${column.id}`;
-                                      return <button key={id} type="button" title={label} className={`flag-swatch${cellFlags[flagKey] === id ? ' flag-swatch-active' : ''}`} style={{ background: bg }} onClick={(e) => { e.stopPropagation(); setCellFlags((prev) => prev[flagKey] === id ? (({ [flagKey]: _, ...r }) => r)(prev) : { ...prev, [flagKey]: id }); setOpenMenuColumn(null); setMenuAnchor(null); }} />;
-                                    })}
-                                    {cellFlags[`header:${column.id}`] && <button type="button" className="flag-clear" onClick={(e) => { e.stopPropagation(); setCellFlags((prev) => { const { [`header:${column.id}`]: _, ...r } = prev; return r; }); setOpenMenuColumn(null); setMenuAnchor(null); }}>×</button>}
-                                  </div>
                                 </div>,
                                 document.body,
                               )
@@ -761,11 +845,19 @@ export default function TreeTable() {
                       col.id === PINNED_COL ? 'sticky-col' : '',
                       cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
                     ].filter(Boolean).join(' ') || undefined}
-                    onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey)}
+                    onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, repoId: Number(row['github_id'] ?? 0), colId: col.id });
+                      const isSelected = selectedSet.has(bodyKey);
+                      const selBodyKeys = selectedKeys.filter((k) => k.startsWith('cell:'));
+                      const targets = (isSelected && selBodyKeys.length > 1)
+                        ? selBodyKeys.map((k) => {
+                            const p = k.split(':');
+                            return { repoId: Number(rows[parseInt(p[1], 10)]?.['github_id'] ?? 0), colId: p[2] };
+                          })
+                        : [{ repoId: Number(row['github_id'] ?? 0), colId: col.id }];
+                      setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, targets });
                       setCellMenuMode('menu');
                       setDraftText('');
                     }}
@@ -820,61 +912,80 @@ export default function TreeTable() {
       ) : null}
     </div>
     {cellMenu && createPortal(
-      <div
-        className="column-menu cell-context-menu"
-        style={{ position: 'absolute', top: cellMenu.anchor.top, left: cellMenu.anchor.left }}
-      >
-        {cellMenuMode === 'menu' && (<>
-          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(cellNotes[`${cellMenu.repoId}:${cellMenu.colId}`] ?? ''); }}>
-            {cellNotes[`${cellMenu.repoId}:${cellMenu.colId}`] ? 'Edit note' : 'Add note'}
-          </button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(cellComments[`${cellMenu.repoId}:${cellMenu.colId}`]?.body ?? ''); }}>
-            {cellComments[`${cellMenu.repoId}:${cellMenu.colId}`] ? 'Edit comment' : 'Add comment'}
-          </button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('flag'); }}>
-            {cellFlags[`${cellMenu.repoId}:${cellMenu.colId}`] ? `Flag: ${cellFlags[`${cellMenu.repoId}:${cellMenu.colId}`]}` : 'Flag cell'}
-          </button>
-        </>)}
-        {cellMenuMode === 'flag' && (
-          <div className="menu-flag-row" onClick={(e) => e.stopPropagation()}>
-            {FLAG_COLORS.map(({ id, label, bg }) => {
-              const flagKey = `${cellMenu.repoId}:${cellMenu.colId}`;
-              const active = cellFlags[flagKey] === id;
-              return <button key={id} type="button" title={label} className={`flag-swatch${active ? ' flag-swatch-active' : ''}`} style={{ background: bg }} onClick={(e) => { e.stopPropagation(); setCellFlags((prev) => active ? (({ [flagKey]: _, ...r }) => r)(prev) : { ...prev, [flagKey]: id }); setCellMenu(null); }} />;
-            })}
-            {cellFlags[`${cellMenu.repoId}:${cellMenu.colId}`] && (
-              <button type="button" className="flag-clear" onClick={(e) => { e.stopPropagation(); const flagKey = `${cellMenu.repoId}:${cellMenu.colId}`; setCellFlags((prev) => { const { [flagKey]: _, ...r } = prev; return r; }); setCellMenu(null); }}>Clear</button>
+      (() => {
+        const { targets } = cellMenu;
+        const n = targets.length;
+        const isSingle = n === 1;
+        const firstKey = `${targets[0].repoId}:${targets[0].colId}`;
+        const allKeys = targets.map(({ repoId, colId }) => `${repoId}:${colId}`);
+        return (
+          <div
+            className="column-menu cell-context-menu"
+            style={{ position: 'absolute', top: cellMenu.anchor.top, left: cellMenu.anchor.left }}
+          >
+            {cellMenuMode === 'menu' && (<>
+              {isSingle && n > 0 && <div className="menu-section-label" style={{ paddingTop: 6 }}>{targets[0].colId}</div>}
+              {!isSingle && <div className="menu-section-label" style={{ paddingTop: 6 }}>{n} cells selected</div>}
+              <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('note'); setDraftText(isSingle ? (cellNotes[firstKey] ?? '') : ''); }}>
+                {isSingle ? (cellNotes[firstKey] ? 'Edit note' : 'Add note') : `Add note to ${n} cells`}
+              </button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('comment'); setDraftText(isSingle ? (cellComments[firstKey]?.body ?? '') : ''); }}>
+                {isSingle ? (cellComments[firstKey] ? 'Edit comment' : 'Add comment') : `Comment ${n} cells`}
+              </button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('flag'); }}>
+                {isSingle ? (cellFlags[firstKey] ? `Flag: ${cellFlags[firstKey]}` : 'Flag cell') : `Flag ${n} cells`}
+              </button>
+              {(() => {
+                const colsToHide = [...new Set(targets.map((t) => t.colId))].filter((id) => id !== PINNED_COL);
+                if (colsToHide.length === 0) return null;
+                return (<>
+                  <div className="menu-divider" />
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setHiddenColumns((prev) => [...prev, ...colsToHide.filter((id) => !prev.includes(id))]); setCellMenu(null); }}>
+                    {colsToHide.length === 1 ? 'Hide column' : `Hide ${colsToHide.length} columns`}
+                  </button>
+                </>);
+              })()}
+            </>)}
+            {cellMenuMode === 'flag' && (
+              <FlagSubmenu
+                flagKeys={allKeys}
+                cellFlags={cellFlags}
+                setCellFlags={setCellFlags}
+                onClose={() => setCellMenu(null)}
+                onBack={() => setCellMenuMode('menu')}
+              />
             )}
-            <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
+            {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
+              <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
+                <textarea
+                  autoFocus
+                  rows={3}
+                  placeholder={cellMenuMode === 'note' ? 'Note…' : 'Comment…'}
+                  value={draftText}
+                  onChange={(e) => setDraftText(e.target.value)}
+                />
+                <div className="menu-add-col-actions">
+                  <button type="button" onClick={(e) => {
+                    e.stopPropagation();
+                    if (cellMenuMode === 'note') {
+                      setCellNotes((prev) => {
+                        const next = { ...prev };
+                        allKeys.forEach((k) => { if (draftText.trim()) next[k] = draftText.trim(); else delete next[k]; });
+                        return next;
+                      });
+                      setCellMenu(null);
+                    } else {
+                      Promise.all(targets.map(({ repoId, colId }) => saveComment(repoId, colId, draftText)))
+                        .then(() => setCellMenu(null));
+                    }
+                  }}>Save</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {(cellMenuMode === 'note' || cellMenuMode === 'comment') && (
-          <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
-            <textarea
-              autoFocus
-              rows={3}
-              placeholder={cellMenuMode === 'note' ? 'Note…' : 'Comment…'}
-              value={draftText}
-              onChange={(e) => setDraftText(e.target.value)}
-            />
-            <div className="menu-add-col-actions">
-              <button type="button" onClick={(e) => {
-                e.stopPropagation();
-                const { repoId, colId } = cellMenu;
-                const key = `${repoId}:${colId}`;
-                if (cellMenuMode === 'note') {
-                  if (draftText.trim()) setCellNotes((prev) => ({ ...prev, [key]: draftText.trim() }));
-                  else setCellNotes((prev) => { const { [key]: _, ...rest } = prev; return rest; });
-                  setCellMenu(null);
-                } else {
-                  saveComment(repoId, colId, draftText).then(() => setCellMenu(null));
-                }
-              }}>Save</button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); setCellMenuMode('menu'); }}>Back</button>
-            </div>
-          </div>
-        )}
-      </div>,
+        );
+      })(),
       document.body,
     )}
     </>
