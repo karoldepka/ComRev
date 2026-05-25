@@ -106,7 +106,7 @@ fn default_per_page() -> u32 { 50 }
 // ─── Filter builder ───────────────────────────────────────────────────────────
 
 fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RepoQuery) {
-    qb.push(" WHERE 1=1");
+    qb.push(" WHERE (github_id IS NULL OR github_id NOT IN (SELECT repo_id FROM hidden_rows))");
 
     macro_rules! range {
         ($col:literal, $min:expr, $max:expr) => {

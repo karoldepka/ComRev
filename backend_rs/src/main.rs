@@ -1,5 +1,8 @@
 mod comment;
 mod custom_column;
+mod flag;
+mod hidden_column;
+mod hidden_row;
 mod repo;
 
 use axum::{routing::get, Router};
@@ -30,6 +33,9 @@ async fn main() -> anyhow::Result<()> {
 
     custom_column::ensure_table(&pool).await?;
     comment::ensure_table(&pool).await?;
+    flag::ensure_table(&pool).await?;
+    hidden_row::ensure_table(&pool).await?;
+    hidden_column::ensure_table(&pool).await?;
 
     let sortable_cols = fetch_sortable_cols(&pool).await?;
     tracing::info!("{} sortable columns loaded from schema", sortable_cols.len());
@@ -46,6 +52,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/custom-columns/:id", delete(custom_column::delete))
         .route("/comments", get(comment::list).post(comment::upsert))
         .route("/comments/:id", delete(comment::delete))
+        .route("/flags", get(flag::list).put(flag::upsert))
+        .route("/flags/:key", delete(flag::delete))
+        .route("/hidden-rows", get(hidden_row::list).post(hidden_row::add))
+        .route("/hidden-rows/:repo_id", delete(hidden_row::remove))
+        .route("/hidden-columns", get(hidden_column::list).post(hidden_column::add))
+        .route("/hidden-columns/:column_id", delete(hidden_column::remove))
         .with_state(state)
         .layer(CorsLayer::permissive());
 
