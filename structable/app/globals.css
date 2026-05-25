@@ -1,0 +1,378 @@
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f6f8fb;
+  color: #111827;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #f6f8fb;
+  line-height: 1.5;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.page-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #2563eb;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 2.5vw, 3rem);
+  line-height: 1.05;
+}
+
+p {
+  margin: 0;
+  color: #4b5563;
+}
+
+.table-shell {
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+  padding: 20px;
+}
+
+.tree-table-wrap {
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.tree-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.tree-table th,
+.tree-table td {
+  position: relative;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 0.95rem;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.tree-table th {
+  overflow: visible;
+}
+
+.tree-table td .resizer {
+  top: 0;
+  height: 100%;
+}
+
+.tree-table th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #111827;
+}
+
+.tree-table td {
+  background: #ffffff;
+}
+
+.tree-table tr:last-child td {
+  border-bottom: none;
+}
+
+.tree-table th.sticky-col,
+.tree-table td.sticky-col {
+  position: sticky;
+  left: 0;
+}
+
+.tree-table th.sticky-col {
+  z-index: 2;
+  background: #f8fafc;
+  box-shadow: 2px 0 6px -2px rgba(15, 23, 42, 0.08);
+}
+
+.tree-table td.sticky-col {
+  z-index: 1;
+  background: #ffffff;
+  box-shadow: 2px 0 6px -2px rgba(15, 23, 42, 0.08);
+}
+
+.cell-selected {
+  background: #e0f2fe !important;
+}
+
+.header-selected {
+  background: #dbeafe !important;
+}
+
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 15%;
+  right: 3px;
+  width: 1px;
+  height: 70%;
+  background: rgba(15, 23, 42, 0.15);
+  border-radius: 1px;
+  transition: background 0.15s;
+}
+
+.resizer:hover::after {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.resizer:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.column-group {
+  font-size: 0.9rem;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.column-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+}
+
+.column-action-button:hover {
+  background: #eff6ff;
+  border-color: #c7d2fe;
+}
+
+.column-menu {
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+  z-index: 9999;
+}
+
+.column-menu button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 14px;
+  color: #111827;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.column-menu button:hover {
+  background: #f8fafc;
+}
+
+.hidden-columns-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 18px;
+}
+
+.show-column-button,
+.show-all-button {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #1e293b;
+  border-radius: 9999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.show-column-button:hover,
+.show-all-button:hover {
+  background: #e2e8f0;
+}
+
+.show-all-button {
+  font-weight: 500;
+}
+
+.table-note {
+  margin-top: 16px;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    background: #0f172a;
+    color: #f1f5f9;
+  }
+
+  body {
+    background: #0f172a;
+  }
+
+  .eyebrow {
+    color: #60a5fa;
+  }
+
+  p {
+    color: #94a3b8;
+  }
+
+  .table-shell {
+    background: #1e293b;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+  }
+
+  .tree-table-wrap {
+    border-color: #334155;
+  }
+
+  .tree-table th,
+  .tree-table td {
+    border-bottom-color: #334155;
+  }
+
+  .tree-table th {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  .tree-table td {
+    background: #0f172a;
+  }
+
+  .tree-table th.sticky-col {
+    background: #1e293b;
+    box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.4);
+  }
+
+  .tree-table td.sticky-col {
+    background: #0f172a;
+    box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.4);
+  }
+
+  .cell-selected {
+    background: #1e3a5f !important;
+  }
+
+  .header-selected {
+    background: #1e3a8a !important;
+  }
+
+  .resizer::after {
+    background: rgba(226, 232, 240, 0.2);
+  }
+
+  .resizer:hover::after {
+    background: rgba(226, 232, 240, 0.5);
+  }
+
+  .resizer:hover {
+    background: rgba(226, 232, 240, 0.06);
+  }
+
+  .column-group {
+    color: #94a3b8;
+  }
+
+  .column-action-button {
+    color: #94a3b8;
+  }
+
+  .column-action-button:hover {
+    background: #1e3a8a;
+    border-color: #3b5a9a;
+  }
+
+  .column-menu {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  .column-menu button {
+    color: #f1f5f9;
+  }
+
+  .column-menu button:hover {
+    background: #334155;
+  }
+
+  .show-column-button,
+  .show-all-button {
+    border-color: #475569;
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  .show-column-button:hover,
+  .show-all-button:hover {
+    background: #334155;
+  }
+
+  .table-note {
+    color: #64748b;
+  }
+}
