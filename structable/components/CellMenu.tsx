@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import FlagSubmenu from './FlagSubmenu';
 import type { CellTarget } from '../types/table';
@@ -30,6 +31,41 @@ export default function CellMenu({
   setDraftText, onSetMode, onSaveNote, onSaveComment,
   onHideCols, onHideRows, onClose,
 }: CellMenuProps) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({
+    position: 'absolute',
+    top: anchor.top,
+    left: anchor.left,
+    visibility: 'hidden',
+  });
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const pad = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let vLeft = anchor.left - window.scrollX;
+    let vTop  = anchor.top  - window.scrollY;
+    if (vLeft < pad)             vLeft = pad;
+    if (vLeft + width  > vw - pad) vLeft = vw - width - pad;
+    if (vTop  < pad)             vTop  = pad;
+    if (vTop  + height > vh - pad) vTop  = vh - height - pad;
+    setMenuStyle({
+      position: 'absolute',
+      top: vTop  + window.scrollY,
+      left: vLeft + window.scrollX,
+      visibility: 'visible',
+    });
+  }, [anchor.top, anchor.left]);
+
   const n = targets.length;
   const isSingle = n === 1;
   const firstKey = `${targets[0].repoId}:${targets[0].colId}`;
@@ -42,10 +78,7 @@ export default function CellMenu({
 
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div
-      className="column-menu cell-context-menu"
-      style={{ position: 'absolute', top: anchor.top, left: anchor.left }}
-    >
+    <div ref={menuRef} className="column-menu cell-context-menu" style={menuStyle}>
       {mode === 'menu' && (
         <>
           {isSingle
