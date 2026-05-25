@@ -143,10 +143,16 @@ export default function TreeTable() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { return JSON.parse(localStorage.getItem('structable:hidden-columns') ?? '[]'); } catch { return []; }
+  });
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem('structable:column-widths') ?? '{}'); } catch { return {}; }
+  });
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
 
@@ -155,7 +161,7 @@ export default function TreeTable() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/repos?page=${page}&per_page=${perPage}&sort=stars_diff_24h:desc,stars:desc`)
+    fetch(`${API_BASE}/repos?page=${page}&per_page=${perPage}&sort=stars_diff_14d:desc,stars:desc`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<PagedResponse>;
@@ -188,8 +194,25 @@ export default function TreeTable() {
     });
   }, [columns]);
 
+  useEffect(() => {
+    localStorage.setItem('structable:hidden-columns', JSON.stringify(hiddenColumns));
+  }, [hiddenColumns]);
+
+  useEffect(() => {
+    if (Object.keys(columnWidths).length === 0) return;
+    localStorage.setItem('structable:column-widths', JSON.stringify(columnWidths));
+  }, [columnWidths]);
+
   const hiddenSet = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
   const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
+
+  const selectedRows = useMemo(() => new Set(
+    selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[1]),
+  ), [selectedKeys]);
+
+  const selectedCols = useMemo(() => new Set(
+    selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[2]),
+  ), [selectedKeys]);
 
   const allLeafColumns = useMemo(() => getLeafColumns(columns), [columns]);
   const visibleLeafColumns = useMemo(
@@ -287,8 +310,15 @@ export default function TreeTable() {
                     key={headerKey}
                     colSpan={colSpan}
                     rowSpan={rowSpan}
-                    className={[isHeaderSelected ? 'header-selected' : '', isSticky ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
+                    className={[isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''), isSticky ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
                     onClick={(e) => toggleSelection(headerKey, e)}
+                    onContextMenu={(e) => {
+                      if (!showMenu) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMenuAnchor({ top: e.clientY + window.scrollY, left: e.clientX + window.scrollX });
+                      setOpenMenuColumn(column.id);
+                    }}
                   >
                     <div className="column-group">
                       {column.label}
@@ -353,7 +383,10 @@ export default function TreeTable() {
                 return (
                   <td
                     key={bodyKey}
-                    className={[selectedSet.has(bodyKey) ? 'cell-selected' : '', colIndex === 0 ? 'sticky-col' : ''].filter(Boolean).join(' ') || undefined}
+                    className={[
+                      selectedSet.has(bodyKey) ? 'cell-selected' : [selectedRows.has(String(rowIndex)) ? 'row-highlight' : '', selectedCols.has(col.id) ? 'col-highlight' : ''].filter(Boolean).join(' '),
+                      colIndex === 0 ? 'sticky-col' : '',
+                    ].filter(Boolean).join(' ') || undefined}
                     onClick={(e) => toggleSelection(bodyKey, e)}
                   >
                     {formatCell(row[col.id], col.id)}

@@ -71,7 +71,6 @@ p {
 .tree-table-wrap {
   overflow: auto;
   border-radius: 16px;
-  border: 1px solid #e5e7eb;
 }
 
 .tree-table {
@@ -139,6 +138,18 @@ p {
 
 .header-selected {
   background: #dbeafe !important;
+}
+
+.row-highlight {
+  background: rgba(59, 130, 246, 0.06) !important;
+}
+
+.col-highlight {
+  background: rgba(59, 130, 246, 0.07) !important;
+}
+
+.row-highlight.col-highlight {
+  background: rgba(59, 130, 246, 0.12) !important;
 }
 
 .resizer {
@@ -319,6 +330,18 @@ p {
 
   .header-selected {
     background: #1e3a8a !important;
+  }
+
+  .row-highlight {
+    background: rgba(96, 165, 250, 0.08) !important;
+  }
+
+  .col-highlight {
+    background: rgba(96, 165, 250, 0.09) !important;
+  }
+
+  .row-highlight.col-highlight {
+    background: rgba(96, 165, 250, 0.15) !important;
   }
 
   .resizer::after {
