@@ -4,8 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TableApi } from '../services/tableApi';
 import { useToast } from '../hooks/useToast';
 import ToastStack from './ToastStack';
-import ColumnMenu from './ColumnMenu';
-import CellMenu from './CellMenu';
+import ContextMenu from './ContextMenu';
 import CellContent from './CellContent';
 
 import type { ApiComment, ApiCustomColumn, CellTarget, RepoRow } from '../types/table';
@@ -180,7 +179,15 @@ export default function TreeTable() {
     if (typeof window === 'undefined') return {};
     try { return JSON.parse(localStorage.getItem('structable:column-widths') ?? '{}'); } catch { return {}; }
   });
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { return JSON.parse(localStorage.getItem('structable:column-order') ?? '[]'); } catch { return []; }
+  });
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
+
+  // ── Drag-to-reorder state ──────────────────────────────────────────────────
+  const dragColRef = useRef<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
   // ── Hidden rows (optimistic local set) ────────────────────────────────────
   const [hiddenRepoIds, setHiddenRepoIds] = useState<Set<number>>(new Set());
@@ -188,7 +195,7 @@ export default function TreeTable() {
   // ── Column menu state ──────────────────────────────────────────────────────
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
-  const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag'>('menu');
+  const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag' | 'note' | 'comment'>('menu');
   const [addingColAfter, setAddingColAfter] = useState<string | null>(null);
   const [newColName, setNewColName] = useState('');
   const [newColId, setNewColId] = useState('');
@@ -259,7 +266,10 @@ export default function TreeTable() {
 
         // Load comments
         const commentMap: Record<string, { id: number; body: string }> = {};
-        commentsData.forEach((c) => { commentMap[`${c.repo_id}:${c.column_id}`] = { id: c.id, body: c.body }; });
+        commentsData.forEach((c) => {
+          const key = c.repo_id === 0 ? `header:${c.column_id}` : `${c.repo_id}:${c.column_id}`;
+          commentMap[key] = { id: c.id, body: c.body };
+        });
         setCellComments(commentMap);
       } catch (err) {
         addToast(`Failed to load data: ${(err as Error).message}`, 'error');
@@ -328,8 +338,19 @@ export default function TreeTable() {
         minWidth: 60,
       });
     }
+    if (columnOrder.length > 0) {
+      const map = new Map(result.map((c) => [c.id, c]));
+      const ordered: Column[] = [];
+      const seen = new Set<string>();
+      for (const id of columnOrder) {
+        const col = map.get(id);
+        if (col) { ordered.push(col); seen.add(id); }
+      }
+      for (const col of result) { if (!seen.has(col.id)) ordered.push(col); }
+      return ordered;
+    }
     return result;
-  }, [rows, customColumns]);
+  }, [rows, customColumns, columnOrder]);
 
   useEffect(() => {
     if (columns.length === 0) return;
@@ -535,7 +556,7 @@ export default function TreeTable() {
     if (!openMenuColumn) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
-      if (!t.closest('.column-menu') && !t.closest('.column-action-button')) {
+      if (!t.closest('.context-menu') && !t.closest('.column-action-button')) {
         setOpenMenuColumn(null);
         setMenuAnchor(null);
       }
@@ -548,7 +569,7 @@ export default function TreeTable() {
   useEffect(() => {
     if (!cellMenu) return;
     const onDown = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement).closest('.cell-context-menu')) setCellMenu(null);
+      if (!(e.target as HTMLElement).closest('.context-menu')) setCellMenu(null);
     };
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
@@ -613,6 +634,24 @@ export default function TreeTable() {
     }
   };
 
+  const saveHeaderComment = async (colId: string, body: string) => {
+    const noteKey = `header:${colId}`;
+    if (!body.trim()) {
+      const existing = cellComments[noteKey];
+      if (existing) {
+        api.deleteComment(existing.id);
+        setCellComments((prev) => { const { [noteKey]: _, ...rest } = prev; return rest; });
+      }
+    } else {
+      try {
+        const saved = await api.upsertComment(0, colId, body);
+        setCellComments((prev) => ({ ...prev, [noteKey]: { id: saved.id, body: saved.body } }));
+      } catch (err) {
+        addToast(`Failed to save comment: ${(err as Error).message}`, 'error');
+      }
+    }
+  };
+
   const saveNote = (keys: string[], text: string) => {
     setCellNotes((prev) => {
       const next = { ...prev };
@@ -672,10 +711,38 @@ export default function TreeTable() {
                       colSpan={colSpan}
                       rowSpan={rowSpan}
                       data-key={headerKey}
+                      draggable={isLeaf && column.id !== PINNED_COL}
+                      onDragStart={(e) => {
+                        dragColRef.current = column.id;
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        if (!dragColRef.current || dragColRef.current === column.id) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setDragOverCol(column.id);
+                      }}
+                      onDragLeave={() => setDragOverCol((prev) => prev === column.id ? null : prev)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const from = dragColRef.current;
+                        dragColRef.current = null;
+                        setDragOverCol(null);
+                        if (!from || from === column.id) return;
+                        const ids = allLeafColumns.map((c) => c.id);
+                        const next = ids.filter((id) => id !== from);
+                        const toIdx = next.indexOf(column.id);
+                        if (toIdx === -1) return;
+                        next.splice(toIdx, 0, from);
+                        setColumnOrder(next);
+                        localStorage.setItem('structable:column-order', JSON.stringify(next));
+                      }}
+                      onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); }}
                       className={[
                         isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''),
                         isSticky ? 'sticky-col' : '',
                         cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : '',
+                        dragOverCol === column.id ? 'col-drag-over' : '',
                       ].filter(Boolean).join(' ') || undefined}
                       onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                       onContextMenu={(e) => {
@@ -717,7 +784,8 @@ export default function TreeTable() {
                               ☰
                             </button>
                             {openMenuColumn === column.id && menuAnchor && (
-                              <ColumnMenu
+                              <ContextMenu
+                                kind="header"
                                 column={column}
                                 anchor={menuAnchor}
                                 mode={headerMenuMode}
@@ -736,6 +804,10 @@ export default function TreeTable() {
                                 setNewColName={setNewColName}
                                 setNewColId={setNewColId}
                                 setNewColExpr={setNewColExpr}
+                                draftText={draftText}
+                                setDraftText={setDraftText}
+                                headerNoteText={cellNotes[`header:${column.id}`]}
+                                headerCommentBody={cellComments[`header:${column.id}`]?.body}
                                 onSetMode={setHeaderMenuMode}
                                 onSort={handleSort}
                                 onApplyFilter={applyFilter}
@@ -744,6 +816,8 @@ export default function TreeTable() {
                                 onAddColClick={(colId) => setAddingColAfter(colId || null)}
                                 onCreateCol={createCustomColumn}
                                 onDeleteCol={deleteCustomColumn}
+                                onSaveNote={saveNote}
+                                onSaveComment={saveHeaderComment}
                                 onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
                               />
                             )}
@@ -853,7 +927,8 @@ export default function TreeTable() {
         )}
       </div>
       {cellMenu && (
-        <CellMenu
+        <ContextMenu
+          kind="cell"
           anchor={cellMenu.anchor}
           targets={cellMenu.targets}
           mode={cellMenuMode}
