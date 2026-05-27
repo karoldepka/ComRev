@@ -4,37 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import FlagSubmenu from './FlagSubmenu';
 import type { CellTarget } from '../types/table';
-
-// ── Column type helpers (header-only) ─────────────────────────────────────────
+import { colType, colFilterParam, colFilterPlaceholder } from '../utils/columnFilters';
 
 type Column = { id: string; label: string; subColumns?: Column[] };
-type ColType = 'numeric' | 'text' | 'categorical' | 'boolean';
-
-function colType(key: string): ColType | null {
-  if (key.endsWith('_at') || key === 'id' || key === 'gh_id') return null;
-  if (key === 'archived' || key === 'disabled') return 'boolean';
-  if (['name', 'description'].includes(key)) return 'text';
-  if (['language', 'license', 'visibility', 'owner_login'].includes(key)) return 'categorical';
-  if (key === 'stars' || key === 'forks' || key === 'open_issues' || key === 'size' ||
-      key === 'stars_now' || key.startsWith('stars_diff_')) return 'numeric';
-  return null;
-}
-
-function colFilterParam(key: string): string | null {
-  const t = colType(key);
-  if (t === 'text') return 'q';
-  if (t === 'numeric') return `${key}_min`;
-  if (t === 'categorical' || t === 'boolean') return key;
-  return null;
-}
-
-function colFilterPlaceholder(key: string): string {
-  const t = colType(key);
-  if (t === 'numeric') return 'Min value…';
-  if (t === 'text') return 'Search name / description…';
-  if (t === 'categorical') return 'Exact value (comma = OR)…';
-  return 'Value…';
-}
 
 // ── Discriminated props ────────────────────────────────────────────────────────
 
@@ -254,12 +226,25 @@ export default function ContextMenu(props: ContextMenuProps) {
         )}
         <div className="menu-divider" />
         {column.id.startsWith('custom:') ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onDeleteCol(column.id); }}
-          >
-            Delete column
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDeleteCol(column.id); }}
+            >
+              Delete column
+            </button>
+            {allColsToHide.length > 0 && (
+              <>
+                <div className="menu-divider" />
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onHide(allColsToHide); }}
+                >
+                  Hide column
+                </button>
+              </>
+            )}
+          </>
         ) : (
           <>
             {addingColAfter === column.id ? (

@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::repo::AppState;
+use crate::{error::db_err, repo::AppState};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CustomColumn {
@@ -50,7 +50,7 @@ pub async fn list(
     .fetch_all(&state.pool)
     .await
     .map(Json)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    .map_err(|e| db_err("list custom columns", e))
 }
 
 pub async fn create(
@@ -69,7 +69,7 @@ pub async fn create(
     .fetch_one(&state.pool)
     .await
     .map(|col| (StatusCode::CREATED, Json(col)))
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    .map_err(|e| db_err("create custom column", e))
 }
 
 pub async fn delete(
@@ -81,5 +81,5 @@ pub async fn delete(
         .execute(&state.pool)
         .await
         .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| db_err("delete custom column", e))
 }

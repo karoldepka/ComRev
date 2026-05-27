@@ -67,10 +67,95 @@ p {
   background: white;
 }
 
+.tree-table-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .tree-table-wrap {
   flex: 1;
   overflow: auto;
 }
+
+.table-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 60px;
+  z-index: 10;
+  pointer-events: none;
+  backdrop-filter: blur(1px);
+}
+
+.table-loading-overlay span {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 0.855rem;
+  color: #475569;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.sync-indicator {
+  position: fixed;
+  top: 8px;
+  right: 12px;
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 3px 10px 3px 8px;
+  font-size: 0.78rem;
+  color: #475569;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  user-select: none;
+  cursor: default;
+  line-height: 1.4;
+}
+
+.sync-cloud {
+  font-size: 1rem;
+  line-height: 1;
+  position: relative;
+  display: inline-block;
+}
+
+.sync-cloud--offline::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 130%;
+  height: 2px;
+  background: #dc2626;
+  border-radius: 1px;
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.sync-badges {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.sync-badge {
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+.sync-synced  { color: #16a34a; }
+.sync-upload  { color: #2563eb; }
+.sync-download { color: #16a34a; }
 
 .tree-table {
   border-collapse: collapse;
@@ -613,4 +698,23 @@ th[draggable] {
     background: #1e293b;
     color: #64748b;
   }
+
+  .table-loading-overlay {
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  .table-loading-overlay span {
+    background: rgba(30, 41, 59, 0.95);
+    border-color: #334155;
+    color: #94a3b8;
+  }
+
+  .sync-indicator {
+    background: rgba(30, 41, 59, 0.92);
+    border-color: #334155;
+    color: #94a3b8;
+  }
+
+  .sync-upload   { color: #60a5fa; }
+  .sync-download { color: #4ade80; }
 }

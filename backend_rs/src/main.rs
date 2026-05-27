@@ -1,5 +1,6 @@
 mod comment;
 mod custom_column;
+mod error;
 mod flag;
 mod hidden_column;
 mod hidden_row;

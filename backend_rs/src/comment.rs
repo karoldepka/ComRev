@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::repo::AppState;
+use crate::{error::db_err, repo::AppState};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Comment {
@@ -26,7 +26,7 @@ pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS cell_comments (
             id         SERIAL PRIMARY KEY,
-            repo_id    BIGINT NOT NULL,
+            repo_id    BIGINT NOT NULL DEFAULT 0,
             column_id  TEXT   NOT NULL,
             body       TEXT   NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -36,6 +36,36 @@ pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+
+    // Migration: table may have been created before repo_id / column_id were added
+    sqlx::query(
+        "ALTER TABLE cell_comments ADD COLUMN IF NOT EXISTS column_id TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "ALTER TABLE cell_comments ADD COLUMN IF NOT EXISTS repo_id BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
+
+    // Migration: add unique constraint if missing (idempotent via DO block)
+    sqlx::query(
+        "DO $$ BEGIN
+           IF NOT EXISTS (
+             SELECT 1 FROM pg_constraint
+             WHERE conrelid = 'cell_comments'::regclass
+               AND conname   = 'cell_comments_repo_id_column_id_key'
+           ) THEN
+             ALTER TABLE cell_comments
+               ADD CONSTRAINT cell_comments_repo_id_column_id_key UNIQUE (repo_id, column_id);
+           END IF;
+         END $$",
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
@@ -48,7 +78,7 @@ pub async fn list(
     .fetch_all(&state.pool)
     .await
     .map(Json)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    .map_err(|e| db_err("list comments", e))
 }
 
 pub async fn upsert(
@@ -68,7 +98,7 @@ pub async fn upsert(
     .fetch_one(&state.pool)
     .await
     .map(Json)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    .map_err(|e| db_err("upsert comment", e))
 }
 
 pub async fn delete(
@@ -80,5 +110,5 @@ pub async fn delete(
         .execute(&state.pool)
         .await
         .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| db_err("delete comment", e))
 }

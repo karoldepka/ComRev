@@ -221,6 +221,7 @@ pub struct ApiError(anyhow::Error);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
+        tracing::error!("list_repos: {}", self.0);
         (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
     }
 }

@@ -6,8 +6,10 @@ import { useToast } from '../hooks/useToast';
 import ToastStack from './ToastStack';
 import ContextMenu from './ContextMenu';
 import CellContent from './CellContent';
+import SyncIndicator from './SyncIndicator';
+import { colFilterParam } from '../utils/columnFilters';
 
-import type { ApiComment, ApiCustomColumn, CellTarget, RepoRow } from '../types/table';
+import type { ApiCustomColumn, CellTarget, PagedResponse, RepoRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -58,8 +60,6 @@ type Column = {
 };
 
 type HeaderCell = { column: Column; colSpan: number; rowSpan: number; depth: number };
-
-type PagedResponse = { data: RepoRow[]; total: number; page: number; per_page: number };
 
 // ── Utility functions ──────────────────────────────────────────────────────────
 
@@ -112,16 +112,6 @@ function buildHeaderRows(cols: Column[], maxDepth: number, hidden: Set<string>):
   return rows.map((r) => r.filter((cell) => cell.colSpan > 0));
 }
 
-function colFilterParam(key: string): string | null {
-  if (key.endsWith('_at') || ['id', 'gh_id'].includes(key)) return null;
-  if (['archived', 'disabled'].includes(key)) return key;
-  if (['name', 'description'].includes(key)) return 'q';
-  if (['language', 'license', 'visibility', 'owner_login'].includes(key)) return key;
-  if (key === 'stars' || key === 'forks' || key === 'open_issues' || key === 'size' ||
-      key === 'stars_now' || key.startsWith('stars_diff_')) return `${key}_min`;
-  return null;
-}
-
 function keyToCursor(key: string, leafCols: Column[]): { row: number; col: number } | null {
   if (key.startsWith('header:')) {
     const colId = key.split(':')[1];
@@ -155,17 +145,31 @@ export default function TreeTable() {
   const { toasts, addToast, dismissToast } = useToast();
 
   const api = useMemo(
-    () => new TableApi({ baseUrl: API_BASE, onError: (msg) => addToast(msg, 'error') }),
+    () => new TableApi({
+      baseUrl: API_BASE,
+      onError: (msg) => addToast(msg, 'error'),
+      // closure captures setPendingUploads by reference; safe because flush() is async
+      // and only executes after setState is initialized on the same render
+      onQueueChange: (count) => setPendingUploads(count),
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
+  // Initialize from queue already loaded from localStorage so indicator is correct immediately after crash/reload
+  const [pendingUploads, setPendingUploads] = useState(api.queueLength);
 
   // ── Repo data ──────────────────────────────────────────────────────────────
   const [rows, setRows] = useState<RepoRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [bootstrapping, setBootstrapping] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const fetchRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchToastedRef = useRef(false);
 
   // ── Selection ──────────────────────────────────────────────────────────────
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -233,7 +237,6 @@ export default function TreeTable() {
           api.fetchComments(),
         ]);
 
-        // Load flags into state
         const flagMap: Record<string, string> = {};
         flagsData.forEach((f) => { flagMap[f.key] = f.color; });
 
@@ -264,7 +267,6 @@ export default function TreeTable() {
         setCellFlags(flagMap);
         setHiddenRepoIds(new Set(hiddenRowsData.map((r) => r.repo_id)));
 
-        // Load comments
         const commentMap: Record<string, { id: number; body: string }> = {};
         commentsData.forEach((c) => {
           const key = c.repo_id === 0 ? `header:${c.column_id}` : `${c.repo_id}:${c.column_id}`;
@@ -272,15 +274,23 @@ export default function TreeTable() {
         });
         setCellComments(commentMap);
       } catch (err) {
-        addToast(`Failed to load data: ${(err as Error).message}`, 'error');
+        addToast(`Failed to load annotations: ${(err as Error).message}`, 'error');
+      } finally {
+        setBootstrapping(false);
       }
     };
     doBootstrap();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Fetch repos ────────────────────────────────────────────────────────────
+  // ── Fetch repos (with abort to prevent race conditions) ───────────────────
   useEffect(() => {
+    fetchAbortRef.current?.abort();
+    if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
+    const aborter = new AbortController();
+    fetchAbortRef.current = aborter;
+    fetchToastedRef.current = false;
+
     setLoading(true);
     setFetchError(null);
     const params = new URLSearchParams({
@@ -289,11 +299,31 @@ export default function TreeTable() {
       sort: `${sort.col}:${sort.dir}`,
     });
     Object.entries(filters).forEach(([k, v]) => params.set(k, v));
-    api.fetchRepos(params)
-      .then((payload) => { setRows(payload.data); setTotal(payload.total); })
-      .catch((err: Error) => { setFetchError(err.message); addToast(`Failed to load repos: ${err.message}`, 'error'); })
-      .finally(() => setLoading(false));
-  }, [page, sort, filters, api]); // eslint-disable-line react-hooks/exhaustive-deps
+    api.fetchRepos(params, aborter.signal)
+      .then((payload: PagedResponse) => {
+        setRows(payload.data);
+        setTotal(payload.total);
+        if (!aborter.signal.aborted) { setLoading(false); setFetchError(null); }
+      })
+      .catch((err: Error) => {
+        if (err.name === 'AbortError') return;
+        setFetchError(err.message);
+        if (!fetchToastedRef.current) {
+          addToast(`Failed to load repos: ${err.message}`, 'error');
+          fetchToastedRef.current = true;
+        }
+        // Keep loading=true so ↓ indicator stays on; retry in 1s
+        fetchRetryTimerRef.current = setTimeout(() => {
+          fetchRetryTimerRef.current = null;
+          setRetryKey((k) => k + 1);
+        }, 1_000);
+      });
+
+    return () => {
+      aborter.abort();
+      if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
+    };
+  }, [page, sort, filters, api, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch custom columns ───────────────────────────────────────────────────
   useEffect(() => {
@@ -302,7 +332,7 @@ export default function TreeTable() {
       .catch((err: Error) => addToast(`Failed to load custom columns: ${err.message}`, 'error'));
   }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Persist ────────────────────────────────────────────────────────────────
+  // ── Persist column widths and cell notes ───────────────────────────────────
   useEffect(() => {
     if (Object.keys(columnWidths).length > 0) {
       localStorage.setItem('structable:column-widths', JSON.stringify(columnWidths));
@@ -313,7 +343,7 @@ export default function TreeTable() {
     localStorage.setItem('structable:cell-notes', JSON.stringify(cellNotes));
   }, [cellNotes]);
 
-  // ── Reset menu modes when menu closes ─────────────────────────────────────
+  // ── Reset column menu modes when it closes ─────────────────────────────────
   useEffect(() => {
     if (!openMenuColumn) {
       setAddingColAfter(null);
@@ -662,242 +692,267 @@ export default function TreeTable() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (loading) return <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>;
-  if (fetchError && rows.length === 0) return <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>;
+  const isDownloading = loading || bootstrapping;
+
+  // Initial empty state: no data yet
+  if (rows.length === 0 && !fetchError) {
+    return (
+      <>
+        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+        {loading && <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>}
+      </>
+    );
+  }
+  if (rows.length === 0 && fetchError) {
+    return (
+      <>
+        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+        <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>
+      </>
+    );
+  }
 
   return (
     <>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
-      <div
-        ref={wrapperRef}
-        className="tree-table-wrap"
-        tabIndex={0}
-        onKeyDown={handleTableKeyDown}
-        style={{ outline: 'none' }}
-      >
-        <table className="tree-table">
-          <colgroup>
-            {visibleLeafColumns.map((col) => (
-              <col key={col.id} style={{ width: `${columnWidths[col.id] ?? 120}px`, minWidth: '8px' }} />
-            ))}
-          </colgroup>
-          <thead>
-            {headerRows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map(({ column, colSpan, rowSpan, depth }: HeaderCell) => {
-                  const headerKey = `header:${column.id}:${depth}`;
-                  const isHeaderSelected = selectedSet.has(headerKey);
-                  const resizerTargetId = resizerTargetByColumn.get(column.id);
-                  const isLeaf = !column.subColumns?.length;
-                  const leafIdsToHide = (isLeaf
-                    ? (hiddenSet.has(column.id) ? [] : [column.id])
-                    : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
-                  ).filter((id) => id !== PINNED_COL);
-                  const selectedHeaderLeafIds = selectedKeys
-                    .filter((k) => k.startsWith('header:'))
-                    .map((k) => k.split(':')[1])
-                    .filter((id) => id !== PINNED_COL && !hiddenSet.has(id) && allLeafColumns.some((c) => c.id === id));
-                  const allColsToHide = [...new Set([...leafIdsToHide, ...selectedHeaderLeafIds])];
-                  const showMenu = leafIdsToHide.length > 0 || isLeaf;
-                  const isSticky = column.id === PINNED_COL;
-                  const colHasFilter = () => {
-                    const p = colFilterParam(column.id);
-                    return !!p && !!filters[p];
-                  };
-
-                  return (
-                    <th
-                      key={headerKey}
-                      colSpan={colSpan}
-                      rowSpan={rowSpan}
-                      data-key={headerKey}
-                      draggable={isLeaf && column.id !== PINNED_COL}
-                      onDragStart={(e) => {
-                        dragColRef.current = column.id;
-                        e.dataTransfer.effectAllowed = 'move';
-                      }}
-                      onDragOver={(e) => {
-                        if (!dragColRef.current || dragColRef.current === column.id) return;
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragOverCol(column.id);
-                      }}
-                      onDragLeave={() => setDragOverCol((prev) => prev === column.id ? null : prev)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const from = dragColRef.current;
-                        dragColRef.current = null;
-                        setDragOverCol(null);
-                        if (!from || from === column.id) return;
-                        const ids = allLeafColumns.map((c) => c.id);
-                        const next = ids.filter((id) => id !== from);
-                        const toIdx = next.indexOf(column.id);
-                        if (toIdx === -1) return;
-                        next.splice(toIdx, 0, from);
-                        setColumnOrder(next);
-                        localStorage.setItem('structable:column-order', JSON.stringify(next));
-                      }}
-                      onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); }}
-                      className={[
-                        isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''),
-                        isSticky ? 'sticky-col' : '',
-                        cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : '',
-                        dragOverCol === column.id ? 'col-drag-over' : '',
-                      ].filter(Boolean).join(' ') || undefined}
-                      onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
-                      onContextMenu={(e) => {
-                        if (!showMenu) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setMenuAnchor({ top: e.clientY + window.scrollY, left: e.clientX + window.scrollX });
-                        setOpenMenuColumn(column.id);
-                      }}
-                    >
-                      <div className="column-group">
-                        <span className="col-label">
-                          {column.label}
-                          {sort.col === column.id && (
-                            <span className="sort-indicator">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span>
-                          )}
-                          {isLeaf && colHasFilter() && (
-                            <span className="filter-indicator" title="Filtered">●</span>
-                          )}
-                        </span>
-                        {showMenu && (
-                          <span className="header-actions">
-                            <button
-                              type="button"
-                              className="column-action-button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (openMenuColumn === column.id) {
-                                  setOpenMenuColumn(null);
-                                  setMenuAnchor(null);
-                                } else {
-                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                  setMenuAnchor({ top: rect.bottom + window.scrollY + 6, left: rect.right + window.scrollX });
-                                  setOpenMenuColumn(column.id);
-                                }
-                              }}
-                              aria-label={`Column actions for ${column.label}`}
-                            >
-                              ☰
-                            </button>
-                            {openMenuColumn === column.id && menuAnchor && (
-                              <ContextMenu
-                                kind="header"
-                                column={column}
-                                anchor={menuAnchor}
-                                mode={headerMenuMode}
-                                isLeaf={isLeaf}
-                                allColsToHide={allColsToHide}
-                                sort={sort}
-                                filters={filters}
-                                filterDraft={filterDraft}
-                                cellFlags={cellFlags}
-                                onFlagsChange={handleFlagsChange}
-                                addingColAfter={addingColAfter}
-                                newColName={newColName}
-                                newColId={newColId}
-                                newColExpr={newColExpr}
-                                setFilterDraft={setFilterDraft}
-                                setNewColName={setNewColName}
-                                setNewColId={setNewColId}
-                                setNewColExpr={setNewColExpr}
-                                draftText={draftText}
-                                setDraftText={setDraftText}
-                                headerNoteText={cellNotes[`header:${column.id}`]}
-                                headerCommentBody={cellComments[`header:${column.id}`]?.body}
-                                onSetMode={setHeaderMenuMode}
-                                onSort={handleSort}
-                                onApplyFilter={applyFilter}
-                                onClearFilter={clearColFilter}
-                                onHide={hideColumns}
-                                onAddColClick={(colId) => setAddingColAfter(colId || null)}
-                                onCreateCol={createCustomColumn}
-                                onDeleteCol={deleteCustomColumn}
-                                onSaveNote={saveNote}
-                                onSaveComment={saveHeaderComment}
-                                onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
-                              />
-                            )}
-                          </span>
-                        )}
-                      </div>
-                      {resizerTargetId && (
-                        <div
-                          className="resizer"
-                          onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, resizerTargetId); }}
-                        />
-                      )}
-                    </th>
-                  );
-                })}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {rows.map((row: RepoRow, rowIndex: number) => {
-              const repoId = Number(row['github_id'] ?? 0);
-              if (hiddenRepoIds.has(repoId)) return null;
-              return (
+      <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+      <div className="tree-table-container">
+        {loading && (
+          <div className="table-loading-overlay">
+            <span>Loading…</span>
+          </div>
+        )}
+        <div
+          ref={wrapperRef}
+          className="tree-table-wrap"
+          tabIndex={0}
+          onKeyDown={handleTableKeyDown}
+          style={{ outline: 'none' }}
+        >
+          <table className="tree-table">
+            <colgroup>
+              {visibleLeafColumns.map((col) => (
+                <col key={col.id} style={{ width: `${columnWidths[col.id] ?? 120}px`, minWidth: '8px' }} />
+              ))}
+            </colgroup>
+            <thead>
+              {headerRows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
-                  {visibleLeafColumns.map((col: Column) => {
-                    const bodyKey = `cell:${rowIndex}:${col.id}`;
-                    const noteKey = `${repoId}:${col.id}`;
+                  {row.map(({ column, colSpan, rowSpan, depth }: HeaderCell) => {
+                    const headerKey = `header:${column.id}:${depth}`;
+                    const isHeaderSelected = selectedSet.has(headerKey);
+                    const resizerTargetId = resizerTargetByColumn.get(column.id);
+                    const isLeaf = !column.subColumns?.length;
+                    const leafIdsToHide = (isLeaf
+                      ? (hiddenSet.has(column.id) ? [] : [column.id])
+                      : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
+                    ).filter((id) => id !== PINNED_COL);
+                    const selectedHeaderLeafIds = selectedKeys
+                      .filter((k) => k.startsWith('header:'))
+                      .map((k) => k.split(':')[1])
+                      .filter((id) => id !== PINNED_COL && !hiddenSet.has(id) && allLeafColumns.some((c) => c.id === id));
+                    const allColsToHide = [...new Set([...leafIdsToHide, ...selectedHeaderLeafIds])];
+                    const showMenu = leafIdsToHide.length > 0 || isLeaf;
+                    const isSticky = column.id === PINNED_COL;
+                    const colHasFilter = () => {
+                      const p = colFilterParam(column.id);
+                      return !!p && !!filters[p];
+                    };
+
                     return (
-                      <td
-                        key={bodyKey}
-                        data-key={bodyKey}
+                      <th
+                        key={headerKey}
+                        colSpan={colSpan}
+                        rowSpan={rowSpan}
+                        data-key={headerKey}
+                        draggable={isLeaf && column.id !== PINNED_COL}
+                        onDragStart={(e) => {
+                          dragColRef.current = column.id;
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(e) => {
+                          if (!dragColRef.current || dragColRef.current === column.id) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDragOverCol(column.id);
+                        }}
+                        onDragLeave={() => setDragOverCol((prev) => prev === column.id ? null : prev)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const from = dragColRef.current;
+                          dragColRef.current = null;
+                          setDragOverCol(null);
+                          if (!from || from === column.id) return;
+                          const ids = allLeafColumns.map((c) => c.id);
+                          const next = ids.filter((id) => id !== from);
+                          const toIdx = next.indexOf(column.id);
+                          if (toIdx === -1) return;
+                          next.splice(toIdx, 0, from);
+                          setColumnOrder(next);
+                          localStorage.setItem('structable:column-order', JSON.stringify(next));
+                        }}
+                        onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); }}
                         className={[
-                          selectedSet.has(bodyKey)
-                            ? 'cell-selected'
-                            : [
-                                selectedRows.has(String(rowIndex)) ? 'row-highlight' : '',
-                                selectedCols.has(col.id) ? 'col-highlight' : '',
-                              ].filter(Boolean).join(' '),
-                          col.id === PINNED_COL ? 'sticky-col' : '',
-                          cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
+                          isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''),
+                          isSticky ? 'sticky-col' : '',
+                          cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : '',
+                          dragOverCol === column.id ? 'col-drag-over' : '',
                         ].filter(Boolean).join(' ') || undefined}
-                        onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey)}
+                        onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                         onContextMenu={(e) => {
+                          if (!showMenu) return;
                           e.preventDefault();
                           e.stopPropagation();
-                          const isSelected = selectedSet.has(bodyKey);
-                          const selBodyKeys = selectedKeys.filter((k) => k.startsWith('cell:'));
-                          const targets: CellTarget[] = (isSelected && selBodyKeys.length > 1)
-                            ? selBodyKeys.map((k) => {
-                                const p = k.split(':');
-                                return {
-                                  repoId: Number(rows[parseInt(p[1], 10)]?.['github_id'] ?? 0),
-                                  colId: p[2],
-                                };
-                              })
-                            : [{ repoId, colId: col.id }];
-                          setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, targets });
-                          setCellMenuMode('menu');
-                          setDraftText('');
+                          setMenuAnchor({ top: e.clientY + window.scrollY, left: e.clientX + window.scrollX });
+                          setOpenMenuColumn(column.id);
                         }}
                       >
-                        <CellContent
-                          row={row}
-                          colId={col.id}
-                          compiledExpr={compiledExprs.get(col.id)}
-                          hasNote={!!cellNotes[noteKey]}
-                          hasComment={!!cellComments[noteKey]?.body}
-                        />
-                        <div
-                          className="resizer"
-                          onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, col.id); }}
-                        />
-                      </td>
+                        <div className="column-group">
+                          <span className="col-label">
+                            {column.label}
+                            {sort.col === column.id && (
+                              <span className="sort-indicator">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span>
+                            )}
+                            {isLeaf && colHasFilter() && (
+                              <span className="filter-indicator" title="Filtered">●</span>
+                            )}
+                          </span>
+                          {showMenu && (
+                            <span className="header-actions">
+                              <button
+                                type="button"
+                                className="column-action-button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (openMenuColumn === column.id) {
+                                    setOpenMenuColumn(null);
+                                    setMenuAnchor(null);
+                                  } else {
+                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    setMenuAnchor({ top: rect.bottom + window.scrollY + 6, left: rect.right + window.scrollX });
+                                    setOpenMenuColumn(column.id);
+                                  }
+                                }}
+                                aria-label={`Column actions for ${column.label}`}
+                              >
+                                ☰
+                              </button>
+                              {openMenuColumn === column.id && menuAnchor && (
+                                <ContextMenu
+                                  kind="header"
+                                  column={column}
+                                  anchor={menuAnchor}
+                                  mode={headerMenuMode}
+                                  isLeaf={isLeaf}
+                                  allColsToHide={allColsToHide}
+                                  sort={sort}
+                                  filters={filters}
+                                  filterDraft={filterDraft}
+                                  cellFlags={cellFlags}
+                                  onFlagsChange={handleFlagsChange}
+                                  addingColAfter={addingColAfter}
+                                  newColName={newColName}
+                                  newColId={newColId}
+                                  newColExpr={newColExpr}
+                                  setFilterDraft={setFilterDraft}
+                                  setNewColName={setNewColName}
+                                  setNewColId={setNewColId}
+                                  setNewColExpr={setNewColExpr}
+                                  draftText={draftText}
+                                  setDraftText={setDraftText}
+                                  headerNoteText={cellNotes[`header:${column.id}`]}
+                                  headerCommentBody={cellComments[`header:${column.id}`]?.body}
+                                  onSetMode={setHeaderMenuMode}
+                                  onSort={handleSort}
+                                  onApplyFilter={applyFilter}
+                                  onClearFilter={clearColFilter}
+                                  onHide={hideColumns}
+                                  onAddColClick={(colId) => setAddingColAfter(colId || null)}
+                                  onCreateCol={createCustomColumn}
+                                  onDeleteCol={deleteCustomColumn}
+                                  onSaveNote={saveNote}
+                                  onSaveComment={saveHeaderComment}
+                                  onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
+                                />
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        {resizerTargetId && (
+                          <div
+                            className="resizer"
+                            onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, resizerTargetId); }}
+                          />
+                        )}
+                      </th>
                     );
                   })}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ))}
+            </thead>
+            <tbody>
+              {rows.map((row: RepoRow, rowIndex: number) => {
+                const repoId = Number(row['github_id'] ?? 0);
+                if (hiddenRepoIds.has(repoId)) return null;
+                return (
+                  <tr key={rowIndex}>
+                    {visibleLeafColumns.map((col: Column) => {
+                      const bodyKey = `cell:${rowIndex}:${col.id}`;
+                      const noteKey = `${repoId}:${col.id}`;
+                      return (
+                        <td
+                          key={bodyKey}
+                          data-key={bodyKey}
+                          className={[
+                            selectedSet.has(bodyKey)
+                              ? 'cell-selected'
+                              : [
+                                  selectedRows.has(String(rowIndex)) ? 'row-highlight' : '',
+                                  selectedCols.has(col.id) ? 'col-highlight' : '',
+                                ].filter(Boolean).join(' '),
+                            col.id === PINNED_COL ? 'sticky-col' : '',
+                            cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
+                          ].filter(Boolean).join(' ') || undefined}
+                          onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const isSelected = selectedSet.has(bodyKey);
+                            const selBodyKeys = selectedKeys.filter((k) => k.startsWith('cell:'));
+                            const targets: CellTarget[] = (isSelected && selBodyKeys.length > 1)
+                              ? selBodyKeys.map((k) => {
+                                  const p = k.split(':');
+                                  return {
+                                    repoId: Number(rows[parseInt(p[1], 10)]?.['github_id'] ?? 0),
+                                    colId: p[2],
+                                  };
+                                })
+                              : [{ repoId, colId: col.id }];
+                            setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, targets });
+                            setCellMenuMode('menu');
+                            setDraftText('');
+                          }}
+                        >
+                          <CellContent
+                            row={row}
+                            colId={col.id}
+                            compiledExpr={compiledExprs.get(col.id)}
+                            hasNote={!!cellNotes[noteKey]}
+                            hasComment={!!cellComments[noteKey]?.body}
+                          />
+                          <div
+                            className="resizer"
+                            onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, col.id); }}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
       <div className="table-note">
         <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>

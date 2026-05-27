@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::repo::AppState;
+use crate::{error::db_err, repo::AppState};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct HiddenRow {
@@ -40,7 +40,7 @@ pub async fn list(
     .fetch_all(&state.pool)
     .await
     .map(Json)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    .map_err(|e| db_err("list hidden rows", e))
 }
 
 pub async fn add(
@@ -57,7 +57,7 @@ pub async fn add(
     .fetch_one(&state.pool)
     .await
     .map(|r| (StatusCode::CREATED, Json(r)))
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    .map_err(|e| db_err("add hidden row", e))
 }
 
 pub async fn remove(
@@ -69,5 +69,5 @@ pub async fn remove(
         .execute(&state.pool)
         .await
         .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| db_err("remove hidden row", e))
 }
