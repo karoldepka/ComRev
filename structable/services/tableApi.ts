@@ -19,6 +19,7 @@ type QueuedOp = {
   body?: unknown;
   retries: number;
   seq: number;      // monotonic insertion order — used to sort after IDB getAll
+  onSuccess?: (data: unknown) => void; // in-memory only; stripped before IDB write
 };
 
 type TableApiOptions = {
@@ -43,8 +44,10 @@ function idbOpen(): Promise<IDBDatabase> {
 
 function idbPut(db: IDBDatabase, record: QueuedOp): Promise<void> {
   return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { onSuccess, ...toStore } = record;
     const tx = db.transaction(OPS_STORE, 'readwrite');
-    tx.objectStore(OPS_STORE).put(record);
+    tx.objectStore(OPS_STORE).put(toStore);
     tx.oncomplete = () => resolve();
     tx.onerror    = () => reject(tx.error);
   });
@@ -181,14 +184,15 @@ export class TableApi {
     return res.json() as Promise<ApiCustomColumn>;
   }
 
-  async upsertComment(repoId: number, colId: string, body: string): Promise<ApiComment> {
-    const res = await fetch(`${this.base}/comments`, {
+  upsertComment(repoId: number, colId: string, body: string, onSuccess?: (saved: ApiComment) => void): void {
+    this.enqueue({
+      id: `comment:upsert:${repoId}:${colId}`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_id: repoId, column_id: colId, body: body.trim() }),
+      path: '/comments',
+      body: { repo_id: repoId, column_id: colId, body: body.trim() },
+      retries: 0,
+      onSuccess: onSuccess ? (data) => onSuccess(data as ApiComment) : undefined,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json() as Promise<ApiComment>;
   }
 
   // ── Queued write operations ────────────────────────────────────────────────
@@ -202,8 +206,11 @@ export class TableApi {
     this.enqueue({ id: `flag:delete:${key}`, method: 'DELETE', path: `/flags/${encodeURIComponent(key)}`, retries: 0 });
   }
 
-  deleteComment(id: number): void {
-    this.enqueue({ id: `comment:delete:${id}`, method: 'DELETE', path: `/comments/${id}`, retries: 0 });
+  deleteComment(id: number, repoId: number, colId: string): void {
+    this.cancelOp(`comment:upsert:${repoId}:${colId}`);
+    if (id > 0) {
+      this.enqueue({ id: `comment:delete:${id}`, method: 'DELETE', path: `/comments/${id}`, retries: 0 });
+    }
   }
 
   deleteCustomColumn(id: number): void {
@@ -289,11 +296,17 @@ export class TableApi {
             continue;
           }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          // Read body before mutating queue (in case json() throws)
+          let responseData: unknown;
+          if (op.onSuccess && res.status !== 204) {
+            try { responseData = await res.json(); } catch { /* no body */ }
+          }
           // Success: remove from in-memory first, then IDB
           // (at-least-once: if crash between the two, op is replayed — all ops are idempotent)
           this.queue.shift();
           await idbDelete(this.db, op.id);
           this.onQueueChange?.(this.queue.length);
+          op.onSuccess?.(responseData);
         } catch {
           op.retries++;
           if (op.retries >= 5) {

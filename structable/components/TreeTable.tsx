@@ -167,9 +167,12 @@ export default function TreeTable() {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [bootstrapRetryKey, setBootstrapRetryKey] = useState(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const fetchRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchToastedRef = useRef(false);
+  const bootstrapRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bootstrapToastedRef = useRef(false);
 
   // ── Selection ──────────────────────────────────────────────────────────────
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -273,15 +276,25 @@ export default function TreeTable() {
           commentMap[key] = { id: c.id, body: c.body };
         });
         setCellComments(commentMap);
-      } catch (err) {
-        addToast(`Failed to load annotations: ${(err as Error).message}`, 'error');
-      } finally {
         setBootstrapping(false);
+      } catch (err) {
+        if (!bootstrapToastedRef.current) {
+          addToast(`Failed to load annotations: ${(err as Error).message}`, 'error');
+          bootstrapToastedRef.current = true;
+        }
+        // Keep bootstrapping=true so ↓ stays on; retry in 1s
+        bootstrapRetryTimerRef.current = setTimeout(() => {
+          bootstrapRetryTimerRef.current = null;
+          setBootstrapRetryKey((k) => k + 1);
+        }, 1_000);
       }
     };
     doBootstrap();
+    return () => {
+      if (bootstrapRetryTimerRef.current !== null) { clearTimeout(bootstrapRetryTimerRef.current); bootstrapRetryTimerRef.current = null; }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bootstrapRetryKey]);
 
   // ── Fetch repos (with abort to prevent race conditions) ───────────────────
   useEffect(() => {
@@ -644,41 +657,40 @@ export default function TreeTable() {
     toDelete.forEach((key) => api.deleteFlag(key));
   }, [api]);
 
-  const saveComment = async (targets: CellTarget[], body: string) => {
+  const saveComment = (targets: CellTarget[], body: string) => {
     for (const { repoId, colId } of targets) {
       const noteKey = `${repoId}:${colId}`;
       if (!body.trim()) {
         const existing = cellComments[noteKey];
         if (existing) {
-          api.deleteComment(existing.id);
+          api.deleteComment(existing.id, repoId, colId);
           setCellComments((prev) => { const { [noteKey]: _, ...rest } = prev; return rest; });
         }
       } else {
-        try {
-          const saved = await api.upsertComment(repoId, colId, body);
+        const existing = cellComments[noteKey];
+        // Optimistic update; onSuccess reconciles with the server-assigned id
+        setCellComments((prev) => ({ ...prev, [noteKey]: { id: existing?.id ?? 0, body } }));
+        api.upsertComment(repoId, colId, body, (saved) => {
           setCellComments((prev) => ({ ...prev, [noteKey]: { id: saved.id, body: saved.body } }));
-        } catch (err) {
-          addToast(`Failed to save comment: ${(err as Error).message}`, 'error');
-        }
+        });
       }
     }
   };
 
-  const saveHeaderComment = async (colId: string, body: string) => {
+  const saveHeaderComment = (colId: string, body: string) => {
     const noteKey = `header:${colId}`;
     if (!body.trim()) {
       const existing = cellComments[noteKey];
       if (existing) {
-        api.deleteComment(existing.id);
+        api.deleteComment(existing.id, 0, colId);
         setCellComments((prev) => { const { [noteKey]: _, ...rest } = prev; return rest; });
       }
     } else {
-      try {
-        const saved = await api.upsertComment(0, colId, body);
+      const existing = cellComments[noteKey];
+      setCellComments((prev) => ({ ...prev, [noteKey]: { id: existing?.id ?? 0, body } }));
+      api.upsertComment(0, colId, body, (saved) => {
         setCellComments((prev) => ({ ...prev, [noteKey]: { id: saved.id, body: saved.body } }));
-      } catch (err) {
-        addToast(`Failed to save comment: ${(err as Error).message}`, 'error');
-      }
+      });
     }
   };
 
