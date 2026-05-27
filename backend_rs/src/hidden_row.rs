@@ -5,11 +5,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::db_err, repo::AppState};
+use crate::repo::AppState;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct HiddenRow {
-    pub id:      i32,
+    pub id:      String,
     pub repo_id: i64,
 }
 
@@ -21,8 +21,8 @@ pub struct AddHiddenRow {
 pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS hidden_rows (
-            id         SERIAL PRIMARY KEY,
-            repo_id    BIGINT NOT NULL UNIQUE,
+            id         TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            repo_id    BIGINT      NOT NULL UNIQUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
     )
@@ -34,40 +34,31 @@ pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 pub async fn list(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<HiddenRow>>, (StatusCode, String)> {
-    sqlx::query_as::<_, HiddenRow>(
-        "SELECT id, repo_id FROM hidden_rows ORDER BY id",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map(Json)
-    .map_err(|e| db_err("list hidden rows", e))
+    state.store.list_hidden_rows().await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 pub async fn add(
     State(state): State<AppState>,
     Json(body): Json<AddHiddenRow>,
 ) -> Result<(StatusCode, Json<HiddenRow>), (StatusCode, String)> {
-    sqlx::query_as::<_, HiddenRow>(
-        "INSERT INTO hidden_rows (repo_id)
-         VALUES ($1)
-         ON CONFLICT (repo_id) DO UPDATE SET repo_id = EXCLUDED.repo_id
-         RETURNING id, repo_id",
-    )
-    .bind(body.repo_id)
-    .fetch_one(&state.pool)
-    .await
-    .map(|r| (StatusCode::CREATED, Json(r)))
-    .map_err(|e| db_err("add hidden row", e))
+    let row = state.store.add_hidden_row(body.repo_id).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    state.store.append_ops_log("hidden_row.add", serde_json::json!({
+        "repo_id": row.repo_id,
+    }), None).await;
+    Ok((StatusCode::CREATED, Json(row)))
 }
 
 pub async fn remove(
     State(state): State<AppState>,
     Path(repo_id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    sqlx::query("DELETE FROM hidden_rows WHERE repo_id = $1")
-        .bind(repo_id)
-        .execute(&state.pool)
-        .await
-        .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| db_err("remove hidden row", e))
+    state.store.remove_hidden_row(repo_id).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    state.store.append_ops_log("hidden_row.remove", serde_json::json!({
+        "repo_id": repo_id,
+    }), None).await;
+    Ok(StatusCode::NO_CONTENT)
 }

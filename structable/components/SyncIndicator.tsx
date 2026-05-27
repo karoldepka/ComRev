@@ -6,6 +6,22 @@ type Props = {
   isDownloading: boolean;
 };
 
+type SyncState = 'synced' | 'uploading' | 'downloading' | 'offline';
+
+function deriveState(offline: boolean, uploads: boolean, downloading: boolean): SyncState {
+  if (offline)     return 'offline';
+  if (uploads)     return 'uploading';
+  if (downloading) return 'downloading';
+  return 'synced';
+}
+
+const LABELS: Record<SyncState, string> = {
+  synced:      'All changes synced',
+  uploading:   'Syncing…',
+  downloading: 'Loading…',
+  offline:     'Offline',
+};
+
 export default function SyncIndicator({ pendingUploads, isDownloading }: Props) {
   const [isOffline, setIsOffline] = useState(
     typeof navigator !== 'undefined' ? !navigator.onLine : false,
@@ -22,27 +38,23 @@ export default function SyncIndicator({ pendingUploads, isDownloading }: Props) 
     };
   }, []);
 
-  const hasUploads = pendingUploads > 0;
-  const title = isOffline
-    ? hasUploads
-      ? `Offline — ${pendingUploads} change${pendingUploads !== 1 ? 's' : ''} queued`
-      : 'Offline'
-    : hasUploads
-    ? `${pendingUploads} change${pendingUploads !== 1 ? 's' : ''} pending upload`
-    : isDownloading
-    ? 'Loading data from server…'
-    : 'All changes synced';
+  const state = deriveState(isOffline, pendingUploads > 0, isDownloading);
+  const label = state === 'uploading'
+    ? `${pendingUploads} change${pendingUploads !== 1 ? 's' : ''} pending`
+    : LABELS[state];
 
   return (
-    <div className="sync-indicator" title={title} aria-label={title}>
-      <span className={`sync-cloud${isOffline ? ' sync-cloud--offline' : ''}`}>☁</span>
-      <span className="sync-badges">
-        {hasUploads
-          ? <span className="sync-badge sync-upload">{pendingUploads}↑</span>
-          : <span className="sync-badge sync-synced">✓</span>
-        }
-        {isDownloading && <span className="sync-badge sync-download">↓</span>}
-      </span>
+    <div
+      className={`sync-indicator sync-indicator--${state}`}
+      title={label}
+      aria-label={label}
+      aria-live="polite"
+    >
+      <span className="sync-dot" />
+      <span className="sync-label">{label}</span>
+      {state === 'uploading' && (
+        <span className="sync-count">{pendingUploads}</span>
+      )}
     </div>
   );
 }

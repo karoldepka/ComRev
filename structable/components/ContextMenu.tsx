@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import FlagSubmenu from './FlagSubmenu';
-import type { CellTarget } from '../types/table';
+import type { ApiRemark, CellTarget, RemarkTarget } from '../types/table';
 import { colType, colFilterParam, colFilterPlaceholder } from '../utils/columnFilters';
 
 type Column = { id: string; label: string; subColumns?: Column[] };
@@ -13,7 +13,14 @@ type Column = { id: string; label: string; subColumns?: Column[] };
 type BaseProps = {
   anchor: { top: number; left: number };
   cellFlags: Record<string, string>;
+  cellRemarks: Record<string, ApiRemark[]>;       // key: `${repoId}:${colId}` (repoId=0 for headers)
   onFlagsChange: (toSet: Record<string, string>, toDelete: string[]) => void;
+  onSaveRemark: (
+    targets: RemarkTarget[],
+    kind: 'note' | 'comment',
+    body: string,
+    existingId: string | null,
+  ) => void;
   onClose: () => void;
 };
 
@@ -36,8 +43,6 @@ export type HeaderMenuProps = BaseProps & {
   setNewColExpr: (v: string) => void;
   draftText: string;
   setDraftText: (v: string) => void;
-  headerNoteText: string | undefined;
-  headerCommentBody: string | undefined;
   onSetMode:    (m: 'menu' | 'flag' | 'note' | 'comment') => void;
   onSort:       (col: string, dir: 'asc' | 'desc') => void;
   onApplyFilter:(colId: string) => void;
@@ -46,8 +51,6 @@ export type HeaderMenuProps = BaseProps & {
   onAddColClick:(colId: string) => void;
   onCreateCol:  (afterColId: string) => void;
   onDeleteCol:  (colId: string) => void;
-  onSaveNote:   (keys: string[], text: string) => void;
-  onSaveComment:(colId: string, text: string) => Promise<void>;
 };
 
 export type CellMenuProps = BaseProps & {
@@ -55,12 +58,8 @@ export type CellMenuProps = BaseProps & {
   targets: CellTarget[];
   mode: 'menu' | 'note' | 'comment' | 'flag';
   draftText: string;
-  cellNotes: Record<string, string>;
-  cellComments: Record<string, { id: number; body: string }>;
   setDraftText: (v: string) => void;
   onSetMode:    (m: 'menu' | 'note' | 'comment' | 'flag') => void;
-  onSaveNote:   (keys: string[], text: string) => void;
-  onSaveComment:(targets: CellTarget[], text: string) => Promise<void>;
   onHideCols:   (colIds: string[]) => void;
   onHideRows:   (repoIds: number[]) => void;
 };
@@ -72,7 +71,7 @@ const PINNED_COL = 'name';
 // ── Unified component ──────────────────────────────────────────────────────────
 
 export default function ContextMenu(props: ContextMenuProps) {
-  const { anchor, cellFlags, onFlagsChange, onClose } = props;
+  const { anchor, cellFlags, cellRemarks, onFlagsChange, onSaveRemark, onClose } = props;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -95,7 +94,6 @@ export default function ContextMenu(props: ContextMenuProps) {
     const pad = 8;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    // header: right edge sits at anchor.left; cell: left edge at anchor.left
     let vLeft = props.kind === 'header'
       ? anchor.left - window.scrollX - width
       : anchor.left - window.scrollX;
@@ -114,9 +112,9 @@ export default function ContextMenu(props: ContextMenuProps) {
 
   if (typeof document === 'undefined') return null;
 
-  // ── Header content ─────────────────────────────────────────────────────────
-
   let content: React.ReactNode;
+
+  // ── Header content ─────────────────────────────────────────────────────────
 
   if (props.kind === 'header') {
     const {
@@ -124,13 +122,16 @@ export default function ContextMenu(props: ContextMenuProps) {
       sort, filters, filterDraft, setFilterDraft,
       addingColAfter, newColName, newColId, newColExpr,
       setNewColName, setNewColId, setNewColExpr,
-      draftText, setDraftText, headerNoteText, headerCommentBody,
+      draftText, setDraftText,
       onSetMode, onSort, onApplyFilter, onClearFilter,
       onHide, onAddColClick, onCreateCol, onDeleteCol,
-      onSaveNote, onSaveComment,
     } = props;
 
-    const flagKey = `header:${column.id}`;
+    const flagKey    = `header:${column.id}`;
+    const remarkKey  = `0:${column.id}`;
+    const targets: RemarkTarget[] = [{ repo_id: 0, column_id: column.id }];
+    const existingNote    = cellRemarks[remarkKey]?.find((r) => r.kind === 'note');
+    const existingComment = cellRemarks[remarkKey]?.find((r) => r.kind === 'comment');
     const colHasFilter = () => { const p = colFilterParam(column.id); return !!p && !!filters[p]; };
 
     content = mode === 'flag' ? (
@@ -155,12 +156,9 @@ export default function ContextMenu(props: ContextMenuProps) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              if (mode === 'note') {
-                onSaveNote([flagKey], draftText);
-                onClose();
-              } else {
-                onSaveComment(column.id, draftText).then(onClose);
-              }
+              const existing = mode === 'note' ? existingNote : existingComment;
+              onSaveRemark(targets, mode, draftText, existing?.id ?? null);
+              onClose();
             }}
           >
             Save
@@ -321,15 +319,23 @@ export default function ContextMenu(props: ContextMenuProps) {
         <div className="menu-divider" />
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSetMode('note'); setDraftText(headerNoteText ?? ''); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetMode('note');
+            setDraftText(existingNote?.body ?? '');
+          }}
         >
-          {headerNoteText ? 'Edit note' : 'Add note'}
+          {existingNote ? 'Edit note' : 'Add note'}
         </button>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onSetMode('comment'); setDraftText(headerCommentBody ?? ''); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetMode('comment');
+            setDraftText(existingComment?.body ?? '');
+          }}
         >
-          {headerCommentBody ? 'Edit comment' : 'Add comment'}
+          {existingComment ? 'Edit comment' : 'Add comment'}
         </button>
         <div className="menu-divider" />
         <button
@@ -345,17 +351,20 @@ export default function ContextMenu(props: ContextMenuProps) {
 
   } else {
     const {
-      targets, mode, draftText, cellNotes, cellComments,
-      setDraftText, onSetMode, onSaveNote, onSaveComment,
+      targets, mode, draftText,
+      setDraftText, onSetMode,
       onHideCols, onHideRows,
     } = props;
 
     const n = targets.length;
     const isSingle = n === 1;
     const firstKey = `${targets[0].repoId}:${targets[0].colId}`;
-    const allKeys = targets.map(({ repoId, colId }) => `${repoId}:${colId}`);
     const colsToHide = [...new Set(targets.map((t) => t.colId))].filter((id) => id !== PINNED_COL);
     const rowsToHide = [...new Set(targets.map((t) => t.repoId))].filter((id) => id > 0);
+    const remarkTargets: RemarkTarget[] = targets.map((t) => ({ repo_id: t.repoId, column_id: t.colId }));
+
+    const existingNote    = isSingle ? cellRemarks[firstKey]?.find((r) => r.kind === 'note')    : undefined;
+    const existingComment = isSingle ? cellRemarks[firstKey]?.find((r) => r.kind === 'comment') : undefined;
 
     content = (
       <>
@@ -370,11 +379,11 @@ export default function ContextMenu(props: ContextMenuProps) {
               onClick={(e) => {
                 e.stopPropagation();
                 onSetMode('note');
-                setDraftText(isSingle ? (cellNotes[firstKey] ?? '') : '');
+                setDraftText(existingNote?.body ?? '');
               }}
             >
               {isSingle
-                ? (cellNotes[firstKey] ? 'Edit note' : 'Add note')
+                ? (existingNote ? 'Edit note' : 'Add note')
                 : `Add note to ${n} cells`}
             </button>
             <button
@@ -382,11 +391,11 @@ export default function ContextMenu(props: ContextMenuProps) {
               onClick={(e) => {
                 e.stopPropagation();
                 onSetMode('comment');
-                setDraftText(isSingle ? (cellComments[firstKey]?.body ?? '') : '');
+                setDraftText(existingComment?.body ?? '');
               }}
             >
               {isSingle
-                ? (cellComments[firstKey] ? 'Edit comment' : 'Add comment')
+                ? (existingComment ? 'Edit comment' : 'Add comment')
                 : `Comment ${n} cells`}
             </button>
             <button
@@ -420,7 +429,7 @@ export default function ContextMenu(props: ContextMenuProps) {
         )}
         {mode === 'flag' && (
           <FlagSubmenu
-            flagKeys={allKeys}
+            flagKeys={targets.map(({ repoId, colId }) => `${repoId}:${colId}`)}
             cellFlags={cellFlags}
             onFlagsChange={onFlagsChange}
             onClose={onClose}
@@ -441,12 +450,9 @@ export default function ContextMenu(props: ContextMenuProps) {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (mode === 'note') {
-                    onSaveNote(allKeys, draftText);
-                    onClose();
-                  } else {
-                    onSaveComment(targets, draftText).then(onClose);
-                  }
+                  const existing = mode === 'note' ? existingNote : existingComment;
+                  onSaveRemark(remarkTargets, mode, draftText, existing?.id ?? null);
+                  onClose();
                 }}
               >
                 Save
@@ -464,10 +470,8 @@ export default function ContextMenu(props: ContextMenuProps) {
     );
   }
 
-  const cssClass = 'context-menu';
-
   return createPortal(
-    <div ref={menuRef} className={cssClass} style={menuStyle}>
+    <div ref={menuRef} className="context-menu" style={menuStyle}>
       {content}
     </div>,
     document.body,

@@ -16,22 +16,32 @@ export type ToastMessage = {
   level: 'error' | 'warn' | 'info';
 };
 
-// API response shapes
-export type ApiComment = {
-  id: number;
-  repo_id: number;
+// ── API response shapes ────────────────────────────────────────────────────────
+// All PKs are client-generated nanoid strings so records can be created offline.
+
+export type RemarkTarget = {
+  repo_id: number;  // 0 = column-header remark
   column_id: string;
+};
+
+/** Unified note or comment. kind='note' has no resolve button; kind='comment' does. */
+export type ApiRemark = {
+  id: string;
   body: string;
+  kind: 'note' | 'comment';
+  is_private: boolean;
+  resolved_at: string | null;
+  targets: RemarkTarget[];
 };
 
 export type ApiFlag = {
-  id: number;
+  id: string;
   key: string;
   color: string;
 };
 
 export type ApiCustomColumn = {
-  id: number;
+  id: string;
   name: string;
   label: string | null;
   expression: string | null;
@@ -39,12 +49,12 @@ export type ApiCustomColumn = {
 };
 
 export type ApiHiddenRow = {
-  id: number;
+  id: string;
   repo_id: number;
 };
 
 export type ApiHiddenColumn = {
-  id: number;
+  id: string;
   column_id: string;
 };
 

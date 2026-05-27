@@ -1,17 +1,20 @@
-mod comment;
 mod custom_column;
 mod error;
 mod flag;
 mod hidden_column;
 mod hidden_row;
+mod ops_log;
+mod remark;
 mod repo;
+mod store;
+mod sync_service;
+mod types;
 
 use axum::{routing::get, Router};
 use axum::routing::delete;
-use repo::{AppState, fetch_sortable_cols};
-use sqlx::postgres::PgPoolOptions;
-use std::{sync::Arc, time::Duration};
+use repo::AppState;
 use tower_http::cors::CorsLayer;
+use tonic_web::GrpcWebLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,47 +29,58 @@ async fn main() -> anyhow::Result<()> {
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
 
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .acquire_timeout(Duration::from_secs(5))
-        .connect(&database_url)
-        .await?;
+    let data_store = store::open(&database_url).await?;
+    data_store.ensure_schema().await?;
+    tracing::info!("schema ready");
 
-    custom_column::ensure_table(&pool).await?;
-    comment::ensure_table(&pool).await?;
-    flag::ensure_table(&pool).await?;
-    hidden_row::ensure_table(&pool).await?;
-    hidden_column::ensure_table(&pool).await?;
-
-    let sortable_cols = fetch_sortable_cols(&pool).await?;
-    tracing::info!("{} sortable columns loaded from schema", sortable_cols.len());
+    let event_tx = sync_service::make_channel();
 
     let state = AppState {
-        pool,
-        sortable_cols: Arc::new(sortable_cols),
+        store:    data_store,
+        event_tx: event_tx.clone(),
     };
 
-    let app = Router::new()
+    // ── REST API (port 3001) ───────────────────────────────────────────────────
+
+    let rest_app = Router::new()
         .route("/health", get(health))
         .route("/repos", get(repo::list_repos))
         .route("/custom-columns", get(custom_column::list).post(custom_column::create))
         .route("/custom-columns/:id", delete(custom_column::delete))
-        .route("/comments", get(comment::list).post(comment::upsert))
-        .route("/comments/:id", delete(comment::delete))
+        .route("/remarks", get(remark::list))
+        .route("/remarks/:id", axum::routing::put(remark::upsert).delete(remark::delete))
         .route("/flags", get(flag::list).put(flag::upsert))
         .route("/flags/:key", delete(flag::delete))
         .route("/hidden-rows", get(hidden_row::list).post(hidden_row::add))
         .route("/hidden-rows/:repo_id", delete(hidden_row::remove))
         .route("/hidden-columns", get(hidden_column::list).post(hidden_column::add))
         .route("/hidden-columns/:column_id", delete(hidden_column::remove))
-        .with_state(state)
+        .with_state(state.clone())
         .layer(CorsLayer::permissive());
 
-    let addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("listening on {addr}");
-    axum::serve(listener, app).await?;
-    tracing::info!("after listening on {addr}");
+    let rest_addr = std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3001".to_string());
+    let rest_listener = tokio::net::TcpListener::bind(&rest_addr).await?;
+    tracing::info!("REST listening on {rest_addr}");
+
+    // ── gRPC + gRPC-Web (port 3002) ────────────────────────────────────────────
+
+    let grpc_addr: std::net::SocketAddr = std::env::var("GRPC_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:3002".to_string())
+        .parse()?;
+    tracing::info!("gRPC listening on {grpc_addr}");
+
+    let grpc_server = tonic::transport::Server::builder()
+        .accept_http1(true)
+        .layer(GrpcWebLayer::new())
+        .layer(tower_http::cors::CorsLayer::permissive())
+        .add_service(sync_service::make_server(state))
+        .serve(grpc_addr);
+
+    tokio::try_join!(
+        async { axum::serve(rest_listener, rest_app).await.map_err(anyhow::Error::from) },
+        async { grpc_server.await.map_err(anyhow::Error::from) },
+    )?;
+
     Ok(())
 }
 

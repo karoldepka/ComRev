@@ -1,0 +1,143 @@
+syntax = "proto3";
+package structable;
+
+// ── Services ───────────────────────────────────────────────────────────────────
+
+service Sync {
+  // Reads — unary
+  rpc ListFlags         (ListRequest)      returns (FlagList);
+  rpc ListRemarks       (ListRequest)      returns (RemarkList);
+  rpc ListHiddenRows    (ListRequest)      returns (HiddenRowList);
+  rpc ListHiddenColumns (ListRequest)      returns (HiddenColumnList);
+  rpc ListCustomColumns (ListRequest)      returns (CustomColumnList);
+  rpc ListRepos         (ListReposRequest) returns (PagedRepos);
+
+  // Mutation — unary; client sends one op, gets back ack/error
+  rpc ApplyOp (ClientOp) returns (OpResult);
+
+  // Server-streaming push — server sends events as they happen
+  // gRPC-Web supports server-streaming from browsers
+  rpc Subscribe (SubscribeRequest) returns (stream ServerEvent);
+}
+
+// ── Common ─────────────────────────────────────────────────────────────────────
+
+message ListRequest {}
+
+message SubscribeRequest {
+  string client_id = 1; // nanoid session identifier for dedup
+}
+
+message OpResult {
+  string op_id    = 1;
+  bool   ok       = 2;
+  string error    = 3;    // non-empty when ok=false
+  bytes  response = 4;    // JSON-encoded entity returned by the op
+}
+
+// ── Client operations ──────────────────────────────────────────────────────────
+
+message ClientOp {
+  string op_id = 1; // nanoid — dedup key; echoed back in OpResult/OpAck
+  uint64 seq   = 2; // monotonic client sequence (crash-safe ordering)
+
+  oneof payload {
+    UpsertFlagOp         upsert_flag         = 10;
+    DeleteFlagOp         delete_flag         = 11;
+    UpsertRemarkOp       upsert_remark       = 20;
+    DeleteRemarkOp       delete_remark       = 21;
+    AddHiddenRowOp       add_hidden_row      = 30;
+    RemoveHiddenRowOp    remove_hidden_row   = 31;
+    AddHiddenColumnOp    add_hidden_col      = 40;
+    RemoveHiddenColumnOp remove_hidden_col   = 41;
+    CreateCustomColOp    create_custom_col   = 50;
+    DeleteCustomColOp    delete_custom_col   = 51;
+  }
+}
+
+message UpsertFlagOp         { string key = 1; string color = 2; }
+message DeleteFlagOp         { string key = 1; }
+message UpsertRemarkOp       { string id = 1; string body = 2; string kind = 3; repeated RemarkTarget targets = 4; }
+message DeleteRemarkOp       { string id = 1; }
+message AddHiddenRowOp       { int64  repo_id   = 1; }
+message RemoveHiddenRowOp    { int64  repo_id   = 1; }
+message AddHiddenColumnOp    { string column_id = 1; }
+message RemoveHiddenColumnOp { string column_id = 1; }
+message CreateCustomColOp    { string id = 1; string name = 2; string label = 3; string expression = 4; string position_after = 5; }
+message DeleteCustomColOp    { string id = 1; }
+
+// ── Server events (push) ───────────────────────────────────────────────────────
+
+message ServerEvent {
+  oneof payload {
+    OpAck          ack        = 1;
+    OpError        error      = 2;
+    FlagEvent      flag       = 10;
+    RemarkEvent    remark     = 11;
+    HiddenRowEvent hidden_row = 12;
+    HiddenColEvent hidden_col = 13;
+    CustomColEvent custom_col = 14;
+  }
+}
+
+message OpAck   { string op_id = 1; bytes response = 2; }
+message OpError { string op_id = 1; string message  = 2; }
+
+enum EventKind { UPSERT = 0; DELETE = 1; }
+
+message FlagEvent      { EventKind kind = 1; Flag      data = 2; }
+message RemarkEvent    { EventKind kind = 1; Remark    data = 2; }
+message HiddenRowEvent { EventKind kind = 1; HiddenRow data = 2; }
+message HiddenColEvent { EventKind kind = 1; HiddenCol data = 3; }
+message CustomColEvent { EventKind kind = 1; CustomCol data = 4; }
+
+// ── Entity types ───────────────────────────────────────────────────────────────
+
+message RemarkTarget { int64 repo_id = 1; string column_id = 2; }
+
+message Flag {
+  string id    = 1;
+  string key   = 2;
+  string color = 3;
+}
+
+message Remark {
+  string id          = 1;
+  string body        = 2;
+  string kind        = 3;
+  bool   is_private  = 4;
+  string resolved_at = 5; // ISO 8601 or empty string
+  repeated RemarkTarget targets = 6;
+}
+
+message HiddenRow { string id = 1; int64  repo_id   = 2; }
+message HiddenCol { string id = 1; string column_id = 2; }
+message CustomCol {
+  string id             = 1;
+  string name           = 2;
+  string label          = 3;
+  string expression     = 4;
+  string position_after = 5;
+}
+
+// ── Read responses ─────────────────────────────────────────────────────────────
+
+message FlagList         { repeated Flag      flags   = 1; }
+message RemarkList       { repeated Remark    remarks = 1; }
+message HiddenRowList    { repeated HiddenRow rows    = 1; }
+message HiddenColumnList { repeated HiddenCol cols    = 1; }
+message CustomColumnList { repeated CustomCol cols    = 1; }
+
+message ListReposRequest {
+  int32  page     = 1;
+  int32  per_page = 2;
+  string sort     = 3;              // e.g. "stars_diff_14d:desc"
+  map<string, string> filters = 4; // e.g. {"min_stars": "100"}
+}
+
+message PagedRepos {
+  repeated bytes rows_json = 1; // each element is a JSON-encoded RepoRow
+  int64  total    = 2;
+  int32  page     = 3;
+  int32  per_page = 4;
+}

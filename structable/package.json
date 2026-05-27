@@ -9,9 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
+    "idb": "^8.0.3",
+    "nanoid": "^5.1.11",
     "next": "14.2.5",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "rxjs": "^7.8.2",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@types/node": "20.14.5",

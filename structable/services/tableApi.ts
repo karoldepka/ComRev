@@ -1,6 +1,8 @@
+import { openDB, type IDBPDatabase } from 'idb';
+import { nanoid } from 'nanoid';
 import type {
-  ApiComment, ApiCustomColumn, ApiFlag, ApiHiddenColumn,
-  ApiHiddenRow, PagedResponse,
+  ApiCustomColumn, ApiFlag, ApiHiddenColumn,
+  ApiHiddenRow, ApiRemark, PagedResponse, RemarkTarget,
 } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -22,54 +24,17 @@ type QueuedOp = {
   onSuccess?: (data: unknown) => void; // in-memory only; stripped before IDB write
 };
 
+type StoredOp = Omit<QueuedOp, 'onSuccess'>;
+
+interface StructableDB {
+  [OPS_STORE]: { key: string; value: StoredOp };
+}
+
 type TableApiOptions = {
   baseUrl: string;
   onError: (msg: string) => void;
   onQueueChange?: (count: number) => void;
 };
-
-// ── IndexedDB helpers ──────────────────────────────────────────────────────────
-
-function idbOpen(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(OPS_STORE))
-        req.result.createObjectStore(OPS_STORE, { keyPath: 'id' });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror  = () => reject(req.error);
-  });
-}
-
-function idbPut(db: IDBDatabase, record: QueuedOp): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { onSuccess, ...toStore } = record;
-    const tx = db.transaction(OPS_STORE, 'readwrite');
-    tx.objectStore(OPS_STORE).put(toStore);
-    tx.oncomplete = () => resolve();
-    tx.onerror    = () => reject(tx.error);
-  });
-}
-
-function idbDelete(db: IDBDatabase, id: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(OPS_STORE, 'readwrite');
-    tx.objectStore(OPS_STORE).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror    = () => reject(tx.error);
-  });
-}
-
-function idbGetAll(db: IDBDatabase): Promise<QueuedOp[]> {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(OPS_STORE, 'readonly');
-    const req = tx.objectStore(OPS_STORE).getAll();
-    req.onsuccess = () => resolve(req.result as QueuedOp[]);
-    req.onerror   = () => reject(req.error);
-  });
-}
 
 // ── TableApi ───────────────────────────────────────────────────────────────────
 
@@ -79,7 +44,7 @@ export class TableApi {
   private onQueueChange?: (count: number) => void;
   private queue: QueuedOp[] = [];
   private flushing = false;
-  private db: IDBDatabase | null = null;
+  private db: IDBPDatabase<StructableDB> | null = null;
   private nextSeq = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly RETRY_MS = 1_000;
@@ -105,10 +70,15 @@ export class TableApi {
 
   private async init(): Promise<void> {
     try {
-      this.db = await idbOpen();
+      this.db = await openDB<StructableDB>(DB_NAME, DB_VERSION, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains(OPS_STORE))
+            db.createObjectStore(OPS_STORE, { keyPath: 'id' });
+        },
+      });
       await this.migrateFromLocalStorage();
 
-      const stored = await idbGetAll(this.db);
+      const stored = await this.db.getAll(OPS_STORE);
       stored.sort((a, b) => a.seq - b.seq);
 
       // Ops enqueued before IDB loaded (rare race): merge after IDB ops
@@ -123,7 +93,7 @@ export class TableApi {
       // Assign correct seq to pre-init ops and persist them
       for (const op of preInitOps) {
         op.seq = this.nextSeq++;
-        await idbPut(this.db, op);
+        await this.idbPut(op);
       }
 
       this.onQueueChange?.(this.queue.length);
@@ -138,12 +108,25 @@ export class TableApi {
     try {
       const raw = localStorage.getItem(LS_LEGACY_KEY);
       if (!raw) return;
-      const items = JSON.parse(raw) as Omit<QueuedOp, 'seq'>[];
+      const items = JSON.parse(raw) as StoredOp[];
       for (let i = 0; i < items.length; i++) {
-        await idbPut(this.db, { ...items[i], seq: i });
+        await this.db.put(OPS_STORE, { ...items[i], seq: i });
       }
       localStorage.removeItem(LS_LEGACY_KEY);
     } catch { /* ignore migration errors */ }
+  }
+
+  // ── IDB helpers (use idb library) ─────────────────────────────────────────
+
+  private async idbPut(op: QueuedOp): Promise<void> {
+    if (!this.db) return;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { onSuccess, ...toStore } = op;
+    await this.db.put(OPS_STORE, toStore);
+  }
+
+  private idbDelete(id: string): void {
+    this.db?.delete(OPS_STORE, id).catch(() => {});
   }
 
   // ── Read operations ────────────────────────────────────────────────────────
@@ -156,8 +139,8 @@ export class TableApi {
     return this.get<ApiCustomColumn[]>('/custom-columns');
   }
 
-  async fetchComments(): Promise<ApiComment[]> {
-    return this.get<ApiComment[]>('/comments');
+  async fetchRemarks(): Promise<ApiRemark[]> {
+    return this.get<ApiRemark[]>('/remarks');
   }
 
   async fetchFlags(): Promise<ApiFlag[]> {
@@ -172,27 +155,48 @@ export class TableApi {
     return this.get<ApiHiddenColumn[]>('/hidden-columns');
   }
 
-  // ── Write operations that need a round-trip result ─────────────────────────
+  // ── Write operations ───────────────────────────────────────────────────────
 
-  async createCustomColumn(payload: Omit<ApiCustomColumn, 'id'>): Promise<ApiCustomColumn> {
-    const res = await fetch(`${this.base}/custom-columns`, {
+  /** Client generates a nanoid so the column is usable immediately offline. */
+  createCustomColumn(
+    payload: Omit<ApiCustomColumn, 'id'>,
+    onConfirmed?: (confirmed: ApiCustomColumn) => void,
+  ): ApiCustomColumn {
+    const id = nanoid();
+    const temp: ApiCustomColumn = { ...payload, id };
+    this.enqueue({
+      id: `custom-col:create:${id}`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      path: '/custom-columns',
+      body: { id, ...payload },
+      retries: 0,
+      onSuccess: onConfirmed ? (data) => onConfirmed(data as ApiCustomColumn) : undefined,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json() as Promise<ApiCustomColumn>;
+    return temp;
   }
 
-  upsertComment(repoId: number, colId: string, body: string, onSuccess?: (saved: ApiComment) => void): void {
+  /**
+   * Upsert a remark (note or comment). Client generates the nanoid so the
+   * remark is available offline before the server is reachable.
+   * If `id` is omitted a new nanoid is generated and returned.
+   */
+  upsertRemark(
+    id: string | null,
+    kind: 'note' | 'comment',
+    body: string,
+    targets: RemarkTarget[],
+    onSuccess?: (saved: ApiRemark) => void,
+  ): string {
+    const rid = id ?? nanoid();
     this.enqueue({
-      id: `comment:upsert:${repoId}:${colId}`,
-      method: 'POST',
-      path: '/comments',
-      body: { repo_id: repoId, column_id: colId, body: body.trim() },
+      id: `remark:upsert:${rid}`,
+      method: 'PUT',
+      path: `/remarks/${encodeURIComponent(rid)}`,
+      body: { body: body.trim(), kind, targets },
       retries: 0,
-      onSuccess: onSuccess ? (data) => onSuccess(data as ApiComment) : undefined,
+      onSuccess: onSuccess ? (data) => onSuccess(data as ApiRemark) : undefined,
     });
+    return rid;
   }
 
   // ── Queued write operations ────────────────────────────────────────────────
@@ -206,15 +210,19 @@ export class TableApi {
     this.enqueue({ id: `flag:delete:${key}`, method: 'DELETE', path: `/flags/${encodeURIComponent(key)}`, retries: 0 });
   }
 
-  deleteComment(id: number, repoId: number, colId: string): void {
-    this.cancelOp(`comment:upsert:${repoId}:${colId}`);
-    if (id > 0) {
-      this.enqueue({ id: `comment:delete:${id}`, method: 'DELETE', path: `/comments/${id}`, retries: 0 });
-    }
+  deleteRemark(id: string): void {
+    this.cancelOp(`remark:upsert:${id}`);
+    this.enqueue({ id: `remark:delete:${id}`, method: 'DELETE', path: `/remarks/${encodeURIComponent(id)}`, retries: 0 });
   }
 
-  deleteCustomColumn(id: number): void {
-    this.enqueue({ id: `custom-col:delete:${id}`, method: 'DELETE', path: `/custom-columns/${id}`, retries: 0 });
+  deleteCustomColumn(id: string): void {
+    // If the create is still queued (never reached the server), cancel it instead
+    const createKey = `custom-col:create:${id}`;
+    if (this.queue.some((q) => q.id === createKey)) {
+      this.cancelOp(createKey);
+      return;
+    }
+    this.enqueue({ id: `custom-col:delete:${id}`, method: 'DELETE', path: `/custom-columns/${encodeURIComponent(id)}`, retries: 0 });
   }
 
   addHiddenRow(repoId: number): void {
@@ -252,21 +260,20 @@ export class TableApi {
 
   private cancelOp(id: string): void {
     this.queue = this.queue.filter((q) => q.id !== id);
-    if (this.db) idbDelete(this.db, id).catch(() => {});
+    this.idbDelete(id);
     this.onQueueChange?.(this.queue.length);
   }
 
   private enqueue(op: Omit<QueuedOp, 'seq'>): void {
     // Replace any existing op with same id (re-enqueue with fresh seq)
-    const existing = this.queue.find((q) => q.id === op.id);
-    if (existing) {
+    if (this.queue.some((q) => q.id === op.id)) {
       this.queue = this.queue.filter((q) => q.id !== op.id);
-      if (this.db) idbDelete(this.db, op.id).catch(() => {});
+      this.idbDelete(op.id);
     }
     const record: QueuedOp = { ...op, seq: this.nextSeq++ };
     this.queue.push(record);
     // Fire-and-forget: op is in-memory already; IDB write is crash insurance
-    if (this.db) idbPut(this.db, record).catch(() => {});
+    this.idbPut(record).catch(() => {});
     this.onQueueChange?.(this.queue.length);
     this.flush();
   }
@@ -290,7 +297,7 @@ export class TableApi {
           if (res.status >= 400 && res.status < 500) {
             // Client error: unrecoverable — drop and report
             this.queue.shift();
-            await idbDelete(this.db, op.id);
+            await this.db.delete(OPS_STORE, op.id);
             this.onQueueChange?.(this.queue.length);
             this.onError(`Sync error ${res.status} for ${op.method} ${op.path}`);
             continue;
@@ -304,22 +311,15 @@ export class TableApi {
           // Success: remove from in-memory first, then IDB
           // (at-least-once: if crash between the two, op is replayed — all ops are idempotent)
           this.queue.shift();
-          await idbDelete(this.db, op.id);
+          await this.db.delete(OPS_STORE, op.id);
           this.onQueueChange?.(this.queue.length);
           op.onSuccess?.(responseData);
         } catch {
           op.retries++;
-          if (op.retries >= 5) {
-            this.onError(`Giving up on ${op.method} ${op.path} after 5 retries`);
-            this.queue.shift();
-            await idbDelete(this.db, op.id);
-            this.onQueueChange?.(this.queue.length);
-          } else {
-            // Persist incremented retry count so it survives a crash
-            await idbPut(this.db, op);
-            this.scheduleRetry();
-            break;
-          }
+          // Persist incremented retry count so it survives a crash, then retry forever
+          await this.idbPut(op);
+          this.scheduleRetry();
+          break;
         }
       }
     } finally {

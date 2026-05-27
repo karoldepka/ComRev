@@ -10,6 +10,7 @@ Structable is the general-purpose table with metadata&comments&notes on each cel
 
 ComRev is a first use-case of Structable. It helps with comparing projects, products and repos.
 Later we will add more use-cases.
+So nothing that is general-purpose should be called "repo". Use row/item term instead.
 
 The app should work well offline or on unreliable connection, as well as gracefully handle server errors. App should be Crash-First; so writing recovery code should have priority over. All user operations should be first locally stored in IndexedDB.
 App should always display in top-right corner a status of sync. Any operation that user takes should go via central code that updates the cloud sync indicator.
@@ -46,7 +47,7 @@ Other operations on objects:
 ### Private vs public
 Most operations objects should have an option whether to make them public or private. For example adding a private note. 
 #### Private vs public view
-* users should be able to have 
+* users should be able to have private mode where the changes they make are only visible to them. So there should be a switch of public/private view. 
 
 ### Notes vs Comments
 * comments indicate something actionable that needs to be dealt with (or replied to). There should be a "resolve" button on comments. Notes do not require "resolve" button.
@@ -78,6 +79,15 @@ Use Tonic ( grpc-rust ) for the syncing.
 Everything is an object. And everything directly editable is also a cell; so unify the editor code.
 
 
+Make the backend database pluggable, having 2 impl-s: Supabase and MongoDB and SurrealDB.
+
+make the frontend data/sync/cache layer be in rust and grpc. Expose changes-listening via rxjs.
+====
+The sync/data layer should have its backing DB impl pluggable (e.g. Supabase, sqlite (on wasm too), SurrealDB, MongoDB)
+
+Operations should be grouped by transaction id, or null if no transaction.
+
+Client should be responsible for generating id (or manually provided by user, as advanced option)
 
 
 

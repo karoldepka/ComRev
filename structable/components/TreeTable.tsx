@@ -1,21 +1,22 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { TableApi } from '../services/tableApi';
-import { useToast } from '../hooks/useToast';
-import ToastStack from './ToastStack';
+import { localStore } from '../services/localStore';
+import { useColumnPrefs } from '../hooks/useColumnPrefs';
+import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam } from '../utils/columnFilters';
 
-import type { ApiCustomColumn, CellTarget, PagedResponse, RepoRow } from '../types/table';
+import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, RepoRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const PINNED_COL = 'name';
-const MIGRATION_KEY = 'structable:migrated-v2';
 
 type ColumnMeta = { width?: number; label?: string };
 
@@ -112,42 +113,13 @@ function buildHeaderRows(cols: Column[], maxDepth: number, hidden: Set<string>):
   return rows.map((r) => r.filter((cell) => cell.colSpan > 0));
 }
 
-function keyToCursor(key: string, leafCols: Column[]): { row: number; col: number } | null {
-  if (key.startsWith('header:')) {
-    const colId = key.split(':')[1];
-    const idx = leafCols.findIndex((c) => c.id === colId);
-    return idx >= 0 ? { row: -1, col: idx } : null;
-  }
-  if (key.startsWith('cell:')) {
-    const parts = key.split(':');
-    const idx = leafCols.findIndex((c) => c.id === parts[2]);
-    return idx >= 0 ? { row: parseInt(parts[1], 10), col: idx } : null;
-  }
-  return null;
-}
-
-function cursorToKey(
-  pos: { row: number; col: number },
-  leafCols: Column[],
-  leafHeaderKey: Map<string, string>,
-  numRows: number,
-): string | null {
-  if (pos.col < 0 || pos.col >= leafCols.length) return null;
-  const col = leafCols[pos.col];
-  if (pos.row === -1) return leafHeaderKey.get(col.id) ?? null;
-  if (pos.row < 0 || pos.row >= numRows) return null;
-  return `cell:${pos.row}:${col.id}`;
-}
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function TreeTable() {
-  const { toasts, addToast, dismissToast } = useToast();
-
   const api = useMemo(
     () => new TableApi({
       baseUrl: API_BASE,
-      onError: (msg) => addToast(msg, 'error'),
+      onError: (msg) => toast.error(msg),
       // closure captures setPendingUploads by reference; safe because flush() is async
       // and only executes after setState is initialized on the same render
       onQueueChange: (count) => setPendingUploads(count),
@@ -168,28 +140,18 @@ export default function TreeTable() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [bootstrapRetryKey, setBootstrapRetryKey] = useState(0);
+  const [customColsRetryKey, setCustomColsRetryKey] = useState(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const fetchRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fetchToastedRef = useRef(false);
   const bootstrapRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bootstrapToastedRef = useRef(false);
+  const customColsRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Selection ──────────────────────────────────────────────────────────────
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [cursorPos, setCursorPos] = useState<{ row: number; col: number } | null>(null);
-  const anchorPosRef = useRef<{ row: number; col: number } | null>(null);
+  // ── Column prefs (widths + order) ─────────────────────────────────────────
+  const { columnWidths, setColumnWidths, columnOrder, reorderColumns } = useColumnPrefs();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // ── Column state ───────────────────────────────────────────────────────────
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
-    if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem('structable:column-widths') ?? '{}'); } catch { return {}; }
-  });
-  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem('structable:column-order') ?? '[]'); } catch { return []; }
-  });
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
 
   // ── Drag-to-reorder state ──────────────────────────────────────────────────
@@ -213,13 +175,9 @@ export default function TreeTable() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
 
-  // ── Cell annotations ───────────────────────────────────────────────────────
-  const [cellNotes, setCellNotes] = useState<Record<string, string>>(() => {
-    if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem('structable:cell-notes') ?? '{}'); } catch { return {}; }
-  });
+  // ── Cell remarks (unified notes + comments) ───────────────────────────────
+  const [cellRemarks, setCellRemarks] = useState<Record<string, ApiRemark[]>>({});
   const [cellFlags, setCellFlags] = useState<Record<string, string>>({});
-  const [cellComments, setCellComments] = useState<Record<string, { id: number; body: string }>>({});
 
   // ── Cell menu state ────────────────────────────────────────────────────────
   const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; targets: CellTarget[] } | null>(null);
@@ -229,28 +187,24 @@ export default function TreeTable() {
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
   const perPage = 50;
 
-  // ── Bootstrap: load flags, hidden columns, hidden rows, comments ───────────
+  // ── Bootstrap: load flags, hidden columns, hidden rows, remarks ───────────
   useEffect(() => {
     const doBootstrap = async () => {
       try {
-        const [flagsData, hiddenColsData, hiddenRowsData, commentsData] = await Promise.all([
+        const [flagsData, hiddenColsData, hiddenRowsData, remarksData] = await Promise.all([
           api.fetchFlags(),
           api.fetchHiddenColumns(),
           api.fetchHiddenRows(),
-          api.fetchComments(),
+          api.fetchRemarks(),
         ]);
 
         const flagMap: Record<string, string> = {};
         flagsData.forEach((f) => { flagMap[f.key] = f.color; });
 
-        // One-time migration from localStorage to backend
-        if (!localStorage.getItem(MIGRATION_KEY)) {
-          const localFlags: Record<string, string> = (() => {
-            try { return JSON.parse(localStorage.getItem('structable:cell-flags') ?? '{}'); } catch { return {}; }
-          })();
-          const localHidden: string[] = (() => {
-            try { return JSON.parse(localStorage.getItem('structable:hidden-columns') ?? '[]'); } catch { return []; }
-          })();
+        // One-time V2 migration: localStorage flags/hidden-cols → server
+        if (!localStore.isMigratedV2()) {
+          const localFlags  = localStore.getLegacyCellFlags();
+          const localHidden = localStore.getLegacyHiddenCols();
 
           if (flagsData.length === 0 && Object.keys(localFlags).length > 0) {
             Object.entries(localFlags).forEach(([key, color]) => api.upsertFlag(key, color));
@@ -262,27 +216,44 @@ export default function TreeTable() {
           } else {
             setHiddenColumns(hiddenColsData.map((c) => c.column_id));
           }
-          localStorage.setItem(MIGRATION_KEY, '1');
+          localStore.setMigratedV2();
         } else {
           setHiddenColumns(hiddenColsData.map((c) => c.column_id));
+        }
+
+        // One-time V3 migration: localStorage cell-notes → server remarks
+        if (!localStore.isMigratedV3()) {
+          const localNotes = localStore.getLegacyCellNotes();
+          for (const [key, body] of Object.entries(localNotes)) {
+            if (!body.trim()) continue;
+            let target: RemarkTarget;
+            if (key.startsWith('header:')) {
+              target = { repo_id: 0, column_id: key.slice('header:'.length) };
+            } else {
+              const colonIdx = key.indexOf(':');
+              target = { repo_id: Number(key.slice(0, colonIdx)), column_id: key.slice(colonIdx + 1) };
+            }
+            api.upsertRemark(null, 'note', body, [target]);
+          }
+          localStore.setMigratedV3();
         }
 
         setCellFlags(flagMap);
         setHiddenRepoIds(new Set(hiddenRowsData.map((r) => r.repo_id)));
 
-        const commentMap: Record<string, { id: number; body: string }> = {};
-        commentsData.forEach((c) => {
-          const key = c.repo_id === 0 ? `header:${c.column_id}` : `${c.repo_id}:${c.column_id}`;
-          commentMap[key] = { id: c.id, body: c.body };
-        });
-        setCellComments(commentMap);
+        // Build cellRemarks: each remark appears in every target cell's list
+        const remarkMap: Record<string, ApiRemark[]> = {};
+        for (const r of remarksData) {
+          for (const t of r.targets) {
+            const key = `${t.repo_id}:${t.column_id}`;
+            if (!remarkMap[key]) remarkMap[key] = [];
+            remarkMap[key].push(r);
+          }
+        }
+        setCellRemarks(remarkMap);
         setBootstrapping(false);
       } catch (err) {
-        if (!bootstrapToastedRef.current) {
-          addToast(`Failed to load annotations: ${(err as Error).message}`, 'error');
-          bootstrapToastedRef.current = true;
-        }
-        // Keep bootstrapping=true so ↓ stays on; retry in 1s
+        toast.error(`Failed to load remarks: ${(err as Error).message}`, { id: 'bootstrap-error' });
         bootstrapRetryTimerRef.current = setTimeout(() => {
           bootstrapRetryTimerRef.current = null;
           setBootstrapRetryKey((k) => k + 1);
@@ -302,7 +273,6 @@ export default function TreeTable() {
     if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
     const aborter = new AbortController();
     fetchAbortRef.current = aborter;
-    fetchToastedRef.current = false;
 
     setLoading(true);
     setFetchError(null);
@@ -321,11 +291,8 @@ export default function TreeTable() {
       .catch((err: Error) => {
         if (err.name === 'AbortError') return;
         setFetchError(err.message);
-        if (!fetchToastedRef.current) {
-          addToast(`Failed to load repos: ${err.message}`, 'error');
-          fetchToastedRef.current = true;
-        }
-        // Keep loading=true so ↓ indicator stays on; retry in 1s
+        toast.error(`Failed to load repos: ${err.message}`, { id: 'fetch-repos-error' });
+        // Keep loading=true so ↓ indicator stays on; retry forever
         fetchRetryTimerRef.current = setTimeout(() => {
           fetchRetryTimerRef.current = null;
           setRetryKey((k) => k + 1);
@@ -342,19 +309,18 @@ export default function TreeTable() {
   useEffect(() => {
     api.fetchCustomColumns()
       .then(setCustomColumns)
-      .catch((err: Error) => addToast(`Failed to load custom columns: ${err.message}`, 'error'));
-  }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Persist column widths and cell notes ───────────────────────────────────
-  useEffect(() => {
-    if (Object.keys(columnWidths).length > 0) {
-      localStorage.setItem('structable:column-widths', JSON.stringify(columnWidths));
-    }
-  }, [columnWidths]);
-
-  useEffect(() => {
-    localStorage.setItem('structable:cell-notes', JSON.stringify(cellNotes));
-  }, [cellNotes]);
+      .catch((err: Error) => {
+        toast.error(`Failed to load custom columns: ${err.message}`, { id: 'fetch-custom-cols-error' });
+        // Retry forever
+        customColsRetryTimerRef.current = setTimeout(() => {
+          customColsRetryTimerRef.current = null;
+          setCustomColsRetryKey((k) => k + 1);
+        }, 1_000);
+      });
+    return () => {
+      if (customColsRetryTimerRef.current !== null) { clearTimeout(customColsRetryTimerRef.current); customColsRetryTimerRef.current = null; }
+    };
+  }, [api, customColsRetryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Reset column menu modes when it closes ─────────────────────────────────
   useEffect(() => {
@@ -415,15 +381,6 @@ export default function TreeTable() {
   }, [openMenuColumn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hiddenSet = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
-  const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
-  const selectedRows = useMemo(
-    () => new Set(selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[1])),
-    [selectedKeys],
-  );
-  const selectedCols = useMemo(() => new Set([
-    ...selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[2]),
-    ...selectedKeys.filter((k) => k.startsWith('header:')).map((k) => k.split(':')[1]),
-  ]), [selectedKeys]);
 
   const allLeafColumns = useMemo(() => getLeafColumns(columns), [columns]);
   const visibleLeafColumns = useMemo(
@@ -456,6 +413,19 @@ export default function TreeTable() {
     return map;
   }, [headerRows]);
 
+  const {
+    selectedKeys, setSelectedKeys,
+    cursorPos,
+    selectedSet, selectedRows, selectedCols,
+    selectKey: selectKeyHook, moveCursor,
+    cursorToKey: cursorToKeyFn,
+  } = useTableSelection(visibleLeafColumns, leafHeaderKey, rows.length);
+
+  const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
+    selectKeyHook(key, multi, shift);
+    wrapperRef.current?.focus();
+  }, [selectKeyHook]);
+
   const compiledExprs = useMemo(() => {
     const map = new Map<string, (row: RepoRow) => unknown>();
     for (const cc of customColumns) {
@@ -473,50 +443,15 @@ export default function TreeTable() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
-    const pos = keyToCursor(key, visibleLeafColumns);
-    if (shift && anchorPosRef.current && pos) {
-      const anchor = anchorPosRef.current;
-      const newKeys: string[] = [];
-      for (let r = Math.min(anchor.row, pos.row); r <= Math.max(anchor.row, pos.row); r++) {
-        for (let c = Math.min(anchor.col, pos.col); c <= Math.max(anchor.col, pos.col); c++) {
-          const k = cursorToKey({ row: r, col: c }, visibleLeafColumns, leafHeaderKey, rows.length);
-          if (k) newKeys.push(k);
-        }
-      }
-      setSelectedKeys(newKeys);
-      setCursorPos(pos);
-    } else {
-      setSelectedKeys((prev) => {
-        const has = prev.includes(key);
-        if (multi) return has ? prev.filter((k) => k !== key) : [...prev, key];
-        return has ? [] : [key];
-      });
-      if (!multi) anchorPosRef.current = pos;
-      setCursorPos(pos);
-    }
-    wrapperRef.current?.focus();
-  }, [visibleLeafColumns, leafHeaderKey, rows.length]);
-
   const handleTableKeyDown = (e: React.KeyboardEvent) => {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
-    const cur = cursorPos ?? (rows.length > 0 && visibleLeafColumns.length > 0 ? { row: 0, col: 0 } : null);
-    if (!cur) return;
-    let { row, col } = cur;
-    if (e.key === 'ArrowUp')    { if (row > 0) row--; else if (row === 0) row = -1; }
-    if (e.key === 'ArrowDown')  { if (row === -1) row = 0; else if (row < rows.length - 1) row++; }
-    if (e.key === 'ArrowLeft')  { if (col > 0) col--; }
-    if (e.key === 'ArrowRight') { if (col < visibleLeafColumns.length - 1) col++; }
-    const newPos = { row, col };
-    setCursorPos(newPos);
-    const key = cursorToKey(newPos, visibleLeafColumns, leafHeaderKey, rows.length);
-    if (key) setSelectedKeys([key]);
+    moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
   };
 
   useEffect(() => {
     if (!cursorPos) return;
-    const key = cursorToKey(cursorPos, visibleLeafColumns, leafHeaderKey, rows.length);
+    const key = cursorToKeyFn(cursorPos);
     if (!key) return;
     const el = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`);
     el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -618,28 +553,30 @@ export default function TreeTable() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [cellMenu]);
 
-  const createCustomColumn = async (afterColId: string) => {
+  const createCustomColumn = (afterColId: string) => {
     if (!newColName.trim()) return;
-    try {
-      const derivedId = newColName.trim().toLowerCase().replace(/\s+/g, '_');
-      const created = await api.createCustomColumn({
+    const derivedId = newColName.trim().toLowerCase().replace(/\s+/g, '_');
+    const temp = api.createCustomColumn(
+      {
         name: newColId.trim() || derivedId,
         label: newColName.trim(),
         expression: newColExpr.trim() || null,
         position_after: afterColId,
-      });
-      setCustomColumns((prev) => [...prev, created]);
-      setNewColName(''); setNewColId(''); setNewColExpr('');
-      setAddingColAfter(null);
-      setOpenMenuColumn(null);
-      setMenuAnchor(null);
-    } catch (err) {
-      addToast(`Failed to create column: ${(err as Error).message}`, 'error');
-    }
+      },
+      (confirmed) => {
+        // Replace temp id with server-assigned id once the queue flushes
+        setCustomColumns((prev) => prev.map((c) => (c.id === temp.id ? confirmed : c)));
+      },
+    );
+    setCustomColumns((prev) => [...prev, temp]);
+    setNewColName(''); setNewColId(''); setNewColExpr('');
+    setAddingColAfter(null);
+    setOpenMenuColumn(null);
+    setMenuAnchor(null);
   };
 
-  const deleteCustomColumn = async (colId: string) => {
-    const id = parseInt(colId.replace('custom:', ''), 10);
+  const deleteCustomColumn = (colId: string) => {
+    const id = colId.replace('custom:', '');
     api.deleteCustomColumn(id);
     setCustomColumns((prev) => prev.filter((c) => c.id !== id));
     setHiddenColumns((prev) => prev.filter((c) => c !== colId));
@@ -657,50 +594,50 @@ export default function TreeTable() {
     toDelete.forEach((key) => api.deleteFlag(key));
   }, [api]);
 
-  const saveComment = (targets: CellTarget[], body: string) => {
-    for (const { repoId, colId } of targets) {
-      const noteKey = `${repoId}:${colId}`;
-      if (!body.trim()) {
-        const existing = cellComments[noteKey];
-        if (existing) {
-          api.deleteComment(existing.id, repoId, colId);
-          setCellComments((prev) => { const { [noteKey]: _, ...rest } = prev; return rest; });
-        }
-      } else {
-        const existing = cellComments[noteKey];
-        // Optimistic update; onSuccess reconciles with the server-assigned id
-        setCellComments((prev) => ({ ...prev, [noteKey]: { id: existing?.id ?? 0, body } }));
-        api.upsertComment(repoId, colId, body, (saved) => {
-          setCellComments((prev) => ({ ...prev, [noteKey]: { id: saved.id, body: saved.body } }));
+  const saveRemark = useCallback((
+    targets: RemarkTarget[],
+    kind: 'note' | 'comment',
+    body: string,
+    existingId: string | null,
+  ) => {
+    if (!body.trim()) {
+      if (existingId) {
+        api.deleteRemark(existingId);
+        setCellRemarks((prev) => {
+          const next = { ...prev };
+          for (const t of targets) {
+            const key = `${t.repo_id}:${t.column_id}`;
+            const filtered = (next[key] ?? []).filter((r) => r.id !== existingId);
+            if (filtered.length > 0) next[key] = filtered; else delete next[key];
+          }
+          return next;
         });
       }
+      return;
     }
-  };
-
-  const saveHeaderComment = (colId: string, body: string) => {
-    const noteKey = `header:${colId}`;
-    if (!body.trim()) {
-      const existing = cellComments[noteKey];
-      if (existing) {
-        api.deleteComment(existing.id, 0, colId);
-        setCellComments((prev) => { const { [noteKey]: _, ...rest } = prev; return rest; });
-      }
-    } else {
-      const existing = cellComments[noteKey];
-      setCellComments((prev) => ({ ...prev, [noteKey]: { id: existing?.id ?? 0, body } }));
-      api.upsertComment(0, colId, body, (saved) => {
-        setCellComments((prev) => ({ ...prev, [noteKey]: { id: saved.id, body: saved.body } }));
+    const rid = api.upsertRemark(existingId, kind, body, targets, (saved) => {
+      setCellRemarks((prev) => {
+        const next = { ...prev };
+        for (const t of saved.targets) {
+          const key = `${t.repo_id}:${t.column_id}`;
+          const others = (next[key] ?? []).filter((r) => r.id !== saved.id);
+          next[key] = [...others, saved];
+        }
+        return next;
       });
-    }
-  };
-
-  const saveNote = (keys: string[], text: string) => {
-    setCellNotes((prev) => {
+    });
+    // Optimistic update
+    const optimistic: ApiRemark = { id: rid, body, kind, is_private: false, resolved_at: null, targets };
+    setCellRemarks((prev) => {
       const next = { ...prev };
-      keys.forEach((k) => { if (text.trim()) next[k] = text.trim(); else delete next[k]; });
+      for (const t of targets) {
+        const key = `${t.repo_id}:${t.column_id}`;
+        const others = (next[key] ?? []).filter((r) => r.id !== (existingId ?? rid));
+        next[key] = [...others, optimistic];
+      }
       return next;
     });
-  };
+  }, [api]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -726,7 +663,6 @@ export default function TreeTable() {
 
   return (
     <>
-      <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
       <div className="tree-table-container">
         {loading && (
@@ -795,13 +731,7 @@ export default function TreeTable() {
                           dragColRef.current = null;
                           setDragOverCol(null);
                           if (!from || from === column.id) return;
-                          const ids = allLeafColumns.map((c) => c.id);
-                          const next = ids.filter((id) => id !== from);
-                          const toIdx = next.indexOf(column.id);
-                          if (toIdx === -1) return;
-                          next.splice(toIdx, 0, from);
-                          setColumnOrder(next);
-                          localStorage.setItem('structable:column-order', JSON.stringify(next));
+                          reorderColumns(from, column.id, allLeafColumns.map((c) => c.id));
                         }}
                         onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); }}
                         className={[
@@ -861,7 +791,9 @@ export default function TreeTable() {
                                   filters={filters}
                                   filterDraft={filterDraft}
                                   cellFlags={cellFlags}
+                                  cellRemarks={cellRemarks}
                                   onFlagsChange={handleFlagsChange}
+                                  onSaveRemark={saveRemark}
                                   addingColAfter={addingColAfter}
                                   newColName={newColName}
                                   newColId={newColId}
@@ -872,8 +804,6 @@ export default function TreeTable() {
                                   setNewColExpr={setNewColExpr}
                                   draftText={draftText}
                                   setDraftText={setDraftText}
-                                  headerNoteText={cellNotes[`header:${column.id}`]}
-                                  headerCommentBody={cellComments[`header:${column.id}`]?.body}
                                   onSetMode={setHeaderMenuMode}
                                   onSort={handleSort}
                                   onApplyFilter={applyFilter}
@@ -882,8 +812,6 @@ export default function TreeTable() {
                                   onAddColClick={(colId) => setAddingColAfter(colId || null)}
                                   onCreateCol={createCustomColumn}
                                   onDeleteCol={deleteCustomColumn}
-                                  onSaveNote={saveNote}
-                                  onSaveComment={saveHeaderComment}
                                   onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
                                 />
                               )}
@@ -949,8 +877,8 @@ export default function TreeTable() {
                             row={row}
                             colId={col.id}
                             compiledExpr={compiledExprs.get(col.id)}
-                            hasNote={!!cellNotes[noteKey]}
-                            hasComment={!!cellComments[noteKey]?.body}
+                            hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
+                            hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
                           />
                           <div
                             className="resizer"
@@ -1001,13 +929,11 @@ export default function TreeTable() {
           mode={cellMenuMode}
           draftText={draftText}
           cellFlags={cellFlags}
+          cellRemarks={cellRemarks}
           onFlagsChange={handleFlagsChange}
-          cellNotes={cellNotes}
-          cellComments={cellComments}
+          onSaveRemark={saveRemark}
           setDraftText={setDraftText}
           onSetMode={setCellMenuMode}
-          onSaveNote={saveNote}
-          onSaveComment={saveComment}
           onHideCols={hideColumns}
           onHideRows={hideRows}
           onClose={() => setCellMenu(null)}
