@@ -77,9 +77,12 @@ async function loadWasm(): Promise<WasmModule> {
   // wasm-pack --target web outputs sync_core.js + sync_core_bg.wasm into public/wasm/
   // Next.js serves public/ as static assets.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mod = await import(/* webpackIgnore: true */ '/wasm/sync_core.js' as any) as WasmModule;
-  _wasm = mod;
-  return mod;
+  const mod = await import(/* webpackIgnore: true */ '/wasm/sync_core.js' as any);
+  // --target web requires calling the default init() to fetch + instantiate the .wasm binary.
+  // Without args it resolves sync_core_bg.wasm relative to the JS file URL.
+  await mod.default();
+  _wasm = mod as WasmModule;
+  return _wasm;
 }
 
 // ── SyncClient wrapper ─────────────────────────────────────────────────────────
@@ -169,8 +172,9 @@ export class SyncClient {
   async fetchCustomColumns(): Promise<import('../types/table').ApiCustomColumn[]> { return JSON.parse(await this.inner.fetch_custom_columns()); }
 
   async fetchRepos(params: URLSearchParams, _signal?: AbortSignal): Promise<import('../types/table').PagedResponse> {
-    const obj: Record<string, string> = {};
-    params.forEach((v, k) => { obj[k] = v; });
+    const NUM_PARAMS = new Set(['page', 'per_page']);
+    const obj: Record<string, string | number> = {};
+    params.forEach((v, k) => { obj[k] = NUM_PARAMS.has(k) ? Number(v) : v; });
     return JSON.parse(await this.inner.fetch_repos(JSON.stringify(obj)));
   }
 }

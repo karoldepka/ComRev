@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { TableApi } from '../services/tableApi';
+import { nanoid } from 'nanoid';
+import { getSyncClient, SyncClient } from '../services/syncClient';
 import { localStore } from '../services/localStore';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
@@ -113,23 +114,29 @@ function buildHeaderRows(cols: Column[], maxDepth: number, hidden: Set<string>):
   return rows.map((r) => r.filter((cell) => cell.colSpan > 0));
 }
 
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  return String(e);
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function TreeTable() {
-  const api = useMemo(
-    () => new TableApi({
-      baseUrl: API_BASE,
-      onError: (msg) => toast.error(msg),
-      // closure captures setPendingUploads by reference; safe because flush() is async
-      // and only executes after setState is initialized on the same render
-      onQueueChange: (count) => setPendingUploads(count),
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  const [api, setApi] = useState<SyncClient | null>(null);
+  const [pendingUploads, setPendingUploads] = useState(0);
 
-  // Initialize from queue already loaded from localStorage so indicator is correct immediately after crash/reload
-  const [pendingUploads, setPendingUploads] = useState(api.queueLength);
+  useEffect(() => {
+    getSyncClient()
+      .then(setApi)
+      .catch((err) => toast.error(`Sync init failed: ${errMsg(err)}`));
+  }, []);
+
+  useEffect(() => {
+    if (!api) return;
+    const sub = api.queueLength$.subscribe(setPendingUploads);
+    return () => sub.unsubscribe();
+  }, [api]);
 
   // ── Repo data ──────────────────────────────────────────────────────────────
   const [rows, setRows] = useState<RepoRow[]>([]);
@@ -189,6 +196,7 @@ export default function TreeTable() {
 
   // ── Bootstrap: load flags, hidden columns, hidden rows, remarks ───────────
   useEffect(() => {
+    if (!api) return;
     const doBootstrap = async () => {
       try {
         const [flagsData, hiddenColsData, hiddenRowsData, remarksData] = await Promise.all([
@@ -253,7 +261,7 @@ export default function TreeTable() {
         setCellRemarks(remarkMap);
         setBootstrapping(false);
       } catch (err) {
-        toast.error(`Failed to load remarks: ${(err as Error).message}`, { id: 'bootstrap-error' });
+        toast.error(`Failed to load remarks: ${errMsg(err)}`, { id: 'bootstrap-error' });
         bootstrapRetryTimerRef.current = setTimeout(() => {
           bootstrapRetryTimerRef.current = null;
           setBootstrapRetryKey((k) => k + 1);
@@ -265,10 +273,11 @@ export default function TreeTable() {
       if (bootstrapRetryTimerRef.current !== null) { clearTimeout(bootstrapRetryTimerRef.current); bootstrapRetryTimerRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootstrapRetryKey]);
+  }, [api, bootstrapRetryKey]);
 
   // ── Fetch repos (with abort to prevent race conditions) ───────────────────
   useEffect(() => {
+    if (!api) return;
     fetchAbortRef.current?.abort();
     if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
     const aborter = new AbortController();
@@ -289,9 +298,10 @@ export default function TreeTable() {
         if (!aborter.signal.aborted) { setLoading(false); setFetchError(null); }
       })
       .catch((err: Error) => {
-        if (err.name === 'AbortError') return;
-        setFetchError(err.message);
-        toast.error(`Failed to load repos: ${err.message}`, { id: 'fetch-repos-error' });
+        if (err instanceof Error && err.name === 'AbortError') return;
+        const msg = errMsg(err);
+        setFetchError(msg);
+        toast.error(`Failed to load repos: ${msg}`, { id: 'fetch-repos-error' });
         // Keep loading=true so ↓ indicator stays on; retry forever
         fetchRetryTimerRef.current = setTimeout(() => {
           fetchRetryTimerRef.current = null;
@@ -307,10 +317,11 @@ export default function TreeTable() {
 
   // ── Fetch custom columns ───────────────────────────────────────────────────
   useEffect(() => {
+    if (!api) return;
     api.fetchCustomColumns()
       .then(setCustomColumns)
-      .catch((err: Error) => {
-        toast.error(`Failed to load custom columns: ${err.message}`, { id: 'fetch-custom-cols-error' });
+      .catch((err: unknown) => {
+        toast.error(`Failed to load custom columns: ${errMsg(err)}`, { id: 'fetch-custom-cols-error' });
         // Retry forever
         customColsRetryTimerRef.current = setTimeout(() => {
           customColsRetryTimerRef.current = null;
@@ -486,6 +497,7 @@ export default function TreeTable() {
   };
 
   const hideColumns = useCallback((ids: string[]) => {
+    if (!api) return;
     setHiddenColumns((prev) => {
       const toAdd = ids.filter((id) => !prev.includes(id));
       toAdd.forEach((id) => api.addHiddenColumn(id));
@@ -497,15 +509,16 @@ export default function TreeTable() {
 
   const showColumn = (id: string) => {
     setHiddenColumns((prev) => prev.filter((c) => c !== id));
-    api.removeHiddenColumn(id);
+    api?.removeHiddenColumn(id);
   };
   const showAllColumns = () => {
-    hiddenColumns.forEach((id) => api.removeHiddenColumn(id));
+    hiddenColumns.forEach((id) => api?.removeHiddenColumn(id));
     setHiddenColumns([]);
     setOpenMenuColumn(null);
   };
 
   const hideRows = useCallback((repoIds: number[]) => {
+    if (!api) return;
     repoIds.forEach((id) => api.addHiddenRow(id));
     setHiddenRepoIds((prev) => new Set([...prev, ...repoIds]));
     setRows((prev) => prev.filter((r) => !repoIds.includes(Number(r['github_id'] ?? 0))));
@@ -554,21 +567,23 @@ export default function TreeTable() {
   }, [cellMenu]);
 
   const createCustomColumn = (afterColId: string) => {
-    if (!newColName.trim()) return;
+    if (!newColName.trim() || !api) return;
     const derivedId = newColName.trim().toLowerCase().replace(/\s+/g, '_');
-    const temp = api.createCustomColumn(
-      {
-        name: newColId.trim() || derivedId,
-        label: newColName.trim(),
-        expression: newColExpr.trim() || null,
-        position_after: afterColId,
-      },
-      (confirmed) => {
-        // Replace temp id with server-assigned id once the queue flushes
-        setCustomColumns((prev) => prev.map((c) => (c.id === temp.id ? confirmed : c)));
-      },
-    );
-    setCustomColumns((prev) => [...prev, temp]);
+    const id = nanoid();
+    const col: ApiCustomColumn = {
+      id,
+      name: newColId.trim() || derivedId,
+      label: newColName.trim(),
+      expression: newColExpr.trim() || null,
+      position_after: afterColId,
+    };
+    setCustomColumns((prev) => [...prev, col]);
+    api.createCustomColumn({
+      name: col.name,
+      label: col.label,
+      expression: col.expression,
+      position_after: col.position_after,
+    }, id);
     setNewColName(''); setNewColId(''); setNewColExpr('');
     setAddingColAfter(null);
     setOpenMenuColumn(null);
@@ -576,6 +591,7 @@ export default function TreeTable() {
   };
 
   const deleteCustomColumn = (colId: string) => {
+    if (!api) return;
     const id = colId.replace('custom:', '');
     api.deleteCustomColumn(id);
     setCustomColumns((prev) => prev.filter((c) => c.id !== id));
@@ -585,6 +601,7 @@ export default function TreeTable() {
   };
 
   const handleFlagsChange = useCallback((toSet: Record<string, string>, toDelete: string[]) => {
+    if (!api) return;
     setCellFlags((prev) => {
       const next = { ...prev, ...toSet };
       toDelete.forEach((k) => delete next[k]);
@@ -600,6 +617,7 @@ export default function TreeTable() {
     body: string,
     existingId: string | null,
   ) => {
+    if (!api) return;
     if (!body.trim()) {
       if (existingId) {
         api.deleteRemark(existingId);
@@ -615,28 +633,19 @@ export default function TreeTable() {
       }
       return;
     }
-    const rid = api.upsertRemark(existingId, kind, body, targets, (saved) => {
-      setCellRemarks((prev) => {
-        const next = { ...prev };
-        for (const t of saved.targets) {
-          const key = `${t.repo_id}:${t.column_id}`;
-          const others = (next[key] ?? []).filter((r) => r.id !== saved.id);
-          next[key] = [...others, saved];
-        }
-        return next;
-      });
-    });
+    const rid = existingId ?? nanoid();
     // Optimistic update
     const optimistic: ApiRemark = { id: rid, body, kind, is_private: false, resolved_at: null, targets };
     setCellRemarks((prev) => {
       const next = { ...prev };
       for (const t of targets) {
         const key = `${t.repo_id}:${t.column_id}`;
-        const others = (next[key] ?? []).filter((r) => r.id !== (existingId ?? rid));
+        const others = (next[key] ?? []).filter((r) => r.id !== rid);
         next[key] = [...others, optimistic];
       }
       return next;
     });
+    api.upsertRemark(rid, kind, body, targets);
   }, [api]);
 
   // ── Render ─────────────────────────────────────────────────────────────────

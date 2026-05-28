@@ -31,8 +31,6 @@ export default function NavBar() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  const currentLabel = TABS.find((t) => t.href === path)?.label ?? 'Menu';
-
   return (
     <div ref={menuRef} className="hamburger-nav">
       <button
@@ -45,7 +43,6 @@ export default function NavBar() {
         <span className="hamburger-icon">
           <span /><span /><span />
         </span>
-        <span className="hamburger-page-name">{currentLabel}</span>
       </button>
 
       {open && (

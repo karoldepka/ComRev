@@ -89,5 +89,7 @@ Operations should be grouped by transaction id, or null if no transaction.
 
 Client should be responsible for generating id (or manually provided by user, as advanced option)
 
+## Error handling
+* errors should not be ignored silently; at the least they should be logged, with some details.
 
 

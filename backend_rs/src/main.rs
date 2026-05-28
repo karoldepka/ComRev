@@ -71,8 +71,8 @@ async fn main() -> anyhow::Result<()> {
 
     let grpc_server = tonic::transport::Server::builder()
         .accept_http1(true)
-        .layer(GrpcWebLayer::new())
         .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(GrpcWebLayer::new())
         .add_service(sync_service::make_server(state))
         .serve(grpc_addr);
 

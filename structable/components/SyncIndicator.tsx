@@ -23,11 +23,10 @@ const LABELS: Record<SyncState, string> = {
 };
 
 export default function SyncIndicator({ pendingUploads, isDownloading }: Props) {
-  const [isOffline, setIsOffline] = useState(
-    typeof navigator !== 'undefined' ? !navigator.onLine : false,
-  );
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
+    setIsOffline(!navigator.onLine);
     const goOnline  = () => setIsOffline(false);
     const goOffline = () => setIsOffline(true);
     window.addEventListener('online',  goOnline);
