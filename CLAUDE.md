@@ -92,4 +92,6 @@ Client should be responsible for generating id (or manually provided by user, as
 ## Error handling
 * errors should not be ignored silently; at the least they should be logged, with some details.
 
+Each cell should have its own url ( .../table-id/#rowId--columnId )
 
+Later AI will edit table cells; so we need to facilitate this in the design.

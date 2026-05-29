@@ -12,6 +12,7 @@ import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam } from '../utils/columnFilters';
 
+import { TableApi } from '../services/tableApi';
 import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, RepoRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -124,7 +125,24 @@ function errMsg(e: unknown): string {
 
 export default function TreeTable() {
   const [api, setApi] = useState<SyncClient | null>(null);
-  const [pendingUploads, setPendingUploads] = useState(0);
+  const [syncPending, setSyncPending] = useState(0);
+  const [cellPending, setCellPending] = useState(0);
+  const pendingUploads = syncPending + cellPending;
+
+  // Separate TableApi instance for cell-value edits (REST + IDB queue).
+  // Created once; stable setter ref keeps onQueueChange wiring correct.
+  const cellApiRef = useRef<TableApi | null>(null);
+  if (!cellApiRef.current && typeof window !== 'undefined') {
+    cellApiRef.current = new TableApi({
+      baseUrl: API_BASE,
+      onError: (msg) => toast.error(msg),
+      onQueueChange: setCellPending,
+    });
+  }
+
+  // ── Inline cell editing ────────────────────────────────────────────────────
+  type EditingCell = { rowIndex: number; rowId: string; colId: string; value: string };
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
 
   useEffect(() => {
     getSyncClient()
@@ -134,7 +152,7 @@ export default function TreeTable() {
 
   useEffect(() => {
     if (!api) return;
-    const sub = api.queueLength$.subscribe(setPendingUploads);
+    const sub = api.queueLength$.subscribe(setSyncPending);
     return () => sub.unsubscribe();
   }, [api]);
 
@@ -166,7 +184,7 @@ export default function TreeTable() {
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
   // ── Hidden rows (optimistic local set) ────────────────────────────────────
-  const [hiddenRepoIds, setHiddenRepoIds] = useState<Set<number>>(new Set());
+  const [hiddenRowIds, setHiddenRowIds] = useState<Set<string>>(new Set());
 
   // ── Column menu state ──────────────────────────────────────────────────────
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
@@ -236,10 +254,10 @@ export default function TreeTable() {
             if (!body.trim()) continue;
             let target: RemarkTarget;
             if (key.startsWith('header:')) {
-              target = { repo_id: 0, column_id: key.slice('header:'.length) };
+              target = { row_id: '', column_id: key.slice('header:'.length) };
             } else {
               const colonIdx = key.indexOf(':');
-              target = { repo_id: Number(key.slice(0, colonIdx)), column_id: key.slice(colonIdx + 1) };
+              target = { row_id: key.slice(0, colonIdx), column_id: key.slice(colonIdx + 1) };
             }
             api.upsertRemark(null, 'note', body, [target]);
           }
@@ -247,13 +265,13 @@ export default function TreeTable() {
         }
 
         setCellFlags(flagMap);
-        setHiddenRepoIds(new Set(hiddenRowsData.map((r) => r.repo_id)));
+        setHiddenRowIds(new Set(hiddenRowsData.map((r) => r.row_id)));
 
         // Build cellRemarks: each remark appears in every target cell's list
         const remarkMap: Record<string, ApiRemark[]> = {};
         for (const r of remarksData) {
           for (const t of r.targets) {
-            const key = `${t.repo_id}:${t.column_id}`;
+            const key = `${t.row_id}:${t.column_id}`;
             if (!remarkMap[key]) remarkMap[key] = [];
             remarkMap[key].push(r);
           }
@@ -450,15 +468,43 @@ export default function TreeTable() {
     return map;
   }, [customColumns]);
 
+  // Lookup maps for column metadata
+  const customColById   = useMemo(() => new Map(customColumns.map((cc) => [cc.id, cc])),   [customColumns]);
+  const customColByName = useMemo(() => new Map(customColumns.map((cc) => [cc.name, cc])), [customColumns]);
+
+  const isCellEditable = useCallback((colId: string): boolean => {
+    if (colId === PINNED_COL) return false;
+    if (colId.startsWith('custom:')) {
+      if (compiledExprs.has(colId)) return false; // computed — not user-editable
+      const cc = customColById.get(colId.slice('custom:'.length));
+      return cc?.is_editable ?? true;
+    }
+    // Regular column (derived from row data) — look up by name in custom_columns metadata
+    const cc = customColByName.get(colId);
+    return cc?.is_editable ?? true; // not in metadata → user column, editable
+  }, [compiledExprs, customColById, customColByName]);
+
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleTableKeyDown = (e: React.KeyboardEvent) => {
+    if (editingCell) return; // let the input handle keys
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
   };
+
+  const commitEdit = useCallback(() => {
+    if (!editingCell || !cellApiRef.current) return;
+    const { rowIndex, rowId, colId, value } = editingCell;
+    setEditingCell(null);
+    // Optimistic local update
+    setRows((prev) => prev.map((r, i) => i === rowIndex ? { ...r, [colId]: value } : r));
+    cellApiRef.current.upsertCellValue(rowId, colId, value);
+  }, [editingCell]);
+
+  const cancelEdit = useCallback(() => setEditingCell(null), []);
 
   useEffect(() => {
     if (!cursorPos) return;
@@ -466,7 +512,35 @@ export default function TreeTable() {
     if (!key) return;
     const el = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`);
     el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // Update URL hash: #rowId--colId
+    if (key.startsWith('cell:')) {
+      const parts = key.split(':');
+      const ri = parseInt(parts[1], 10);
+      const colId = parts.slice(2).join(':');
+      const row = rows[ri];
+      if (row) {
+        const rowId = String(row['id'] ?? '');
+        history.replaceState(null, '', `#${encodeURIComponent(rowId)}--${encodeURIComponent(colId)}`);
+      }
+    }
   }, [cursorPos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On rows load, jump to the cell referenced in the URL hash.
+  useEffect(() => {
+    if (rows.length === 0 || typeof window === 'undefined') return;
+    const hash = window.location.hash.slice(1);
+    if (!hash) return;
+    const sepIdx = hash.indexOf('--');
+    if (sepIdx < 0) return;
+    const targetRowId = decodeURIComponent(hash.slice(0, sepIdx));
+    const targetColId = decodeURIComponent(hash.slice(sepIdx + 2));
+    const ri = rows.findIndex((r) => String(r['id'] ?? '') === targetRowId);
+    if (ri < 0) return;
+    const bodyKey = `cell:${ri}:${targetColId}`;
+    const el = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(bodyKey)}"]`);
+    el?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    selectKey(bodyKey, false);
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSort = (col: string, dir: 'asc' | 'desc') => {
     setSort({ col, dir });
@@ -517,11 +591,11 @@ export default function TreeTable() {
     setOpenMenuColumn(null);
   };
 
-  const hideRows = useCallback((repoIds: number[]) => {
+  const hideRows = useCallback((rowIds: string[]) => {
     if (!api) return;
-    repoIds.forEach((id) => api.addHiddenRow(id));
-    setHiddenRepoIds((prev) => new Set([...prev, ...repoIds]));
-    setRows((prev) => prev.filter((r) => !repoIds.includes(Number(r['github_id'] ?? 0))));
+    rowIds.forEach((id) => api.addHiddenRow(id));
+    setHiddenRowIds((prev) => new Set([...prev, ...rowIds]));
+    setRows((prev) => prev.filter((r) => !rowIds.includes(String(r['id'] ?? ''))));
   }, [api]);
 
   const handleResizerPointerDown = (event: React.PointerEvent<HTMLDivElement>, columnId: string) => {
@@ -576,6 +650,7 @@ export default function TreeTable() {
       label: newColName.trim(),
       expression: newColExpr.trim() || null,
       position_after: afterColId,
+      is_editable: true,
     };
     setCustomColumns((prev) => [...prev, col]);
     api.createCustomColumn({
@@ -624,7 +699,7 @@ export default function TreeTable() {
         setCellRemarks((prev) => {
           const next = { ...prev };
           for (const t of targets) {
-            const key = `${t.repo_id}:${t.column_id}`;
+            const key = `${t.row_id}:${t.column_id}`;
             const filtered = (next[key] ?? []).filter((r) => r.id !== existingId);
             if (filtered.length > 0) next[key] = filtered; else delete next[key];
           }
@@ -639,7 +714,7 @@ export default function TreeTable() {
     setCellRemarks((prev) => {
       const next = { ...prev };
       for (const t of targets) {
-        const key = `${t.repo_id}:${t.column_id}`;
+        const key = `${t.row_id}:${t.column_id}`;
         const others = (next[key] ?? []).filter((r) => r.id !== rid);
         next[key] = [...others, optimistic];
       }
@@ -841,13 +916,13 @@ export default function TreeTable() {
             </thead>
             <tbody>
               {rows.map((row: RepoRow, rowIndex: number) => {
-                const repoId = Number(row['github_id'] ?? 0);
-                if (hiddenRepoIds.has(repoId)) return null;
+                const rowId = String(row['id'] ?? '');
+                if (hiddenRowIds.has(rowId)) return null;
                 return (
                   <tr key={rowIndex}>
                     {visibleLeafColumns.map((col: Column) => {
                       const bodyKey = `cell:${rowIndex}:${col.id}`;
-                      const noteKey = `${repoId}:${col.id}`;
+                      const noteKey = `${rowId}:${col.id}`;
                       return (
                         <td
                           key={bodyKey}
@@ -863,7 +938,15 @@ export default function TreeTable() {
                             cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
                           ].filter(Boolean).join(' ') || undefined}
                           onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey)}
+                          onDoubleClick={(e) => {
+                            if (!isCellEditable(col.id)) return;
+                            e.stopPropagation();
+                            const rawVal = row[col.id];
+                            const strVal = rawVal == null ? '' : String(rawVal);
+                            setEditingCell({ rowIndex, rowId, colId: col.id, value: strVal });
+                          }}
                           onContextMenu={(e) => {
+                            if (editingCell?.rowIndex === rowIndex && editingCell?.colId === col.id) return;
                             e.preventDefault();
                             e.stopPropagation();
                             const isSelected = selectedSet.has(bodyKey);
@@ -872,23 +955,37 @@ export default function TreeTable() {
                               ? selBodyKeys.map((k) => {
                                   const p = k.split(':');
                                   return {
-                                    repoId: Number(rows[parseInt(p[1], 10)]?.['github_id'] ?? 0),
+                                    rowId: String(rows[parseInt(p[1], 10)]?.['id'] ?? ''),
                                     colId: p[2],
                                   };
                                 })
-                              : [{ repoId, colId: col.id }];
+                              : [{ rowId, colId: col.id }];
                             setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, targets });
                             setCellMenuMode('menu');
                             setDraftText('');
                           }}
                         >
-                          <CellContent
-                            row={row}
-                            colId={col.id}
-                            compiledExpr={compiledExprs.get(col.id)}
-                            hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
-                            hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
-                          />
+                          {editingCell?.rowIndex === rowIndex && editingCell?.colId === col.id ? (
+                            <input
+                              className="cell-editor"
+                              autoFocus
+                              value={editingCell.value}
+                              onChange={(e) => setEditingCell((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                              onBlur={commitEdit}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+                                if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                              }}
+                            />
+                          ) : (
+                            <CellContent
+                              row={row}
+                              colId={col.id}
+                              compiledExpr={compiledExprs.get(col.id)}
+                              hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
+                              hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
+                            />
+                          )}
                           <div
                             className="resizer"
                             onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, col.id); }}
@@ -910,9 +1007,9 @@ export default function TreeTable() {
           {' '}
           <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
         </span>
-        {hiddenRepoIds.size > 0 && (
+        {hiddenRowIds.size > 0 && (
           <span style={{ marginLeft: '1rem', color: '#64748b', fontSize: '0.81rem' }}>
-            {hiddenRepoIds.size} row{hiddenRepoIds.size !== 1 ? 's' : ''} hidden
+            {hiddenRowIds.size} row{hiddenRowIds.size !== 1 ? 's' : ''} hidden
           </span>
         )}
         {hiddenColumns.length > 0 && (

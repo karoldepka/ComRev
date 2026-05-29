@@ -14,9 +14,9 @@ import { share, takeUntil } from 'rxjs/operators';
 // ── Proto-aligned event types (mirrors structable.proto ServerEvent) ──────────
 
 export type FlagData      = { id: string; key: string; color: string };
-export type RemarkTarget  = { repo_id: number; column_id: string };
+export type RemarkTarget  = { row_id: string; column_id: string };
 export type RemarkData    = { id: string; body: string; kind: 'note'|'comment'; is_private: boolean; resolved_at: string; targets: RemarkTarget[] };
-export type HiddenRowData = { id: string; repo_id: number };
+export type HiddenRowData = { id: string; row_id: string };
 export type HiddenColData = { id: string; column_id: string };
 export type CustomColData = { id: string; name: string; label: string; expression: string; position_after: string };
 
@@ -147,12 +147,16 @@ export class SyncClient {
     body: string,
     targets: RemarkTarget[],
   ): Promise<string> {
-    return this.inner.upsert_remark(id, kind, body, JSON.stringify(targets));
+    // WASM/gRPC wire still uses {repo_id: number}; convert at boundary.
+    // TODO: update sync_core Rust to accept {row_id: string} natively.
+    const wire = targets.map((t) => ({ repo_id: t.row_id === '' ? 0 : parseInt(t.row_id, 10), column_id: t.column_id }));
+    return this.inner.upsert_remark(id, kind, body, JSON.stringify(wire));
   }
 
-  deleteRemark(id: string):                         Promise<void>   { return this.inner.delete_remark(id); }
-  addHiddenRow(repoId: number):                     Promise<void>   { return this.inner.add_hidden_row(repoId); }
-  removeHiddenRow(repoId: number):                  Promise<void>   { return this.inner.remove_hidden_row(repoId); }
+  deleteRemark(id: string):          Promise<void> { return this.inner.delete_remark(id); }
+  // TODO: update sync_core to accept string rowId natively.
+  addHiddenRow(rowId: string):       Promise<void> { return this.inner.add_hidden_row(parseInt(rowId, 10)); }
+  removeHiddenRow(rowId: string):    Promise<void> { return this.inner.remove_hidden_row(parseInt(rowId, 10)); }
   addHiddenColumn(columnId: string):                Promise<void>   { return this.inner.add_hidden_column(columnId); }
   removeHiddenColumn(columnId: string):             Promise<void>   { return this.inner.remove_hidden_column(columnId); }
   deleteCustomColumn(id: string):                   Promise<void>   { return this.inner.delete_custom_column(id); }

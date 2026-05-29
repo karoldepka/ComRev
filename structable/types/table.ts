@@ -8,7 +8,7 @@ export const FLAG_COLORS: readonly { id: FlagColorId; label: string; bg: string 
   { id: 'red',    label: 'Bad',         bg: '#dc2626' },
 ] as const;
 
-export type CellTarget = { repoId: number; colId: string };
+export type CellTarget = { rowId: string; colId: string };
 
 export type ToastMessage = {
   id: string;
@@ -20,7 +20,7 @@ export type ToastMessage = {
 // All PKs are client-generated nanoid strings so records can be created offline.
 
 export type RemarkTarget = {
-  repo_id: number;  // 0 = column-header remark
+  row_id: string;   // '' = column-header remark
   column_id: string;
 };
 
@@ -46,11 +46,12 @@ export type ApiCustomColumn = {
   label: string | null;
   expression: string | null;
   position_after: string | null;
+  is_editable: boolean;
 };
 
 export type ApiHiddenRow = {
   id: string;
-  repo_id: number;
+  row_id: string;
 };
 
 export type ApiHiddenColumn = {

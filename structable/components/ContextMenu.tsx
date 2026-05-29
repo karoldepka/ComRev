@@ -13,7 +13,7 @@ type Column = { id: string; label: string; subColumns?: Column[] };
 type BaseProps = {
   anchor: { top: number; left: number };
   cellFlags: Record<string, string>;
-  cellRemarks: Record<string, ApiRemark[]>;       // key: `${repoId}:${colId}` (repoId=0 for headers)
+  cellRemarks: Record<string, ApiRemark[]>;       // key: `${rowId}:${colId}` (rowId='' for headers)
   onFlagsChange: (toSet: Record<string, string>, toDelete: string[]) => void;
   onSaveRemark: (
     targets: RemarkTarget[],
@@ -34,13 +34,6 @@ export type HeaderMenuProps = BaseProps & {
   filters: Record<string, string>;
   filterDraft: Record<string, string>;
   setFilterDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  addingColAfter: string | null;
-  newColName: string;
-  newColId: string;
-  newColExpr: string;
-  setNewColName: (v: string) => void;
-  setNewColId:   (v: string) => void;
-  setNewColExpr: (v: string) => void;
   draftText: string;
   setDraftText: (v: string) => void;
   onSetMode:    (m: 'menu' | 'flag' | 'note' | 'comment') => void;
@@ -49,7 +42,6 @@ export type HeaderMenuProps = BaseProps & {
   onClearFilter:(colId: string) => void;
   onHide:       (ids: string[]) => void;
   onAddColClick:(colId: string) => void;
-  onCreateCol:  (afterColId: string) => void;
   onDeleteCol:  (colId: string) => void;
 };
 
@@ -61,7 +53,7 @@ export type CellMenuProps = BaseProps & {
   setDraftText: (v: string) => void;
   onSetMode:    (m: 'menu' | 'note' | 'comment' | 'flag') => void;
   onHideCols:   (colIds: string[]) => void;
-  onHideRows:   (repoIds: number[]) => void;
+  onHideRows:   (rowIds: string[]) => void;
 };
 
 export type ContextMenuProps = HeaderMenuProps | CellMenuProps;
@@ -120,16 +112,14 @@ export default function ContextMenu(props: ContextMenuProps) {
     const {
       column, mode, isLeaf, allColsToHide,
       sort, filters, filterDraft, setFilterDraft,
-      addingColAfter, newColName, newColId, newColExpr,
-      setNewColName, setNewColId, setNewColExpr,
       draftText, setDraftText,
       onSetMode, onSort, onApplyFilter, onClearFilter,
-      onHide, onAddColClick, onCreateCol, onDeleteCol,
+      onHide, onAddColClick, onDeleteCol,
     } = props;
 
     const flagKey    = `header:${column.id}`;
     const remarkKey  = `0:${column.id}`;
-    const targets: RemarkTarget[] = [{ repo_id: 0, column_id: column.id }];
+    const targets: RemarkTarget[] = [{ row_id: '', column_id: column.id }];
     const existingNote    = cellRemarks[remarkKey]?.find((r) => r.kind === 'note');
     const existingComment = cellRemarks[remarkKey]?.find((r) => r.kind === 'comment');
     const colHasFilter = () => { const p = colFilterParam(column.id); return !!p && !!filters[p]; };
@@ -245,62 +235,12 @@ export default function ContextMenu(props: ContextMenuProps) {
           </>
         ) : (
           <>
-            {addingColAfter === column.id ? (
-              <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
-                <input
-                  autoFocus
-                  placeholder="Column label…"
-                  value={newColName}
-                  onChange={(e) => setNewColName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') onCreateCol(column.id);
-                    if (e.key === 'Escape') onAddColClick('');
-                  }}
-                />
-                <input
-                  placeholder={`ID (default: ${newColName.trim().toLowerCase().replace(/\s+/g, '_') || 'auto'})`}
-                  value={newColId}
-                  onChange={(e) => setNewColId(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') onCreateCol(column.id);
-                    if (e.key === 'Escape') onAddColClick('');
-                  }}
-                />
-                <input
-                  placeholder="JS expression (optional, e.g. row.stars/row.forks)…"
-                  value={newColExpr}
-                  onChange={(e) => setNewColExpr(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') onCreateCol(column.id); }}
-                />
-                <div className="menu-add-col-actions">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onCreateCol(column.id); }}
-                  >
-                    Create
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddColClick('');
-                      setNewColName('');
-                      setNewColId('');
-                      setNewColExpr('');
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onAddColClick(column.id); }}
-              >
-                + Add column to the right
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAddColClick(column.id); }}
+            >
+              + Add column to the right
+            </button>
             {allColsToHide.length > 0 && (
               <>
                 <div className="menu-divider" />
@@ -358,10 +298,10 @@ export default function ContextMenu(props: ContextMenuProps) {
 
     const n = targets.length;
     const isSingle = n === 1;
-    const firstKey = `${targets[0].repoId}:${targets[0].colId}`;
+    const firstKey = `${targets[0].rowId}:${targets[0].colId}`;
     const colsToHide = [...new Set(targets.map((t) => t.colId))].filter((id) => id !== PINNED_COL);
-    const rowsToHide = [...new Set(targets.map((t) => t.repoId))].filter((id) => id > 0);
-    const remarkTargets: RemarkTarget[] = targets.map((t) => ({ repo_id: t.repoId, column_id: t.colId }));
+    const rowsToHide = [...new Set(targets.map((t) => t.rowId))].filter((id) => id !== '');
+    const remarkTargets: RemarkTarget[] = targets.map((t) => ({ row_id: t.rowId, column_id: t.colId }));
 
     const existingNote    = isSingle ? cellRemarks[firstKey]?.find((r) => r.kind === 'note')    : undefined;
     const existingComment = isSingle ? cellRemarks[firstKey]?.find((r) => r.kind === 'comment') : undefined;
@@ -429,7 +369,7 @@ export default function ContextMenu(props: ContextMenuProps) {
         )}
         {mode === 'flag' && (
           <FlagSubmenu
-            flagKeys={targets.map(({ repoId, colId }) => `${repoId}:${colId}`)}
+            flagKeys={targets.map(({ rowId, colId }) => `${rowId}:${colId}`)}
             cellFlags={cellFlags}
             onFlagsChange={onFlagsChange}
             onClose={onClose}

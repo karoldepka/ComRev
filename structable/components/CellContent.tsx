@@ -37,15 +37,16 @@ export default function CellContent({ row, colId, compiledExpr, hasNote, hasComm
       </a>
     );
   } else if (colId.startsWith('custom:')) {
-    if (!compiledExpr) {
-      content = '-';
-    } else {
+    if (compiledExpr) {
       try {
         const v = compiledExpr(row);
         content = v != null ? String(v) : '-';
       } catch {
         content = '#ERR';
       }
+    } else {
+      // Non-expression custom column: show stored value (may be set by user edits)
+      content = formatCell(row[colId], colId);
     }
   } else {
     content = formatCell(row[colId], colId);

@@ -12,6 +12,7 @@
         ".specify/scripts/powershell/": true
     },
     "cSpell.words": [
+        "Prefs",
         "structable"
     ]
 }

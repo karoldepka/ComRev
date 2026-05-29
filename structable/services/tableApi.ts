@@ -225,19 +225,34 @@ export class TableApi {
     this.enqueue({ id: `custom-col:delete:${id}`, method: 'DELETE', path: `/custom-columns/${encodeURIComponent(id)}`, retries: 0 });
   }
 
-  addHiddenRow(repoId: number): void {
-    this.cancelOp(`hidden-row:remove:${repoId}`);
-    this.enqueue({ id: `hidden-row:add:${repoId}`, method: 'POST', path: '/hidden-rows', body: { repo_id: repoId }, retries: 0 });
+  addHiddenRow(rowId: string): void {
+    this.cancelOp(`hidden-row:remove:${rowId}`);
+    this.enqueue({ id: `hidden-row:add:${rowId}`, method: 'POST', path: '/hidden-rows', body: { row_id: rowId }, retries: 0 });
   }
 
-  removeHiddenRow(repoId: number): void {
-    this.cancelOp(`hidden-row:add:${repoId}`);
-    this.enqueue({ id: `hidden-row:remove:${repoId}`, method: 'DELETE', path: `/hidden-rows/${repoId}`, retries: 0 });
+  removeHiddenRow(rowId: string): void {
+    this.cancelOp(`hidden-row:add:${rowId}`);
+    this.enqueue({ id: `hidden-row:remove:${rowId}`, method: 'DELETE', path: `/hidden-rows/${encodeURIComponent(rowId)}`, retries: 0 });
   }
 
   addHiddenColumn(columnId: string): void {
     this.cancelOp(`hidden-col:remove:${columnId}`);
     this.enqueue({ id: `hidden-col:add:${columnId}`, method: 'POST', path: '/hidden-columns', body: { column_id: columnId }, retries: 0 });
+  }
+
+  /**
+   * Persist a cell value edit. Coalesces rapid edits to the same cell.
+   * colId may carry a 'custom:' prefix — stripped before sending to the API.
+   */
+  upsertCellValue(rowId: string, colId: string, value: unknown): void {
+    const apiColId = colId.startsWith('custom:') ? colId.slice('custom:'.length) : colId;
+    this.enqueue({
+      id: `cell:upsert:${rowId}:${apiColId}`,
+      method: 'PATCH',
+      path: `/repos/${encodeURIComponent(rowId)}/values`,
+      body: { col_id: apiColId, value },
+      retries: 0,
+    });
   }
 
   removeHiddenColumn(columnId: string): void {
