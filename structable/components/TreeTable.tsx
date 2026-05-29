@@ -152,6 +152,8 @@ export default function TreeTable({ tableId }: Props) {
 
   type PendingChange = { id: string; description: string; timestamp: number };
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const [cellQueueSummary, setCellQueueSummary] = useState<PendingChange[]>([]);
+  const [syncQueueSummary, setSyncQueueSummary] = useState<PendingChange[]>([]);
   const recordChange = useCallback((description: string) => {
     const id = nanoid();
     setPendingChanges((prev) => [{ id, description, timestamp: Date.now() }, ...prev].slice(0, 50));
@@ -165,7 +167,10 @@ export default function TreeTable({ tableId }: Props) {
       baseUrl: API_BASE,
       tableId,
       onError: (msg) => toast.error(msg),
-      onQueueChange: setCellPending,
+      onQueueChange: (count) => {
+        setCellPending(count);
+        setCellQueueSummary(cellApiRef.current?.getQueueSummary() ?? []);
+      },
     });
   }
 
@@ -181,7 +186,12 @@ export default function TreeTable({ tableId }: Props) {
 
   useEffect(() => {
     if (!api) return;
-    const sub = api.queueLength$.subscribe(setSyncPending);
+    const sub = api.queueLength$.subscribe((count) => {
+      setSyncPending(count);
+      setSyncQueueSummary(
+        api.getQueueSummary().map((item) => ({ ...item, timestamp: Date.now() }))
+      );
+    });
     return () => sub.unsubscribe();
   }, [api]);
 
@@ -451,7 +461,7 @@ export default function TreeTable({ tableId }: Props) {
   }, [headerRows]);
 
   const {
-    selectedKeys, setSelectedKeys,
+    selectedKeys,
     cursorPos,
     selectedSet, selectedRows, selectedCols,
     selectKey: selectKeyHook, moveCursor,
@@ -777,11 +787,16 @@ export default function TreeTable({ tableId }: Props) {
 
   const isDownloading = loading || bootstrapping;
 
+  // Prefer in-session recorded changes; fall back to actual queue items so the
+  // popup is never empty while the badge shows a non-zero count.
+  const displayChanges: PendingChange[] =
+    pendingChanges.length > 0 ? pendingChanges : [...cellQueueSummary, ...syncQueueSummary];
+
   // Initial empty state: no data yet
   if (rows.length === 0 && !fetchError) {
     return (
       <>
-        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={pendingChanges} />
+        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
         {loading && <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>}
       </>
     );
@@ -789,7 +804,7 @@ export default function TreeTable({ tableId }: Props) {
   if (rows.length === 0 && fetchError) {
     return (
       <>
-        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={pendingChanges} />
+        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
         <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>
       </>
     );
@@ -797,7 +812,7 @@ export default function TreeTable({ tableId }: Props) {
 
   return (
     <>
-      <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+      <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
       <TableToolbar
         tableId={tableId}
         tables={tables}

@@ -40,6 +40,47 @@ struct QueuedOp {
     data:    serde_json::Value,
 }
 
+fn describe_op(kind: &str, data: &serde_json::Value) -> String {
+    let s = |key: &str| data[key].as_str().unwrap_or("").to_string();
+    let i = |key: &str| data[key].as_i64().map(|n| n.to_string()).unwrap_or_default();
+    match kind {
+        "upsert_flag" => {
+            let color = s("color");
+            let key   = s("key");
+            if color.is_empty() { format!("Set flag [{key}]") }
+            else { format!("Set {color} flag [{key}]") }
+        }
+        "delete_flag" => format!("Remove flag [{}]", s("key")),
+        "upsert_remark" => {
+            let kind = s("kind");
+            let body = s("body");
+            let preview: String = body.chars().take(40).collect();
+            let ellipsis = if body.chars().count() > 40 { "…" } else { "" };
+            format!("Save {kind}: \"{preview}{ellipsis}\"")
+        }
+        "delete_remark" => "Delete remark".to_string(),
+        "add_hidden_row"    => format!("Hide row #{}", i("repo_id")),
+        "remove_hidden_row" => format!("Unhide row #{}", i("repo_id")),
+        "add_hidden_col" => {
+            let col = s("column_id");
+            format!("Hide column [{col}]")
+        }
+        "remove_hidden_col" => {
+            let col = s("column_id");
+            format!("Unhide column [{col}]")
+        }
+        "create_custom_col" => {
+            let label = s("label");
+            let name  = s("name");
+            let display = if !label.is_empty() { &label } else { &name };
+            if display.is_empty() { "Create column".to_string() }
+            else { format!("Create column \"{display}\"") }
+        }
+        "delete_custom_col" => "Delete column".to_string(),
+        _ => kind.to_string(),
+    }
+}
+
 impl QueuedOp {
     fn into_client_op(self) -> Option<ClientOp> {
         let payload = match self.kind.as_str() {
@@ -435,6 +476,18 @@ impl SyncClient {
 
     pub fn queue_length(&self) -> u32 {
         self.inner.borrow().queue.len() as u32
+    }
+
+    /// Returns a JSON string: `[{ "id": "…", "description": "…" }, …]`
+    pub fn get_queue_summary(&self) -> String {
+        let g = self.inner.borrow();
+        let items: Vec<serde_json::Value> = g.queue.iter().map(|op| {
+            serde_json::json!({
+                "id": op.op_id,
+                "description": describe_op(&op.kind, &op.data),
+            })
+        }).collect();
+        serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string())
     }
 
     // ── Mutation methods ──────────────────────────────────────────────────────

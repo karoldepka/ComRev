@@ -95,9 +95,9 @@ export default function SyncIndicator({ pendingUploads, isDownloading, pendingCh
         <div className="sync-panel" role="dialog" aria-label="Pending changes">
           <div className="sync-panel-header">
             <span>
-              {pendingChanges.length === 0
+              {pendingUploads === 0
                 ? 'No pending changes'
-                : `${pendingChanges.length} change${pendingChanges.length !== 1 ? 's' : ''}`}
+                : `${pendingUploads} change${pendingUploads !== 1 ? 's' : ''} pending`}
             </span>
             <button
               type="button"

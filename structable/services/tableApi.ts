@@ -21,10 +21,29 @@ type QueuedOp = {
   body?: unknown;
   retries: number;
   seq: number;      // monotonic insertion order — used to sort after IDB getAll
+  enqueuedAt?: number; // optional: absent in ops persisted by older code
   onSuccess?: (data: unknown) => void; // in-memory only; stripped before IDB write
 };
 
 type StoredOp = Omit<QueuedOp, 'onSuccess'>;
+
+function describeOp(op: StoredOp): string {
+  const parts = op.id.split(':');
+  const type = parts[0];
+  const action = parts[1];
+  if (type === 'cell' && action === 'upsert') return parts[3] ? `Edit cell [${parts[3]}]` : 'Edit cell';
+  if (type === 'flag')       return action === 'upsert' ? 'Update flag'    : 'Remove flag';
+  if (type === 'remark')     return action === 'upsert' ? 'Save remark'    : 'Delete remark';
+  if (type === 'custom-col') return action === 'create' ? 'Create column'  : 'Delete column';
+  if (type === 'hidden-row') return action === 'add'    ? 'Hide row'       : 'Unhide row';
+  if (type === 'hidden-col') return action === 'add'    ? 'Hide column'    : 'Unhide column';
+  if (type === 'table') {
+    const title = (op.body as { title?: string } | undefined)?.title;
+    if (action === 'create') return title ? `Create table "${title}"` : 'Create table';
+    return title ? `Update table "${title}"` : 'Update table';
+  }
+  return `${op.method} ${op.path}`;
+}
 
 interface StructableDB {
   [OPS_STORE]: { key: string; value: StoredOp };
@@ -306,13 +325,21 @@ export class TableApi {
     this.onQueueChange?.(this.queue.length);
   }
 
-  private enqueue(op: Omit<QueuedOp, 'seq'>): void {
+  getQueueSummary(): { id: string; description: string; timestamp: number }[] {
+    return this.queue.map((op) => ({
+      id: op.id,
+      description: describeOp(op),
+      timestamp: op.enqueuedAt ?? Date.now(),
+    }));
+  }
+
+  private enqueue(op: Omit<QueuedOp, 'seq' | 'enqueuedAt'>): void {
     // Replace any existing op with same id (re-enqueue with fresh seq)
     if (this.queue.some((q) => q.id === op.id)) {
       this.queue = this.queue.filter((q) => q.id !== op.id);
       this.idbDelete(op.id);
     }
-    const record: QueuedOp = { ...op, seq: this.nextSeq++ };
+    const record: QueuedOp = { ...op, seq: this.nextSeq++, enqueuedAt: Date.now() };
     this.queue.push(record);
     // Fire-and-forget: op is in-memory already; IDB write is crash insurance
     this.idbPut(record).catch(() => {});

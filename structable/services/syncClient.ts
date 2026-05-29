@@ -40,6 +40,7 @@ interface WasmSyncClient {
   set_on_error(cb: (msg: string) => void): void;
   subscribe(onEvent: (json: string) => void): () => void;
   queue_length(): number;
+  get_queue_summary(): string;
 
   upsert_flag(key: string, color: string): Promise<void>;
   delete_flag(key: string): Promise<void>;
@@ -134,6 +135,10 @@ export class SyncClient {
 
   get queueLength(): number {
     return this.inner.queue_length();
+  }
+
+  getQueueSummary(): { id: string; description: string }[] {
+    try { return JSON.parse(this.inner.get_queue_summary()); } catch { return []; }
   }
 
   // ── Mutations ────────────────────────────────────────────────────────────────
