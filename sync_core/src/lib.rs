@@ -620,7 +620,7 @@ impl SyncClient {
             let req = ListReposRequest {
                 page:     p.page.unwrap_or(1),
                 per_page: p.per_page.unwrap_or(50),
-                sort:     p.sort.unwrap_or_else(|| "stars_diff_14d:desc".into()),
+                sort:     p.sort.unwrap_or_else(|| "when_created:desc".into()),
                 filters:  p.filters,
             };
             let mut client = grpc_client(&base_url);
@@ -694,13 +694,16 @@ impl serde::Serialize for HiddenCol {
 impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("CustomCol", 6)?;
+        let mut st = s.serialize_struct("CustomCol", 9)?;
         st.serialize_field("id",             &self.id)?;
         st.serialize_field("name",           &self.name)?;
         st.serialize_field("label",          &self.label)?;
         st.serialize_field("expression",     &self.expression)?;
         st.serialize_field("position_after", &self.position_after)?;
         st.serialize_field("description",    &self.description)?;
+        st.serialize_field("read_only",      &self.read_only)?;
+        st.serialize_field("readOnly",       &self.read_only)?;
+        st.serialize_field("types",          &self.types)?;
         st.end()
     }
 }
@@ -763,7 +766,8 @@ impl serde::Serialize for ServerEvent {
                     "data": v.data.as_ref().map(|d| serde_json::json!({
                         "id": d.id, "name": d.name, "label": d.label,
                         "expression": d.expression, "position_after": d.position_after,
-                        "description": d.description,
+                        "description": d.description, "read_only": d.read_only,
+                        "readOnly": d.read_only, "types": d.types,
                     })),
                 }))?;
             }

@@ -122,6 +122,8 @@ impl Sync for SyncServiceImpl {
                 description:    c.description.clone().unwrap_or_default(),
                 expression:     c.expression.clone().unwrap_or_default(),
                 position_after: c.position_after.clone().unwrap_or_default(),
+                read_only:      c.read_only,
+                types:          c.types.clone(),
             }).collect(),
         }))
     }
@@ -295,6 +297,8 @@ impl SyncServiceImpl {
                     description:    col.description.clone().unwrap_or_default(),
                     expression:     col.expression.clone().unwrap_or_default(),
                     position_after: col.position_after.clone().unwrap_or_default(),
+                    read_only:      col.read_only,
+                    types:          col.types.clone(),
                 });
                 let resp = serde_json::to_vec(&serde_json::json!({
                     "id": col.id, "name": col.name,

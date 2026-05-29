@@ -63,13 +63,16 @@ pub struct UpsertRemark {
 pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS remarks (
-            id          TEXT        PRIMARY KEY,
-            body        TEXT        NOT NULL    DEFAULT '',
-            kind        TEXT        NOT NULL    DEFAULT 'note',
-            is_private  BOOLEAN     NOT NULL    DEFAULT false,
-            resolved_at TIMESTAMPTZ,
-            created_at  TIMESTAMPTZ NOT NULL    DEFAULT NOW(),
-            updated_at  TIMESTAMPTZ NOT NULL    DEFAULT NOW()
+            id                 TEXT        PRIMARY KEY,
+            body               TEXT        NOT NULL    DEFAULT '',
+            kind               TEXT        NOT NULL    DEFAULT 'note',
+            is_private         BOOLEAN     NOT NULL    DEFAULT false,
+            resolved_at        TIMESTAMPTZ,
+            who_created        TEXT,
+            when_created       TIMESTAMPTZ NOT NULL    DEFAULT NOW(),
+            who_last_modified  TEXT,
+            when_last_modified TIMESTAMPTZ NOT NULL    DEFAULT NOW(),
+            modify_count       INTEGER     NOT NULL    DEFAULT 0
         )",
     )
     .execute(pool)

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   createColumnHelper,
   flexRender,
@@ -15,19 +15,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const helper = createColumnHelper<RepoRow>();
 
-const COLUMNS = [
-  helper.accessor('name',           { header: 'Repo',         size: 220 }),
-  helper.accessor('description',    { header: 'Description',  size: 320 }),
-  helper.accessor('owner_login',    { header: 'Owner',        size: 130 }),
-  helper.accessor('language',       { header: 'Language',     size: 120 }),
-  helper.accessor('stars',          { header: 'Stars',        size: 90  }),
-  helper.accessor('forks',          { header: 'Forks',        size: 80  }),
-  helper.accessor('open_issues',    { header: 'Issues',       size: 80  }),
-  helper.accessor('stars_diff_14d', { header: '±14d',         size: 80  }),
-  helper.accessor('stars_diff_30d', { header: '±30d',         size: 80  }),
-  helper.accessor('pushed_at',      { header: 'Pushed',       size: 170 }),
-  helper.accessor('language',       { id: 'language2', header: 'Lang',  size: 80  }),
-];
+function labelFor(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 export default function TanStackTable() {
   const [data, setData] = useState<RepoRow[]>([]);
@@ -35,7 +25,7 @@ export default function TanStackTable() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'stars_diff_14d', desc: true }]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'when_created', desc: true }]);
   const perPage = 50;
 
   useEffect(() => {
@@ -45,7 +35,7 @@ export default function TanStackTable() {
     const params = new URLSearchParams({
       page: String(page),
       per_page: String(perPage),
-      sort: s ? `${s.id}:${s.desc ? 'desc' : 'asc'}` : 'stars_diff_14d:desc',
+      sort: s ? `${s.id}:${s.desc ? 'desc' : 'asc'}` : 'when_created:desc',
     });
     fetch(`${API_BASE}/repos?${params}`)
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
@@ -53,9 +43,15 @@ export default function TanStackTable() {
       .catch((err: Error) => { setError(err.message); setLoading(false); });
   }, [page, sorting]);
 
+  const columns = useMemo(() => {
+    const first = data[0];
+    const keys = first ? Object.keys(first) : ['id', 'when_created'];
+    return keys.map((key) => helper.accessor(key, { header: labelFor(key), size: 120 }));
+  }, [data]);
+
   const table = useReactTable({
     data,
-    columns: COLUMNS,
+    columns,
     state: { sorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),

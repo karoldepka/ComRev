@@ -8,49 +8,20 @@ import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
 import AddColumnDialog from './AddColumnDialog';
+import AddTableDialog from './AddTableDialog';
+import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
+import TableToolbar from './TableToolbar';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam } from '../utils/columnFilters';
 
 import { TableApi } from '../services/tableApi';
-import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, RepoRow } from '../types/table';
+import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, RemarkTarget, RepoRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const PINNED_COL = 'name';
-
-type ColumnMeta = { width?: number; label?: string };
-
-const COLUMNS: Record<string, ColumnMeta> = {
-  name:           { width: 220, label: 'Repo' },
-  description:    { width: 320 },
-  owner_login:    { width: 130 },
-  language:       { width: 120 },
-  license:        { width: 120 },
-  stars:          { width: 90 },
-  forks:          { width: 80 },
-  open_issues:    { width: 80 },
-  size:           { width: 80 },
-  stars_now:      { width: 90 },
-  stars_diff_6h:  { width: 80 },
-  stars_diff_12h: { width: 80 },
-  stars_diff_24h: { width: 80 },
-  stars_diff_48h: { width: 80 },
-  stars_diff_5d:  { width: 80 },
-  stars_diff_7d:  { width: 80 },
-  stars_diff_10d: { width: 80 },
-  stars_diff_14d: { width: 80 },
-  stars_diff_20d: { width: 80 },
-  stars_diff_30d: { width: 80 },
-  pushed_at:      { width: 170 },
-  created_at:     { width: 170 },
-  updated_at:     { width: 170 },
-  visibility:     { width: 100 },
-  archived:       { width: 80 },
-  disabled:       { width: 80 },
-  topics:         { width: 200 },
-};
 
 // ── Local types ────────────────────────────────────────────────────────────────
 
@@ -59,6 +30,9 @@ type Column = {
   label: string;
   width?: number;
   minWidth?: number;
+  customColumnId?: string;
+  readOnly?: boolean;
+  types?: string[];
   subColumns?: Column[];
 };
 
@@ -75,10 +49,33 @@ function deriveColumns(row: RepoRow): Column[] {
   const sorted = [...(keys.includes(PINNED_COL) ? [PINNED_COL] : []), ...keys.filter((k) => k !== PINNED_COL)];
   return sorted.map((key) => ({
     id: key,
-    label: COLUMNS[key]?.label ?? labelFor(key),
-    width: COLUMNS[key]?.width ?? 120,
+    label: labelFor(key),
+    width: 120,
     minWidth: 60,
   }));
+}
+
+function isColumnReadOnly(cc: ApiCustomColumn): boolean {
+  return cc.readOnly ?? cc.read_only ?? !(cc.is_editable ?? true);
+}
+
+function columnsFromMetadata(customColumns: ApiCustomColumn[]): Column[] {
+  const result: Column[] = [];
+  for (const cc of customColumns) {
+    const afterIdx = cc.position_after
+      ? result.findIndex((c) => c.id === cc.position_after || c.customColumnId === cc.position_after)
+      : -1;
+    result.splice(afterIdx >= 0 ? afterIdx + 1 : result.length, 0, {
+      id: cc.name,
+      customColumnId: cc.id,
+      label: cc.label ?? labelFor(cc.name),
+      width: 150,
+      minWidth: 60,
+      readOnly: isColumnReadOnly(cc),
+      types: cc.types ?? ['text'],
+    });
+  }
+  return result;
 }
 
 function getLeafColumns(cols: Column[]): Column[] {
@@ -180,6 +177,16 @@ export default function TreeTable({ tableId }: Props) {
   const { columnWidths, setColumnWidths, columnOrder, reorderColumns } = useColumnPrefs();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // ── Tables registry ───────────────────────────────────────────────────────
+  const [tables, setTables] = useState<ApiTable[]>([]);
+
+  useEffect(() => {
+    if (!cellApiRef.current) return;
+    cellApiRef.current.fetchTables()
+      .then(setTables)
+      .catch((err: unknown) => toast.error(`Failed to load tables: ${errMsg(err)}`));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Column state ───────────────────────────────────────────────────────────
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
@@ -195,11 +202,14 @@ export default function TreeTable({ tableId }: Props) {
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag' | 'note' | 'comment'>('menu');
-  // ── Add-column dialog ──────────────────────────────────────────────────────
+  // ── Add-column / add-table dialogs ────────────────────────────────────────
   const [addColAfter, setAddColAfter] = useState<string | null>(null);
+  const [showAddTable, setShowAddTable] = useState(false);
+  type PendingDelete = { colId: string; label: string; notes: number; comments: number; flags: number };
+  const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
-  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'stars_diff_14d', dir: 'desc' });
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'when_created', dir: 'desc' });
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
 
@@ -323,18 +333,9 @@ export default function TreeTable({ tableId }: Props) {
 
   // ── Column geometry ────────────────────────────────────────────────────────
   const columns = useMemo<Column[]>(() => {
-    if (rows.length === 0) return [];
-    const base = deriveColumns(rows[0]);
-    const result = [...base];
-    for (const cc of customColumns) {
-      const afterIdx = cc.position_after ? result.findIndex((c) => c.id === cc.position_after) : -1;
-      result.splice(afterIdx >= 0 ? afterIdx + 1 : result.length, 0, {
-        id: `custom:${cc.id}`,
-        label: cc.label ?? cc.name,
-        width: 150,
-        minWidth: 60,
-      });
-    }
+    const result = customColumns.length > 0
+      ? columnsFromMetadata(customColumns)
+      : (rows.length > 0 ? deriveColumns(rows[0]) : []);
     if (columnOrder.length > 0) {
       const map = new Map(result.map((c) => [c.id, c]));
       const ordered: Column[] = [];
@@ -420,7 +421,7 @@ export default function TreeTable({ tableId }: Props) {
       if (cc.expression?.trim()) {
         try {
           // eslint-disable-next-line no-new-func
-          map.set(`custom:${cc.id}`, new Function('row', `"use strict"; return (${cc.expression})`) as (row: RepoRow) => unknown);
+          map.set(cc.name, new Function('row', `"use strict"; return (${cc.expression})`) as (row: RepoRow) => unknown);
         } catch { /* invalid expression */ }
       }
     }
@@ -428,20 +429,14 @@ export default function TreeTable({ tableId }: Props) {
   }, [customColumns]);
 
   // Lookup maps for column metadata
-  const customColById   = useMemo(() => new Map(customColumns.map((cc) => [cc.id, cc])),   [customColumns]);
   const customColByName = useMemo(() => new Map(customColumns.map((cc) => [cc.name, cc])), [customColumns]);
 
   const isCellEditable = useCallback((colId: string): boolean => {
     if (colId === PINNED_COL) return false;
-    if (colId.startsWith('custom:')) {
-      if (compiledExprs.has(colId)) return false; // computed — not user-editable
-      const cc = customColById.get(colId.slice('custom:'.length));
-      return cc?.is_editable ?? true;
-    }
-    // Regular column (derived from row data) — look up by name in custom_columns metadata
+    if (compiledExprs.has(colId)) return false; // computed — not user-editable
     const cc = customColByName.get(colId);
-    return cc?.is_editable ?? true; // not in metadata → user column, editable
-  }, [compiledExprs, customColById, customColByName]);
+    return cc ? !isColumnReadOnly(cc) : true; // no metadata yet → fallback columns are editable
+  }, [compiledExprs, customColByName]);
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
@@ -599,9 +594,9 @@ export default function TreeTable({ tableId }: Props) {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [cellMenu]);
 
-  // All column names currently visible (row-derived + custom), used for duplicate-ID validation.
+  // All column names currently visible, used for duplicate-ID validation.
   const existingColNames = useMemo<Set<string>>(() => new Set([
-    ...allLeafColumns.filter((c) => !c.id.startsWith('custom:')).map((c) => c.id),
+    ...allLeafColumns.map((c) => c.id),
     ...customColumns.map((cc) => cc.name),
   ]), [allLeafColumns, customColumns]);
 
@@ -619,21 +614,64 @@ export default function TreeTable({ tableId }: Props) {
       description: payload.description,
       expression: payload.expression,
       position_after: afterColId,
-      is_editable: true,
+      read_only: false,
+      readOnly: false,
+      types: ['text'],
     };
     setCustomColumns((prev) => [...prev, col]);
     api.createCustomColumn({ name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
   }, [api]);
 
-  const deleteCustomColumn = (colId: string) => {
-    if (!api) return;
-    const id = colId.replace('custom:', '');
-    api.deleteCustomColumn(id);
-    setCustomColumns((prev) => prev.filter((c) => c.id !== id));
-    setHiddenColumns((prev) => prev.filter((c) => c !== colId));
+  const handleCreateTable = useCallback((payload: import('./AddTableDialog').AddTablePayload) => {
+    if (!cellApiRef.current) return;
+    const id = nanoid();
+    const newTable: ApiTable = { id, title: payload.title, description: payload.description };
+    cellApiRef.current.createTable({ id, title: payload.title, description: payload.description });
+    setTables((prev) => [...prev, newTable]);
+    setShowAddTable(false);
+  }, []);
+
+  const handleRenameTable = useCallback((id: string, title: string) => {
+    if (!cellApiRef.current) return;
+    cellApiRef.current.patchTable(id, { title });
+    setTables((prev) => prev.map((t) => t.id === id ? { ...t, title } : t));
+  }, []);
+
+  const deleteCustomColumn = useCallback((colId: string) => {
+    const colMeta = customColByName.get(colId);
+    if (!colMeta || isColumnReadOnly(colMeta)) return;
+    // Count associated remarks and flags from local state, then show confirmation.
+    const suffix = `:${colId}`;
+    const noteIds    = new Set<string>();
+    const commentIds = new Set<string>();
+    for (const [key, remarks] of Object.entries(cellRemarks)) {
+      if (key.endsWith(suffix) || key === colId) {
+        for (const r of remarks) {
+          if (r.kind === 'note')    noteIds.add(r.id);
+          else if (r.kind === 'comment') commentIds.add(r.id);
+        }
+      }
+    }
+    let flagCount = 0;
+    for (const key of Object.keys(cellFlags)) {
+      if (key.endsWith(suffix) || key === `header:${colId}`) flagCount++;
+    }
+    const label = allLeafColumns.find((c) => c.id === colId)?.label ?? colId;
     setOpenMenuColumn(null);
     setMenuAnchor(null);
-  };
+    setPendingDeleteCol({ colId, label, notes: noteIds.size, comments: commentIds.size, flags: flagCount });
+  }, [customColByName, cellRemarks, cellFlags, allLeafColumns]);
+
+  const confirmDeleteCustomColumn = useCallback(() => {
+    if (!pendingDeleteCol || !api) return;
+    const { colId } = pendingDeleteCol;
+    const colMeta = customColByName.get(colId);
+    if (!colMeta || isColumnReadOnly(colMeta)) return;
+    api.deleteCustomColumn(colMeta.id);
+    setCustomColumns((prev) => prev.filter((c) => c.id !== colMeta.id));
+    setHiddenColumns((prev) => prev.filter((c) => c !== colId));
+    setPendingDeleteCol(null);
+  }, [api, customColByName, pendingDeleteCol]);
 
   const handleFlagsChange = useCallback((toSet: Record<string, string>, toDelete: string[]) => {
     if (!api) return;
@@ -708,6 +746,14 @@ export default function TreeTable({ tableId }: Props) {
   return (
     <>
       <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+      <TableToolbar
+        tableId={tableId}
+        tables={tables}
+        onAddTable={() => setShowAddTable(true)}
+        onSelectTable={() => {}}
+        onShowAllTables={() => toast.info('Table list coming soon')}
+        onRenameTable={handleRenameTable}
+      />
       <div className="tree-table-container">
         {loading && (
           <div className="table-loading-overlay">
@@ -1003,6 +1049,22 @@ export default function TreeTable({ tableId }: Props) {
           existingNames={existingColNames}
           onConfirm={handleDialogConfirm}
           onClose={() => setAddColAfter(null)}
+        />
+      )}
+      {showAddTable && (
+        <AddTableDialog
+          onConfirm={handleCreateTable}
+          onClose={() => setShowAddTable(false)}
+        />
+      )}
+      {pendingDeleteCol && (
+        <ColumnDeleteConfirmDialog
+          columnLabel={pendingDeleteCol.label}
+          notesCount={pendingDeleteCol.notes}
+          commentsCount={pendingDeleteCol.comments}
+          flagsCount={pendingDeleteCol.flags}
+          onConfirm={confirmDeleteCustomColumn}
+          onCancel={() => setPendingDeleteCol(null)}
         />
       )}
     </>

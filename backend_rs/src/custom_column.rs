@@ -15,6 +15,8 @@ pub struct CustomColumn {
     pub description:    Option<String>,
     pub expression:     Option<String>,
     pub position_after: Option<String>,
+    pub read_only:      bool,
+    pub types:          Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,17 +32,29 @@ pub struct CreateCustomColumn {
 pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS custom_columns (
-            id             TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-            name           TEXT        NOT NULL,
-            label          TEXT,
-            description    TEXT,
-            expression     TEXT,
-            position_after TEXT,
-            when_created   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            id                 TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            name               TEXT        NOT NULL,
+            label              TEXT,
+            description        TEXT,
+            expression         TEXT,
+            position_after     TEXT,
+            read_only          BOOLEAN     NOT NULL DEFAULT false,
+            types              TEXT[]      NOT NULL DEFAULT ARRAY['text'],
+            who_created        TEXT,
+            when_created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            who_last_modified  TEXT,
+            when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            modify_count       INTEGER     NOT NULL DEFAULT 0
         )",
     )
     .execute(pool)
     .await?;
+    sqlx::query("ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS read_only BOOLEAN NOT NULL DEFAULT false")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS types TEXT[] NOT NULL DEFAULT ARRAY['text']")
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

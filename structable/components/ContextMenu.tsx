@@ -6,7 +6,7 @@ import FlagSubmenu from './FlagSubmenu';
 import type { ApiRemark, CellTarget, RemarkTarget } from '../types/table';
 import { colType, colFilterParam, colFilterPlaceholder } from '../utils/columnFilters';
 
-type Column = { id: string; label: string; subColumns?: Column[] };
+type Column = { id: string; label: string; readOnly?: boolean; subColumns?: Column[] };
 
 // ── Discriminated props ────────────────────────────────────────────────────────
 
@@ -160,7 +160,7 @@ export default function ContextMenu(props: ContextMenuProps) {
       </div>
     ) : (
       <>
-        {!column.id.startsWith('custom:') && (
+        {isLeaf && (
           <>
             <div className="menu-section-label">Sort</div>
             <button
@@ -213,49 +213,35 @@ export default function ContextMenu(props: ContextMenuProps) {
           </>
         )}
         <div className="menu-divider" />
-        {column.id.startsWith('custom:') ? (
-          <>
+        <>
+          {!column.readOnly && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onDeleteCol(column.id); }}
             >
               Delete column
             </button>
-            {allColsToHide.length > 0 && (
-              <>
-                <div className="menu-divider" />
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onHide(allColsToHide); }}
-                >
-                  Hide column
-                </button>
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onAddColClick(column.id); }}
-            >
-              + Add column to the right
-            </button>
-            {allColsToHide.length > 0 && (
-              <>
-                <div className="menu-divider" />
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onHide(allColsToHide); }}
-                >
-                  {allColsToHide.length > 1
-                    ? `Hide ${allColsToHide.length} columns`
-                    : isLeaf ? 'Hide column' : 'Hide group'}
-                </button>
-              </>
-            )}
-          </>
-        )}
+          )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onAddColClick(column.id); }}
+          >
+            + New column
+          </button>
+          {allColsToHide.length > 0 && (
+            <>
+              <div className="menu-divider" />
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onHide(allColsToHide); }}
+              >
+                {allColsToHide.length > 1
+                  ? `Hide ${allColsToHide.length} columns`
+                  : isLeaf ? 'Hide column' : 'Hide group'}
+              </button>
+            </>
+          )}
+        </>
         <div className="menu-divider" />
         <button
           type="button"

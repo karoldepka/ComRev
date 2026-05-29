@@ -40,6 +40,12 @@ export type ApiFlag = {
   color: string;
 };
 
+export type ApiTable = {
+  id: string;
+  title: string;
+  description: string | null;
+};
+
 export type ApiCustomColumn = {
   id: string;
   name: string;
@@ -47,7 +53,11 @@ export type ApiCustomColumn = {
   description: string | null;
   expression: string | null;
   position_after: string | null;
-  is_editable: boolean;
+  read_only?: boolean;
+  readOnly?: boolean;
+  types?: string[];
+  /** Backward compatibility for older API responses. Prefer read_only. */
+  is_editable?: boolean;
 };
 
 export type ApiHiddenRow = {

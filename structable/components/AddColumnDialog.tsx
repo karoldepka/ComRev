@@ -74,7 +74,7 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
         <h2 className="dialog-title">Add column</h2>
 
         <label className="dialog-field">
-          <span className="dialog-label">Label</span>
+          <span className="dialog-label">Title</span>
           <input
             autoFocus
             value={label}

@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb';
 import { nanoid } from 'nanoid';
 import type {
   ApiCustomColumn, ApiFlag, ApiHiddenColumn,
-  ApiHiddenRow, ApiRemark, PagedResponse, RemarkTarget,
+  ApiHiddenRow, ApiRemark, ApiTable, PagedResponse, RemarkTarget,
 } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -160,13 +160,37 @@ export class TableApi {
 
   // ── Write operations ───────────────────────────────────────────────────────
 
+  async fetchTables(): Promise<ApiTable[]> {
+    return this.get<ApiTable[]>('/tables');
+  }
+
+  createTable(payload: { id: string; title: string; description?: string | null }): void {
+    this.enqueue({
+      id: `table:create:${payload.id}`,
+      method: 'POST',
+      path: '/tables',
+      body: payload,
+      retries: 0,
+    });
+  }
+
+  patchTable(id: string, updates: { title?: string; description?: string | null }): void {
+    this.enqueue({
+      id: `table:patch:${id}`,
+      method: 'PATCH',
+      path: `/tables/${encodeURIComponent(id)}`,
+      body: updates,
+      retries: 0,
+    });
+  }
+
   /** Client generates a nanoid so the column is usable immediately offline. */
   createCustomColumn(
-    payload: Omit<ApiCustomColumn, 'id'>,
+    payload: Omit<ApiCustomColumn, 'id' | 'read_only' | 'readOnly' | 'is_editable' | 'types'>,
     onConfirmed?: (confirmed: ApiCustomColumn) => void,
   ): ApiCustomColumn {
     const id = nanoid();
-    const temp: ApiCustomColumn = { ...payload, id };
+    const temp: ApiCustomColumn = { ...payload, id, read_only: false, readOnly: false, types: ['text'] };
     this.enqueue({
       id: `custom-col:create:${id}`,
       method: 'POST',

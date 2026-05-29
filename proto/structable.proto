@@ -119,6 +119,8 @@ message CustomCol {
   string expression     = 4;
   string position_after = 5;
   string description    = 6;
+  bool   read_only      = 7;
+  repeated string types = 8;
 }
 
 // ── Read responses ─────────────────────────────────────────────────────────────
@@ -132,7 +134,7 @@ message CustomColumnList { repeated CustomCol cols    = 1; }
 message ListReposRequest {
   int32  page     = 1;
   int32  per_page = 2;
-  string sort     = 3;              // e.g. "stars_diff_14d:desc"
+  string sort     = 3;              // e.g. "when_created:desc"
   map<string, string> filters = 4; // e.g. {"min_stars": "100"}
 }
 

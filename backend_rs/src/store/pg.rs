@@ -58,7 +58,9 @@ impl DataStore for PgStore {
             "INSERT INTO cell_flags (key, color)
              VALUES ($1, $2)
              ON CONFLICT (key) DO UPDATE
-               SET color = EXCLUDED.color, updated_at = NOW()
+               SET color = EXCLUDED.color,
+                   when_last_modified = NOW(),
+                   modify_count = cell_flags.modify_count + 1
              RETURNING id::text, key, color",
         )
         .bind(key)
@@ -89,7 +91,7 @@ impl DataStore for PgStore {
              FROM remarks r
              LEFT JOIN remark_targets t ON t.remark_id = r.id
              GROUP BY r.id
-             ORDER BY r.created_at",
+             ORDER BY r.when_created",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -113,7 +115,8 @@ impl DataStore for PgStore {
              ON CONFLICT (id) DO UPDATE
                SET body = EXCLUDED.body, kind = EXCLUDED.kind,
                    is_private = EXCLUDED.is_private, resolved_at = EXCLUDED.resolved_at,
-                   updated_at = NOW()",
+                   when_last_modified = NOW(),
+                   modify_count = remarks.modify_count + 1",
         )
         .bind(id)
         .bind(body)
@@ -162,7 +165,7 @@ impl DataStore for PgStore {
 
     async fn list_hidden_rows(&self) -> Result<Vec<HiddenRow>> {
         Ok(sqlx::query_as::<_, HiddenRow>(
-            "SELECT id::text, row_id FROM hidden_rows ORDER BY created_at",
+            "SELECT id::text, row_id FROM hidden_rows ORDER BY when_created",
         )
         .fetch_all(&self.pool)
         .await?)
@@ -222,7 +225,7 @@ impl DataStore for PgStore {
 
     async fn list_custom_columns(&self) -> Result<Vec<CustomColumn>> {
         Ok(sqlx::query_as::<_, CustomColumn>(
-            "SELECT id::text, name, label, description, expression, position_after \
+            "SELECT id::text, name, label, description, expression, position_after, read_only, types \
              FROM custom_columns ORDER BY when_created",
         )
         .fetch_all(&self.pool)
@@ -238,14 +241,16 @@ impl DataStore for PgStore {
         expression: Option<&str>,
         position_after: Option<&str>,
     ) -> Result<CustomColumn> {
-        Ok(sqlx::query_as::<_, CustomColumn>(
-            "INSERT INTO custom_columns (id, name, label, description, expression, position_after)
-             VALUES ($1, $2, $3, $4, $5, $6)
+        let col = sqlx::query_as::<_, CustomColumn>(
+            "INSERT INTO custom_columns (id, name, label, description, expression, position_after, read_only)
+             VALUES ($1, $2, $3, $4, $5, $6, false)
              ON CONFLICT (id) DO UPDATE
                SET name = EXCLUDED.name, label = EXCLUDED.label,
                    description = EXCLUDED.description,
-                   expression = EXCLUDED.expression, position_after = EXCLUDED.position_after
-             RETURNING id::text, name, label, description, expression, position_after",
+                   expression = EXCLUDED.expression, position_after = EXCLUDED.position_after,
+                   when_last_modified = NOW(),
+                   modify_count = custom_columns.modify_count + 1
+             RETURNING id::text, name, label, description, expression, position_after, read_only, types",
         )
         .bind(id)
         .bind(name)
@@ -254,7 +259,22 @@ impl DataStore for PgStore {
         .bind(expression)
         .bind(position_after)
         .fetch_one(&self.pool)
-        .await?)
+        .await?;
+
+        // Per-key JSONB index for fast filtering/sorting on this column.
+        // Index name uses the column id (unique, stable). Key is single-quote-escaped.
+        // Errors are non-fatal — the column record is already saved.
+        let idx = format!("idx_cv_{id}");
+        let safe_key = name.replace('\'', "''");
+        let sql = format!(
+            r#"CREATE INDEX IF NOT EXISTS "{idx}" ON github_repos ((custom_values->>'{}'))"#,
+            safe_key,
+        );
+        if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
+            tracing::warn!("could not create index \"{idx}\": {e}");
+        }
+
+        Ok(col)
     }
 
     async fn delete_custom_column(&self, id: &str) -> Result<()> {
@@ -262,6 +282,12 @@ impl DataStore for PgStore {
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        let idx = format!("idx_cv_{id}");
+        let sql = format!(r#"DROP INDEX IF EXISTS "{idx}""#);
+        if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
+            tracing::warn!("could not drop index \"{idx}\": {e}");
+        }
         Ok(())
     }
 
@@ -269,7 +295,7 @@ impl DataStore for PgStore {
 
     async fn list_tables(&self) -> Result<Vec<Table>> {
         Ok(sqlx::query_as::<_, Table>(
-            "SELECT id, title, description, who_created, when_created, when_last_modified, who_last_modified \
+            "SELECT id, title, description, who_created, when_created, who_last_modified, when_last_modified, modify_count \
              FROM tables ORDER BY when_created",
         )
         .fetch_all(&self.pool)
@@ -280,7 +306,7 @@ impl DataStore for PgStore {
         Ok(sqlx::query_as::<_, Table>(
             "INSERT INTO tables (id, title, description, who_created)
              VALUES ($1, $2, $3, $4)
-             RETURNING id, title, description, who_created, when_created, when_last_modified, who_last_modified",
+             RETURNING id, title, description, who_created, when_created, who_last_modified, when_last_modified, modify_count",
         )
         .bind(id).bind(title).bind(description).bind(who_created)
         .fetch_one(&self.pool)
@@ -293,9 +319,10 @@ impl DataStore for PgStore {
              SET title = COALESCE($2, title),
                  description = COALESCE($3, description),
                  who_last_modified = $4,
-                 when_last_modified = NOW()
+                 when_last_modified = NOW(),
+                 modify_count = modify_count + 1
              WHERE id = $1
-             RETURNING id, title, description, who_created, when_created, when_last_modified, who_last_modified",
+             RETURNING id, title, description, who_created, when_created, who_last_modified, when_last_modified, modify_count",
         )
         .bind(id).bind(title).bind(description).bind(who_last_modified)
         .fetch_one(&self.pool)
@@ -464,38 +491,13 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
     }
 }
 
-/// Maps a logical sort column name to its SQL ORDER BY expression for the JSONB schema.
-fn col_to_sort_expr(col: &str) -> Option<&'static str> {
+fn col_to_sort_expr(col: &str) -> Option<String> {
+    if !col.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
     Some(match col {
-        "when_created"       => "when_created",
-        "when_last_modified" => "when_last_modified",
-        "name"               => "custom_values->>'name'",
-        "language"           => "custom_values->>'language'",
-        "license"            => "custom_values->>'license'",
-        "visibility"         => "custom_values->>'visibility'",
-        "owner_login"        => "custom_values->>'owner_login'",
-        "default_branch"     => "custom_values->>'default_branch'",
-        "stars"              => "(custom_values->>'stars')::bigint",
-        "forks"              => "(custom_values->>'forks')::bigint",
-        "open_issues"        => "(custom_values->>'open_issues')::bigint",
-        "watchers"           => "(custom_values->>'watchers')::bigint",
-        "size"               => "(custom_values->>'size')::bigint",
-        "stars_now"          => "(custom_values->>'stars_now')::bigint",
-        "stars_diff_6h"      => "(custom_values->'stars_diff'->>'6h')::bigint",
-        "stars_diff_12h"     => "(custom_values->'stars_diff'->>'12h')::bigint",
-        "stars_diff_24h"     => "(custom_values->'stars_diff'->>'24h')::bigint",
-        "stars_diff_48h"     => "(custom_values->'stars_diff'->>'48h')::bigint",
-        "stars_diff_5d"      => "(custom_values->'stars_diff'->>'5d')::bigint",
-        "stars_diff_7d"      => "(custom_values->'stars_diff'->>'7d')::bigint",
-        "stars_diff_10d"     => "(custom_values->'stars_diff'->>'10d')::bigint",
-        "stars_diff_14d"     => "(custom_values->'stars_diff'->>'14d')::bigint",
-        "stars_diff_20d"     => "(custom_values->'stars_diff'->>'20d')::bigint",
-        "stars_diff_30d"     => "(custom_values->'stars_diff'->>'30d')::bigint",
-        "pushed_at"          => "custom_values->>'pushed_at'",
-        "github_created_at"  => "custom_values->>'github_created_at'",
-        "github_updated_at"  => "custom_values->>'github_updated_at'",
-        "fetched_at"         => "custom_values->>'fetched_at'",
-        _                    => return None,
+        "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => col.to_string(),
+        _ => format!("custom_values->>'{}'", col.replace('\'', "''")),
     })
 }
 
@@ -514,8 +516,7 @@ fn validated_sort(sort: Option<&str>) -> String {
         .collect();
 
     if parts.is_empty() {
-        "(custom_values->'stars_diff'->>'14d')::bigint DESC NULLS LAST, \
-         (custom_values->>'stars')::bigint DESC NULLS LAST".to_string()
+        "when_created DESC NULLS LAST".to_string()
     } else {
         parts.join(", ")
     }

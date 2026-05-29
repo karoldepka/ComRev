@@ -21,12 +21,13 @@ pub async fn append(pool: &sqlx::PgPool, op: &str, payload: Value, tx_id: Option
 pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS operations_log (
-            id         TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-            op         TEXT        NOT NULL,
-            payload    JSONB       NOT NULL,
-            tx_id      TEXT,
-            client_id  TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            id           TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            op           TEXT        NOT NULL,
+            payload      JSONB       NOT NULL,
+            tx_id        TEXT,
+            client_id    TEXT,
+            who_created  TEXT,
+            when_created TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
     )
     .execute(pool)
