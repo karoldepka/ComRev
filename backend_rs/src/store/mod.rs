@@ -12,7 +12,6 @@ pub mod surreal;
 pub mod mongo;
 
 pub use pg::PgStore;
-pub use sqlite::SqliteStore;
 
 #[async_trait]
 pub trait DataStore: Send + Sync {
@@ -41,8 +40,8 @@ pub trait DataStore: Send + Sync {
     // ── Hidden rows ───────────────────────────────────────────────────────────
 
     async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>>;
-    async fn add_hidden_row(&self, repo_id: i64) -> Result<crate::hidden_row::HiddenRow>;
-    async fn remove_hidden_row(&self, repo_id: i64) -> Result<()>;
+    async fn add_hidden_row(&self, row_id: &str) -> Result<crate::hidden_row::HiddenRow>;
+    async fn remove_hidden_row(&self, row_id: &str) -> Result<()>;
 
     // ── Hidden columns ────────────────────────────────────────────────────────
 
@@ -58,14 +57,26 @@ pub trait DataStore: Send + Sync {
         id: &str,
         name: &str,
         label: Option<&str>,
+        description: Option<&str>,
         expression: Option<&str>,
         position_after: Option<&str>,
     ) -> Result<crate::custom_column::CustomColumn>;
     async fn delete_custom_column(&self, id: &str) -> Result<()>;
 
-    // ── Repos (PG-specific; other backends return Err) ────────────────────────
+    // ── Tables registry ───────────────────────────────────────────────────────
 
-    async fn list_repos(&self, params: &crate::types::RepoQuery) -> Result<crate::types::PagedResponse>;
+    async fn list_tables(&self) -> Result<Vec<crate::table::Table>>;
+    async fn create_table(&self, id: &str, title: &str, description: Option<&str>, who_created: Option<&str>) -> Result<crate::table::Table>;
+    async fn patch_table(&self, id: &str, title: Option<&str>, description: Option<&str>, who_last_modified: Option<&str>) -> Result<crate::table::Table>;
+    async fn delete_table(&self, id: &str) -> Result<()>;
+
+    // ── Rows / items ──────────────────────────────────────────────────────────
+
+    async fn list_repos(&self, params: &crate::types::RowQuery) -> Result<crate::types::PagedResponse>;
+
+    /// Updates a single column value for a row without touching other columns.
+    /// Implementations must ensure concurrent edits to different columns do not overwrite each other.
+    async fn patch_row_value(&self, table_id: &str, row_id: &str, col_id: &str, value: serde_json::Value) -> Result<()>;
 
     // ── Ops log (fire-and-forget; MUST NOT propagate errors) ─────────────────
     // tx_id groups related operations from one client transaction; None for standalone ops.
@@ -75,7 +86,7 @@ pub trait DataStore: Send + Sync {
 /// Construct the appropriate store from DATABASE_URL.
 pub async fn open(url: &str) -> Result<Arc<dyn DataStore>> {
     if url.starts_with("sqlite") {
-        Ok(Arc::new(SqliteStore::connect(url).await?))
+        Ok(Arc::new(sqlite::SqliteStore))
     } else if url.starts_with("surreal") {
         Ok(Arc::new(surreal::SurrealStore))
     } else if url.starts_with("mongodb") {

@@ -85,6 +85,7 @@ impl QueuedOp {
                 label:          self.data["label"].as_str().unwrap_or("").to_string(),
                 expression:     self.data["expression"].as_str().unwrap_or("").to_string(),
                 position_after: self.data["position_after"].as_str().unwrap_or("").to_string(),
+                description:    self.data["description"].as_str().unwrap_or("").to_string(),
             })),
             "delete_custom_col" => Some(OpPayload::DeleteCustomCol(DeleteCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
@@ -693,12 +694,13 @@ impl serde::Serialize for HiddenCol {
 impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("CustomCol", 5)?;
+        let mut st = s.serialize_struct("CustomCol", 6)?;
         st.serialize_field("id",             &self.id)?;
         st.serialize_field("name",           &self.name)?;
         st.serialize_field("label",          &self.label)?;
         st.serialize_field("expression",     &self.expression)?;
         st.serialize_field("position_after", &self.position_after)?;
+        st.serialize_field("description",    &self.description)?;
         st.end()
     }
 }
@@ -761,6 +763,7 @@ impl serde::Serialize for ServerEvent {
                     "data": v.data.as_ref().map(|d| serde_json::json!({
                         "id": d.id, "name": d.name, "label": d.label,
                         "expression": d.expression, "position_after": d.position_after,
+                        "description": d.description,
                     })),
                 }))?;
             }

@@ -10,7 +10,7 @@ echo "Building sync_core WASM..."
 cd "$REPO_ROOT/sync_core"
 
 # --target web: generates ES modules + .wasm — Next.js serves from public/
-wasm-pack build \
+time  wasm-pack build \
   --target web \
   --out-dir "$OUT_DIR" \
   --release

@@ -44,6 +44,7 @@ export type ApiCustomColumn = {
   id: string;
   name: string;
   label: string | null;
+  description: string | null;
   expression: string | null;
   position_after: string | null;
   is_editable: boolean;

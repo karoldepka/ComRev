@@ -4,10 +4,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { getSyncClient, SyncClient } from '../services/syncClient';
-import { localStore } from '../services/localStore';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
+import AddColumnDialog from './AddColumnDialog';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam } from '../utils/columnFilters';
@@ -123,7 +123,11 @@ function errMsg(e: unknown): string {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function TreeTable() {
+type Props = {
+  tableId: string;
+};
+
+export default function TreeTable({ tableId }: Props) {
   const [api, setApi] = useState<SyncClient | null>(null);
   const [syncPending, setSyncPending] = useState(0);
   const [cellPending, setCellPending] = useState(0);
@@ -135,6 +139,7 @@ export default function TreeTable() {
   if (!cellApiRef.current && typeof window !== 'undefined') {
     cellApiRef.current = new TableApi({
       baseUrl: API_BASE,
+      tableId,
       onError: (msg) => toast.error(msg),
       onQueueChange: setCellPending,
     });
@@ -190,10 +195,8 @@ export default function TreeTable() {
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag' | 'note' | 'comment'>('menu');
-  const [addingColAfter, setAddingColAfter] = useState<string | null>(null);
-  const [newColName, setNewColName] = useState('');
-  const [newColId, setNewColId] = useState('');
-  const [newColExpr, setNewColExpr] = useState('');
+  // ── Add-column dialog ──────────────────────────────────────────────────────
+  const [addColAfter, setAddColAfter] = useState<string | null>(null);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
   const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'stars_diff_14d', dir: 'desc' });
@@ -227,43 +230,7 @@ export default function TreeTable() {
         const flagMap: Record<string, string> = {};
         flagsData.forEach((f) => { flagMap[f.key] = f.color; });
 
-        // One-time V2 migration: localStorage flags/hidden-cols → server
-        if (!localStore.isMigratedV2()) {
-          const localFlags  = localStore.getLegacyCellFlags();
-          const localHidden = localStore.getLegacyHiddenCols();
-
-          if (flagsData.length === 0 && Object.keys(localFlags).length > 0) {
-            Object.entries(localFlags).forEach(([key, color]) => api.upsertFlag(key, color));
-            Object.assign(flagMap, localFlags);
-          }
-          if (hiddenColsData.length === 0 && localHidden.length > 0) {
-            localHidden.forEach((id) => api.addHiddenColumn(id));
-            setHiddenColumns(localHidden);
-          } else {
-            setHiddenColumns(hiddenColsData.map((c) => c.column_id));
-          }
-          localStore.setMigratedV2();
-        } else {
-          setHiddenColumns(hiddenColsData.map((c) => c.column_id));
-        }
-
-        // One-time V3 migration: localStorage cell-notes → server remarks
-        if (!localStore.isMigratedV3()) {
-          const localNotes = localStore.getLegacyCellNotes();
-          for (const [key, body] of Object.entries(localNotes)) {
-            if (!body.trim()) continue;
-            let target: RemarkTarget;
-            if (key.startsWith('header:')) {
-              target = { row_id: '', column_id: key.slice('header:'.length) };
-            } else {
-              const colonIdx = key.indexOf(':');
-              target = { row_id: key.slice(0, colonIdx), column_id: key.slice(colonIdx + 1) };
-            }
-            api.upsertRemark(null, 'note', body, [target]);
-          }
-          localStore.setMigratedV3();
-        }
-
+        setHiddenColumns(hiddenColsData.map((c) => c.column_id));
         setCellFlags(flagMap);
         setHiddenRowIds(new Set(hiddenRowsData.map((r) => r.row_id)));
 
@@ -352,15 +319,7 @@ export default function TreeTable() {
   }, [api, customColsRetryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Reset column menu modes when it closes ─────────────────────────────────
-  useEffect(() => {
-    if (!openMenuColumn) {
-      setAddingColAfter(null);
-      setNewColName('');
-      setNewColId('');
-      setNewColExpr('');
-    }
-    setHeaderMenuMode('menu');
-  }, [openMenuColumn]);
+  useEffect(() => { setHeaderMenuMode('menu'); }, [openMenuColumn]);
 
   // ── Column geometry ────────────────────────────────────────────────────────
   const columns = useMemo<Column[]>(() => {
@@ -640,30 +599,31 @@ export default function TreeTable() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [cellMenu]);
 
-  const createCustomColumn = (afterColId: string) => {
-    if (!newColName.trim() || !api) return;
-    const derivedId = newColName.trim().toLowerCase().replace(/\s+/g, '_');
+  // All column names currently visible (row-derived + custom), used for duplicate-ID validation.
+  const existingColNames = useMemo<Set<string>>(() => new Set([
+    ...allLeafColumns.filter((c) => !c.id.startsWith('custom:')).map((c) => c.id),
+    ...customColumns.map((cc) => cc.name),
+  ]), [allLeafColumns, customColumns]);
+
+  const handleDialogConfirm = useCallback((afterColId: string, payload: import('./AddColumnDialog').AddColumnPayload) => {
+    if (!api) return;
+    setAddColAfter(null);
+    setOpenMenuColumn(null);
+    setMenuAnchor(null);
+    const derivedName = payload.title.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     const id = nanoid();
     const col: ApiCustomColumn = {
       id,
-      name: newColId.trim() || derivedId,
-      label: newColName.trim(),
-      expression: newColExpr.trim() || null,
+      name: payload.customId ?? derivedName,
+      label: payload.title.trim(),
+      description: payload.description,
+      expression: payload.expression,
       position_after: afterColId,
       is_editable: true,
     };
     setCustomColumns((prev) => [...prev, col]);
-    api.createCustomColumn({
-      name: col.name,
-      label: col.label,
-      expression: col.expression,
-      position_after: col.position_after,
-    }, id);
-    setNewColName(''); setNewColId(''); setNewColExpr('');
-    setAddingColAfter(null);
-    setOpenMenuColumn(null);
-    setMenuAnchor(null);
-  };
+    api.createCustomColumn({ name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
+  }, [api]);
 
   const deleteCustomColumn = (colId: string) => {
     if (!api) return;
@@ -878,14 +838,7 @@ export default function TreeTable() {
                                   cellRemarks={cellRemarks}
                                   onFlagsChange={handleFlagsChange}
                                   onSaveRemark={saveRemark}
-                                  addingColAfter={addingColAfter}
-                                  newColName={newColName}
-                                  newColId={newColId}
-                                  newColExpr={newColExpr}
                                   setFilterDraft={setFilterDraft}
-                                  setNewColName={setNewColName}
-                                  setNewColId={setNewColId}
-                                  setNewColExpr={setNewColExpr}
                                   draftText={draftText}
                                   setDraftText={setDraftText}
                                   onSetMode={setHeaderMenuMode}
@@ -893,8 +846,7 @@ export default function TreeTable() {
                                   onApplyFilter={applyFilter}
                                   onClearFilter={clearColFilter}
                                   onHide={hideColumns}
-                                  onAddColClick={(colId) => setAddingColAfter(colId || null)}
-                                  onCreateCol={createCustomColumn}
+                                  onAddColClick={(colId) => { setAddColAfter(colId || null); setOpenMenuColumn(null); setMenuAnchor(null); }}
                                   onDeleteCol={deleteCustomColumn}
                                   onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
                                 />
@@ -1043,6 +995,14 @@ export default function TreeTable() {
           onHideCols={hideColumns}
           onHideRows={hideRows}
           onClose={() => setCellMenu(null)}
+        />
+      )}
+      {addColAfter !== null && (
+        <AddColumnDialog
+          afterColId={addColAfter}
+          existingNames={existingColNames}
+          onConfirm={handleDialogConfirm}
+          onClose={() => setAddColAfter(null)}
         />
       )}
     </>

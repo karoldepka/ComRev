@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use super::DataStore;
-use crate::types::{PagedResponse, RepoQuery};
+use crate::types::{PagedResponse, RowQuery};
 
 pub struct SurrealStore;
 
@@ -23,18 +23,24 @@ impl DataStore for SurrealStore {
     async fn delete_remark(&self, _id: &str) -> Result<()> { not_impl!() }
 
     async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>> { not_impl!() }
-    async fn add_hidden_row(&self, _repo_id: i64) -> Result<crate::hidden_row::HiddenRow> { not_impl!() }
-    async fn remove_hidden_row(&self, _repo_id: i64) -> Result<()> { not_impl!() }
+    async fn add_hidden_row(&self, _row_id: &str) -> Result<crate::hidden_row::HiddenRow> { not_impl!() }
+    async fn remove_hidden_row(&self, _row_id: &str) -> Result<()> { not_impl!() }
 
     async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> { not_impl!() }
     async fn add_hidden_column(&self, _column_id: &str) -> Result<crate::hidden_column::HiddenColumn> { not_impl!() }
     async fn remove_hidden_column(&self, _column_id: &str) -> Result<()> { not_impl!() }
 
     async fn list_custom_columns(&self) -> Result<Vec<crate::custom_column::CustomColumn>> { not_impl!() }
-    async fn upsert_custom_column(&self, _id: &str, _name: &str, _label: Option<&str>, _expression: Option<&str>, _position_after: Option<&str>) -> Result<crate::custom_column::CustomColumn> { not_impl!() }
+    async fn upsert_custom_column(&self, _id: &str, _name: &str, _label: Option<&str>, _description: Option<&str>, _expression: Option<&str>, _position_after: Option<&str>) -> Result<crate::custom_column::CustomColumn> { not_impl!() }
     async fn delete_custom_column(&self, _id: &str) -> Result<()> { not_impl!() }
 
-    async fn list_repos(&self, _params: &RepoQuery) -> Result<PagedResponse> { not_impl!() }
+    async fn list_tables(&self) -> Result<Vec<crate::table::Table>> { not_impl!() }
+    async fn create_table(&self, _id: &str, _title: &str, _description: Option<&str>, _who_created: Option<&str>) -> Result<crate::table::Table> { not_impl!() }
+    async fn patch_table(&self, _id: &str, _title: Option<&str>, _description: Option<&str>, _who_last_modified: Option<&str>) -> Result<crate::table::Table> { not_impl!() }
+    async fn delete_table(&self, _id: &str) -> Result<()> { not_impl!() }
+
+    async fn list_repos(&self, _params: &RowQuery) -> Result<PagedResponse> { not_impl!() }
+    async fn patch_row_value(&self, _table_id: &str, _row_id: &str, _col_id: &str, _value: serde_json::Value) -> Result<()> { not_impl!() }
 
     async fn append_ops_log(&self, _op: &str, _payload: serde_json::Value, _tx_id: Option<&str>) {}
 }

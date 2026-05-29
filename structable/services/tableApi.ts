@@ -32,6 +32,7 @@ interface StructableDB {
 
 type TableApiOptions = {
   baseUrl: string;
+  tableId: string;
   onError: (msg: string) => void;
   onQueueChange?: (count: number) => void;
 };
@@ -40,6 +41,7 @@ type TableApiOptions = {
 
 export class TableApi {
   private base: string;
+  private tableId: string;
   private onError: (msg: string) => void;
   private onQueueChange?: (count: number) => void;
   private queue: QueuedOp[] = [];
@@ -49,8 +51,9 @@ export class TableApi {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly RETRY_MS = 1_000;
 
-  constructor({ baseUrl, onError, onQueueChange }: TableApiOptions) {
+  constructor({ baseUrl, tableId, onError, onQueueChange }: TableApiOptions) {
     this.base = baseUrl;
+    this.tableId = tableId;
     this.onError = onError;
     this.onQueueChange = onQueueChange;
     if (typeof window !== 'undefined') {
@@ -249,7 +252,7 @@ export class TableApi {
     this.enqueue({
       id: `cell:upsert:${rowId}:${apiColId}`,
       method: 'PATCH',
-      path: `/repos/${encodeURIComponent(rowId)}/values`,
+      path: `/tables/${encodeURIComponent(this.tableId)}/rows/${encodeURIComponent(rowId)}/values`,
       body: { col_id: apiColId, value },
       retries: 0,
     });
@@ -311,13 +314,15 @@ export class TableApi {
           });
           if (res.status >= 400 && res.status < 500) {
             // Client error: unrecoverable — drop and report
+            let errBody = '';
+            try { errBody = await res.text(); } catch { /* no body */ }
             this.queue.shift();
             await this.db.delete(OPS_STORE, op.id);
             this.onQueueChange?.(this.queue.length);
-            this.onError(`Sync error ${res.status} for ${op.method} ${op.path}`);
+            this.onError(`Sync error ${res.status} for ${op.method} ${this.base}${op.path}${errBody ? `: ${errBody.slice(0, 300)}` : ''}`);
             continue;
           }
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status} for ${op.method} ${this.base}${op.path}`);
           // Read body before mutating queue (in case json() throws)
           let responseData: unknown;
           if (op.onSuccess && res.status !== 204) {
@@ -329,8 +334,10 @@ export class TableApi {
           await this.db.delete(OPS_STORE, op.id);
           this.onQueueChange?.(this.queue.length);
           op.onSuccess?.(responseData);
-        } catch {
+        } catch (cause) {
           op.retries++;
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          console.warn(`[tableApi] ${op.method} ${this.base}${op.path} failed (retry ${op.retries}): ${reason}`);
           // Persist incremented retry count so it survives a crash, then retry forever
           await this.idbPut(op);
           this.scheduleRetry();
@@ -343,8 +350,19 @@ export class TableApi {
   }
 
   private async get<T>(path: string, signal?: AbortSignal): Promise<T> {
-    const res = await fetch(`${this.base}${path}`, { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const url = `${this.base}${path}`;
+    let res: Response;
+    try {
+      res = await fetch(url, { signal });
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`GET ${url} — ${reason}`);
+    }
+    if (!res.ok) {
+      let body = '';
+      try { body = await res.text(); } catch { /* no body */ }
+      throw new Error(`GET ${url} — HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ''}`);
+    }
     return res.json() as Promise<T>;
   }
 }

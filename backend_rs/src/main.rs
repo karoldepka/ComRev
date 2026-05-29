@@ -8,6 +8,7 @@ mod remark;
 mod repo;
 mod store;
 mod sync_service;
+mod table;
 mod types;
 
 use axum::{routing::get, Router};
@@ -45,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
     let rest_app = Router::new()
         .route("/health", get(health))
         .route("/repos", get(repo::list_repos))
+        .route("/tables/:table_id/rows/:row_id/values", axum::routing::patch(repo::patch_cell_value))
         .route("/custom-columns", get(custom_column::list).post(custom_column::create))
         .route("/custom-columns/:id", delete(custom_column::delete))
         .route("/remarks", get(remark::list))
@@ -55,6 +57,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/hidden-rows/:repo_id", delete(hidden_row::remove))
         .route("/hidden-columns", get(hidden_column::list).post(hidden_column::add))
         .route("/hidden-columns/:column_id", delete(hidden_column::remove))
+        .route("/tables", get(table::list).post(table::create))
+        .route("/tables/:id", axum::routing::patch(table::patch).delete(table::delete))
         .with_state(state.clone())
         .layer(CorsLayer::permissive());
 

@@ -63,7 +63,7 @@ message AddHiddenRowOp       { int64  repo_id   = 1; }
 message RemoveHiddenRowOp    { int64  repo_id   = 1; }
 message AddHiddenColumnOp    { string column_id = 1; }
 message RemoveHiddenColumnOp { string column_id = 1; }
-message CreateCustomColOp    { string id = 1; string name = 2; string label = 3; string expression = 4; string position_after = 5; }
+message CreateCustomColOp    { string id = 1; string name = 2; string label = 3; string expression = 4; string position_after = 5; string description = 6; }
 message DeleteCustomColOp    { string id = 1; }
 
 // ── Server events (push) ───────────────────────────────────────────────────────
@@ -118,6 +118,7 @@ message CustomCol {
   string label          = 3;
   string expression     = 4;
   string position_after = 5;
+  string description    = 6;
 }
 
 // ── Read responses ─────────────────────────────────────────────────────────────

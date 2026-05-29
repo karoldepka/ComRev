@@ -11,7 +11,7 @@ pub struct PagedResponse {
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
-pub struct RepoQuery {
+pub struct RowQuery {
     pub sort: Option<String>,
 
     #[serde(default = "default_page")]

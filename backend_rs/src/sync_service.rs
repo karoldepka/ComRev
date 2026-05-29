@@ -59,7 +59,8 @@ fn remark_to_proto(r: &remark::Remark) -> Remark {
         is_private:  r.is_private,
         resolved_at: r.resolved_at.map(|dt| dt.to_rfc3339()).unwrap_or_default(),
         targets:     r.targets.iter().map(|t| RemarkTarget {
-            repo_id:   t.repo_id,
+            // Proto uses repo_id: i64; '' sentinel → 0.
+            repo_id:   if t.row_id.is_empty() { 0 } else { t.row_id.parse().unwrap_or(0) },
             column_id: t.column_id.clone(),
         }).collect(),
     }
@@ -74,7 +75,7 @@ impl Sync for SyncServiceImpl {
 
     async fn list_flags(&self, _: Request<ListRequest>) -> Result<Response<FlagList>, Status> {
         let flags = self.state.store.list_flags().await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("list_flags: {e}")))?;
         Ok(Response::new(FlagList {
             flags: flags.iter().map(flag_to_proto).collect(),
         }))
@@ -82,7 +83,7 @@ impl Sync for SyncServiceImpl {
 
     async fn list_remarks(&self, _: Request<ListRequest>) -> Result<Response<RemarkList>, Status> {
         let remarks = self.state.store.list_remarks().await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("list_remarks: {e}")))?;
         Ok(Response::new(RemarkList {
             remarks: remarks.iter().map(remark_to_proto).collect(),
         }))
@@ -90,15 +91,19 @@ impl Sync for SyncServiceImpl {
 
     async fn list_hidden_rows(&self, _: Request<ListRequest>) -> Result<Response<HiddenRowList>, Status> {
         let rows = self.state.store.list_hidden_rows().await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("list_hidden_rows: {e}")))?;
         Ok(Response::new(HiddenRowList {
-            rows: rows.iter().map(|r| HiddenRow { id: r.id.clone(), repo_id: r.repo_id }).collect(),
+            rows: rows.iter().map(|r| HiddenRow {
+                id: r.id.clone(),
+                // Proto still uses repo_id: i64; parse row_id string.
+                repo_id: r.row_id.parse().unwrap_or(0),
+            }).collect(),
         }))
     }
 
     async fn list_hidden_columns(&self, _: Request<ListRequest>) -> Result<Response<HiddenColumnList>, Status> {
         let cols = self.state.store.list_hidden_columns().await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("list_hidden_columns: {e}")))?;
         Ok(Response::new(HiddenColumnList {
             cols: cols.iter().map(|c| HiddenCol {
                 id: c.id.clone(), column_id: c.column_id.clone(),
@@ -108,12 +113,13 @@ impl Sync for SyncServiceImpl {
 
     async fn list_custom_columns(&self, _: Request<ListRequest>) -> Result<Response<CustomColumnList>, Status> {
         let cols = self.state.store.list_custom_columns().await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("list_custom_columns: {e}")))?;
         Ok(Response::new(CustomColumnList {
             cols: cols.iter().map(|c| CustomCol {
                 id:             c.id.clone(),
                 name:           c.name.clone(),
                 label:          c.label.clone().unwrap_or_default(),
+                description:    c.description.clone().unwrap_or_default(),
                 expression:     c.expression.clone().unwrap_or_default(),
                 position_after: c.position_after.clone().unwrap_or_default(),
             }).collect(),
@@ -125,14 +131,14 @@ impl Sync for SyncServiceImpl {
         request: Request<ListReposRequest>,
     ) -> Result<Response<PagedRepos>, Status> {
         let req = request.into_inner();
-        let params = crate::types::RepoQuery {
+        let params = crate::types::RowQuery {
             sort:     if req.sort.is_empty() { None } else { Some(req.sort) },
             page:     req.page.max(1) as u32,
             per_page: req.per_page.clamp(1, 200) as u32,
             ..Default::default()
         };
         let paged = self.state.store.list_repos(&params).await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("list_repos: {e}")))?;
 
         let rows_json: Vec<Vec<u8>> = paged.data.iter()
             .map(|v| serde_json::to_vec(v).unwrap_or_default())
@@ -155,7 +161,7 @@ impl Sync for SyncServiceImpl {
         let payload = op.payload.ok_or_else(|| Status::invalid_argument("missing payload"))?;
 
         let (event, response_bytes) = self.dispatch(op_id.clone(), payload).await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(|e| Status::internal(format!("apply_op({op_id}): {e}")))?;
 
         let _ = self.state.event_tx.send(event);
 
@@ -215,8 +221,13 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::UpsertRemark(p) => {
+                // Proto still carries repo_id: i64; convert to row_id: String at boundary.
+                // TODO: update proto to use row_id: string once sync_core Rust is updated.
                 let targets: Vec<remark::RemarkTarget> = p.targets.iter().map(|t| {
-                    remark::RemarkTarget { repo_id: t.repo_id, column_id: t.column_id.clone() }
+                    remark::RemarkTarget {
+                        row_id: if t.repo_id == 0 { String::new() } else { t.repo_id.to_string() },
+                        column_id: t.column_id.clone(),
+                    }
                 }).collect();
                 let r = self.state.store
                     .upsert_remark(&p.id, &p.body, &p.kind, false, None, &targets)
@@ -238,16 +249,19 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::AddHiddenRow(p) => {
-                let row = self.state.store.add_hidden_row(p.repo_id).await?;
+                // Proto carries repo_id: i64; convert to row_id: String.
+                let row_id_str = p.repo_id.to_string();
+                let row = self.state.store.add_hidden_row(&row_id_str).await?;
                 let event = hidden_row_event(EventKind::Upsert, HiddenRow {
                     id: row.id.clone(), repo_id: p.repo_id,
                 });
                 Ok((event, serde_json::to_vec(&serde_json::json!({
-                    "id": row.id, "repo_id": p.repo_id,
+                    "id": row.id, "row_id": row.row_id,
                 }))?))
             }
             OpPayload::RemoveHiddenRow(p) => {
-                self.state.store.remove_hidden_row(p.repo_id).await?;
+                let row_id_str = p.repo_id.to_string();
+                self.state.store.remove_hidden_row(&row_id_str).await?;
                 let event = hidden_row_event(EventKind::Delete, HiddenRow {
                     id: String::new(), repo_id: p.repo_id,
                 });
@@ -270,13 +284,15 @@ impl SyncServiceImpl {
             OpPayload::CreateCustomCol(p) => {
                 let col = self.state.store.upsert_custom_column(
                     &p.id, &p.name,
-                    if p.label.is_empty()        { None } else { Some(p.label.as_str()) },
-                    if p.expression.is_empty()   { None } else { Some(p.expression.as_str()) },
+                    if p.label.is_empty()          { None } else { Some(p.label.as_str()) },
+                    if p.description.is_empty()    { None } else { Some(p.description.as_str()) },
+                    if p.expression.is_empty()     { None } else { Some(p.expression.as_str()) },
                     if p.position_after.is_empty() { None } else { Some(p.position_after.as_str()) },
                 ).await?;
                 let event = custom_col_event(EventKind::Upsert, CustomCol {
                     id: col.id.clone(), name: col.name.clone(),
                     label:          col.label.clone().unwrap_or_default(),
+                    description:    col.description.clone().unwrap_or_default(),
                     expression:     col.expression.clone().unwrap_or_default(),
                     position_after: col.position_after.clone().unwrap_or_default(),
                 });

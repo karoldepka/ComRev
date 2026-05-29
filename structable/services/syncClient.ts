@@ -162,7 +162,7 @@ export class SyncClient {
   deleteCustomColumn(id: string):                   Promise<void>   { return this.inner.delete_custom_column(id); }
 
   createCustomColumn(payload: {
-    name: string; label?: string | null; expression?: string | null; position_after?: string | null;
+    name: string; label?: string | null; description?: string | null; expression?: string | null; position_after?: string | null;
   }, id?: string): Promise<string> {
     return this.inner.create_custom_column(JSON.stringify({ ...payload, id: id ?? null }));
   }

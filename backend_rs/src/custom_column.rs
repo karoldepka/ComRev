@@ -12,6 +12,7 @@ pub struct CustomColumn {
     pub id:             String,
     pub name:           String,
     pub label:          Option<String>,
+    pub description:    Option<String>,
     pub expression:     Option<String>,
     pub position_after: Option<String>,
 }
@@ -21,6 +22,7 @@ pub struct CreateCustomColumn {
     pub id:             Option<String>,
     pub name:           String,
     pub label:          Option<String>,
+    pub description:    Option<String>,
     pub expression:     Option<String>,
     pub position_after: Option<String>,
 }
@@ -31,9 +33,10 @@ pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             id             TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
             name           TEXT        NOT NULL,
             label          TEXT,
+            description    TEXT,
             expression     TEXT,
             position_after TEXT,
-            created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            when_created   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
     )
     .execute(pool)
@@ -53,7 +56,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateCustomColumn>,
 ) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
-    let CreateCustomColumn { id, name, label, expression, position_after } = body;
+    let CreateCustomColumn { id, name, label, description, expression, position_after } = body;
     // Client should always provide a nanoid; server generates one only as fallback.
     let id = id.filter(|s| !s.is_empty()).unwrap_or_else(|| nanoid::nanoid!());
 
@@ -61,6 +64,7 @@ pub async fn create(
         &id,
         &name,
         label.as_deref(),
+        description.as_deref(),
         expression.as_deref(),
         position_after.as_deref(),
     )

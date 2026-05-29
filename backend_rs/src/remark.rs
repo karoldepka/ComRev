@@ -12,7 +12,7 @@ use crate::repo::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct RemarkTarget {
-    pub repo_id:   i64,
+    pub row_id:    String,  // '' = column-header remark
     pub column_id: String,
 }
 
@@ -78,9 +78,9 @@ pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS remark_targets (
             remark_id   TEXT    NOT NULL REFERENCES remarks(id) ON DELETE CASCADE,
-            repo_id     BIGINT  NOT NULL DEFAULT 0,
+            row_id      TEXT    NOT NULL DEFAULT '',
             column_id   TEXT    NOT NULL,
-            PRIMARY KEY (remark_id, repo_id, column_id)
+            PRIMARY KEY (remark_id, row_id, column_id)
         )",
     )
     .execute(pool)

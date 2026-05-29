@@ -9,20 +9,20 @@ use crate::repo::AppState;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct HiddenRow {
-    pub id:      String,
-    pub repo_id: i64,
+    pub id:     String,
+    pub row_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct AddHiddenRow {
-    pub repo_id: i64,
+    pub row_id: String,
 }
 
 pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS hidden_rows (
             id         TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-            repo_id    BIGINT      NOT NULL UNIQUE,
+            row_id     TEXT        NOT NULL UNIQUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
     )
@@ -43,22 +43,22 @@ pub async fn add(
     State(state): State<AppState>,
     Json(body): Json<AddHiddenRow>,
 ) -> Result<(StatusCode, Json<HiddenRow>), (StatusCode, String)> {
-    let row = state.store.add_hidden_row(body.repo_id).await
+    let row = state.store.add_hidden_row(&body.row_id).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     state.store.append_ops_log("hidden_row.add", serde_json::json!({
-        "repo_id": row.repo_id,
+        "row_id": row.row_id,
     }), None).await;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
 pub async fn remove(
     State(state): State<AppState>,
-    Path(repo_id): Path<i64>,
+    Path(row_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    state.store.remove_hidden_row(repo_id).await
+    state.store.remove_hidden_row(&row_id).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     state.store.append_ops_log("hidden_row.remove", serde_json::json!({
-        "repo_id": repo_id,
+        "row_id": row_id,
     }), None).await;
     Ok(StatusCode::NO_CONTENT)
 }

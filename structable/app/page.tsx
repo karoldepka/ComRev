@@ -11,7 +11,7 @@ export default function Home() {
         </div>
       </section>
       <div className="table-shell">
-        <TreeTable />
+        <TreeTable tableId={process.env.NEXT_PUBLIC_TABLE_ID ?? '_default'} />
       </div>
     </main>
   );
