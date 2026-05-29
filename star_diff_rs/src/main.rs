@@ -170,6 +170,16 @@ fn build_repo_diffs(repo_id: i64, stars_now: i64, snapshots: &HashMap<String, Ha
     m
 }
 
+fn fmt_bytes(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 { out.push(' '); }
+        out.push(c);
+    }
+    out
+}
+
 fn has_any_change(diffs: &Mapping) -> bool {
     for (_k, v) in diffs.iter() {
         if let Some(n) = v.as_i64() {
@@ -268,7 +278,8 @@ fn main() -> Result<()> {
 
     let t0 = Instant::now();
     let new_data = load_yaml_from_file(&current_yaml)?;
-    info!("📦 {:>10?}  Current repos: {}", t0.elapsed(), new_data.len());
+    let input_bytes = fs::metadata(&current_yaml).map(|m| m.len()).unwrap_or(0);
+    info!("📦 {:>10?}  Current repos: {}  ({} bytes)", t0.elapsed(), new_data.len(), fmt_bytes(input_bytes));
 
     // Build snapshots
     let now = Utc::now();
@@ -323,9 +334,11 @@ fn main() -> Result<()> {
     // Save result — timed per format
     macro_rules! timed_write {
         ($path:expr, $data:expr) => {{
+            let data = $data;
+            let size = data.len() as u64;
             let t = Instant::now();
-            fs::write(&$path, $data)?;
-            info!("💾 {:>12?}  {}", t.elapsed(), $path.file_name().unwrap().to_string_lossy());
+            fs::write(&$path, data)?;
+            info!("💾 {:>12?}  {:>15} bytes  {}", t.elapsed(), fmt_bytes(size), $path.file_name().unwrap().to_string_lossy());
         }};
     }
     timed_write!(output_csv,         result_to_csv(&result)?);

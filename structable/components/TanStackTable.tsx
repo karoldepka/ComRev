@@ -10,6 +10,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import type { RepoRow } from '../types/table';
+import TableToolbar from './TableToolbar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -61,60 +62,70 @@ export default function TanStackTable() {
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
-  if (error) return <div style={{ padding: '1rem', color: 'red' }}>Error: {error}</div>;
+  if (error) {
+    return (
+      <>
+        <TableToolbar title="TanStack Table" />
+        <div style={{ padding: '1rem', color: 'red' }}>Error: {error}</div>
+      </>
+    );
+  }
 
   return (
-    <div className="tree-table-container">
-      {loading && <div className="table-loading-overlay"><span>Loading…</span></div>}
-      <div className="tree-table-wrap">
-        <table className="tree-table">
-          <colgroup>
-            {table.getFlatHeaders().map((h) => (
-              <col key={h.id} style={{ width: `${h.getSize()}px` }} />
-            ))}
-          </colgroup>
-          <thead>
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((h) => (
-                  <th
-                    key={h.id}
-                    style={{ cursor: h.column.getCanSort() ? 'pointer' : undefined }}
-                    onClick={h.column.getToggleSortingHandler()}
-                  >
-                    <div className="column-group">
-                      <span className="col-label">
-                        {flexRender(h.column.columnDef.header, h.getContext())}
-                        {h.column.getIsSorted() === 'asc' && <span className="sort-indicator"> ↑</span>}
-                        {h.column.getIsSorted() === 'desc' && <span className="sort-indicator"> ↓</span>}
-                      </span>
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <>
+      <TableToolbar title="TanStack Table" />
+      <div className="tree-table-container">
+        {loading && <div className="table-loading-overlay"><span>Loading…</span></div>}
+        <div className="tree-table-wrap">
+          <table className="tree-table">
+            <colgroup>
+              {table.getFlatHeaders().map((h) => (
+                <col key={h.id} style={{ width: `${h.getSize()}px` }} />
+              ))}
+            </colgroup>
+            <thead>
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((h) => (
+                    <th
+                      key={h.id}
+                      style={{ cursor: h.column.getCanSort() ? 'pointer' : undefined }}
+                      onClick={h.column.getToggleSortingHandler()}
+                    >
+                      <div className="column-group">
+                        <span className="col-label">
+                          {flexRender(h.column.columnDef.header, h.getContext())}
+                          {h.column.getIsSorted() === 'asc' && <span className="sort-indicator"> ↑</span>}
+                          {h.column.getIsSorted() === 'desc' && <span className="sort-indicator"> ↓</span>}
+                        </span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map((row) => (
+                <tr key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="table-note">
+          <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
+          <span style={{ marginLeft: '1rem' }}>
+            <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
+            {' '}
+            <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
+          </span>
+        </div>
       </div>
-      <div className="table-note">
-        <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
-        <span style={{ marginLeft: '1rem' }}>
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
-          {' '}
-          <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
-        </span>
-      </div>
-    </div>
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { getSyncClient, SyncClient } from '../services/syncClient';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
+import type { ColumnGroup } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
 import AddColumnDialog from './AddColumnDialog';
@@ -112,6 +113,25 @@ function buildHeaderRows(cols: Column[], maxDepth: number, hidden: Set<string>):
   return rows.map((r) => r.filter((cell) => cell.colSpan > 0));
 }
 
+function applyColumnGroups(flatCols: Column[], groups: ColumnGroup[]): Column[] {
+  if (groups.length === 0) return flatCols;
+  const groupByChild = new Map<string, ColumnGroup>();
+  for (const g of groups) {
+    for (const cid of g.childIds) groupByChild.set(cid, g);
+  }
+  const result: Column[] = [];
+  const processedGroups = new Set<string>();
+  for (const col of flatCols) {
+    const group = groupByChild.get(col.id);
+    if (!group) { result.push(col); continue; }
+    if (processedGroups.has(group.id)) continue;
+    processedGroups.add(group.id);
+    const children = flatCols.filter((c) => group.childIds.includes(c.id));
+    result.push({ id: group.id, label: group.label, subColumns: children });
+  }
+  return result;
+}
+
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message;
   if (typeof e === 'string') return e;
@@ -129,6 +149,13 @@ export default function TreeTable({ tableId }: Props) {
   const [syncPending, setSyncPending] = useState(0);
   const [cellPending, setCellPending] = useState(0);
   const pendingUploads = syncPending + cellPending;
+
+  type PendingChange = { id: string; description: string; timestamp: number };
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const recordChange = useCallback((description: string) => {
+    const id = nanoid();
+    setPendingChanges((prev) => [{ id, description, timestamp: Date.now() }, ...prev].slice(0, 50));
+  }, []);
 
   // Separate TableApi instance for cell-value edits (REST + IDB queue).
   // Created once; stable setter ref keeps onQueueChange wiring correct.
@@ -158,6 +185,13 @@ export default function TreeTable({ tableId }: Props) {
     return () => sub.unsubscribe();
   }, [api]);
 
+  // Clear pending changes list 3s after everything is synced
+  useEffect(() => {
+    if (pendingUploads > 0) return;
+    const t = setTimeout(() => setPendingChanges([]), 3000);
+    return () => clearTimeout(t);
+  }, [pendingUploads]);
+
   // ── Repo data ──────────────────────────────────────────────────────────────
   const [rows, setRows] = useState<RepoRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -173,8 +207,17 @@ export default function TreeTable({ tableId }: Props) {
   const bootstrapRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customColsRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Column prefs (widths + order) ─────────────────────────────────────────
-  const { columnWidths, setColumnWidths, columnOrder, reorderColumns } = useColumnPrefs();
+  // ── Column prefs (widths + order + groups) ────────────────────────────────
+  const {
+    columnWidths, setColumnWidths,
+    columnOrder,
+    reorderColumns,
+    columnGroups,
+    addColumnGroup,
+    addToGroup,
+    removeColumnGroup,
+    updateGroupLabel,
+  } = useColumnPrefs();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // ── Tables registry ───────────────────────────────────────────────────────
@@ -191,9 +234,13 @@ export default function TreeTable({ tableId }: Props) {
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
 
-  // ── Drag-to-reorder state ──────────────────────────────────────────────────
+  // ── Drag-to-reorder / drag-to-group state ─────────────────────────────────
   const dragColRef = useRef<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const [dragGroupTarget, setDragGroupTarget] = useState<string | null>(null);
+
+  // ── Inline group-label editing ─────────────────────────────────────────────
+  const [editingGroupLabel, setEditingGroupLabel] = useState<Record<string, string>>({});
 
   // ── Hidden rows (optimistic local set) ────────────────────────────────────
   const [hiddenRowIds, setHiddenRowIds] = useState<Set<string>>(new Set());
@@ -336,6 +383,7 @@ export default function TreeTable({ tableId }: Props) {
     const result = customColumns.length > 0
       ? columnsFromMetadata(customColumns)
       : (rows.length > 0 ? deriveColumns(rows[0]) : []);
+    let flat = result;
     if (columnOrder.length > 0) {
       const map = new Map(result.map((c) => [c.id, c]));
       const ordered: Column[] = [];
@@ -345,10 +393,10 @@ export default function TreeTable({ tableId }: Props) {
         if (col) { ordered.push(col); seen.add(id); }
       }
       for (const col of result) { if (!seen.has(col.id)) ordered.push(col); }
-      return ordered;
+      flat = ordered;
     }
-    return result;
-  }, [rows, customColumns, columnOrder]);
+    return applyColumnGroups(flat, columnGroups);
+  }, [rows, customColumns, columnOrder, columnGroups]);
 
   useEffect(() => {
     if (columns.length === 0) return;
@@ -455,8 +503,9 @@ export default function TreeTable({ tableId }: Props) {
     setEditingCell(null);
     // Optimistic local update
     setRows((prev) => prev.map((r, i) => i === rowIndex ? { ...r, [colId]: value } : r));
+    recordChange(`Edit cell [${colId}]`);
     cellApiRef.current.upsertCellValue(rowId, colId, value);
-  }, [editingCell]);
+  }, [editingCell, recordChange]);
 
   const cancelEdit = useCallback(() => setEditingCell(null), []);
 
@@ -619,6 +668,7 @@ export default function TreeTable({ tableId }: Props) {
       types: ['text'],
     };
     setCustomColumns((prev) => [...prev, col]);
+    recordChange(`Create column "${col.label ?? col.name}"`);
     api.createCustomColumn({ name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
   }, [api]);
 
@@ -667,6 +717,7 @@ export default function TreeTable({ tableId }: Props) {
     const { colId } = pendingDeleteCol;
     const colMeta = customColByName.get(colId);
     if (!colMeta || isColumnReadOnly(colMeta)) return;
+    recordChange(`Delete column "${pendingDeleteCol.label}"`);
     api.deleteCustomColumn(colMeta.id);
     setCustomColumns((prev) => prev.filter((c) => c.id !== colMeta.id));
     setHiddenColumns((prev) => prev.filter((c) => c !== colId));
@@ -680,8 +731,8 @@ export default function TreeTable({ tableId }: Props) {
       toDelete.forEach((k) => delete next[k]);
       return next;
     });
-    Object.entries(toSet).forEach(([key, color]) => api.upsertFlag(key, color));
-    toDelete.forEach((key) => api.deleteFlag(key));
+    Object.entries(toSet).forEach(([key, color]) => { recordChange(`Set ${color} flag`); api.upsertFlag(key, color); });
+    toDelete.forEach((key) => { recordChange('Remove flag'); api.deleteFlag(key); });
   }, [api]);
 
   const saveRemark = useCallback((
@@ -707,6 +758,7 @@ export default function TreeTable({ tableId }: Props) {
       return;
     }
     const rid = existingId ?? nanoid();
+    recordChange(`Save ${kind}`);
     // Optimistic update
     const optimistic: ApiRemark = { id: rid, body, kind, is_private: false, resolved_at: null, targets };
     setCellRemarks((prev) => {
@@ -729,7 +781,7 @@ export default function TreeTable({ tableId }: Props) {
   if (rows.length === 0 && !fetchError) {
     return (
       <>
-        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={pendingChanges} />
         {loading && <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>}
       </>
     );
@@ -737,7 +789,7 @@ export default function TreeTable({ tableId }: Props) {
   if (rows.length === 0 && fetchError) {
     return (
       <>
-        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} />
+        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={pendingChanges} />
         <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>
       </>
     );
@@ -809,26 +861,56 @@ export default function TreeTable({ tableId }: Props) {
                           e.dataTransfer.effectAllowed = 'move';
                         }}
                         onDragOver={(e) => {
-                          if (!dragColRef.current || dragColRef.current === column.id) return;
+                          const from = dragColRef.current;
+                          if (!from || from === column.id || column.id === PINNED_COL) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = 'move';
-                          setDragOverCol(column.id);
+                          if (!isLeaf) {
+                            setDragGroupTarget(column.id);
+                            setDragOverCol(null);
+                          } else {
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const relX = (e.clientX - rect.left) / rect.width;
+                            if (relX > 0.3 && relX < 0.7) {
+                              setDragGroupTarget(column.id);
+                              setDragOverCol(null);
+                            } else {
+                              setDragOverCol(column.id);
+                              setDragGroupTarget(null);
+                            }
+                          }
                         }}
-                        onDragLeave={() => setDragOverCol((prev) => prev === column.id ? null : prev)}
+                        onDragLeave={() => {
+                          setDragOverCol((prev) => prev === column.id ? null : prev);
+                          setDragGroupTarget((prev) => prev === column.id ? null : prev);
+                        }}
                         onDrop={(e) => {
                           e.preventDefault();
                           const from = dragColRef.current;
                           dragColRef.current = null;
                           setDragOverCol(null);
-                          if (!from || from === column.id) return;
-                          reorderColumns(from, column.id, allLeafColumns.map((c) => c.id));
+                          setDragGroupTarget(null);
+                          if (!from || from === column.id || column.id === PINNED_COL) return;
+                          if (!isLeaf) {
+                            addToGroup(column.id, from);
+                          } else {
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const relX = (e.clientX - rect.left) / rect.width;
+                            if (relX > 0.3 && relX < 0.7) {
+                              const fromLabel = allLeafColumns.find((c) => c.id === from)?.label ?? from;
+                              addColumnGroup(`${fromLabel} / ${column.label}`, [from, column.id]);
+                            } else {
+                              reorderColumns(from, column.id, allLeafColumns.map((c) => c.id));
+                            }
+                          }
                         }}
-                        onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); }}
+                        onDragEnd={() => { dragColRef.current = null; setDragOverCol(null); setDragGroupTarget(null); }}
                         className={[
                           isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''),
                           isSticky ? 'sticky-col' : '',
                           cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : '',
                           dragOverCol === column.id ? 'col-drag-over' : '',
+                          dragGroupTarget === column.id ? 'col-drag-group' : '',
                         ].filter(Boolean).join(' ') || undefined}
                         onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                         onContextMenu={(e) => {
@@ -840,15 +922,40 @@ export default function TreeTable({ tableId }: Props) {
                         }}
                       >
                         <div className="column-group">
-                          <span className="col-label">
-                            {column.label}
-                            {sort.col === column.id && (
-                              <span className="sort-indicator">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span>
-                            )}
-                            {isLeaf && colHasFilter() && (
-                              <span className="filter-indicator" title="Filtered">●</span>
-                            )}
-                          </span>
+                          {!isLeaf && column.id in editingGroupLabel ? (
+                            <input
+                              className="group-label-editor"
+                              autoFocus
+                              value={editingGroupLabel[column.id] ?? column.label}
+                              onChange={(e) => setEditingGroupLabel((prev) => ({ ...prev, [column.id]: e.target.value }))}
+                              onBlur={() => {
+                                const newLabel = editingGroupLabel[column.id];
+                                if (newLabel !== undefined) updateGroupLabel(column.id, newLabel);
+                                setEditingGroupLabel((prev) => { const { [column.id]: _, ...rest } = prev; return rest; });
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                                if (e.key === 'Escape') setEditingGroupLabel((prev) => { const { [column.id]: _, ...rest } = prev; return rest; });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span
+                              className="col-label"
+                              onDoubleClick={!isLeaf ? (e) => {
+                                e.stopPropagation();
+                                setEditingGroupLabel((prev) => ({ ...prev, [column.id]: column.label }));
+                              } : undefined}
+                            >
+                              {column.label}
+                              {sort.col === column.id && (
+                                <span className="sort-indicator">{sort.dir === 'asc' ? ' ↑' : ' ↓'}</span>
+                              )}
+                              {isLeaf && colHasFilter() && (
+                                <span className="filter-indicator" title="Filtered">●</span>
+                              )}
+                            </span>
+                          )}
                           {showMenu && (
                             <span className="header-actions">
                               <button
@@ -894,6 +1001,7 @@ export default function TreeTable({ tableId }: Props) {
                                   onHide={hideColumns}
                                   onAddColClick={(colId) => { setAddColAfter(colId || null); setOpenMenuColumn(null); setMenuAnchor(null); }}
                                   onDeleteCol={deleteCustomColumn}
+                                  onUngroup={!isLeaf ? (groupId) => { removeColumnGroup(groupId); setOpenMenuColumn(null); setMenuAnchor(null); } : undefined}
                                   onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
                                 />
                               )}

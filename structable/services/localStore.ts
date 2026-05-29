@@ -1,7 +1,10 @@
 const KEYS = {
-  columnWidths: 'structable:column-widths',
-  columnOrder:  'structable:column-order',
+  columnWidths:  'structable:column-widths',
+  columnOrder:   'structable:column-order',
+  columnGroups:  'structable:column-groups',
 } as const;
+
+export type StoredColumnGroup = { id: string; label: string; childIds: string[] };
 
 function parse<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -23,4 +26,7 @@ export const localStore = {
 
   getColumnOrder: (): string[]  => parse(KEYS.columnOrder, []),
   setColumnOrder: (v: string[]) => store(KEYS.columnOrder, v),
+
+  getColumnGroups: (): StoredColumnGroup[] => parse(KEYS.columnGroups, []),
+  setColumnGroups: (v: StoredColumnGroup[]) => store(KEYS.columnGroups, v),
 };

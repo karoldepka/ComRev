@@ -43,6 +43,7 @@ export type HeaderMenuProps = BaseProps & {
   onHide:       (ids: string[]) => void;
   onAddColClick:(colId: string) => void;
   onDeleteCol:  (colId: string) => void;
+  onUngroup?:   (groupId: string) => void;
 };
 
 export type CellMenuProps = BaseProps & {
@@ -114,7 +115,7 @@ export default function ContextMenu(props: ContextMenuProps) {
       sort, filters, filterDraft, setFilterDraft,
       draftText, setDraftText,
       onSetMode, onSort, onApplyFilter, onClearFilter,
-      onHide, onAddColClick, onDeleteCol,
+      onHide, onAddColClick, onDeleteCol, onUngroup,
     } = props;
 
     const flagKey    = `header:${column.id}`;
@@ -214,12 +215,20 @@ export default function ContextMenu(props: ContextMenuProps) {
         )}
         <div className="menu-divider" />
         <>
-          {!column.readOnly && (
+          {!column.readOnly && isLeaf && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onDeleteCol(column.id); }}
             >
               Delete column
+            </button>
+          )}
+          {!isLeaf && onUngroup && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onUngroup(column.id); }}
+            >
+              Ungroup
             </button>
           )}
           <button

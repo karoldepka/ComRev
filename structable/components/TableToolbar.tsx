@@ -1,22 +1,33 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import type { ApiTable } from '../types/table';
 
 type Props = {
-  tableId: string;
-  tables: ApiTable[];
-  onAddTable: () => void;
-  onSelectTable: (id: string) => void;
-  onShowAllTables: () => void;
-  onRenameTable: (id: string, title: string) => void;
+  tableId?: string;
+  title?: string;
+  tables?: ApiTable[];
+  onAddTable?: () => void;
+  onSelectTable?: (id: string) => void;
+  onShowAllTables?: () => void;
+  onRenameTable?: (id: string, title: string) => void;
 };
 
+const TABLE_IMPLS = [
+  { href: '/',         label: 'Custom TreeTable' },
+  { href: '/tanstack', label: 'TanStack Table' },
+];
+
 export default function TableToolbar({
-  tableId, tables, onAddTable, onSelectTable, onShowAllTables, onRenameTable,
+  tableId, title, tables = [], onAddTable, onSelectTable, onShowAllTables, onRenameTable,
 }: Props) {
-  const current     = tables.find((t) => t.id === tableId);
-  const displayTitle = current?.title || tableId;
+  const path = usePathname();
+  const current = tableId ? tables.find((t) => t.id === tableId) : undefined;
+  const displayTitle = title ?? current?.title ?? tableId ?? 'Table';
+  const canRename = !!tableId && !!onRenameTable;
+  const hasTableActions = !!(onAddTable || onShowAllTables || tables.length > 0);
 
   const [menuOpen, setMenuOpen]     = useState(false);
   const [editing, setEditing]       = useState(false);
@@ -29,7 +40,6 @@ export default function TableToolbar({
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Position the dropdown below the button
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({ display: 'none' });
   useLayoutEffect(() => {
     if (!menuOpen || !btnRef.current) { setDropdownStyle({ display: 'none' }); return; }
@@ -51,8 +61,9 @@ export default function TableToolbar({
 
   const saveTitle = () => {
     setEditing(false);
-    const t = titleDraft.trim() || tableId;
-    if (t !== displayTitle) onRenameTable(tableId, t);
+    if (!tableId || !onRenameTable) return;
+    const nextTitle = titleDraft.trim() || tableId;
+    if (nextTitle !== displayTitle) onRenameTable(tableId, nextTitle);
   };
 
   return (
@@ -69,28 +80,51 @@ export default function TableToolbar({
 
       {menuOpen && (
         <div ref={menuRef} className="table-dropdown" style={dropdownStyle}>
-          <button type="button" onClick={() => { setMenuOpen(false); onAddTable(); }}>
-            + Add table
-          </button>
-          {tables.length > 0 && <div className="menu-divider" />}
-          {tables.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={t.id === tableId ? 'menu-active' : ''}
-              onClick={() => { setMenuOpen(false); onSelectTable(t.id); }}
+          <div className="table-dropdown-section-label">Table renderer</div>
+          {TABLE_IMPLS.map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className={['table-dropdown-link', path === href ? 'menu-active' : ''].filter(Boolean).join(' ')}
+              onClick={() => setMenuOpen(false)}
             >
-              {t.title || t.id}
-            </button>
+              {label}
+            </Link>
           ))}
-          <div className="menu-divider" />
-          <button type="button" onClick={() => { setMenuOpen(false); onShowAllTables(); }}>
-            Show all tables
-          </button>
+
+          {hasTableActions && (
+            <>
+              <div className="menu-divider" />
+              {onAddTable && (
+                <button type="button" onClick={() => { setMenuOpen(false); onAddTable(); }}>
+                  + Add table
+                </button>
+              )}
+              {tables.length > 0 && <div className="menu-divider" />}
+              {tables.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={t.id === tableId ? 'menu-active' : ''}
+                  onClick={() => { setMenuOpen(false); onSelectTable?.(t.id); }}
+                >
+                  {t.title || t.id}
+                </button>
+              ))}
+              {onShowAllTables && (
+                <>
+                  <div className="menu-divider" />
+                  <button type="button" onClick={() => { setMenuOpen(false); onShowAllTables(); }}>
+                    Show all tables
+                  </button>
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
 
-      {editing ? (
+      {editing && canRename ? (
         <input
           autoFocus
           className="table-title-input"
@@ -105,8 +139,12 @@ export default function TableToolbar({
       ) : (
         <span
           className="table-title"
-          title="Click to rename"
-          onClick={() => { setTitleDraft(displayTitle); setEditing(true); }}
+          title={canRename ? 'Click to rename' : undefined}
+          onClick={() => {
+            if (!canRename) return;
+            setTitleDraft(displayTitle);
+            setEditing(true);
+          }}
         >
           {displayTitle}
         </span>

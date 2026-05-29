@@ -15,6 +15,7 @@ TOPICS_RAW = [
     *"language programming-language compiler v".split(" "),
     *"react agent open-source typescript ai js reactjs nextjs ts assistant copilot agents assistant-chat-bots ai-assistant ai-agent llm copilot-chat generative-ui agentic-ai agent-native".split(" "),
     *"reinforcement-learning transformers pytorch diffusion dit video-generation world-models sana text-to-video linear-transformer text-to-image-generation system-algorithm-deisgn ystem-algorithm-design nvfp4".split(" "),
+    *"ui ai mcp openapi self-hosted openai webui rag llm llms ollama llm-ui ollama-webui llm-webui open-webui".split(" "),
    "mobx",
     "redux",
     "zustand",
