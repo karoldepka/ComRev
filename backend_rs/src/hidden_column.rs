@@ -18,23 +18,6 @@ pub struct AddHiddenColumn {
     pub column_id: String,
 }
 
-pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS hidden_columns (
-            id                 TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-            column_id          TEXT        NOT NULL UNIQUE,
-            who_created        TEXT,
-            when_created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            who_last_modified  TEXT,
-            when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            modify_count       INTEGER     NOT NULL DEFAULT 0
-        )",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 pub async fn list(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<HiddenColumn>>, (StatusCode, String)> {

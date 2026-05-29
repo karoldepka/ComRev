@@ -37,24 +37,6 @@ pub struct PatchTable {
     pub who_last_modified: Option<String>,
 }
 
-pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS tables (
-            id                 TEXT        PRIMARY KEY,
-            title              TEXT        NOT NULL,
-            description        TEXT,
-            who_created        TEXT,
-            when_created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            who_last_modified  TEXT,
-            when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            modify_count       INTEGER     NOT NULL DEFAULT 0
-        )",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 pub async fn list(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Table>>, (StatusCode, String)> {

@@ -58,40 +58,6 @@ pub struct UpsertRemark {
     pub resolved_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-// ── ensure_table (called by PgStore::ensure_schema) ───────────────────────────
-
-pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS remarks (
-            id                 TEXT        PRIMARY KEY,
-            body               TEXT        NOT NULL    DEFAULT '',
-            kind               TEXT        NOT NULL    DEFAULT 'note',
-            is_private         BOOLEAN     NOT NULL    DEFAULT false,
-            resolved_at        TIMESTAMPTZ,
-            who_created        TEXT,
-            when_created       TIMESTAMPTZ NOT NULL    DEFAULT NOW(),
-            who_last_modified  TEXT,
-            when_last_modified TIMESTAMPTZ NOT NULL    DEFAULT NOW(),
-            modify_count       INTEGER     NOT NULL    DEFAULT 0
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS remark_targets (
-            remark_id   TEXT    NOT NULL REFERENCES remarks(id) ON DELETE CASCADE,
-            row_id      TEXT    NOT NULL DEFAULT '',
-            column_id   TEXT    NOT NULL,
-            PRIMARY KEY (remark_id, row_id, column_id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 pub async fn list(

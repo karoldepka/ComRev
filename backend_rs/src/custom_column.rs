@@ -29,35 +29,6 @@ pub struct CreateCustomColumn {
     pub position_after: Option<String>,
 }
 
-pub async fn ensure_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS custom_columns (
-            id                 TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-            name               TEXT        NOT NULL,
-            label              TEXT,
-            description        TEXT,
-            expression         TEXT,
-            position_after     TEXT,
-            read_only          BOOLEAN     NOT NULL DEFAULT false,
-            types              TEXT[]      NOT NULL DEFAULT ARRAY['text'],
-            who_created        TEXT,
-            when_created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            who_last_modified  TEXT,
-            when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            modify_count       INTEGER     NOT NULL DEFAULT 0
-        )",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query("ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS read_only BOOLEAN NOT NULL DEFAULT false")
-        .execute(pool)
-        .await?;
-    sqlx::query("ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS types TEXT[] NOT NULL DEFAULT ARRAY['text']")
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 pub async fn list(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CustomColumn>>, (StatusCode, String)> {

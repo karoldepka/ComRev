@@ -33,13 +33,6 @@ impl PgStore {
 #[async_trait]
 impl DataStore for PgStore {
     async fn ensure_schema(&self) -> Result<()> {
-        crate::flag::ensure_table(&self.pool).await?;
-        crate::remark::ensure_table(&self.pool).await?;
-        crate::hidden_row::ensure_table(&self.pool).await?;
-        crate::hidden_column::ensure_table(&self.pool).await?;
-        crate::custom_column::ensure_table(&self.pool).await?;
-        crate::table::ensure_table(&self.pool).await?;
-        crate::ops_log::ensure_table(&self.pool).await?;
         Ok(())
     }
 
@@ -263,7 +256,7 @@ impl DataStore for PgStore {
 
         // Per-key JSONB index for fast filtering/sorting on this column.
         // Index name uses the column id (unique, stable). Key is single-quote-escaped.
-        // Errors are non-fatal — the column record is already saved.
+        // We always try to CREATE INDEX when a column is upserted/created.
         let idx = format!("idx_cv_{id}");
         let safe_key = name.replace('\'', "''");
         let sql = format!(
