@@ -15,6 +15,7 @@ import TableToolbar from './TableToolbar';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
+import logger from '../utils/logger';
 
 import { TableApi } from '../services/tableApi';
 import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, RemarkTarget, DataRow } from '../types/table';
@@ -82,14 +83,59 @@ function isColumnReadOnly(cc: ApiCustomColumn): boolean {
   return cc.readOnly ?? cc.read_only ?? !(cc.is_editable ?? true);
 }
 
-function columnsFromMetadata(customColumns: ApiCustomColumn[]): Column[] {
-  const result: Column[] = [];
+function insertAfter(list: Column[], col: Column, positionAfter: string | null | undefined): void {
+  const idx = positionAfter
+    ? list.findIndex((c) => c.id === positionAfter || c.customColumnId === positionAfter)
+    : -1;
+  list.splice(idx >= 0 ? idx + 1 : list.length, 0, col);
+}
+
+/**
+ * Resolve the column ID used for rowVal lookup.
+ * Priority:
+ *   1. source_path from API (authoritative, multi-segment → dot join)
+ *   2. parent_ids + row sample: if parent's name is a nested object in the row, use dot notation
+ *   3. Heuristic: if cc.name starts with a row nested-object key + '_', build dot path
+ *   4. Fallback: cc.name
+ */
+function resolveColumnId(
+  cc: ApiCustomColumn,
+  rawMap: Map<string, ApiCustomColumn>,
+  rowSample?: DataRow,
+): string {
+  if ((cc.source_path?.length ?? 0) > 1) return cc.source_path!.join('.');
+
+  if (cc.parent_ids?.length && rowSample) {
+    const parent = rawMap.get(cc.parent_ids[cc.parent_ids.length - 1]);
+    if (parent) {
+      const parentName = parent.source_path?.[0] ?? parent.name;
+      const parentVal = rowSample[parentName];
+      if (parentVal !== null && parentVal !== undefined && typeof parentVal === 'object' && !Array.isArray(parentVal)) {
+        return `${parentName}.${cc.label ?? cc.name}`;
+      }
+    }
+  }
+
+  if (rowSample && !(cc.name in rowSample)) {
+    for (const rowKey of Object.keys(rowSample)) {
+      const val = rowSample[rowKey];
+      if (val !== null && val !== undefined && typeof val === 'object' && !Array.isArray(val)) {
+        if (cc.name.startsWith(rowKey + '_')) {
+          return `${rowKey}.${cc.name.slice(rowKey.length + 1)}`;
+        }
+      }
+    }
+  }
+
+  return cc.source_path?.[0] ?? cc.name;
+}
+
+function columnsFromMetadata(customColumns: ApiCustomColumn[], rowSample?: DataRow): Column[] {
+  const rawMap = new Map(customColumns.map((cc) => [cc.id, cc]));
+  const colMap = new Map<string, Column>();
   for (const cc of customColumns) {
-    const afterIdx = cc.position_after
-      ? result.findIndex((c) => c.id === cc.position_after || c.customColumnId === cc.position_after)
-      : -1;
-    result.splice(afterIdx >= 0 ? afterIdx + 1 : result.length, 0, {
-      id: cc.name,
+    colMap.set(cc.id, {
+      id: resolveColumnId(cc, rawMap, rowSample),
       customColumnId: cc.id,
       label: cc.label ?? labelFor(cc.name),
       width: 150,
@@ -99,7 +145,20 @@ function columnsFromMetadata(customColumns: ApiCustomColumn[]): Column[] {
       filterType: (cc.data_types?.[0] as ColType | undefined) ?? null,
     });
   }
-  return result;
+
+  const root: Column[] = [];
+  for (const cc of customColumns) {
+    const col = colMap.get(cc.id)!;
+    const parentId = cc.parent_ids?.length ? cc.parent_ids[cc.parent_ids.length - 1] : null;
+    const parentCol = parentId ? colMap.get(parentId) : null;
+    if (parentCol) {
+      if (!parentCol.subColumns) parentCol.subColumns = [];
+      insertAfter(parentCol.subColumns, col, cc.position_after);
+    } else {
+      insertAfter(root, col, cc.position_after);
+    }
+  }
+  return root;
 }
 
 function getLeafColumns(cols: Column[]): Column[] {
@@ -377,6 +436,8 @@ export default function TreeTable({ tableId }: Props) {
         setRows(payload.data);
         setTotal(payload.total);
         if (!aborter.signal.aborted) { setLoading(false); setFetchError(null); }
+        const first = payload.data[0];
+        if (first) logger.debug({ stars_diff: first['stars_diff'], stars_diff_6h: (first['stars_diff'] as Record<string, unknown>)?.['6h'] }, 'first row stars_diff');
       })
       .catch((err: Error) => {
         if (err instanceof Error && err.name === 'AbortError') return;
@@ -400,7 +461,11 @@ export default function TreeTable({ tableId }: Props) {
   useEffect(() => {
     if (!api) return;
     api.fetchCustomColumns()
-      .then(setCustomColumns)
+      .then((cols) => {
+        logger.debug({ count: cols.length, stars_diff: cols.filter((c) => c.id.startsWith('gh_stars_diff')) }, 'custom columns loaded');
+        logger.debug(cols.reduce<Record<string, unknown>>((acc, c) => { acc[c.id] = { name: c.name, source_path: c.source_path, parent_ids: c.parent_ids, types: c.types }; return acc; }, {}), 'column metadata');
+        setCustomColumns(cols);
+      })
       .catch((err: unknown) => {
         toast.error(`Failed to load custom columns: ${errMsg(err)}`, { id: 'fetch-custom-cols-error' });
         // Retry forever
@@ -419,9 +484,10 @@ export default function TreeTable({ tableId }: Props) {
 
   // ── Column geometry ────────────────────────────────────────────────────────
   const columns = useMemo<Column[]>(() => {
+    const rowSample = rows[0];
     const result = customColumns.length > 0
-      ? columnsFromMetadata(customColumns)
-      : (rows.length > 0 ? deriveColumns(rows[0]) : []);
+      ? columnsFromMetadata(customColumns, rowSample)
+      : (rowSample ? deriveColumns(rowSample) : []);
     let flat = result;
     if (columnOrder.length > 0) {
       const map = new Map(result.map((c) => [c.id, c]));

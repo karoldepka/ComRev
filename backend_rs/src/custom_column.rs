@@ -17,6 +17,10 @@ pub struct CustomColumn {
     pub position_after: Option<String>,
     pub read_only: bool,
     pub types: Vec<String>,
+    pub source_path: Option<Vec<String>>,
+    pub data_types: Vec<String>,
+    pub is_group: bool,
+    pub parent_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

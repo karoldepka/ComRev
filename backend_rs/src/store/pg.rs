@@ -221,7 +221,11 @@ impl DataStore for PgStore {
 
     async fn list_custom_columns(&self) -> Result<Vec<CustomColumn>> {
         Ok(sqlx::query_as::<_, CustomColumn>(
-            "SELECT id::text, name, label, description, expression, position_after, read_only, types \
+            "SELECT id::text, name, label, description, expression, position_after, read_only, types, \
+               source_path, \
+               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types, \
+               COALESCE(is_group, false) AS is_group, \
+               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids \
              FROM custom_columns ORDER BY when_created",
         )
         .fetch_all(&self.pool)
@@ -246,7 +250,11 @@ impl DataStore for PgStore {
                    expression = EXCLUDED.expression, position_after = EXCLUDED.position_after,
                    when_last_modified = NOW(),
                    modify_count = custom_columns.modify_count + 1
-             RETURNING id::text, name, label, description, expression, position_after, read_only, types",
+             RETURNING id::text, name, label, description, expression, position_after, read_only, types, \
+               source_path, \
+               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types, \
+               COALESCE(is_group, false) AS is_group, \
+               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids",
         )
         .bind(id)
         .bind(name)
