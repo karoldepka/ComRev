@@ -9,16 +9,14 @@ import type { ColumnGroup } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
 import AddColumnDialog from './AddColumnDialog';
-import AddTableDialog from './AddTableDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
-import TableToolbar from './TableToolbar';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
 import logger from '../utils/logger';
 
 import { TableApi } from '../services/tableApi';
-import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, RemarkTarget, DataRow } from '../types/table';
+import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, DataRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -304,16 +302,6 @@ export default function TreeTable({ tableId }: Props) {
   } = useColumnPrefs();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // ── Tables registry ───────────────────────────────────────────────────────
-  const [tables, setTables] = useState<ApiTable[]>([]);
-
-  useEffect(() => {
-    if (!cellApiRef.current) return;
-    cellApiRef.current.fetchTables()
-      .then(setTables)
-      .catch((err: unknown) => toast.error(`Failed to load tables: ${errMsg(err)}`));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Column state ───────────────────────────────────────────────────────────
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
@@ -333,9 +321,8 @@ export default function TreeTable({ tableId }: Props) {
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag' | 'note' | 'comment'>('menu');
-  // ── Add-column / add-table dialogs ────────────────────────────────────────
+  // ── Add-column dialog ─────────────────────────────────────────────────────
   const [addColAfter, setAddColAfter] = useState<string | null>(null);
-  const [showAddTable, setShowAddTable] = useState(false);
   type PendingDelete = { colId: string; label: string; notes: number; comments: number; flags: number };
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
 
@@ -793,21 +780,6 @@ export default function TreeTable({ tableId }: Props) {
       .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
   }, [allLeafColumns, customColByName, recordChange, tableId]);
 
-  const handleCreateTable = useCallback((payload: import('./AddTableDialog').AddTablePayload) => {
-    if (!cellApiRef.current) return;
-    const id = nanoid();
-    const newTable: ApiTable = { id, title: payload.title, description: payload.description };
-    cellApiRef.current.createTable({ id, title: payload.title, description: payload.description });
-    setTables((prev) => [...prev, newTable]);
-    setShowAddTable(false);
-  }, []);
-
-  const handleRenameTable = useCallback((id: string, title: string) => {
-    if (!cellApiRef.current) return;
-    cellApiRef.current.patchTable(id, { title });
-    setTables((prev) => prev.map((t) => t.id === id ? { ...t, title } : t));
-  }, []);
-
   const deleteCustomColumn = useCallback((colId: string) => {
     const colMeta = customColByName.get(colId);
     if (!colMeta || isColumnReadOnly(colMeta)) return;
@@ -907,66 +879,17 @@ export default function TreeTable({ tableId }: Props) {
     ? queueChanges
     : pendingChanges;
 
-  // Initial empty state: no data yet
-  if (rows.length === 0 && columns.length === 0 && !fetchError) {
-    return (
-      <>
-        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
-        <TableToolbar
-          tableId={tableId}
-          tables={tables}
-          onAddTable={() => setShowAddTable(true)}
-          onAddColumn={() => setAddColAfter('')}
-          onShowAllTables={() => toast.info('Table list coming soon')}
-          onRenameTable={handleRenameTable}
-        />
-        {loading && <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>}
-        {!loading && <div className="table-empty-state">No rows yet. Use the table menu to add a column.</div>}
-        {addColAfter !== null && (
-          <AddColumnDialog
-            afterColId={addColAfter}
-            existingNames={existingColNames}
-            onConfirm={handleDialogConfirm}
-            onClose={() => setAddColAfter(null)}
-          />
-        )}
-        {showAddTable && (
-          <AddTableDialog
-            onConfirm={handleCreateTable}
-            onClose={() => setShowAddTable(false)}
-          />
-        )}
-      </>
-    );
-  }
-  if (rows.length === 0 && columns.length === 0 && fetchError) {
-    return (
-      <>
-        <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
-        <TableToolbar
-          tableId={tableId}
-          tables={tables}
-          onAddTable={() => setShowAddTable(true)}
-          onAddColumn={() => setAddColAfter('')}
-          onShowAllTables={() => toast.info('Table list coming soon')}
-          onRenameTable={handleRenameTable}
-        />
-        <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>
-      </>
-    );
-  }
-
   return (
     <>
       <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
-      <TableToolbar
-        tableId={tableId}
-        tables={tables}
-        onAddTable={() => setShowAddTable(true)}
-        onAddColumn={() => setAddColAfter('')}
-        onShowAllTables={() => toast.info('Table list coming soon')}
-        onRenameTable={handleRenameTable}
-      />
+      {rows.length === 0 && columns.length === 0 ? (
+        fetchError
+          ? <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>
+          : loading
+            ? <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>
+            : <div className="table-empty-state">No rows yet. Use the column menu to add a column.</div>
+      ) : (
+      <>
       <div className="tree-table-container">
         {loading && (
           <div className="table-loading-overlay">
@@ -1298,6 +1221,8 @@ export default function TreeTable({ tableId }: Props) {
           </span>
         )}
       </div>
+      </>
+      )}
       {cellMenu && (
         <ContextMenu
           kind="cell"
@@ -1322,12 +1247,6 @@ export default function TreeTable({ tableId }: Props) {
           existingNames={existingColNames}
           onConfirm={handleDialogConfirm}
           onClose={() => setAddColAfter(null)}
-        />
-      )}
-      {showAddTable && (
-        <AddTableDialog
-          onConfirm={handleCreateTable}
-          onClose={() => setShowAddTable(false)}
         />
       )}
       {pendingDeleteCol && (

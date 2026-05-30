@@ -19,7 +19,21 @@ export type RemarkTarget  = { row_id: string; column_id: string };
 export type RemarkData    = { id: string; body: string; kind: 'note'|'comment'; is_private: boolean; resolved_at: string; targets: RemarkTarget[] };
 export type HiddenRowData = { id: string; row_id: string };
 export type HiddenColData = { id: string; column_id: string };
-export type CustomColData = { id: string; name: string; label: string; expression: string; position_after: string; read_only: boolean; readOnly: boolean; types: string[]; source_path: string[] | null; parent_ids: string[]; is_group: boolean; is_frozen: boolean; data_types: string[] };
+export type CustomColData = {
+  id: string;
+  name: string;
+  label: string;
+  expression: string;
+  position_after: string;
+  read_only: boolean;
+  readOnly: boolean;
+  types: string[];
+  source_path: string[] | null;
+  parent_ids: string[];
+  is_group: boolean;
+  is_frozen: boolean;
+  data_types: string[];
+};
 
 export type EventKind = 0 | 1; // 0=UPSERT, 1=DELETE
 
@@ -72,7 +86,6 @@ interface WasmModule {
 const GRPC_BASE = process.env.NEXT_PUBLIC_GRPC_URL ?? 'http://localhost:3002';
 
 let _wasm: WasmModule | null = null;
-let _client: WasmSyncClient | null = null;
 let _initPromise: Promise<SyncClient> | null = null;
 
 async function loadWasm(): Promise<WasmModule> {
@@ -181,8 +194,7 @@ export class SyncClient {
   }
 
   deleteRemark(id: string):          Promise<void> { return this.inner.delete_remark(id); }
-  // TODO: update sync_core to accept string rowId natively.
-  // TODO: update sync_core WASM to accept string rowId natively (currently expects number)
+  // TODO: sync_core WASM expects number; change to string once it is updated
   addHiddenRow(rowId: string):    Promise<void> { return this.inner.add_hidden_row(parseInt(rowId, 10)); }
   removeHiddenRow(rowId: string): Promise<void> { return this.inner.remove_hidden_row(parseInt(rowId, 10)); }
   addHiddenColumn(columnId: string):                Promise<void>   { return this.inner.add_hidden_column(columnId); }

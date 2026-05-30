@@ -1,12 +1,10 @@
-import TreeTable from '../../../components/TreeTable';
+import TablePage from '../../../components/TablePage';
 
-export default async function TablePage({ params }: { params: Promise<{ tableId: string }> }) {
+export default async function Page({ params }: { params: Promise<{ tableId: string }> }) {
   const { tableId } = await params;
   return (
     <main className="page-shell">
-      <div className="table-shell">
-        <TreeTable tableId={tableId} />
-      </div>
+      <TablePage tableId={tableId} />
     </main>
   );
 }
