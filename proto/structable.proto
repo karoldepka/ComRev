@@ -123,6 +123,7 @@ message CustomCol {
   string description    = 6;
   bool   read_only      = 7;
   repeated string types = 8;
+  bool   is_frozen      = 9;
 }
 
 // ── Read responses ─────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ pub struct CustomColumn {
     pub data_types: Vec<String>,
     pub is_group: bool,
     pub parent_ids: Vec<String>,
+    pub is_frozen: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +32,11 @@ pub struct CreateCustomColumn {
     pub description: Option<String>,
     pub expression: Option<String>,
     pub position_after: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PatchTableColumn {
+    pub is_frozen: Option<bool>,
 }
 
 pub async fn list(
@@ -122,4 +128,20 @@ pub async fn delete(
         )
         .await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn patch_for_table(
+    State(state): State<AppState>,
+    Path((table_id, column_id)): Path<(String, String)>,
+    Json(body): Json<PatchTableColumn>,
+) -> Result<Json<CustomColumn>, (StatusCode, String)> {
+    let is_frozen = body
+        .is_frozen
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing is_frozen".to_string()))?;
+    state
+        .store
+        .set_table_column_frozen(&table_id, &column_id, is_frozen)
+        .await
+        .map(Json)
+        .map_err(|e| db_err("custom_column.patch_for_table", e))
 }

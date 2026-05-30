@@ -19,7 +19,7 @@ export type RemarkTarget  = { row_id: string; column_id: string };
 export type RemarkData    = { id: string; body: string; kind: 'note'|'comment'; is_private: boolean; resolved_at: string; targets: RemarkTarget[] };
 export type HiddenRowData = { id: string; row_id: string };
 export type HiddenColData = { id: string; column_id: string };
-export type CustomColData = { id: string; name: string; label: string; expression: string; position_after: string; read_only: boolean; readOnly: boolean; types: string[]; source_path: string[] | null; parent_ids: string[]; is_group: boolean; data_types: string[] };
+export type CustomColData = { id: string; name: string; label: string; expression: string; position_after: string; read_only: boolean; readOnly: boolean; types: string[]; source_path: string[] | null; parent_ids: string[]; is_group: boolean; is_frozen: boolean; data_types: string[] };
 
 export type EventKind = 0 | 1; // 0=UPSERT, 1=DELETE
 

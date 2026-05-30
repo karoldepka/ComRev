@@ -620,6 +620,12 @@ th[draggable] {
 }
 .table-title-input:focus { border-color: #ea580c; box-shadow: 0 0 0 2px #ea580c33; }
 
+.table-empty-state {
+  padding: 1rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
 .table-dropdown {
   background: #fff;
   border: 1px solid #e2e8f0;

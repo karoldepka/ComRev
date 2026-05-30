@@ -1019,7 +1019,7 @@ impl serde::Serialize for HiddenCol {
 impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("CustomCol", 9)?;
+        let mut st = s.serialize_struct("CustomCol", 10)?;
         st.serialize_field("id", &self.id)?;
         st.serialize_field("name", &self.name)?;
         st.serialize_field("label", &self.label)?;
@@ -1029,6 +1029,7 @@ impl serde::Serialize for CustomCol {
         st.serialize_field("read_only", &self.read_only)?;
         st.serialize_field("readOnly", &self.read_only)?;
         st.serialize_field("types", &self.types)?;
+        st.serialize_field("is_frozen", &self.is_frozen)?;
         st.end()
     }
 }
@@ -1113,6 +1114,7 @@ impl serde::Serialize for ServerEvent {
                             "expression": d.expression, "position_after": d.position_after,
                             "description": d.description, "read_only": d.read_only,
                             "readOnly": d.read_only, "types": d.types,
+                            "is_frozen": d.is_frozen,
                         })),
                     }),
                 )?;

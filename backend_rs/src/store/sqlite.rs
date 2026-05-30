@@ -97,6 +97,28 @@ impl DataStore for SqliteStore {
     async fn delete_custom_column(&self, _id: &str) -> Result<()> {
         not_impl!()
     }
+    async fn set_table_column_frozen(
+        &self,
+        _table_id: &str,
+        _column_id: &str,
+        is_frozen: bool,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        Ok(crate::custom_column::CustomColumn {
+            id: "".into(),
+            name: "".into(),
+            label: None,
+            description: None,
+            expression: None,
+            position_after: None,
+            read_only: false,
+            types: vec![],
+            source_path: None,
+            data_types: vec![],
+            is_group: false,
+            parent_ids: vec![],
+            is_frozen,
+        })
+    }
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
         not_impl!()

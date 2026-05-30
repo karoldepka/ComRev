@@ -6,7 +6,7 @@ import FlagSubmenu from './FlagSubmenu';
 import type { ApiRemark, CellTarget, RemarkTarget } from '../types/table';
 import { colType, colFilterParam, colFilterPlaceholder, type ColType } from '../utils/columnFilters';
 
-type Column = { id: string; label: string; readOnly?: boolean; filterType?: ColType | null; subColumns?: Column[] };
+type Column = { id: string; label: string; readOnly?: boolean; isFrozen?: boolean; filterType?: ColType | null; subColumns?: Column[] };
 
 // ── Discriminated props ────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ export type HeaderMenuProps = BaseProps & {
   onClearFilter:(colId: string) => void;
   onHide:       (ids: string[]) => void;
   onAddColClick:(colId: string) => void;
+  onToggleFrozen?: (colId: string, next: boolean) => void;
   onDeleteCol:  (colId: string) => void;
   onUngroup?:   (groupId: string) => void;
 };
@@ -58,8 +59,6 @@ export type CellMenuProps = BaseProps & {
 };
 
 export type ContextMenuProps = HeaderMenuProps | CellMenuProps;
-
-const PINNED_COL = 'name';
 
 // ── Unified component ──────────────────────────────────────────────────────────
 
@@ -115,7 +114,7 @@ export default function ContextMenu(props: ContextMenuProps) {
       sort, filters, filterDraft, setFilterDraft,
       draftText, setDraftText,
       onSetMode, onSort, onApplyFilter, onClearFilter,
-      onHide, onAddColClick, onDeleteCol, onUngroup,
+      onHide, onAddColClick, onToggleFrozen, onDeleteCol, onUngroup,
     } = props;
 
     const flagKey    = `header:${column.id}`;
@@ -237,6 +236,14 @@ export default function ContextMenu(props: ContextMenuProps) {
           >
             + New column
           </button>
+          {isLeaf && onToggleFrozen && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleFrozen(column.id, !column.isFrozen); onClose(); }}
+            >
+              {column.isFrozen ? 'Unfreeze column' : 'Freeze column'}
+            </button>
+          )}
           {allColsToHide.length > 0 && (
             <>
               <div className="menu-divider" />
@@ -294,7 +301,7 @@ export default function ContextMenu(props: ContextMenuProps) {
     const n = targets.length;
     const isSingle = n === 1;
     const firstKey = `${targets[0].rowId}:${targets[0].colId}`;
-    const colsToHide = [...new Set(targets.map((t) => t.colId))].filter((id) => id !== PINNED_COL);
+    const colsToHide = [...new Set(targets.map((t) => t.colId))];
     const rowsToHide = [...new Set(targets.map((t) => t.rowId))].filter((id) => id !== '');
     const remarkTargets: RemarkTarget[] = targets.map((t) => ({ row_id: t.rowId, column_id: t.colId }));
 

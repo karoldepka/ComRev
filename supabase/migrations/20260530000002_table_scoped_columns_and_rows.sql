@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS table_custom_columns (
   table_id            TEXT        NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
   column_id           TEXT        NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
   position_after      TEXT,
+  is_frozen           BOOLEAN     NOT NULL DEFAULT false,
   who_created         TEXT,
   when_created        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   who_last_modified   TEXT,
@@ -17,8 +18,8 @@ CREATE TRIGGER trg_table_custom_columns_when_last_modified
   BEFORE UPDATE ON table_custom_columns
   FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();
 
-INSERT INTO table_custom_columns (table_id, column_id, position_after)
-SELECT 'gh_repos', id, position_after
+INSERT INTO table_custom_columns (table_id, column_id, position_after, is_frozen)
+SELECT 'gh_repos', id, position_after, name = 'name'
 FROM custom_columns
 ON CONFLICT DO NOTHING;
 

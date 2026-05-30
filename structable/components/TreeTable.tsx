@@ -23,8 +23,6 @@ import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, R
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-const PINNED_COL = 'name';
-
 // ── Local types ────────────────────────────────────────────────────────────────
 
 type Column = {
@@ -34,6 +32,7 @@ type Column = {
   minWidth?: number;
   customColumnId?: string;
   readOnly?: boolean;
+  isFrozen?: boolean;
   types?: string[];
   filterType?: ColType | null;
   subColumns?: Column[];
@@ -58,7 +57,7 @@ export function rowVal(row: DataRow, id: string): unknown {
 
 function deriveColumns(row: DataRow): Column[] {
   const keys = Object.keys(row);
-  const sorted = [...(keys.includes(PINNED_COL) ? [PINNED_COL] : []), ...keys.filter((k) => k !== PINNED_COL)];
+  const sorted = [...(keys.includes('name') ? ['name'] : []), ...keys.filter((k) => k !== 'name')];
   return sorted.map((key) => {
     const val = row[key];
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
@@ -75,7 +74,7 @@ function deriveColumns(row: DataRow): Column[] {
         })),
       };
     }
-    return { id: key, label: labelFor(key), width: 120, minWidth: 60 };
+    return { id: key, label: labelFor(key), width: 120, minWidth: 60, isFrozen: key === 'name' };
   });
 }
 
@@ -118,6 +117,7 @@ function columnsFromMetadata(customColumns: ApiCustomColumn[], rowSample?: DataR
       width: 150,
       minWidth: 60,
       readOnly: isColumnReadOnly(cc),
+      isFrozen: cc.is_frozen ?? false,
       types: cc.types ?? ['text'],
       filterType: (cc.data_types?.[0] as ColType | undefined) ?? null,
     });
@@ -489,6 +489,7 @@ export default function TreeTable({ tableId }: Props) {
       for (const col of result) { if (!seen.has(col.id)) ordered.push(col); }
       flat = ordered;
     }
+    flat = [...flat.filter((col) => col.isFrozen), ...flat.filter((col) => !col.isFrozen)];
     return applyColumnGroups(flat, columnGroups);
   }, [rows, customColumns, columnOrder, columnGroups]);
 
@@ -519,6 +520,16 @@ export default function TreeTable({ tableId }: Props) {
     () => allLeafColumns.filter((c) => !hiddenSet.has(c.id)),
     [allLeafColumns, hiddenSet],
   );
+  const frozenLeftByColumn = useMemo(() => {
+    let left = 0;
+    const map = new Map<string, number>();
+    for (const col of visibleLeafColumns) {
+      if (!col.isFrozen) continue;
+      map.set(col.id, left);
+      left += columnWidths[col.id] ?? col.width ?? 120;
+    }
+    return map;
+  }, [visibleLeafColumns, columnWidths]);
   const headerRows = useMemo(
     () => buildHeaderRows(columns, getColumnDepth(columns), hiddenSet),
     [columns, hiddenSet],
@@ -575,7 +586,6 @@ export default function TreeTable({ tableId }: Props) {
   const customColByName = useMemo(() => new Map(customColumns.map((cc) => [cc.name, cc])), [customColumns]);
 
   const isCellEditable = useCallback((colId: string): boolean => {
-    if (colId === PINNED_COL) return false;
     if (compiledExprs.has(colId)) return false; // computed — not user-editable
     const cc = customColByName.get(colId);
     return cc ? !isColumnReadOnly(cc) : true; // no metadata yet → fallback columns are editable
@@ -754,21 +764,34 @@ export default function TreeTable({ tableId }: Props) {
     setMenuAnchor(null);
     const derivedName = payload.title.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     const id = nanoid();
+    const positionAfter = afterColId || null;
     const col: ApiCustomColumn = {
       id,
       name: payload.customId ?? derivedName,
       label: payload.title.trim(),
       description: payload.description,
       expression: payload.expression,
-      position_after: afterColId,
+      position_after: positionAfter,
       read_only: false,
       readOnly: false,
+      is_frozen: false,
       types: ['text'],
     };
     setCustomColumns((prev) => [...prev, col]);
     recordChange(`Create column "${col.label ?? col.name}"`);
     api.createCustomColumn(tableId, { name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
-  }, [api]);
+  }, [api, recordChange, tableId]);
+
+  const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {
+    const col = allLeafColumns.find((c) => c.id === colId);
+    const customId = col?.customColumnId ?? customColByName.get(colId)?.id;
+    if (!customId || !cellApiRef.current) return;
+    setCustomColumns((prev) => prev.map((cc) => cc.id === customId ? { ...cc, is_frozen: isFrozen } : cc));
+    recordChange(`${isFrozen ? 'Freeze' : 'Unfreeze'} column "${col?.label ?? colId}"`);
+    cellApiRef.current.setColumnFrozen(tableId, customId, isFrozen)
+      .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
+      .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
+  }, [allLeafColumns, customColByName, recordChange, tableId]);
 
   const handleCreateTable = useCallback((payload: import('./AddTableDialog').AddTablePayload) => {
     if (!cellApiRef.current) return;
@@ -885,18 +908,49 @@ export default function TreeTable({ tableId }: Props) {
     : pendingChanges;
 
   // Initial empty state: no data yet
-  if (rows.length === 0 && !fetchError) {
+  if (rows.length === 0 && columns.length === 0 && !fetchError) {
     return (
       <>
         <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
+        <TableToolbar
+          tableId={tableId}
+          tables={tables}
+          onAddTable={() => setShowAddTable(true)}
+          onAddColumn={() => setAddColAfter('')}
+          onShowAllTables={() => toast.info('Table list coming soon')}
+          onRenameTable={handleRenameTable}
+        />
         {loading && <div style={{ padding: '1rem', opacity: 0.6 }}>Loading…</div>}
+        {!loading && <div className="table-empty-state">No rows yet. Use the table menu to add a column.</div>}
+        {addColAfter !== null && (
+          <AddColumnDialog
+            afterColId={addColAfter}
+            existingNames={existingColNames}
+            onConfirm={handleDialogConfirm}
+            onClose={() => setAddColAfter(null)}
+          />
+        )}
+        {showAddTable && (
+          <AddTableDialog
+            onConfirm={handleCreateTable}
+            onClose={() => setShowAddTable(false)}
+          />
+        )}
       </>
     );
   }
-  if (rows.length === 0 && fetchError) {
+  if (rows.length === 0 && columns.length === 0 && fetchError) {
     return (
       <>
         <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
+        <TableToolbar
+          tableId={tableId}
+          tables={tables}
+          onAddTable={() => setShowAddTable(true)}
+          onAddColumn={() => setAddColAfter('')}
+          onShowAllTables={() => toast.info('Table list coming soon')}
+          onRenameTable={handleRenameTable}
+        />
         <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>
       </>
     );
@@ -909,6 +963,7 @@ export default function TreeTable({ tableId }: Props) {
         tableId={tableId}
         tables={tables}
         onAddTable={() => setShowAddTable(true)}
+        onAddColumn={() => setAddColAfter('')}
         onShowAllTables={() => toast.info('Table list coming soon')}
         onRenameTable={handleRenameTable}
       />
@@ -942,14 +997,15 @@ export default function TreeTable({ tableId }: Props) {
                     const leafIdsToHide = (isLeaf
                       ? (hiddenSet.has(column.id) ? [] : [column.id])
                       : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
-                    ).filter((id) => id !== PINNED_COL);
+                    ).filter((id) => !allLeafColumns.find((c) => c.id === id)?.isFrozen);
                     const selectedHeaderLeafIds = selectedKeys
                       .filter((k) => k.startsWith('header:'))
                       .map((k) => k.split(':')[1])
-                      .filter((id) => id !== PINNED_COL && !hiddenSet.has(id) && allLeafColumns.some((c) => c.id === id));
+                      .filter((id) => !hiddenSet.has(id) && !allLeafColumns.find((c) => c.id === id)?.isFrozen && allLeafColumns.some((c) => c.id === id));
                     const allColsToHide = [...new Set([...leafIdsToHide, ...selectedHeaderLeafIds])];
                     const showMenu = leafIdsToHide.length > 0 || isLeaf;
-                    const isSticky = column.id === PINNED_COL;
+                    const frozenLeft = isLeaf ? frozenLeftByColumn.get(column.id) : undefined;
+                    const isSticky = frozenLeft !== undefined;
                     const colHasFilter = () => {
                       const p = colFilterParam(column);
                       return !!p && !!filters[p];
@@ -961,14 +1017,14 @@ export default function TreeTable({ tableId }: Props) {
                         colSpan={colSpan}
                         rowSpan={rowSpan}
                         data-key={headerKey}
-                        draggable={isLeaf && column.id !== PINNED_COL}
+                        draggable={isLeaf && !column.isFrozen}
                         onDragStart={(e) => {
                           dragColRef.current = column.id;
                           e.dataTransfer.effectAllowed = 'move';
                         }}
                         onDragOver={(e) => {
                           const from = dragColRef.current;
-                          if (!from || from === column.id || column.id === PINNED_COL) return;
+                          if (!from || from === column.id || column.isFrozen) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = 'move';
                           if (!isLeaf) {
@@ -996,7 +1052,7 @@ export default function TreeTable({ tableId }: Props) {
                           dragColRef.current = null;
                           setDragOverCol(null);
                           setDragGroupTarget(null);
-                          if (!from || from === column.id || column.id === PINNED_COL) return;
+                          if (!from || from === column.id || column.isFrozen) return;
                           if (!isLeaf) {
                             addToGroup(column.id, from);
                           } else {
@@ -1018,6 +1074,7 @@ export default function TreeTable({ tableId }: Props) {
                           dragOverCol === column.id ? 'col-drag-over' : '',
                           dragGroupTarget === column.id ? 'col-drag-group' : '',
                         ].filter(Boolean).join(' ') || undefined}
+                        style={isSticky ? { left: frozenLeft } : undefined}
                         onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                         onContextMenu={(e) => {
                           if (!showMenu) return;
@@ -1106,6 +1163,7 @@ export default function TreeTable({ tableId }: Props) {
                                   onClearFilter={clearColFilter}
                                   onHide={hideColumns}
                                   onAddColClick={(colId) => { setAddColAfter(colId || null); setOpenMenuColumn(null); setMenuAnchor(null); }}
+                                  onToggleFrozen={toggleColumnFrozen}
                                   onDeleteCol={deleteCustomColumn}
                                   onUngroup={!isLeaf ? (groupId) => { removeColumnGroup(groupId); setOpenMenuColumn(null); setMenuAnchor(null); } : undefined}
                                   onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
@@ -1146,9 +1204,10 @@ export default function TreeTable({ tableId }: Props) {
                                   selectedRows.has(String(rowIndex)) ? 'row-highlight' : '',
                                   selectedCols.has(col.id) ? 'col-highlight' : '',
                                 ].filter(Boolean).join(' '),
-                            col.id === PINNED_COL ? 'sticky-col' : '',
+                            col.isFrozen ? 'sticky-col' : '',
                             cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
                           ].filter(Boolean).join(' ') || undefined}
+                          style={col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined}
                           onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                           onDoubleClick={(e) => {
                             if (!isCellEditable(col.id)) return;

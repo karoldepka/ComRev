@@ -193,6 +193,7 @@ impl Sync for SyncServiceImpl {
                     position_after: c.position_after.clone().unwrap_or_default(),
                     read_only: c.read_only,
                     types: c.types.clone(),
+                    is_frozen: c.is_frozen,
                 })
                 .collect(),
         }))
@@ -556,6 +557,7 @@ impl SyncServiceImpl {
                         position_after: col.position_after.clone().unwrap_or_default(),
                         read_only: col.read_only,
                         types: col.types.clone(),
+                        is_frozen: col.is_frozen,
                     },
                 );
                 let resp = serde_json::to_vec(&serde_json::json!({

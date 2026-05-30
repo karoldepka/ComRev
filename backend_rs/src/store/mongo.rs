@@ -97,6 +97,14 @@ impl DataStore for MongoStore {
     async fn delete_custom_column(&self, _id: &str) -> Result<()> {
         not_impl!()
     }
+    async fn set_table_column_frozen(
+        &self,
+        _table_id: &str,
+        _column_id: &str,
+        _is_frozen: bool,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        not_impl!()
+    }
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
         not_impl!()

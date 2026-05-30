@@ -230,7 +230,8 @@ impl DataStore for PgStore {
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
                COALESCE(c.is_group, false) AS is_group,
-               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids
+               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
+               COALESCE(tcc.is_frozen, c.is_frozen) AS is_frozen
              FROM custom_columns c
              JOIN table_custom_columns tcc ON tcc.column_id = c.id
              WHERE tcc.table_id = $1
@@ -253,8 +254,8 @@ impl DataStore for PgStore {
     ) -> Result<CustomColumn> {
         let col = sqlx::query_as::<_, CustomColumn>(
             "WITH upsert_col AS (
-               INSERT INTO custom_columns (id, name, label, description, expression, position_after, read_only)
-               VALUES ($1, $2, $3, $4, $5, $6, false)
+               INSERT INTO custom_columns (id, name, label, description, expression, position_after, read_only, is_frozen)
+               VALUES ($1, $2, $3, $4, $5, $6, false, false)
                ON CONFLICT (id) DO UPDATE
                  SET name = EXCLUDED.name, label = EXCLUDED.label,
                      description = EXCLUDED.description,
@@ -277,7 +278,8 @@ impl DataStore for PgStore {
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
                COALESCE(c.is_group, false) AS is_group,
-               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids
+               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
+               COALESCE(a.is_frozen, c.is_frozen) AS is_frozen
              FROM upsert_col c
              JOIN attach a ON a.column_id = c.id",
         )
@@ -317,6 +319,38 @@ impl DataStore for PgStore {
             tracing::warn!("could not drop index \"{idx}\": {e}");
         }
         Ok(())
+    }
+
+    async fn set_table_column_frozen(
+        &self,
+        table_id: &str,
+        column_id: &str,
+        is_frozen: bool,
+    ) -> Result<CustomColumn> {
+        Ok(sqlx::query_as::<_, CustomColumn>(
+            "WITH updated AS (
+               UPDATE table_custom_columns
+               SET is_frozen = $3,
+                   when_last_modified = NOW(),
+                   modify_count = table_custom_columns.modify_count + 1
+               WHERE table_id = $1 AND column_id = $2
+               RETURNING *
+             )
+             SELECT c.id::text, c.name, c.label, c.description, c.expression,
+               COALESCE(u.position_after, c.position_after) AS position_after,
+               c.read_only, c.types, c.source_path,
+               COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
+               COALESCE(c.is_group, false) AS is_group,
+               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
+               COALESCE(u.is_frozen, c.is_frozen) AS is_frozen
+             FROM updated u
+             JOIN custom_columns c ON c.id = u.column_id",
+        )
+        .bind(table_id)
+        .bind(column_id)
+        .bind(is_frozen)
+        .fetch_one(&self.pool)
+        .await?)
     }
 
     // ── Tables registry ───────────────────────────────────────────────────────
@@ -570,6 +604,7 @@ fn table_registry_columns() -> Vec<CustomColumn> {
         data_types: vec![if ty == "integer" { "numeric" } else { "text" }.to_string()],
         is_group: false,
         parent_ids: vec![],
+        is_frozen: name == "title",
     })
     .collect()
 }

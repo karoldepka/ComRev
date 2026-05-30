@@ -183,6 +183,13 @@ export class TableApi {
     return this.get<ApiCustomColumn[]>(`/tables/${encodeURIComponent(tableId)}/custom-columns`);
   }
 
+  async setColumnFrozen(tableId: string, columnId: string, isFrozen: boolean): Promise<ApiCustomColumn> {
+    return this.patch<ApiCustomColumn>(
+      `/tables/${encodeURIComponent(tableId)}/custom-columns/${encodeURIComponent(columnId)}`,
+      { is_frozen: isFrozen },
+    );
+  }
+
   async fetchRemarks(): Promise<ApiRemark[]> {
     return this.get<ApiRemark[]>('/remarks');
   }
@@ -453,6 +460,21 @@ export class TableApi {
       throw new Error(`GET ${url} — HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ''}`);
     }
     logger.debug({ url, status: res.status }, 'table api get finished');
+    return res.json() as Promise<T>;
+  }
+
+  private async patch<T>(path: string, body: unknown): Promise<T> {
+    const url = `${this.base}${path}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      let text = '';
+      try { text = await res.text(); } catch { /* no body */ }
+      throw new Error(`PATCH ${url} — HTTP ${res.status}${text ? `: ${text.slice(0, 300)}` : ''}`);
+    }
     return res.json() as Promise<T>;
   }
 }

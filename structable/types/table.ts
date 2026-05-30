@@ -59,6 +59,7 @@ export type ApiCustomColumn = {
   data_types?: string[];
   source_path?: string[] | null;
   is_group?: boolean;
+  is_frozen?: boolean;
   parent_ids?: string[];
   /** Backward compatibility for older API responses. Prefer read_only. */
   is_editable?: boolean;

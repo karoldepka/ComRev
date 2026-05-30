@@ -68,6 +68,12 @@ pub trait DataStore: Send + Sync {
         position_after: Option<&str>,
     ) -> Result<crate::custom_column::CustomColumn>;
     async fn delete_custom_column(&self, id: &str) -> Result<()>;
+    async fn set_table_column_frozen(
+        &self,
+        table_id: &str,
+        column_id: &str,
+        is_frozen: bool,
+    ) -> Result<crate::custom_column::CustomColumn>;
 
     // ── Tables registry ───────────────────────────────────────────────────────
 

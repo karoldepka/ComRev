@@ -10,6 +10,7 @@ type Props = {
   title?: string;
   tables?: ApiTable[];
   onAddTable?: () => void;
+  onAddColumn?: () => void;
   onShowAllTables?: () => void;
   onRenameTable?: (id: string, title: string) => void;
 };
@@ -20,13 +21,13 @@ const TABLE_IMPLS = [
 ];
 
 export default function TableToolbar({
-  tableId, title, tables = [], onAddTable, onShowAllTables, onRenameTable,
+  tableId, title, tables = [], onAddTable, onAddColumn, onShowAllTables, onRenameTable,
 }: Props) {
   const path = usePathname();
   const current = tableId ? tables.find((t) => t.id === tableId) : undefined;
   const displayTitle = title ?? current?.title ?? tableId ?? 'Table';
   const canRename = !!tableId && !!onRenameTable;
-  const hasTableActions = !!(onAddTable || onShowAllTables || tables.length > 0);
+  const hasTableActions = !!(onAddTable || onAddColumn || onShowAllTables || tables.length > 0);
 
   const [menuOpen, setMenuOpen]     = useState(false);
   const [editing, setEditing]       = useState(false);
@@ -97,6 +98,11 @@ export default function TableToolbar({
               {onAddTable && (
                 <button type="button" onClick={() => { setMenuOpen(false); onAddTable(); }}>
                   + Add table
+                </button>
+              )}
+              {onAddColumn && (
+                <button type="button" onClick={() => { setMenuOpen(false); onAddColumn(); }}>
+                  + Add column
                 </button>
               )}
               {tables.length > 0 && <div className="menu-divider" />}

@@ -56,6 +56,10 @@ async fn main() -> anyhow::Result<()> {
             get(custom_column::list_for_table).post(custom_column::create_for_table),
         )
         .route(
+            "/tables/:table_id/custom-columns/:column_id",
+            axum::routing::patch(custom_column::patch_for_table),
+        )
+        .route(
             "/custom-columns",
             get(custom_column::list).post(custom_column::create),
         )
