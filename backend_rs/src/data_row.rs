@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{error::db_err, store::DataStore};
 
@@ -38,8 +38,9 @@ impl<E: Into<anyhow::Error>> From<E> for ApiError {
 
 pub async fn list_repos(
     State(state): State<AppState>,
-    Query(params): Query<crate::types::RowQuery>,
+    Query(raw): Query<HashMap<String, String>>,
 ) -> Result<Json<crate::types::PagedResponse>, ApiError> {
+    let params = crate::types::RowQuery::from_map(&raw);
     Ok(Json(state.store.list_repos(&params).await?))
 }
 

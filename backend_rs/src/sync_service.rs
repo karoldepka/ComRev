@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tonic::{Request, Response, Status};
 
-use crate::{flag, remark, repo::AppState};
+use crate::{flag, remark, data_row::AppState};
 
 // ── Proto types ────────────────────────────────────────────────────────────────
 

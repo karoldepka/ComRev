@@ -101,14 +101,15 @@ pub trait DataStore: Send + Sync {
         value: serde_json::Value,
     ) -> Result<()>;
 
-    // ── Ops log (propagates errors to frontend) ─────────────────────────────
+    // ── Ops log ──────────────────────────────────────────────────────────────
+    // Fire-and-forget: errors are logged internally; callers do not need to handle them.
     // tx_id groups related operations from one client transaction; None for standalone ops.
     async fn append_ops_log(
         &self,
         op: &str,
         payload: serde_json::Value,
         tx_id: Option<&str>,
-    ) -> Result<()>;
+    );
 }
 
 /// Construct the appropriate store from DATABASE_URL.

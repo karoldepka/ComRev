@@ -6,7 +6,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{error::db_err, repo::AppState};
+use crate::{error::db_err, data_row::AppState};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Table {

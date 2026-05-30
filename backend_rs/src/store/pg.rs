@@ -381,9 +381,19 @@ impl DataStore for PgStore {
         let per_page = params.per_page.clamp(1, 200) as i64;
         let offset = (params.page.max(1) - 1) as i64 * per_page;
 
+        // Column type map drives filter SQL (array vs. scalar vs. date operators).
+        let col_types: std::collections::HashMap<String, Vec<String>> =
+            sqlx::query_as::<_, (String, Vec<String>)>(
+                "SELECT name, types FROM custom_columns",
+            )
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .collect();
+
         let total: i64 = {
             let mut qb = QueryBuilder::new("SELECT COUNT(*) FROM github_repos");
-            push_filters(&mut qb, params);
+            push_filters(&mut qb, params, &col_types);
             qb.build_query_scalar().fetch_one(&self.pool).await?
         };
 
@@ -399,7 +409,7 @@ impl DataStore for PgStore {
                    'who_last_modified', who_last_modified\
                  ) || custom_values) FROM github_repos",
             );
-            push_filters(&mut qb, params);
+            push_filters(&mut qb, params, &col_types);
             qb.push(format!(" ORDER BY {order}"));
             qb.push(" LIMIT ").push_bind(per_page);
             qb.push(" OFFSET ").push_bind(offset);
@@ -426,144 +436,72 @@ impl DataStore for PgStore {
         op: &str,
         payload: serde_json::Value,
         tx_id: Option<&str>,
-    ) -> Result<()> {
+    ) {
         crate::ops_log::append(&self.pool, op, payload, tx_id).await;
-        Ok(())
     }
 }
 
 // ── Query helpers (PG-specific) ───────────────────────────────────────────────
 
-fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
-    // Exclude rows hidden by the user (id is the TEXT pk matching hidden_rows.row_id).
+fn col_has_type(col_types: &std::collections::HashMap<String, Vec<String>>, name: &str, target: &str) -> bool {
+    col_types.get(name).map_or(false, |types| types.iter().any(|t| t == target))
+}
+
+fn push_filters<'q>(
+    qb: &mut QueryBuilder<'q, Postgres>,
+    p: &'q RowQuery,
+    col_types: &std::collections::HashMap<String, Vec<String>>,
+) {
     qb.push(" WHERE id NOT IN (SELECT row_id FROM hidden_rows)");
 
-    // Integer fields stored in custom_values JSONB.
-    macro_rules! cv_int {
-        ($key:literal, $min:expr, $max:expr) => {
-            if let Some(v) = $min {
-                qb.push(concat!(" AND (custom_values->>'", $key, "')::bigint >= "))
-                    .push_bind(v);
-            }
-            if let Some(v) = $max {
-                qb.push(concat!(" AND (custom_values->>'", $key, "')::bigint <= "))
-                    .push_bind(v);
-            }
-        };
-    }
-
-    // Stars-diff windows nested under custom_values->'stars_diff'.
-    macro_rules! cv_sdiff {
-        ($window:literal, $min:expr, $max:expr) => {
-            if let Some(v) = $min {
-                qb.push(concat!(
-                    " AND (custom_values->'stars_diff'->>'",
-                    $window,
-                    "')::bigint >= "
-                ))
-                .push_bind(v);
-            }
-            if let Some(v) = $max {
-                qb.push(concat!(
-                    " AND (custom_values->'stars_diff'->>'",
-                    $window,
-                    "')::bigint <= "
-                ))
-                .push_bind(v);
-            }
-        };
-    }
-
-    cv_int!("stars", p.stars_min, p.stars_max);
-    cv_int!("forks", p.forks_min, p.forks_max);
-    cv_int!("open_issues", p.open_issues_min, p.open_issues_max);
-    cv_int!("size", p.size_min, p.size_max);
-    cv_int!("stars_now", p.stars_now_min, p.stars_now_max);
-
-    cv_sdiff!("6h", p.stars_diff_6h_min, p.stars_diff_6h_max);
-    cv_sdiff!("12h", p.stars_diff_12h_min, p.stars_diff_12h_max);
-    cv_sdiff!("24h", p.stars_diff_24h_min, p.stars_diff_24h_max);
-    cv_sdiff!("48h", p.stars_diff_48h_min, p.stars_diff_48h_max);
-    cv_sdiff!("5d", p.stars_diff_5d_min, p.stars_diff_5d_max);
-    cv_sdiff!("7d", p.stars_diff_7d_min, p.stars_diff_7d_max);
-    cv_sdiff!("10d", p.stars_diff_10d_min, p.stars_diff_10d_max);
-    cv_sdiff!("14d", p.stars_diff_14d_min, p.stars_diff_14d_max);
-    cv_sdiff!("20d", p.stars_diff_20d_min, p.stars_diff_20d_max);
-    cv_sdiff!("30d", p.stars_diff_30d_min, p.stars_diff_30d_max);
-
-    macro_rules! cv_text_in {
-        ($key:literal, $opt:expr) => {
-            if let Some(ref csv) = $opt {
-                let vals: Vec<String> = csv
-                    .split(',')
-                    .map(|s| s.trim().to_owned())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                if !vals.is_empty() {
-                    qb.push(concat!(" AND custom_values->>'", $key, "' = ANY("))
-                        .push_bind(vals)
-                        .push(")");
-                }
-            }
-        };
-    }
-
-    cv_text_in!("language", p.language);
-    cv_text_in!("license", p.license);
-    cv_text_in!("visibility", p.visibility);
-    cv_text_in!("owner_login", p.owner_login);
-
-    if let Some(v) = p.archived {
-        qb.push(" AND (custom_values->>'archived')::boolean = ")
-            .push_bind(v);
-    }
-    if let Some(v) = p.disabled {
-        qb.push(" AND (custom_values->>'disabled')::boolean = ")
-            .push_bind(v);
-    }
-
-    if let Some(ref csv) = p.topics {
-        let vals: Vec<String> = csv
-            .split(',')
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if !vals.is_empty() {
-            // ?| checks if any of the text values exist as elements in the JSONB array.
-            qb.push(" AND custom_values->'topics' ?| ").push_bind(vals);
+    // Numeric range filters: `{dot-path}_min` / `{dot-path}_max`
+    for (path, min, max) in &p.range_filters {
+        if let Some(expr) = path_to_jsonb_expr(path) {
+            if let Some(v) = min { qb.push(format!(" AND ({expr})::numeric >= ")).push_bind(*v); }
+            if let Some(v) = max { qb.push(format!(" AND ({expr})::numeric <= ")).push_bind(*v); }
         }
     }
 
-    if let Some(ref csv) = p.topics_like {
-        let patterns: Vec<String> = csv
-            .split(',')
-            .map(|s| format!("%{}%", s.trim()))
-            .filter(|s| s != "%%")
-            .collect();
-        if !patterns.is_empty() {
-            qb.push(" AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(custom_values->'topics') _t WHERE _t ILIKE ANY(")
-              .push_bind(patterns)
-              .push("))");
+    // Date range filters: `{dot-path}_after` / `{dot-path}_before`
+    for (path, after, before) in &p.date_filters {
+        if let Some(expr) = path_to_jsonb_expr(path) {
+            if let Some(v) = after  { qb.push(format!(" AND ({expr})::timestamptz >= ")).push_bind(*v); }
+            if let Some(v) = before { qb.push(format!(" AND ({expr})::timestamptz <= ")).push_bind(*v); }
         }
     }
 
-    if let Some(v) = p.pushed_after {
-        qb.push(" AND (custom_values->>'pushed_at')::timestamptz >= ")
-            .push_bind(v);
-    }
-    if let Some(v) = p.pushed_before {
-        qb.push(" AND (custom_values->>'pushed_at')::timestamptz <= ")
-            .push_bind(v);
-    }
-    if let Some(v) = p.created_after {
-        qb.push(" AND (custom_values->>'github_created_at')::timestamptz >= ")
-            .push_bind(v);
-    }
-    if let Some(v) = p.created_before {
-        qb.push(" AND (custom_values->>'github_created_at')::timestamptz <= ")
-            .push_bind(v);
+    // Exact / categorical / array-containment filters: `{dot-path}=val1,val2`
+    // Operator chosen by column type: array → ?|, otherwise → = ANY(text[])
+    for (path, vals) in &p.value_filters {
+        if vals.is_empty() { continue; }
+        let col_name = path.split('.').next().unwrap_or(path.as_str());
+        if col_has_type(col_types, col_name, "array") {
+            if let Some(obj_expr) = path_to_jsonb_value_expr(path) {
+                qb.push(format!(" AND {obj_expr} ?| ")).push_bind(vals.clone());
+            }
+        } else if let Some(expr) = path_to_jsonb_expr(path) {
+            qb.push(format!(" AND ({expr}) = ANY(")).push_bind(vals.clone()).push(")");
+        }
     }
 
+    // ILIKE filters: `{dot-path}_like=pattern`; % wrapping added here
+    // Array columns: element-level ILIKE via jsonb_array_elements_text
+    for (path, patterns) in &p.like_filters {
+        let wrapped: Vec<String> = patterns.iter().filter(|p| !p.is_empty()).map(|p| format!("%{p}%")).collect();
+        if wrapped.is_empty() { continue; }
+        let col_name = path.split('.').next().unwrap_or(path.as_str());
+        if col_has_type(col_types, col_name, "array") {
+            if let Some(obj_expr) = path_to_jsonb_value_expr(path) {
+                qb.push(format!(" AND EXISTS (SELECT 1 FROM jsonb_array_elements_text({obj_expr}) _t WHERE _t ILIKE ANY("))
+                  .push_bind(wrapped)
+                  .push("))");
+            }
+        } else if let Some(expr) = path_to_jsonb_expr(path) {
+            qb.push(format!(" AND ({expr}) ILIKE ANY(")).push_bind(wrapped).push(")");
+        }
+    }
+
+    // Full-text search across the table's indexed text columns (q param)
     if let Some(ref q) = p.q {
         let pat = format!("%{q}%");
         qb.push(" AND (custom_values->>'name' ILIKE ")
@@ -574,44 +512,76 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
     }
 }
 
-fn col_to_sort_expr(col: &str) -> Option<String> {
-    // Allow alphanumeric, underscore, and a single dot (for nested JSONB paths like stars_diff.6h)
-    if !col.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+/// Returns a JSONB expression (all `->` navigation, last segment also `->`)
+/// for use with operators like `?|` that need a JSONB value, not text.
+fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('.').collect();
+    if parts.is_empty() { return None; }
+    if parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
         return None;
     }
-    if let Some((parent, leaf)) = col.split_once('.') {
-        if parent.contains('.') || leaf.contains('.') {
-            return None; // only one level of nesting supported
-        }
-        let safe_parent = parent.replace('\'', "''");
-        let safe_leaf   = leaf.replace('\'', "''");
-        return Some(format!("(custom_values->'{safe_parent}'->>'{safe_leaf}')::numeric"));
+    let mut expr = String::from("custom_values");
+    for &seg in &parts { expr.push_str(&format!("->'{seg}'")); }
+    Some(expr)
+}
+
+/// Build a PostgreSQL text expression for navigating `custom_values` by a dot-path.
+/// Each segment must be alphanumeric/underscore only (SQL-injection guard).
+/// "stars"           → custom_values->>'stars'
+/// "stars_diff.6h"   → custom_values->'stars_diff'->>'6h'
+/// "a.b.c"           → custom_values->'a'->'b'->>'c'
+fn path_to_jsonb_expr(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('.').collect();
+    if parts.is_empty() { return None; }
+    if parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+        return None;
     }
-    Some(match col {
+    let n = parts.len();
+    let mut expr = String::from("custom_values");
+    for &seg in &parts[..n - 1] {
+        expr.push_str(&format!("->'{seg}'"));
+    }
+    expr.push_str(&format!("->>'{}'", parts[n - 1]));
+    Some(expr)
+}
+
+/// Build a sort expression from a dot-path and an optional type hint.
+/// col_type values match custom_columns.types elements: "integer", "text", "timestamptz", …
+fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
+    if col.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.') {
+        return None;
+    }
+    let base = match col {
         "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => {
-            col.to_string()
+            return Some(col.to_string());
         }
-        _ => format!("custom_values->>'{}'", col.replace('\'', "''")),
-    })
+        _ => path_to_jsonb_expr(col)?,
+    };
+    let cast = match col_type {
+        Some("integer") | Some("bigint") | Some("numeric") => "::numeric",
+        Some("timestamptz")                                 => "::timestamptz",
+        Some("boolean")                                     => "::boolean",
+        _                                                   => "",
+    };
+    Some(if cast.is_empty() { base } else { format!("({base}){cast}") })
 }
 
 fn validated_sort(sort: Option<&str>) -> String {
+    // Sort param format: "col:dir[:type]" where type is a custom_columns.types element.
+    // Multiple sorts are comma-separated.
     let parts: Vec<String> = sort
         .unwrap_or("")
         .split(',')
         .filter_map(|s| {
             let s = s.trim();
-            if s.is_empty() {
-                return None;
-            }
-            let (col, dir) = s.split_once(':').unwrap_or((s, "desc"));
-            let expr = col_to_sort_expr(col)?;
-            let dir = if dir.eq_ignore_ascii_case("asc") {
-                "ASC"
-            } else {
-                "DESC"
-            };
-            Some(format!("{expr} {dir} NULLS LAST"))
+            if s.is_empty() { return None; }
+            let mut it = s.splitn(3, ':');
+            let col      = it.next()?;
+            let dir      = it.next().unwrap_or("desc");
+            let col_type = it.next();
+            let expr = col_to_sort_expr(col, col_type)?;
+            let dir_sql = if dir.eq_ignore_ascii_case("asc") { "ASC" } else { "DESC" };
+            Some(format!("{expr} {dir_sql} NULLS LAST"))
         })
         .collect();
 

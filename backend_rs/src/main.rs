@@ -5,7 +5,7 @@ mod hidden_column;
 mod hidden_row;
 mod ops_log;
 mod remark;
-mod repo;
+mod data_row;
 mod store;
 mod sync_service;
 mod table;
@@ -13,7 +13,7 @@ mod types;
 
 use axum::{routing::get, Router};
 use axum::routing::delete;
-use repo::AppState;
+use data_row::AppState;
 use tower_http::cors::CorsLayer;
 use tonic_web::GrpcWebLayer;
 
@@ -45,8 +45,8 @@ async fn main() -> anyhow::Result<()> {
 
     let rest_app = Router::new()
         .route("/health", get(health))
-        .route("/repos", get(repo::list_repos))
-        .route("/tables/:table_id/rows/:row_id/values", axum::routing::patch(repo::patch_cell_value))
+        .route("/repos", get(data_row::list_repos))
+        .route("/tables/:table_id/rows/:row_id/values", axum::routing::patch(data_row::patch_cell_value))
         .route("/custom-columns", get(custom_column::list).post(custom_column::create))
         .route("/custom-columns/:id", delete(custom_column::delete))
         .route("/remarks", get(remark::list))
