@@ -575,8 +575,17 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
 }
 
 fn col_to_sort_expr(col: &str) -> Option<String> {
-    if !col.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+    // Allow alphanumeric, underscore, and a single dot (for nested JSONB paths like stars_diff.6h)
+    if !col.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
         return None;
+    }
+    if let Some((parent, leaf)) = col.split_once('.') {
+        if parent.contains('.') || leaf.contains('.') {
+            return None; // only one level of nesting supported
+        }
+        let safe_parent = parent.replace('\'', "''");
+        let safe_leaf   = leaf.replace('\'', "''");
+        return Some(format!("(custom_values->'{safe_parent}'->>'{safe_leaf}')::numeric"));
     }
     Some(match col {
         "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => {
