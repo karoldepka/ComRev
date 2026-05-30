@@ -36,9 +36,16 @@ pub struct CreateCustomColumn {
 pub async fn list(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CustomColumn>>, (StatusCode, String)> {
+    list_for_table(State(state), Path("gh_repos".to_string())).await
+}
+
+pub async fn list_for_table(
+    State(state): State<AppState>,
+    Path(table_id): Path<String>,
+) -> Result<Json<Vec<CustomColumn>>, (StatusCode, String)> {
     state
         .store
-        .list_custom_columns()
+        .list_custom_columns(&table_id)
         .await
         .map(Json)
         .map_err(|e| db_err("custom_column", e))
@@ -46,6 +53,14 @@ pub async fn list(
 
 pub async fn create(
     State(state): State<AppState>,
+    Json(body): Json<CreateCustomColumn>,
+) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
+    create_for_table(State(state), Path("gh_repos".to_string()), Json(body)).await
+}
+
+pub async fn create_for_table(
+    State(state): State<AppState>,
+    Path(table_id): Path<String>,
     Json(body): Json<CreateCustomColumn>,
 ) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
     let CreateCustomColumn {
@@ -64,6 +79,7 @@ pub async fn create(
     let col = state
         .store
         .upsert_custom_column(
+            &table_id,
             &id,
             &name,
             label.as_deref(),
@@ -79,7 +95,7 @@ pub async fn create(
         .append_ops_log(
             "custom_column.create",
             serde_json::json!({
-                "id": col.id, "name": col.name,
+                "id": col.id, "table_id": table_id, "name": col.name,
             }),
             None,
         )

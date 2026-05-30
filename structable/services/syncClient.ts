@@ -59,8 +59,8 @@ interface WasmSyncClient {
   fetch_remarks(): Promise<string>;
   fetch_hidden_rows(): Promise<string>;
   fetch_hidden_columns(): Promise<string>;
-  fetch_custom_columns(): Promise<string>;
-  fetch_data_rows(paramsJson: string): Promise<string>;
+  fetch_custom_columns(tableId: string): Promise<string>;
+  fetch_data_rows(tableId: string, paramsJson: string): Promise<string>;
 }
 
 interface WasmModule {
@@ -189,10 +189,10 @@ export class SyncClient {
   removeHiddenColumn(columnId: string):             Promise<void>   { return this.inner.remove_hidden_column(columnId); }
   deleteCustomColumn(id: string):                   Promise<void>   { return this.inner.delete_custom_column(id); }
 
-  createCustomColumn(payload: {
+  createCustomColumn(tableId: string, payload: {
     name: string; label?: string | null; description?: string | null; expression?: string | null; position_after?: string | null;
   }, id?: string): Promise<string> {
-    return this.inner.create_custom_column(JSON.stringify({ ...payload, id: id ?? null }));
+    return this.inner.create_custom_column(JSON.stringify({ ...payload, table_id: tableId, id: id ?? null }));
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────────
@@ -201,13 +201,13 @@ export class SyncClient {
   async fetchRemarks():       Promise<import('../types/table').ApiRemark[]>       { return JSON.parse(await this.inner.fetch_remarks()); }
   async fetchHiddenRows():    Promise<import('../types/table').ApiHiddenRow[]>    { return JSON.parse(await this.inner.fetch_hidden_rows()); }
   async fetchHiddenColumns(): Promise<import('../types/table').ApiHiddenColumn[]> { return JSON.parse(await this.inner.fetch_hidden_columns()); }
-  async fetchCustomColumns(): Promise<import('../types/table').ApiCustomColumn[]> { return JSON.parse(await this.inner.fetch_custom_columns()); }
+  async fetchCustomColumns(tableId = 'gh_repos'): Promise<import('../types/table').ApiCustomColumn[]> { return JSON.parse(await this.inner.fetch_custom_columns(tableId)); }
 
-  async fetchDataRows(params: URLSearchParams, _signal?: AbortSignal): Promise<import('../types/table').PagedResponse> {
+  async fetchDataRows(tableId: string, params: URLSearchParams, _signal?: AbortSignal): Promise<import('../types/table').PagedResponse> {
     const NUM_PARAMS = new Set(['page', 'per_page']);
     const obj: Record<string, string | number> = {};
     params.forEach((v, k) => { obj[k] = NUM_PARAMS.has(k) ? Number(v) : v; });
-    return JSON.parse(await this.inner.fetch_data_rows(JSON.stringify(obj)));
+    return JSON.parse(await this.inner.fetch_data_rows(tableId, JSON.stringify(obj)));
   }
 }
 

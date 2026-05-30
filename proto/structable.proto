@@ -22,7 +22,9 @@ service Sync {
 
 // ── Common ─────────────────────────────────────────────────────────────────────
 
-message ListRequest {}
+message ListRequest {
+  string table_id = 1;
+}
 
 message SubscribeRequest {
   string client_id = 1; // nanoid session identifier for dedup
@@ -63,7 +65,7 @@ message AddHiddenRowOp       { string id = 1; int64  repo_id   = 2; }
 message RemoveHiddenRowOp    { int64  repo_id   = 1; }
 message AddHiddenColumnOp    { string id = 1; string column_id = 2; }
 message RemoveHiddenColumnOp { string column_id = 1; }
-message CreateCustomColOp    { string id = 1; string name = 2; string label = 3; string expression = 4; string position_after = 5; string description = 6; }
+message CreateCustomColOp    { string id = 1; string name = 2; string label = 3; string expression = 4; string position_after = 5; string description = 6; string table_id = 7; }
 message DeleteCustomColOp    { string id = 1; }
 
 // ── Server events (push) ───────────────────────────────────────────────────────
@@ -136,6 +138,7 @@ message ListReposRequest {
   int32  per_page = 2;
   string sort     = 3;              // e.g. "when_created:desc"
   map<string, string> filters = 4; // e.g. {"min_stars": "100"}
+  string table_id = 5;
 }
 
 message PagedRepos {

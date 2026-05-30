@@ -232,6 +232,7 @@ export default function TreeTable({ tableId }: Props) {
       },
     });
   }
+  cellApiRef.current?.setTableId(tableId);
 
   // ── Inline cell editing ────────────────────────────────────────────────────
   type EditingCell = { rowIndex: number; rowId: string; colId: string; value: string };
@@ -242,6 +243,14 @@ export default function TreeTable({ tableId }: Props) {
       .then(setApi)
       .catch((err) => toast.error(`Sync init failed: ${errMsg(err)}`));
   }, []);
+
+  useEffect(() => {
+    setRows([]);
+    setCustomColumns([]);
+    setTotal(0);
+    setPage(1);
+    setFetchError(null);
+  }, [tableId]);
 
   useEffect(() => {
     if (!api) return;
@@ -408,7 +417,7 @@ export default function TreeTable({ tableId }: Props) {
       sort: sort.colType ? `${sort.col}:${sort.dir}:${sort.colType}` : `${sort.col}:${sort.dir}`,
     });
     Object.entries(filters).forEach(([k, v]) => params.set(k, v));
-    api.fetchDataRows(params, aborter.signal)
+    api.fetchDataRows(tableId, params, aborter.signal)
       .then((payload: PagedResponse) => {
         setRows(payload.data);
         setTotal(payload.total);
@@ -432,18 +441,21 @@ export default function TreeTable({ tableId }: Props) {
       aborter.abort();
       if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
     };
-  }, [page, sort, filters, api, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, sort, filters, api, tableId, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch custom columns ───────────────────────────────────────────────────
   useEffect(() => {
     if (!api) return;
-    api.fetchCustomColumns()
+    let active = true;
+    api.fetchCustomColumns(tableId)
       .then((cols) => {
+        if (!active) return;
         logger.debug({ count: cols.length, stars_diff: cols.filter((c) => c.id.startsWith('gh_stars_diff')) }, 'custom columns loaded');
         logger.debug(cols.reduce<Record<string, unknown>>((acc, c) => { acc[c.id] = { name: c.name, source_path: c.source_path, parent_ids: c.parent_ids, types: c.types }; return acc; }, {}), 'column metadata');
         setCustomColumns(cols);
       })
       .catch((err: unknown) => {
+        if (!active) return;
         toast.error(`Failed to load custom columns: ${errMsg(err)}`, { id: 'fetch-custom-cols-error' });
         // Retry forever
         customColsRetryTimerRef.current = setTimeout(() => {
@@ -452,9 +464,10 @@ export default function TreeTable({ tableId }: Props) {
         }, 1_000);
       });
     return () => {
+      active = false;
       if (customColsRetryTimerRef.current !== null) { clearTimeout(customColsRetryTimerRef.current); customColsRetryTimerRef.current = null; }
     };
-  }, [api, customColsRetryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, tableId, customColsRetryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Reset column menu modes when it closes ─────────────────────────────────
   useEffect(() => { setHeaderMenuMode('menu'); }, [openMenuColumn]);
@@ -754,7 +767,7 @@ export default function TreeTable({ tableId }: Props) {
     };
     setCustomColumns((prev) => [...prev, col]);
     recordChange(`Create column "${col.label ?? col.name}"`);
-    api.createCustomColumn({ name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
+    api.createCustomColumn(tableId, { name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
   }, [api]);
 
   const handleCreateTable = useCallback((payload: import('./AddTableDialog').AddTablePayload) => {

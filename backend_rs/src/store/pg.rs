@@ -219,21 +219,31 @@ impl DataStore for PgStore {
 
     // ── Custom columns ────────────────────────────────────────────────────────
 
-    async fn list_custom_columns(&self) -> Result<Vec<CustomColumn>> {
+    async fn list_custom_columns(&self, table_id: &str) -> Result<Vec<CustomColumn>> {
+        if table_id == "tables" {
+            return Ok(table_registry_columns());
+        }
+
         Ok(sqlx::query_as::<_, CustomColumn>(
-            "SELECT id::text, name, label, description, expression, position_after, read_only, types, \
-               source_path, \
-               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types, \
-               COALESCE(is_group, false) AS is_group, \
-               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids \
-             FROM custom_columns ORDER BY when_created",
+            "SELECT c.id::text, c.name, c.label, c.description, c.expression,
+               COALESCE(tcc.position_after, c.position_after) AS position_after,
+               c.read_only, c.types, c.source_path,
+               COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
+               COALESCE(c.is_group, false) AS is_group,
+               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids
+             FROM custom_columns c
+             JOIN table_custom_columns tcc ON tcc.column_id = c.id
+             WHERE tcc.table_id = $1
+             ORDER BY tcc.when_created, c.when_created",
         )
+        .bind(table_id)
         .fetch_all(&self.pool)
         .await?)
     }
 
     async fn upsert_custom_column(
         &self,
+        table_id: &str,
         id: &str,
         name: &str,
         label: Option<&str>,
@@ -242,19 +252,34 @@ impl DataStore for PgStore {
         position_after: Option<&str>,
     ) -> Result<CustomColumn> {
         let col = sqlx::query_as::<_, CustomColumn>(
-            "INSERT INTO custom_columns (id, name, label, description, expression, position_after, read_only)
-             VALUES ($1, $2, $3, $4, $5, $6, false)
-             ON CONFLICT (id) DO UPDATE
-               SET name = EXCLUDED.name, label = EXCLUDED.label,
-                   description = EXCLUDED.description,
-                   expression = EXCLUDED.expression, position_after = EXCLUDED.position_after,
-                   when_last_modified = NOW(),
-                   modify_count = custom_columns.modify_count + 1
-             RETURNING id::text, name, label, description, expression, position_after, read_only, types, \
-               source_path, \
-               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types, \
-               COALESCE(is_group, false) AS is_group, \
-               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids",
+            "WITH upsert_col AS (
+               INSERT INTO custom_columns (id, name, label, description, expression, position_after, read_only)
+               VALUES ($1, $2, $3, $4, $5, $6, false)
+               ON CONFLICT (id) DO UPDATE
+                 SET name = EXCLUDED.name, label = EXCLUDED.label,
+                     description = EXCLUDED.description,
+                     expression = EXCLUDED.expression,
+                     when_last_modified = NOW(),
+                     modify_count = custom_columns.modify_count + 1
+               RETURNING *
+             ),
+             attach AS (
+               INSERT INTO table_custom_columns (table_id, column_id, position_after)
+               VALUES ($7, $1, $6)
+               ON CONFLICT (table_id, column_id) DO UPDATE
+                 SET position_after = EXCLUDED.position_after,
+                     when_last_modified = NOW(),
+                     modify_count = table_custom_columns.modify_count + 1
+               RETURNING *
+             )
+             SELECT c.id::text, c.name, c.label, c.description, c.expression,
+               COALESCE(a.position_after, c.position_after) AS position_after,
+               c.read_only, c.types, c.source_path,
+               COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
+               COALESCE(c.is_group, false) AS is_group,
+               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids
+             FROM upsert_col c
+             JOIN attach a ON a.column_id = c.id",
         )
         .bind(id)
         .bind(name)
@@ -262,6 +287,7 @@ impl DataStore for PgStore {
         .bind(description)
         .bind(expression)
         .bind(position_after)
+        .bind(table_id)
         .fetch_one(&self.pool)
         .await?;
 
@@ -270,10 +296,8 @@ impl DataStore for PgStore {
         // We always try to CREATE INDEX when a column is upserted/created.
         let idx = format!("idx_cv_{id}");
         let safe_key = name.replace('\'', "''");
-        let sql = format!(
-            r#"CREATE INDEX IF NOT EXISTS "{idx}" ON github_repos ((custom_values->>'{}'))"#,
-            safe_key,
-        );
+        let indexed_table = if table_id == "gh_repos" { "github_repos" } else { "table_rows" };
+        let sql = format!(r#"CREATE INDEX IF NOT EXISTS "{idx}" ON {indexed_table} ((custom_values->>'{}'))"#, safe_key);
         if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
             tracing::warn!("could not create index \"{idx}\": {e}");
         }
@@ -357,35 +381,109 @@ impl DataStore for PgStore {
 
     async fn patch_row_value(
         &self,
-        _table_id: &str,
+        table_id: &str,
         row_id: &str,
         col_id: &str,
         value: serde_json::Value,
     ) -> Result<()> {
-        // Merge a single key into custom_values so concurrent edits to other keys are preserved.
-        // TODO: use _table_id to route to the correct table once multi-table is supported.
-        sqlx::query(
-            "UPDATE github_repos
-             SET custom_values = custom_values || jsonb_build_object($2::text, $3::jsonb)
-             WHERE id = $1",
-        )
-        .bind(row_id)
-        .bind(col_id)
-        .bind(value)
-        .execute(&self.pool)
-        .await?;
+        if table_id == "gh_repos" {
+            sqlx::query(
+                "UPDATE github_repos
+                 SET custom_values = custom_values || jsonb_build_object($2::text, $3::jsonb)
+                 WHERE id = $1",
+            )
+            .bind(row_id)
+            .bind(col_id)
+            .bind(value)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query(
+                "INSERT INTO table_rows (id, table_id, custom_values)
+                 VALUES ($1, $2, jsonb_build_object($3::text, $4::jsonb))
+                 ON CONFLICT (id) DO UPDATE
+                   SET custom_values = table_rows.custom_values || jsonb_build_object($3::text, $4::jsonb),
+                       when_last_modified = NOW(),
+                       modify_count = table_rows.modify_count + 1",
+            )
+            .bind(row_id)
+            .bind(table_id)
+            .bind(col_id)
+            .bind(value)
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 
-    async fn list_data_rows(&self, params: &RowQuery) -> Result<PagedResponse> {
+    async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
         let per_page = params.per_page.clamp(1, 200) as i64;
         let offset = (params.page.max(1) - 1) as i64 * per_page;
+
+        if table_id == "tables" {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tables")
+                .fetch_one(&self.pool)
+                .await?;
+            let rows = sqlx::query(
+                "SELECT jsonb_build_object(
+                   'id', id,
+                   'title', title,
+                   'description', description,
+                   'who_created', who_created,
+                   'when_created', when_created,
+                   'who_last_modified', who_last_modified,
+                   'when_last_modified', when_last_modified,
+                   'modify_count', modify_count
+                 ) FROM tables ORDER BY when_created LIMIT $1 OFFSET $2",
+            )
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?
+            .iter()
+            .map(|r| r.try_get::<serde_json::Value, _>(0))
+            .collect::<Result<_, _>>()?;
+            return Ok(PagedResponse { data: rows, total, page: params.page, per_page: params.per_page });
+        }
+
+        if table_id != "gh_repos" {
+            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM table_rows WHERE table_id = $1")
+                .bind(table_id)
+                .fetch_one(&self.pool)
+                .await?;
+            let rows = sqlx::query(
+                "SELECT (jsonb_build_object(
+                   'id', id,
+                   'when_created', when_created,
+                   'who_created', who_created,
+                   'when_last_modified', when_last_modified,
+                   'who_last_modified', who_last_modified
+                 ) || custom_values)
+                 FROM table_rows
+                 WHERE table_id = $1
+                 ORDER BY when_created DESC
+                 LIMIT $2 OFFSET $3",
+            )
+            .bind(table_id)
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await?
+            .iter()
+            .map(|r| r.try_get::<serde_json::Value, _>(0))
+            .collect::<Result<_, _>>()?;
+            return Ok(PagedResponse { data: rows, total, page: params.page, per_page: params.per_page });
+        }
 
         // Column type map drives filter SQL (array vs. scalar vs. date operators).
         let col_types: std::collections::HashMap<String, Vec<String>> =
             sqlx::query_as::<_, (String, Vec<String>)>(
-                "SELECT name, types FROM custom_columns",
+                "SELECT c.name, c.types
+                 FROM custom_columns c
+                 JOIN table_custom_columns tcc ON tcc.column_id = c.id
+                 WHERE tcc.table_id = $1",
             )
+            .bind(table_id)
             .fetch_all(&self.pool)
             .await?
             .into_iter()
@@ -445,6 +543,35 @@ impl DataStore for PgStore {
 
 fn col_has_type(col_types: &std::collections::HashMap<String, Vec<String>>, name: &str, target: &str) -> bool {
     col_types.get(name).map_or(false, |types| types.iter().any(|t| t == target))
+}
+
+fn table_registry_columns() -> Vec<CustomColumn> {
+    [
+        ("id", "ID", "text"),
+        ("title", "Title", "text"),
+        ("description", "Description", "text"),
+        ("who_created", "Created by", "text"),
+        ("when_created", "Created", "timestamptz"),
+        ("who_last_modified", "Modified by", "text"),
+        ("when_last_modified", "Modified", "timestamptz"),
+        ("modify_count", "Modify count", "integer"),
+    ]
+    .into_iter()
+    .map(|(name, label, ty)| CustomColumn {
+        id: name.to_string(),
+        name: name.to_string(),
+        label: Some(label.to_string()),
+        description: None,
+        expression: None,
+        position_after: None,
+        read_only: true,
+        types: vec![ty.to_string()],
+        source_path: None,
+        data_types: vec![if ty == "integer" { "numeric" } else { "text" }.to_string()],
+        is_group: false,
+        parent_ids: vec![],
+    })
+    .collect()
 }
 
 fn push_filters<'q>(

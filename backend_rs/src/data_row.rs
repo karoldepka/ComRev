@@ -40,9 +40,17 @@ pub async fn list_data_rows(
     State(state): State<AppState>,
     Query(raw): Query<HashMap<String, String>>,
 ) -> Result<Json<crate::types::PagedResponse>, ApiError> {
+    list_data_rows_for_table(State(state), Path("gh_repos".to_string()), Query(raw)).await
+}
+
+pub async fn list_data_rows_for_table(
+    State(state): State<AppState>,
+    Path(table_id): Path<String>,
+    Query(raw): Query<HashMap<String, String>>,
+) -> Result<Json<crate::types::PagedResponse>, ApiError> {
     let params = crate::types::RowQuery::from_map(&raw);
-    tracing::debug!(?raw, "list rows requested");
-    let page = state.store.list_data_rows(&params).await?;
+    tracing::debug!(%table_id, ?raw, "list rows requested");
+    let page = state.store.list_data_rows(&table_id, &params).await?;
     tracing::info!(
         total = page.total,
         page = page.page,

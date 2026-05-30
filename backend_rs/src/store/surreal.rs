@@ -79,11 +79,12 @@ impl DataStore for SurrealStore {
         not_impl!()
     }
 
-    async fn list_custom_columns(&self) -> Result<Vec<crate::custom_column::CustomColumn>> {
+    async fn list_custom_columns(&self, _table_id: &str) -> Result<Vec<crate::custom_column::CustomColumn>> {
         not_impl!()
     }
     async fn upsert_custom_column(
         &self,
+        _table_id: &str,
         _id: &str,
         _name: &str,
         _label: Option<&str>,
@@ -122,7 +123,7 @@ impl DataStore for SurrealStore {
         not_impl!()
     }
 
-    async fn list_data_rows(&self, _params: &RowQuery) -> Result<PagedResponse> {
+    async fn list_data_rows(&self, _table_id: &str, _params: &RowQuery) -> Result<PagedResponse> {
         not_impl!()
     }
     async fn patch_row_value(

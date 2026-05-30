@@ -79,6 +79,14 @@ fn remark_to_proto(r: &remark::Remark) -> Remark {
     }
 }
 
+fn table_id_or_default(table_id: String) -> String {
+    if table_id.is_empty() {
+        "gh_repos".to_string()
+    } else {
+        table_id
+    }
+}
+
 // ── Service implementation ─────────────────────────────────────────────────────
 
 #[tonic::async_trait]
@@ -162,13 +170,14 @@ impl Sync for SyncServiceImpl {
 
     async fn list_custom_columns(
         &self,
-        _: Request<ListRequest>,
+        request: Request<ListRequest>,
     ) -> Result<Response<CustomColumnList>, Status> {
-        tracing::debug!("grpc list_custom_columns requested");
+        let table_id = table_id_or_default(request.into_inner().table_id);
+        tracing::debug!(%table_id, "grpc list_custom_columns requested");
         let cols = self
             .state
             .store
-            .list_custom_columns()
+            .list_custom_columns(&table_id)
             .await
             .map_err(|e| Status::internal(format!("list_custom_columns: {e}")))?;
         tracing::info!(count = cols.len(), "grpc list_custom_columns completed");
@@ -194,7 +203,9 @@ impl Sync for SyncServiceImpl {
         request: Request<ListReposRequest>,
     ) -> Result<Response<PagedRepos>, Status> {
         let req = request.into_inner();
+        let table_id = table_id_or_default(req.table_id);
         tracing::debug!(
+            %table_id,
             page = req.page,
             per_page = req.per_page,
             sort = %req.sort,
@@ -214,7 +225,7 @@ impl Sync for SyncServiceImpl {
         let paged = self
             .state
             .store
-            .list_data_rows(&params)
+            .list_data_rows(&table_id, &params)
             .await
             .map_err(|e| Status::internal(format!("list_data_rows: {e}")))?;
         tracing::info!(
@@ -503,11 +514,13 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::CreateCustomCol(p) => {
-                tracing::debug!(%op_id, id = %p.id, name = %p.name, "dispatch custom column create");
+                let table_id = table_id_or_default(p.table_id);
+                tracing::debug!(%op_id, %table_id, id = %p.id, name = %p.name, "dispatch custom column create");
                 let col = self
                     .state
                     .store
                     .upsert_custom_column(
+                        &table_id,
                         &p.id,
                         &p.name,
                         if p.label.is_empty() {

@@ -53,9 +53,13 @@ pub trait DataStore: Send + Sync {
 
     // ── Custom columns ────────────────────────────────────────────────────────
 
-    async fn list_custom_columns(&self) -> Result<Vec<crate::custom_column::CustomColumn>>;
+    async fn list_custom_columns(
+        &self,
+        table_id: &str,
+    ) -> Result<Vec<crate::custom_column::CustomColumn>>;
     async fn upsert_custom_column(
         &self,
+        table_id: &str,
         id: &str,
         name: &str,
         label: Option<&str>,
@@ -88,6 +92,7 @@ pub trait DataStore: Send + Sync {
 
     async fn list_data_rows(
         &self,
+        table_id: &str,
         params: &crate::types::RowQuery,
     ) -> Result<crate::types::PagedResponse>;
 

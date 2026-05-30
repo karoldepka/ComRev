@@ -171,12 +171,16 @@ export class TableApi {
 
   // ── Read operations ────────────────────────────────────────────────────────
 
-  async fetchDataRows(params: URLSearchParams, signal?: AbortSignal): Promise<PagedResponse> {
-    return this.get<PagedResponse>(`/data-rows?${params}`, signal);
+  setTableId(tableId: string): void {
+    this.tableId = tableId;
   }
 
-  async fetchCustomColumns(): Promise<ApiCustomColumn[]> {
-    return this.get<ApiCustomColumn[]>('/custom-columns');
+  async fetchDataRows(tableId: string, params: URLSearchParams, signal?: AbortSignal): Promise<PagedResponse> {
+    return this.get<PagedResponse>(`/tables/${encodeURIComponent(tableId)}/data-rows?${params}`, signal);
+  }
+
+  async fetchCustomColumns(tableId: string): Promise<ApiCustomColumn[]> {
+    return this.get<ApiCustomColumn[]>(`/tables/${encodeURIComponent(tableId)}/custom-columns`);
   }
 
   async fetchRemarks(): Promise<ApiRemark[]> {
@@ -223,6 +227,7 @@ export class TableApi {
 
   /** Client generates a nanoid so the column is usable immediately offline. */
   createCustomColumn(
+    tableId: string,
     payload: Omit<ApiCustomColumn, 'id' | 'read_only' | 'readOnly' | 'is_editable' | 'types'>,
     onConfirmed?: (confirmed: ApiCustomColumn) => void,
   ): ApiCustomColumn {
@@ -231,7 +236,7 @@ export class TableApi {
     this.enqueue({
       id: `custom-col:create:${id}`,
       method: 'POST',
-      path: '/custom-columns',
+      path: `/tables/${encodeURIComponent(tableId)}/custom-columns`,
       body: { id, ...payload },
       retries: 0,
       onSuccess: onConfirmed ? (data) => onConfirmed(data as ApiCustomColumn) : undefined,

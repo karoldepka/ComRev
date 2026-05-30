@@ -46,9 +46,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/data-rows", get(data_row::list_data_rows))
         // Compatibility route for older frontend builds.
         .route("/repos", get(data_row::list_data_rows))
+        .route("/tables/:table_id/data-rows", get(data_row::list_data_rows_for_table))
         .route(
             "/tables/:table_id/rows/:row_id/values",
             axum::routing::patch(data_row::patch_cell_value),
+        )
+        .route(
+            "/tables/:table_id/custom-columns",
+            get(custom_column::list_for_table).post(custom_column::create_for_table),
         )
         .route(
             "/custom-columns",

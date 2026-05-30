@@ -163,6 +163,10 @@ impl QueuedOp {
                     .unwrap_or("")
                     .to_string(),
                 description: self.data["description"].as_str().unwrap_or("").to_string(),
+                table_id: self.data["table_id"]
+                    .as_str()
+                    .unwrap_or("gh_repos")
+                    .to_string(),
             })),
             "delete_custom_col" => Some(OpPayload::DeleteCustomCol(DeleteCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
@@ -856,7 +860,7 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_flags(tonic::Request::new(ListRequest {}))
+                .list_flags(tonic::Request::new(ListRequest { table_id: String::new() }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().flags)
@@ -870,7 +874,7 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_remarks(tonic::Request::new(ListRequest {}))
+                .list_remarks(tonic::Request::new(ListRequest { table_id: String::new() }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().remarks)
@@ -884,7 +888,7 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_hidden_rows(tonic::Request::new(ListRequest {}))
+                .list_hidden_rows(tonic::Request::new(ListRequest { table_id: String::new() }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().rows)
@@ -898,7 +902,7 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_hidden_columns(tonic::Request::new(ListRequest {}))
+                .list_hidden_columns(tonic::Request::new(ListRequest { table_id: String::new() }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().cols)
@@ -907,12 +911,12 @@ impl SyncClient {
         })
     }
 
-    pub fn fetch_custom_columns(&self) -> js_sys::Promise {
+    pub fn fetch_custom_columns(&self, table_id: String) -> js_sys::Promise {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_custom_columns(tonic::Request::new(ListRequest {}))
+                .list_custom_columns(tonic::Request::new(ListRequest { table_id }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().cols)
@@ -921,7 +925,7 @@ impl SyncClient {
         })
     }
 
-    pub fn fetch_data_rows(&self, params_json: String) -> js_sys::Promise {
+    pub fn fetch_data_rows(&self, table_id: String, params_json: String) -> js_sys::Promise {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             #[derive(Deserialize)]
@@ -939,6 +943,7 @@ impl SyncClient {
                 per_page: p.per_page.unwrap_or(50),
                 sort: p.sort.unwrap_or_else(|| "when_created:desc".into()),
                 filters: p.filters,
+                table_id,
             };
             let mut client = grpc_client(&base_url);
             // Compatibility boundary: proto still calls these rows "repos".
