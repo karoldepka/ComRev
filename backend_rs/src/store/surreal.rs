@@ -135,12 +135,5 @@ impl DataStore for SurrealStore {
         not_impl!()
     }
 
-    async fn append_ops_log(
-        &self,
-        _op: &str,
-        _payload: serde_json::Value,
-        _tx_id: Option<&str>,
-    ) -> Result<()> {
-        Ok(())
-    }
+    async fn append_ops_log(&self, _op: &str, _payload: serde_json::Value, _tx_id: Option<&str>) {}
 }

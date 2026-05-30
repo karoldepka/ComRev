@@ -48,8 +48,7 @@ pub async fn add(
             }),
             None,
         )
-        .await
-        .map_err(|e| db_err("hidden_row", e))?;
+        .await;
     Ok((StatusCode::CREATED, Json(row)))
 }
 

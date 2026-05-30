@@ -90,52 +90,29 @@ function insertAfter(list: Column[], col: Column, positionAfter: string | null |
   list.splice(idx >= 0 ? idx + 1 : list.length, 0, col);
 }
 
-/**
- * Resolve the column ID used for rowVal lookup.
- * Priority:
- *   1. source_path from API (authoritative, multi-segment → dot join)
- *   2. parent_ids + row sample: if parent's name is a nested object in the row, use dot notation
- *   3. Heuristic: if cc.name starts with a row nested-object key + '_', build dot path
- *   4. Fallback: cc.name
- */
-function resolveColumnId(
-  cc: ApiCustomColumn,
-  rawMap: Map<string, ApiCustomColumn>,
-  rowSample?: DataRow,
-): string {
+/** Resolve the row-data key for a column.
+ *  1. source_path from backend (authoritative)
+ *  2. Heuristic: if cc.name isn't a direct row key but starts with a nested-object key + '_',
+ *     build the dot-path.  Handles old backends that don't yet return source_path. */
+function resolveColumnId(cc: ApiCustomColumn, rowSample?: DataRow): string {
   if ((cc.source_path?.length ?? 0) > 1) return cc.source_path!.join('.');
-
-  if (cc.parent_ids?.length && rowSample) {
-    const parent = rawMap.get(cc.parent_ids[cc.parent_ids.length - 1]);
-    if (parent) {
-      const parentName = parent.source_path?.[0] ?? parent.name;
-      const parentVal = rowSample[parentName];
-      if (parentVal !== null && parentVal !== undefined && typeof parentVal === 'object' && !Array.isArray(parentVal)) {
-        return `${parentName}.${cc.label ?? cc.name}`;
-      }
-    }
-  }
-
+  if (cc.source_path?.[0]) return cc.source_path[0];
   if (rowSample && !(cc.name in rowSample)) {
-    for (const rowKey of Object.keys(rowSample)) {
-      const val = rowSample[rowKey];
-      if (val !== null && val !== undefined && typeof val === 'object' && !Array.isArray(val)) {
-        if (cc.name.startsWith(rowKey + '_')) {
-          return `${rowKey}.${cc.name.slice(rowKey.length + 1)}`;
-        }
+    for (const key of Object.keys(rowSample)) {
+      const val = rowSample[key];
+      if (val !== null && typeof val === 'object' && !Array.isArray(val) && cc.name.startsWith(key + '_')) {
+        return `${key}.${cc.name.slice(key.length + 1)}`;
       }
     }
   }
-
-  return cc.source_path?.[0] ?? cc.name;
+  return cc.name;
 }
 
 function columnsFromMetadata(customColumns: ApiCustomColumn[], rowSample?: DataRow): Column[] {
-  const rawMap = new Map(customColumns.map((cc) => [cc.id, cc]));
   const colMap = new Map<string, Column>();
   for (const cc of customColumns) {
     colMap.set(cc.id, {
-      id: resolveColumnId(cc, rawMap, rowSample),
+      id: resolveColumnId(cc, rowSample),
       customColumnId: cc.id,
       label: cc.label ?? labelFor(cc.name),
       width: 150,
@@ -354,7 +331,7 @@ export default function TreeTable({ tableId }: Props) {
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
-  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'stars_diff.14d', dir: 'desc' });
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff.14d', dir: 'desc' });
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
 
@@ -428,7 +405,7 @@ export default function TreeTable({ tableId }: Props) {
     const params = new URLSearchParams({
       page: String(page),
       per_page: String(perPage),
-      sort: `${sort.col}:${sort.dir}`,
+      sort: sort.colType ? `${sort.col}:${sort.dir}:${sort.colType}` : `${sort.col}:${sort.dir}`,
     });
     Object.entries(filters).forEach(([k, v]) => params.set(k, v));
     api.fetchRepos(params, aborter.signal)
@@ -484,10 +461,9 @@ export default function TreeTable({ tableId }: Props) {
 
   // ── Column geometry ────────────────────────────────────────────────────────
   const columns = useMemo<Column[]>(() => {
-    const rowSample = rows[0];
     const result = customColumns.length > 0
-      ? columnsFromMetadata(customColumns, rowSample)
-      : (rowSample ? deriveColumns(rowSample) : []);
+      ? columnsFromMetadata(customColumns, rows[0])
+      : (rows[0] ? deriveColumns(rows[0]) : []);
     let flat = result;
     if (columnOrder.length > 0) {
       const map = new Map(result.map((c) => [c.id, c]));
@@ -652,7 +628,8 @@ export default function TreeTable({ tableId }: Props) {
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSort = (col: string, dir: 'asc' | 'desc') => {
-    setSort({ col, dir });
+    const colType = allLeafColumns.find((c) => c.id === col)?.types?.[0];
+    setSort({ col, dir, colType });
     setPage(1);
     setOpenMenuColumn(null);
     setMenuAnchor(null);
@@ -919,7 +896,6 @@ export default function TreeTable({ tableId }: Props) {
         tableId={tableId}
         tables={tables}
         onAddTable={() => setShowAddTable(true)}
-        onSelectTable={() => {}}
         onShowAllTables={() => toast.info('Table list coming soon')}
         onRenameTable={handleRenameTable}
       />

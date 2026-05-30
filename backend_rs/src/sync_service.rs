@@ -305,7 +305,7 @@ impl SyncServiceImpl {
                         }),
                         None,
                     )
-                    .await?;
+                    .await;
                 let resp = serde_json::to_vec(&serde_json::json!({
                     "id": f.id, "key": f.key, "color": f.color,
                 }))?;
@@ -403,7 +403,7 @@ impl SyncServiceImpl {
                         }),
                         None,
                     )
-                    .await?;
+                    .await;
                 let event = hidden_row_event(
                     EventKind::Upsert,
                     HiddenRow {
@@ -446,7 +446,7 @@ impl SyncServiceImpl {
                         }),
                         None,
                     )
-                    .await?;
+                    .await;
                 let event = hidden_col_event(
                     EventKind::Upsert,
                     HiddenCol {

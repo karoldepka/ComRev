@@ -83,8 +83,7 @@ pub async fn create(
             }),
             None,
         )
-        .await
-        .map_err(|e| db_err("custom_column", e))?;
+        .await;
 
     Ok((StatusCode::CREATED, Json(col)))
 }
@@ -105,7 +104,6 @@ pub async fn delete(
             serde_json::json!({ "id": id }),
             None,
         )
-        .await
-        .map_err(|e| db_err("custom_column", e))?;
+        .await;
     Ok(StatusCode::NO_CONTENT)
 }

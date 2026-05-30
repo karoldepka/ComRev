@@ -18,7 +18,7 @@ export type RemarkTarget  = { row_id: string; column_id: string };
 export type RemarkData    = { id: string; body: string; kind: 'note'|'comment'; is_private: boolean; resolved_at: string; targets: RemarkTarget[] };
 export type HiddenRowData = { id: string; row_id: string };
 export type HiddenColData = { id: string; column_id: string };
-export type CustomColData = { id: string; name: string; label: string; expression: string; position_after: string; read_only: boolean; readOnly: boolean; types: string[] };
+export type CustomColData = { id: string; name: string; label: string; expression: string; position_after: string; read_only: boolean; readOnly: boolean; types: string[]; source_path: string[] | null; parent_ids: string[]; is_group: boolean; data_types: string[] };
 
 export type EventKind = 0 | 1; // 0=UPSERT, 1=DELETE
 
@@ -47,8 +47,8 @@ interface WasmSyncClient {
   delete_flag(key: string): Promise<void>;
   upsert_remark(existingId: string | null, kind: string, body: string, targetsJson: string): Promise<string>;
   delete_remark(id: string): Promise<void>;
-  add_hidden_row(repoId: number): Promise<void>;
-  remove_hidden_row(repoId: number): Promise<void>;
+  add_hidden_row(rowId: number): Promise<void>;    // TODO: change to string once sync_core is updated
+  remove_hidden_row(rowId: number): Promise<void>; // TODO: change to string once sync_core is updated
   add_hidden_column(columnId: string): Promise<void>;
   remove_hidden_column(columnId: string): Promise<void>;
   create_custom_column(payloadJson: string): Promise<string>;
@@ -170,8 +170,9 @@ export class SyncClient {
 
   deleteRemark(id: string):          Promise<void> { return this.inner.delete_remark(id); }
   // TODO: update sync_core to accept string rowId natively.
-  addHiddenRow(rowId: string):       Promise<void> { return this.inner.add_hidden_row(parseInt(rowId, 10)); }
-  removeHiddenRow(rowId: string):    Promise<void> { return this.inner.remove_hidden_row(parseInt(rowId, 10)); }
+  // TODO: update sync_core WASM to accept string rowId natively (currently expects number)
+  addHiddenRow(rowId: string):    Promise<void> { return this.inner.add_hidden_row(parseInt(rowId, 10)); }
+  removeHiddenRow(rowId: string): Promise<void> { return this.inner.remove_hidden_row(parseInt(rowId, 10)); }
   addHiddenColumn(columnId: string):                Promise<void>   { return this.inner.add_hidden_column(columnId); }
   removeHiddenColumn(columnId: string):             Promise<void>   { return this.inner.remove_hidden_column(columnId); }
   deleteCustomColumn(id: string):                   Promise<void>   { return this.inner.delete_custom_column(id); }

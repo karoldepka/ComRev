@@ -50,8 +50,7 @@ pub async fn upsert(
             }),
             None,
         )
-        .await
-        .map_err(|e| db_err("flag", e))?;
+        .await;
     Ok(Json(flag))
 }
 

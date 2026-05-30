@@ -10,7 +10,6 @@ type Props = {
   title?: string;
   tables?: ApiTable[];
   onAddTable?: () => void;
-  onSelectTable?: (id: string) => void;
   onShowAllTables?: () => void;
   onRenameTable?: (id: string, title: string) => void;
 };
@@ -21,7 +20,7 @@ const TABLE_IMPLS = [
 ];
 
 export default function TableToolbar({
-  tableId, title, tables = [], onAddTable, onSelectTable, onShowAllTables, onRenameTable,
+  tableId, title, tables = [], onAddTable, onShowAllTables, onRenameTable,
 }: Props) {
   const path = usePathname();
   const current = tableId ? tables.find((t) => t.id === tableId) : undefined;
@@ -102,14 +101,14 @@ export default function TableToolbar({
               )}
               {tables.length > 0 && <div className="menu-divider" />}
               {tables.map((t) => (
-                <button
+                <Link
                   key={t.id}
-                  type="button"
-                  className={t.id === tableId ? 'menu-active' : ''}
-                  onClick={() => { setMenuOpen(false); onSelectTable?.(t.id); }}
+                  href={`/t/${t.id}`}
+                  className={['table-dropdown-link', t.id === tableId ? 'menu-active' : ''].filter(Boolean).join(' ')}
+                  onClick={() => setMenuOpen(false)}
                 >
                   {t.title || t.id}
-                </button>
+                </Link>
               ))}
               {onShowAllTables && (
                 <>
