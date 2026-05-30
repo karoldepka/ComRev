@@ -4,6 +4,7 @@ import type {
   ApiCustomColumn, ApiFlag, ApiHiddenColumn,
   ApiHiddenRow, ApiRemark, ApiTable, PagedResponse, RemarkTarget,
 } from '../types/table';
+import logger from '../utils/logger';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -82,9 +83,15 @@ export class TableApi {
     this.onError = onError;
     this.onQueueChange = onQueueChange;
     if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => { this.clearRetryTimer(); this.flush(); });
+      logger.info({ baseUrl: this.base, tableId: this.tableId }, 'table api initialized');
+      window.addEventListener('online', () => {
+        logger.info({ queueLength: this.queue.length }, 'browser online; flushing table api queue');
+        this.clearRetryTimer();
+        this.flush();
+      });
       window.addEventListener('beforeunload', (e) => {
         if (this.queue.length > 0) {
+          logger.info({ queueLength: this.queue.length }, 'blocking unload with pending table api queue');
           e.preventDefault(); // triggers the browser's "Leave site?" dialog
         }
       });
@@ -125,9 +132,11 @@ export class TableApi {
       }
 
       this.onQueueChange?.(this.queue.length);
+      logger.info({ queueLength: this.queue.length }, 'table api queue restored from indexeddb');
       if (this.queue.length > 0 && navigator.onLine) this.flush();
-    } catch {
+    } catch (cause) {
       // IDB unavailable (e.g. private browsing on some browsers): queue is in-memory only
+      logger.error({ cause }, 'table api indexeddb init failed; queue is memory-only');
     }
   }
 
@@ -141,7 +150,10 @@ export class TableApi {
         await this.db.put(OPS_STORE, { ...items[i], seq: i });
       }
       localStorage.removeItem(LS_LEGACY_KEY);
-    } catch { /* ignore migration errors */ }
+      logger.info({ count: items.length }, 'migrated legacy offline queue to indexeddb');
+    } catch (cause) {
+      logger.error({ cause }, 'legacy offline queue migration failed');
+    }
   }
 
   // ── IDB helpers (use idb library) ─────────────────────────────────────────
@@ -159,8 +171,8 @@ export class TableApi {
 
   // ── Read operations ────────────────────────────────────────────────────────
 
-  async fetchRepos(params: URLSearchParams, signal?: AbortSignal): Promise<PagedResponse> {
-    return this.get<PagedResponse>(`/repos?${params}`, signal);
+  async fetchDataRows(params: URLSearchParams, signal?: AbortSignal): Promise<PagedResponse> {
+    return this.get<PagedResponse>(`/data-rows?${params}`, signal);
   }
 
   async fetchCustomColumns(): Promise<ApiCustomColumn[]> {
@@ -350,8 +362,9 @@ export class TableApi {
     }
     const record: QueuedOp = { ...op, seq: this.nextSeq++, enqueuedAt: Date.now() };
     this.queue.push(record);
+    logger.info({ id: record.id, method: record.method, path: record.path, queueLength: this.queue.length }, 'queued table api operation');
     // Fire-and-forget: op is in-memory already; IDB write is crash insurance
-    this.idbPut(record).catch(() => {});
+    this.idbPut(record).catch((cause) => logger.error({ cause, id: record.id }, 'failed to persist queued table api operation'));
     this.onQueueChange?.(this.queue.length);
     this.flush();
   }
@@ -363,9 +376,11 @@ export class TableApi {
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     this.clearRetryTimer();
     this.flushing = true;
+    logger.debug({ queueLength: this.queue.length }, 'starting table api flush');
     try {
       while (this.queue.length > 0) {
         const op = this.queue[0];
+        logger.debug({ id: op.id, method: op.method, path: op.path, retries: op.retries }, 'flushing table api operation');
         try {
           const res = await fetch(`${this.base}${op.path}`, {
             method: op.method,
@@ -380,6 +395,7 @@ export class TableApi {
             await this.db.delete(OPS_STORE, op.id);
             this.onQueueChange?.(this.queue.length);
             this.onError(`Sync error ${res.status} for ${op.method} ${this.base}${op.path}${errBody ? `: ${errBody.slice(0, 300)}` : ''}`);
+            logger.info({ id: op.id, status: res.status, queueLength: this.queue.length }, 'dropped unrecoverable table api operation');
             continue;
           }
           if (!res.ok) throw new Error(`HTTP ${res.status} for ${op.method} ${this.base}${op.path}`);
@@ -393,11 +409,12 @@ export class TableApi {
           this.queue.shift();
           await this.db.delete(OPS_STORE, op.id);
           this.onQueueChange?.(this.queue.length);
+          logger.info({ id: op.id, queueLength: this.queue.length }, 'flushed table api operation');
           op.onSuccess?.(responseData);
         } catch (cause) {
           op.retries++;
           const reason = cause instanceof Error ? cause.message : String(cause);
-          console.warn(`[tableApi] ${op.method} ${this.base}${op.path} failed (retry ${op.retries}): ${reason}`);
+          logger.warn({ id: op.id, method: op.method, path: op.path, retries: op.retries, reason }, 'table api operation failed; retry scheduled');
           if (op.retries === 1 || op.retries % 10 === 0) {
             this.onError(`Syncing "${describeOp(op)}" failed (attempt ${op.retries}): ${reason}`);
           }
@@ -409,6 +426,7 @@ export class TableApi {
       }
     } finally {
       this.flushing = false;
+      logger.debug({ queueLength: this.queue.length }, 'table api flush finished');
     }
   }
 
@@ -416,16 +434,20 @@ export class TableApi {
     const url = `${this.base}${path}`;
     let res: Response;
     try {
+      logger.debug({ url }, 'table api get started');
       res = await fetch(url, { signal });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
+      logger.error({ url, reason }, 'table api get failed');
       throw new Error(`GET ${url} — ${reason}`);
     }
     if (!res.ok) {
       let body = '';
       try { body = await res.text(); } catch { /* no body */ }
+      logger.error({ url, status: res.status, body: body.slice(0, 300) }, 'table api get returned error');
       throw new Error(`GET ${url} — HTTP ${res.status}${body ? `: ${body.slice(0, 300)}` : ''}`);
     }
+    logger.debug({ url, status: res.status }, 'table api get finished');
     return res.json() as Promise<T>;
   }
 }

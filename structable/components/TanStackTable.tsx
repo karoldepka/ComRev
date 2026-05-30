@@ -38,7 +38,7 @@ export default function TanStackTable() {
       per_page: String(perPage),
       sort: s ? `${s.id}:${s.desc ? 'desc' : 'asc'}` : 'when_created:desc',
     });
-    fetch(`${API_BASE}/repos?${params}`)
+    fetch(`${API_BASE}/data-rows?${params}`)
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((payload) => { setData(payload.data); setTotal(payload.total); setLoading(false); })
       .catch((err: Error) => { setError(err.message); setLoading(false); });
@@ -118,7 +118,7 @@ export default function TanStackTable() {
           </table>
         </div>
         <div className="table-note">
-          <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
+          <span>{total.toLocaleString()} rows — page {page} of {totalPages}</span>
           <span style={{ marginLeft: '1rem' }}>
             <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
             {' '}

@@ -122,7 +122,7 @@ impl DataStore for MongoStore {
         not_impl!()
     }
 
-    async fn list_repos(&self, _params: &RowQuery) -> Result<PagedResponse> {
+    async fn list_data_rows(&self, _params: &RowQuery) -> Result<PagedResponse> {
         not_impl!()
     }
     async fn patch_row_value(

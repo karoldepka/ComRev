@@ -23,7 +23,7 @@ pub struct ApiError(anyhow::Error);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        tracing::error!("list_repos: {}", self.0);
+        tracing::error!("list_data_rows: {}", self.0);
         (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
     }
 }
@@ -36,12 +36,20 @@ impl<E: Into<anyhow::Error>> From<E> for ApiError {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
-pub async fn list_repos(
+pub async fn list_data_rows(
     State(state): State<AppState>,
     Query(raw): Query<HashMap<String, String>>,
 ) -> Result<Json<crate::types::PagedResponse>, ApiError> {
     let params = crate::types::RowQuery::from_map(&raw);
-    Ok(Json(state.store.list_repos(&params).await?))
+    tracing::debug!(?raw, "list rows requested");
+    let page = state.store.list_data_rows(&params).await?;
+    tracing::info!(
+        total = page.total,
+        page = page.page,
+        per_page = page.per_page,
+        "list rows completed"
+    );
+    Ok(Json(page))
 }
 
 #[derive(Deserialize)]
@@ -55,10 +63,12 @@ pub async fn patch_cell_value(
     Path((table_id, row_id)): Path<(String, String)>,
     Json(body): Json<PatchCellValueBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    tracing::info!(%table_id, %row_id, col_id = %body.col_id, "patch cell value requested");
     state
         .store
         .patch_row_value(&table_id, &row_id, &body.col_id, body.value)
         .await
         .map_err(|e| db_err("repo", e))?;
+    tracing::debug!(%table_id, %row_id, col_id = %body.col_id, "patch cell value completed");
     Ok(StatusCode::NO_CONTENT)
 }

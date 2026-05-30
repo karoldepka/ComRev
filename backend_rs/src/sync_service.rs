@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tonic::{Request, Response, Status};
 
-use crate::{flag, remark, data_row::AppState};
+use crate::{data_row::AppState, flag, remark};
 
 // ── Proto types ────────────────────────────────────────────────────────────────
 
@@ -86,24 +86,28 @@ impl Sync for SyncServiceImpl {
     // ── Reads ──────────────────────────────────────────────────────────────────
 
     async fn list_flags(&self, _: Request<ListRequest>) -> Result<Response<FlagList>, Status> {
+        tracing::debug!("grpc list_flags requested");
         let flags = self
             .state
             .store
             .list_flags()
             .await
             .map_err(|e| Status::internal(format!("list_flags: {e}")))?;
+        tracing::info!(count = flags.len(), "grpc list_flags completed");
         Ok(Response::new(FlagList {
             flags: flags.iter().map(flag_to_proto).collect(),
         }))
     }
 
     async fn list_remarks(&self, _: Request<ListRequest>) -> Result<Response<RemarkList>, Status> {
+        tracing::debug!("grpc list_remarks requested");
         let remarks = self
             .state
             .store
             .list_remarks()
             .await
             .map_err(|e| Status::internal(format!("list_remarks: {e}")))?;
+        tracing::info!(count = remarks.len(), "grpc list_remarks completed");
         Ok(Response::new(RemarkList {
             remarks: remarks.iter().map(remark_to_proto).collect(),
         }))
@@ -113,12 +117,14 @@ impl Sync for SyncServiceImpl {
         &self,
         _: Request<ListRequest>,
     ) -> Result<Response<HiddenRowList>, Status> {
+        tracing::debug!("grpc list_hidden_rows requested");
         let rows = self
             .state
             .store
             .list_hidden_rows()
             .await
             .map_err(|e| Status::internal(format!("list_hidden_rows: {e}")))?;
+        tracing::info!(count = rows.len(), "grpc list_hidden_rows completed");
         Ok(Response::new(HiddenRowList {
             rows: rows
                 .iter()
@@ -135,12 +141,14 @@ impl Sync for SyncServiceImpl {
         &self,
         _: Request<ListRequest>,
     ) -> Result<Response<HiddenColumnList>, Status> {
+        tracing::debug!("grpc list_hidden_columns requested");
         let cols = self
             .state
             .store
             .list_hidden_columns()
             .await
             .map_err(|e| Status::internal(format!("list_hidden_columns: {e}")))?;
+        tracing::info!(count = cols.len(), "grpc list_hidden_columns completed");
         Ok(Response::new(HiddenColumnList {
             cols: cols
                 .iter()
@@ -156,12 +164,14 @@ impl Sync for SyncServiceImpl {
         &self,
         _: Request<ListRequest>,
     ) -> Result<Response<CustomColumnList>, Status> {
+        tracing::debug!("grpc list_custom_columns requested");
         let cols = self
             .state
             .store
             .list_custom_columns()
             .await
             .map_err(|e| Status::internal(format!("list_custom_columns: {e}")))?;
+        tracing::info!(count = cols.len(), "grpc list_custom_columns completed");
         Ok(Response::new(CustomColumnList {
             cols: cols
                 .iter()
@@ -184,6 +194,13 @@ impl Sync for SyncServiceImpl {
         request: Request<ListReposRequest>,
     ) -> Result<Response<PagedRepos>, Status> {
         let req = request.into_inner();
+        tracing::debug!(
+            page = req.page,
+            per_page = req.per_page,
+            sort = %req.sort,
+            filter_count = req.filters.len(),
+            "grpc list rows requested"
+        );
         let params = crate::types::RowQuery {
             sort: if req.sort.is_empty() {
                 None
@@ -197,9 +214,15 @@ impl Sync for SyncServiceImpl {
         let paged = self
             .state
             .store
-            .list_repos(&params)
+            .list_data_rows(&params)
             .await
-            .map_err(|e| Status::internal(format!("list_repos: {e}")))?;
+            .map_err(|e| Status::internal(format!("list_data_rows: {e}")))?;
+        tracing::info!(
+            total = paged.total,
+            page = paged.page,
+            per_page = paged.per_page,
+            "grpc list rows completed"
+        );
 
         let rows_json: Vec<Vec<u8>> = paged
             .data
@@ -226,11 +249,12 @@ impl Sync for SyncServiceImpl {
             Status::invalid_argument("missing payload")
         })?;
 
-        tracing::debug!("apply_op({op_id})");
+        tracing::debug!(%op_id, "apply op requested");
 
         match self.dispatch(op_id.clone(), payload).await {
             Ok((event, response_bytes)) => {
                 let _ = self.state.event_tx.send(event);
+                tracing::info!(%op_id, response_bytes = response_bytes.len(), "apply op completed");
                 Ok(Response::new(OpResult {
                     op_id,
                     ok: true,
@@ -294,6 +318,7 @@ impl SyncServiceImpl {
     ) -> anyhow::Result<(ServerEvent, Vec<u8>)> {
         match payload {
             OpPayload::UpsertFlag(p) => {
+                tracing::debug!(%op_id, key = %p.key, color = %p.color, "dispatch flag upsert");
                 let id = Self::record_id(&op_id, &p.id);
                 let f = self.state.store.upsert_flag(&id, &p.key, &p.color).await?;
                 self.state
@@ -312,6 +337,7 @@ impl SyncServiceImpl {
                 Ok((flag_event(EventKind::Upsert, flag_to_proto(&f)), resp))
             }
             OpPayload::DeleteFlag(p) => {
+                tracing::debug!(%op_id, key = %p.key, "dispatch flag delete");
                 self.state.store.delete_flag(&p.key).await?;
                 self.state
                     .store
@@ -334,6 +360,7 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::UpsertRemark(p) => {
+                tracing::debug!(%op_id, id = %p.id, kind = %p.kind, target_count = p.targets.len(), "dispatch remark upsert");
                 // Proto still carries repo_id: i64; convert to row_id: String at boundary.
                 // TODO: update proto to use row_id: string once sync_core Rust is updated.
                 let targets: Vec<remark::RemarkTarget> = p
@@ -369,6 +396,7 @@ impl SyncServiceImpl {
                 Ok((remark_event(EventKind::Upsert, remark_to_proto(&r)), resp))
             }
             OpPayload::DeleteRemark(p) => {
+                tracing::debug!(%op_id, id = %p.id, "dispatch remark delete");
                 self.state.store.delete_remark(&p.id).await?;
                 self.state
                     .store
@@ -390,6 +418,7 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::AddHiddenRow(p) => {
+                tracing::debug!(%op_id, row_id = p.repo_id, "dispatch hidden row add");
                 // Proto carries repo_id: i64; convert to row_id: String.
                 let row_id_str = p.repo_id.to_string();
                 let id = Self::record_id(&op_id, &p.id);
@@ -419,6 +448,7 @@ impl SyncServiceImpl {
                 ))
             }
             OpPayload::RemoveHiddenRow(p) => {
+                tracing::debug!(%op_id, row_id = p.repo_id, "dispatch hidden row remove");
                 let row_id_str = p.repo_id.to_string();
                 self.state.store.remove_hidden_row(&row_id_str).await?;
                 let event = hidden_row_event(
@@ -431,6 +461,7 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::AddHiddenCol(p) => {
+                tracing::debug!(%op_id, column_id = %p.column_id, "dispatch hidden column add");
                 let id = Self::record_id(&op_id, &p.id);
                 let col = self
                     .state
@@ -460,6 +491,7 @@ impl SyncServiceImpl {
                 ))
             }
             OpPayload::RemoveHiddenCol(p) => {
+                tracing::debug!(%op_id, column_id = %p.column_id, "dispatch hidden column remove");
                 self.state.store.remove_hidden_column(&p.column_id).await?;
                 let event = hidden_col_event(
                     EventKind::Delete,
@@ -471,6 +503,7 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::CreateCustomCol(p) => {
+                tracing::debug!(%op_id, id = %p.id, name = %p.name, "dispatch custom column create");
                 let col = self
                     .state
                     .store
@@ -518,6 +551,7 @@ impl SyncServiceImpl {
                 Ok((event, resp))
             }
             OpPayload::DeleteCustomCol(p) => {
+                tracing::debug!(%op_id, id = %p.id, "dispatch custom column delete");
                 self.state.store.delete_custom_column(&p.id).await?;
                 let event = custom_col_event(
                     EventKind::Delete,

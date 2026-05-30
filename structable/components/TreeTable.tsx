@@ -392,7 +392,7 @@ export default function TreeTable({ tableId }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, bootstrapRetryKey]);
 
-  // ── Fetch repos (with abort to prevent race conditions) ───────────────────
+  // ── Fetch data rows (with abort to prevent race conditions) ───────────────
   useEffect(() => {
     if (!api) return;
     fetchAbortRef.current?.abort();
@@ -408,7 +408,7 @@ export default function TreeTable({ tableId }: Props) {
       sort: sort.colType ? `${sort.col}:${sort.dir}:${sort.colType}` : `${sort.col}:${sort.dir}`,
     });
     Object.entries(filters).forEach(([k, v]) => params.set(k, v));
-    api.fetchRepos(params, aborter.signal)
+    api.fetchDataRows(params, aborter.signal)
       .then((payload: PagedResponse) => {
         setRows(payload.data);
         setTotal(payload.total);
@@ -420,7 +420,7 @@ export default function TreeTable({ tableId }: Props) {
         if (err instanceof Error && err.name === 'AbortError') return;
         const msg = errMsg(err);
         setFetchError(msg);
-        toast.error(`Failed to load repos: ${msg}`, { id: 'fetch-repos-error' });
+        toast.error(`Failed to load rows: ${msg}`, { id: 'fetch-data-rows-error' });
         // Keep loading=true so ↓ indicator stays on; retry forever
         fetchRetryTimerRef.current = setTimeout(() => {
           fetchRetryTimerRef.current = null;
@@ -1200,7 +1200,7 @@ export default function TreeTable({ tableId }: Props) {
         </div>
       </div>
       <div className="table-note">
-        <span>{total.toLocaleString()} repos — page {page} of {totalPages}</span>
+        <span>{total.toLocaleString()} rows — page {page} of {totalPages}</span>
         <span style={{ marginLeft: '1rem' }}>
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
           {' '}

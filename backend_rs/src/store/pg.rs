@@ -377,7 +377,7 @@ impl DataStore for PgStore {
         Ok(())
     }
 
-    async fn list_repos(&self, params: &RowQuery) -> Result<PagedResponse> {
+    async fn list_data_rows(&self, params: &RowQuery) -> Result<PagedResponse> {
         let per_page = params.per_page.clamp(1, 200) as i64;
         let offset = (params.page.max(1) - 1) as i64 * per_page;
 

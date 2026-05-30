@@ -10,6 +10,7 @@
 
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { share, takeUntil } from 'rxjs/operators';
+import logger from '../utils/logger';
 
 // ── Proto-aligned event types (mirrors structable.proto ServerEvent) ──────────
 
@@ -59,7 +60,7 @@ interface WasmSyncClient {
   fetch_hidden_rows(): Promise<string>;
   fetch_hidden_columns(): Promise<string>;
   fetch_custom_columns(): Promise<string>;
-  fetch_repos(paramsJson: string): Promise<string>;
+  fetch_data_rows(paramsJson: string): Promise<string>;
 }
 
 interface WasmModule {
@@ -76,6 +77,7 @@ let _initPromise: Promise<SyncClient> | null = null;
 
 async function loadWasm(): Promise<WasmModule> {
   if (_wasm) return _wasm;
+  logger.info({ baseUrl: GRPC_BASE }, 'loading sync_core wasm');
   // wasm-pack --target web outputs sync_core.js + sync_core_bg.wasm into public/wasm/
   // Next.js serves public/ as static assets.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,6 +86,7 @@ async function loadWasm(): Promise<WasmModule> {
   // Without args it resolves sync_core_bg.wasm relative to the JS file URL.
   await mod.default();
   _wasm = mod as WasmModule;
+  logger.info('sync_core wasm loaded');
   return _wasm;
 }
 
@@ -107,12 +110,16 @@ export class SyncClient {
     const inner = new wasm.SyncClient(GRPC_BASE);
     const queueLength$ = new BehaviorSubject<number>(inner.queue_length());
 
-    inner.set_on_queue_change((count) => queueLength$.next(count));
-    inner.set_on_error((msg) => console.error('[sync_core]', msg));
+    inner.set_on_queue_change((count) => {
+      logger.debug({ count }, 'sync queue length changed');
+      queueLength$.next(count);
+    });
+    inner.set_on_error((msg) => logger.error({ msg }, 'sync_core error'));
 
     // Build a cold Observable that starts the gRPC Subscribe stream
     const rawEvents$ = new Observable<ServerEvent>((subscriber) => {
       const unsub = inner.subscribe((json: string) => {
+        logger.debug({ json }, 'sync event received');
         subscriber.next(JSON.parse(json) as ServerEvent);
       });
       return () => {
@@ -126,9 +133,13 @@ export class SyncClient {
 
     const client = new SyncClient(inner, events$, queueLength$);
     await inner.init();
+    logger.info({ queueLength: inner.queue_length() }, 'sync client initialized');
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => client.triggerFlush());
+      window.addEventListener('online', () => {
+        logger.info('browser online; triggering sync flush');
+        client.triggerFlush();
+      });
     }
 
     return client;
@@ -148,6 +159,7 @@ export class SyncClient {
   }
 
   triggerFlush(): void {
+    logger.debug({ queueLength: this.queueLength }, 'manual sync flush requested');
     this.inner.trigger_flush();
   }
 
@@ -191,11 +203,11 @@ export class SyncClient {
   async fetchHiddenColumns(): Promise<import('../types/table').ApiHiddenColumn[]> { return JSON.parse(await this.inner.fetch_hidden_columns()); }
   async fetchCustomColumns(): Promise<import('../types/table').ApiCustomColumn[]> { return JSON.parse(await this.inner.fetch_custom_columns()); }
 
-  async fetchRepos(params: URLSearchParams, _signal?: AbortSignal): Promise<import('../types/table').PagedResponse> {
+  async fetchDataRows(params: URLSearchParams, _signal?: AbortSignal): Promise<import('../types/table').PagedResponse> {
     const NUM_PARAMS = new Set(['page', 'per_page']);
     const obj: Record<string, string | number> = {};
     params.forEach((v, k) => { obj[k] = NUM_PARAMS.has(k) ? Number(v) : v; });
-    return JSON.parse(await this.inner.fetch_repos(JSON.stringify(obj)));
+    return JSON.parse(await this.inner.fetch_data_rows(JSON.stringify(obj)));
   }
 }
 
@@ -203,9 +215,11 @@ export class SyncClient {
 
 export function getSyncClient(): Promise<SyncClient> {
   if (!_initPromise) {
+    logger.debug('creating sync client singleton');
     _initPromise = SyncClient.create().catch((err) => {
       // Reset so a retry is possible after a transient failure
       _initPromise = null;
+      logger.error({ err }, 'sync client initialization failed');
       throw err;
     });
   }

@@ -21,6 +21,7 @@ pub mod proto {
 }
 
 use proto::{client_op::Payload as OpPayload, sync_client::SyncClient as GrpcSyncClient, *};
+use structable_logger as logger;
 use tonic_web_wasm_client::Client as WasmTransport;
 
 // ── Queued operation (stored in IDB) ──────────────────────────────────────────
@@ -295,8 +296,20 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
     {
         let mut g = inner.borrow_mut();
         if g.flushing || g.queue.is_empty() {
+            logger::debug(
+                "sync_core",
+                &format!(
+                    "flush skipped: flushing={} queue_len={}",
+                    g.flushing,
+                    g.queue.len()
+                ),
+            );
             return;
         }
+        logger::debug(
+            "sync_core",
+            &format!("flush started: queue_len={}", g.queue.len()),
+        );
         g.flushing = true;
     }
 
@@ -312,6 +325,10 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
 
         let Some(client_op) = op.clone().into_client_op() else {
             // Malformed op — drop it
+            logger::warn(
+                "sync_core",
+                &format!("dropping malformed op: op_id={} kind={}", op.op_id, op.kind),
+            );
             let mut g = inner.borrow_mut();
             g.queue.remove(0);
             g.notify_queue_change();
@@ -319,10 +336,21 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
         };
 
         let mut client = grpc_client(&base_url);
+        logger::debug(
+            "sync_core",
+            &format!(
+                "sending op: op_id={} kind={} retries={}",
+                op.op_id, op.kind, op.retries
+            ),
+        );
         match client.apply_op(tonic::Request::new(client_op)).await {
             Ok(resp) => {
                 let result = resp.into_inner();
                 if result.ok {
+                    logger::info(
+                        "sync_core",
+                        &format!("op acknowledged: op_id={} kind={}", op.op_id, op.kind),
+                    );
                     // Persist success: remove from IDB then memory
                     if let Some(db) = &db_ref {
                         idb_delete(db, &op.op_id).await;
@@ -337,6 +365,13 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
                     });
                     g.notify_event(&ack_json.to_string());
                 } else {
+                    logger::warn(
+                        "sync_core",
+                        &format!(
+                            "op rejected: op_id={} kind={} error={}",
+                            op.op_id, op.kind, result.error
+                        ),
+                    );
                     // 4xx-style rejection: drop and report
                     if let Some(db) = &db_ref {
                         idb_delete(db, &op.op_id).await;
@@ -350,11 +385,14 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
             }
             Err(status) => {
                 // Network error — log, back off and retry
-                web_sys::console::warn_1(&JsValue::from_str(&format!(
-                    "[sync_core] apply_op '{}' failed (attempt {}): {status}",
-                    op.op_id,
-                    op.retries + 1,
-                )));
+                logger::warn(
+                    "sync_core",
+                    &format!(
+                        "apply_op '{}' failed (attempt {}): {status}",
+                        op.op_id,
+                        op.retries + 1,
+                    ),
+                );
                 {
                     let mut g = inner.borrow_mut();
                     if let Some(first) = g.queue.first_mut() {
@@ -372,7 +410,14 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
         }
     }
 
-    inner.borrow_mut().flushing = false;
+    {
+        let mut g = inner.borrow_mut();
+        g.flushing = false;
+        logger::debug(
+            "sync_core",
+            &format!("flush finished: queue_len={}", g.queue.len()),
+        );
+    }
 }
 
 // ── Enqueue helper ─────────────────────────────────────────────────────────────
@@ -412,6 +457,15 @@ async fn enqueue(inner: Rc<RefCell<Inner>>, kind: &str, data: serde_json::Value)
             enqueued_at: js_sys::Date::now() as u64,
         };
         g.queue.push(op.clone());
+        logger::info(
+            "sync_core",
+            &format!(
+                "queued op: op_id={} kind={} queue_len={}",
+                op.op_id,
+                op.kind,
+                g.queue.len()
+            ),
+        );
         g.notify_queue_change();
         op
     };
@@ -420,6 +474,18 @@ async fn enqueue(inner: Rc<RefCell<Inner>>, kind: &str, data: serde_json::Value)
     let db = inner.borrow().db.clone();
     if let Some(db) = &db {
         idb_put(db, &op).await;
+        logger::debug(
+            "sync_core",
+            &format!("persisted queued op to idb: op_id={}", op.op_id),
+        );
+    } else {
+        logger::warn(
+            "sync_core",
+            &format!(
+                "queued op is memory-only until idb opens: op_id={}",
+                op.op_id
+            ),
+        );
     }
 
     // Kick off flush
@@ -438,6 +504,10 @@ pub struct SyncClient {
 impl SyncClient {
     #[wasm_bindgen(constructor)]
     pub fn new(base_url: String) -> SyncClient {
+        logger::info(
+            "sync_core",
+            &format!("creating sync client: base_url={base_url}"),
+        );
         SyncClient {
             inner: Rc::new(RefCell::new(Inner::new(base_url))),
         }
@@ -448,11 +518,13 @@ impl SyncClient {
     pub fn init(&self) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
+            logger::info("sync_core", "initializing sync client");
             match idb_open().await {
                 Ok(db) => {
                     let db = Rc::new(db);
                     let mut stored = idb_load_all(&db).await;
                     stored.sort_by_key(|o| o.seq);
+                    let stored_count = stored.len();
 
                     // Deduplicate: for each (kind, dedup_key) keep only the
                     // latest op by seq. Old builds used random op_ids so the
@@ -474,6 +546,10 @@ impl SyncClient {
                     for op in &stored {
                         if !kept.contains(op.op_id.as_str()) {
                             idb_delete(&db, &op.op_id).await;
+                            logger::debug(
+                                "sync_core",
+                                &format!("deleted stale duplicate op from idb: op_id={}", op.op_id),
+                            );
                         }
                     }
                     let deduped: Vec<QueuedOp> = keep_indices
@@ -496,12 +572,21 @@ impl SyncClient {
                     g.queue.sort_by_key(|o| o.seq);
                     g.next_seq = max_seq;
                     g.notify_queue_change();
+                    logger::info(
+                        "sync_core",
+                        &format!(
+                            "sync queue restored: stored={} active_queue={}",
+                            stored_count,
+                            g.queue.len()
+                        ),
+                    );
                 }
                 Err(e) => {
                     // IDB unavailable (private browsing etc.) — queue is memory-only
-                    web_sys::console::warn_1(&JsValue::from_str(&format!(
-                        "sync_core: IDB unavailable, queue is memory-only: {e:?}"
-                    )));
+                    logger::warn(
+                        "sync_core",
+                        &format!("IDB unavailable, queue is memory-only: {e:?}"),
+                    );
                 }
             }
             // Flush anything already in the queue
@@ -514,16 +599,19 @@ impl SyncClient {
     // ── Callbacks ────────────────────────────────────────────────────────────
 
     pub fn set_on_queue_change(&self, cb: js_sys::Function) {
+        logger::debug("sync_core", "registered queue change callback");
         self.inner.borrow_mut().on_queue_change = Some(cb);
     }
 
     pub fn set_on_error(&self, cb: js_sys::Function) {
+        logger::debug("sync_core", "registered error callback");
         self.inner.borrow_mut().on_error = Some(cb);
     }
 
     /// Register an event callback; called with a JSON string for each ServerEvent.
     /// Returns a `() => void` unsubscribe function.
     pub fn subscribe(&self, on_event: js_sys::Function) -> js_sys::Function {
+        logger::info("sync_core", "starting subscribe stream");
         self.inner.borrow_mut().on_event = Some(on_event);
 
         // Start the gRPC Subscribe stream in the background
@@ -538,25 +626,42 @@ impl SyncClient {
                 let req = tonic::Request::new(SubscribeRequest { client_id });
                 match client.subscribe(req).await {
                     Ok(response) => {
+                        logger::info("sync_core", "subscribe stream connected");
                         let mut stream = response.into_inner();
                         loop {
                             match stream.message().await {
                                 Ok(Some(event)) => {
                                     if let Ok(json) = serde_json::to_string(&event) {
+                                        logger::debug(
+                                            "sync_core",
+                                            &format!("received server event: {json}"),
+                                        );
                                         inner.borrow().notify_event(&json);
                                     }
                                 }
-                                Ok(None) => break, // stream ended
-                                Err(_) => break,   // stream error
+                                Ok(None) => {
+                                    logger::info("sync_core", "subscribe stream ended");
+                                    break;
+                                }
+                                Err(e) => {
+                                    logger::warn(
+                                        "sync_core",
+                                        &format!("subscribe stream error: {e}"),
+                                    );
+                                    break;
+                                }
                             }
                         }
                     }
-                    Err(_) => {}
+                    Err(e) => {
+                        logger::warn("sync_core", &format!("subscribe connection failed: {e}"));
+                    }
                 }
                 // Reconnect after 2s
                 TimeoutFuture::new(2_000).await;
                 // Stop if on_event was cleared
                 if inner.borrow().on_event.is_none() {
+                    logger::info("sync_core", "subscribe stream stopped");
                     break;
                 }
                 // After reconnect, flush any ops that accumulated while offline
@@ -574,6 +679,7 @@ impl SyncClient {
 
     /// Kick off a flush without awaiting it — safe to call from JS event handlers.
     pub fn trigger_flush(&self) {
+        logger::debug("sync_core", "manual flush triggered");
         let inner = Rc::clone(&self.inner);
         wasm_bindgen_futures::spawn_local(async move {
             do_flush(inner).await;
@@ -815,7 +921,7 @@ impl SyncClient {
         })
     }
 
-    pub fn fetch_repos(&self, params_json: String) -> js_sys::Promise {
+    pub fn fetch_data_rows(&self, params_json: String) -> js_sys::Promise {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             #[derive(Deserialize)]
@@ -835,6 +941,7 @@ impl SyncClient {
                 filters: p.filters,
             };
             let mut client = grpc_client(&base_url);
+            // Compatibility boundary: proto still calls these rows "repos".
             let resp = client
                 .list_repos(tonic::Request::new(req))
                 .await
