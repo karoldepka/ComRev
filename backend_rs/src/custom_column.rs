@@ -5,60 +5,82 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::repo::AppState;
+use crate::{error::db_err, repo::AppState};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CustomColumn {
-    pub id:             String,
-    pub name:           String,
-    pub label:          Option<String>,
-    pub description:    Option<String>,
-    pub expression:     Option<String>,
+    pub id: String,
+    pub name: String,
+    pub label: Option<String>,
+    pub description: Option<String>,
+    pub expression: Option<String>,
     pub position_after: Option<String>,
-    pub read_only:      bool,
-    pub types:          Vec<String>,
+    pub read_only: bool,
+    pub types: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCustomColumn {
-    pub id:             Option<String>,
-    pub name:           String,
-    pub label:          Option<String>,
-    pub description:    Option<String>,
-    pub expression:     Option<String>,
+    pub id: Option<String>,
+    pub name: String,
+    pub label: Option<String>,
+    pub description: Option<String>,
+    pub expression: Option<String>,
     pub position_after: Option<String>,
 }
 
 pub async fn list(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CustomColumn>>, (StatusCode, String)> {
-    state.store.list_custom_columns().await
+    state
+        .store
+        .list_custom_columns()
+        .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| db_err("custom_column", e))
 }
 
 pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateCustomColumn>,
 ) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
-    let CreateCustomColumn { id, name, label, description, expression, position_after } = body;
-    // Client should always provide a nanoid; server generates one only as fallback.
-    let id = id.filter(|s| !s.is_empty()).unwrap_or_else(|| nanoid::nanoid!());
+    let CreateCustomColumn {
+        id,
+        name,
+        label,
+        description,
+        expression,
+        position_after,
+    } = body;
+    // Client should always provide a nanoid.
+    let id = id
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing column id".to_string()))?;
 
-    let col = state.store.upsert_custom_column(
-        &id,
-        &name,
-        label.as_deref(),
-        description.as_deref(),
-        expression.as_deref(),
-        position_after.as_deref(),
-    )
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let col = state
+        .store
+        .upsert_custom_column(
+            &id,
+            &name,
+            label.as_deref(),
+            description.as_deref(),
+            expression.as_deref(),
+            position_after.as_deref(),
+        )
+        .await
+        .map_err(|e| db_err("custom_column", e))?;
 
-    state.store.append_ops_log("custom_column.create", serde_json::json!({
-        "id": col.id, "name": col.name,
-    }), None).await;
+    state
+        .store
+        .append_ops_log(
+            "custom_column.create",
+            serde_json::json!({
+                "id": col.id, "name": col.name,
+            }),
+            None,
+        )
+        .await
+        .map_err(|e| db_err("custom_column", e))?;
 
     Ok((StatusCode::CREATED, Json(col)))
 }
@@ -67,8 +89,19 @@ pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    state.store.delete_custom_column(&id).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    state.store.append_ops_log("custom_column.delete", serde_json::json!({ "id": id }), None).await;
+    state
+        .store
+        .delete_custom_column(&id)
+        .await
+        .map_err(|e| db_err("custom_column", e))?;
+    state
+        .store
+        .append_ops_log(
+            "custom_column.delete",
+            serde_json::json!({ "id": id }),
+            None,
+        )
+        .await
+        .map_err(|e| db_err("custom_column", e))?;
     Ok(StatusCode::NO_CONTENT)
 }

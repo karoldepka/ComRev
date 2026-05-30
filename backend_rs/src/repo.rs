@@ -1,19 +1,19 @@
 use axum::{
     extract::{Path, Query, State},
-    response::IntoResponse,
     http::StatusCode,
+    response::IntoResponse,
     Json,
 };
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::store::DataStore;
+use crate::{error::db_err, store::DataStore};
 
 // ─── App state ────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store:    Arc<dyn DataStore>,
+    pub store: Arc<dyn DataStore>,
     pub event_tx: crate::sync_service::EventTx,
 }
 
@@ -29,7 +29,9 @@ impl IntoResponse for ApiError {
 }
 
 impl<E: Into<anyhow::Error>> From<E> for ApiError {
-    fn from(e: E) -> Self { Self(e.into()) }
+    fn from(e: E) -> Self {
+        Self(e.into())
+    }
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ pub async fn list_repos(
 #[derive(Deserialize)]
 pub struct PatchCellValueBody {
     pub col_id: String,
-    pub value:  serde_json::Value,
+    pub value: serde_json::Value,
 }
 
 pub async fn patch_cell_value(
@@ -52,9 +54,10 @@ pub async fn patch_cell_value(
     Path((table_id, row_id)): Path<(String, String)>,
     Json(body): Json<PatchCellValueBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    state.store
+    state
+        .store
         .patch_row_value(&table_id, &row_id, &body.col_id, body.value)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| db_err("repo", e))?;
     Ok(StatusCode::NO_CONTENT)
 }

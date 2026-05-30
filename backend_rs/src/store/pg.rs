@@ -46,16 +46,17 @@ impl DataStore for PgStore {
         .await?)
     }
 
-    async fn upsert_flag(&self, key: &str, color: &str) -> Result<CellFlag> {
+    async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> Result<CellFlag> {
         Ok(sqlx::query_as::<_, CellFlag>(
-            "INSERT INTO cell_flags (key, color)
-             VALUES ($1, $2)
+            "INSERT INTO cell_flags (id, key, color)
+             VALUES ($1, $2, $3)
              ON CONFLICT (key) DO UPDATE
                SET color = EXCLUDED.color,
                    when_last_modified = NOW(),
                    modify_count = cell_flags.modify_count + 1
              RETURNING id::text, key, color",
         )
+        .bind(id)
         .bind(key)
         .bind(color)
         .fetch_one(&self.pool)
@@ -164,13 +165,14 @@ impl DataStore for PgStore {
         .await?)
     }
 
-    async fn add_hidden_row(&self, row_id: &str) -> Result<HiddenRow> {
+    async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<HiddenRow> {
         Ok(sqlx::query_as::<_, HiddenRow>(
-            "INSERT INTO hidden_rows (row_id)
-             VALUES ($1)
+            "INSERT INTO hidden_rows (id, row_id)
+             VALUES ($1, $2)
              ON CONFLICT (row_id) DO UPDATE SET row_id = EXCLUDED.row_id
              RETURNING id::text, row_id",
         )
+        .bind(id)
         .bind(row_id)
         .fetch_one(&self.pool)
         .await?)
@@ -194,13 +196,14 @@ impl DataStore for PgStore {
         .await?)
     }
 
-    async fn add_hidden_column(&self, column_id: &str) -> Result<HiddenColumn> {
+    async fn add_hidden_column(&self, id: &str, column_id: &str) -> Result<HiddenColumn> {
         Ok(sqlx::query_as::<_, HiddenColumn>(
-            "INSERT INTO hidden_columns (column_id)
-             VALUES ($1)
+            "INSERT INTO hidden_columns (id, column_id)
+             VALUES ($1, $2)
              ON CONFLICT (column_id) DO UPDATE SET column_id = EXCLUDED.column_id
              RETURNING id::text, column_id",
         )
+        .bind(id)
         .bind(column_id)
         .fetch_one(&self.pool)
         .await?)
@@ -295,7 +298,13 @@ impl DataStore for PgStore {
         .await?)
     }
 
-    async fn create_table(&self, id: &str, title: &str, description: Option<&str>, who_created: Option<&str>) -> Result<Table> {
+    async fn create_table(
+        &self,
+        id: &str,
+        title: &str,
+        description: Option<&str>,
+        who_created: Option<&str>,
+    ) -> Result<Table> {
         Ok(sqlx::query_as::<_, Table>(
             "INSERT INTO tables (id, title, description, who_created)
              VALUES ($1, $2, $3, $4)
@@ -306,7 +315,13 @@ impl DataStore for PgStore {
         .await?)
     }
 
-    async fn patch_table(&self, id: &str, title: Option<&str>, description: Option<&str>, who_last_modified: Option<&str>) -> Result<Table> {
+    async fn patch_table(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+        who_last_modified: Option<&str>,
+    ) -> Result<Table> {
         Ok(sqlx::query_as::<_, Table>(
             "UPDATE tables
              SET title = COALESCE($2, title),
@@ -324,13 +339,21 @@ impl DataStore for PgStore {
 
     async fn delete_table(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM tables WHERE id = $1")
-            .bind(id).execute(&self.pool).await?;
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     // ── Rows / items ──────────────────────────────────────────────────────────
 
-    async fn patch_row_value(&self, _table_id: &str, row_id: &str, col_id: &str, value: serde_json::Value) -> Result<()> {
+    async fn patch_row_value(
+        &self,
+        _table_id: &str,
+        row_id: &str,
+        col_id: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
         // Merge a single key into custom_values so concurrent edits to other keys are preserved.
         // TODO: use _table_id to route to the correct table once multi-table is supported.
         sqlx::query(
@@ -348,7 +371,7 @@ impl DataStore for PgStore {
 
     async fn list_repos(&self, params: &RowQuery) -> Result<PagedResponse> {
         let per_page = params.per_page.clamp(1, 200) as i64;
-        let offset   = (params.page.max(1) - 1) as i64 * per_page;
+        let offset = (params.page.max(1) - 1) as i64 * per_page;
 
         let total: i64 = {
             let mut qb = QueryBuilder::new("SELECT COUNT(*) FROM github_repos");
@@ -381,13 +404,23 @@ impl DataStore for PgStore {
                 .collect::<Result<_, _>>()?
         };
 
-        Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page })
+        Ok(PagedResponse {
+            data,
+            total,
+            page: params.page,
+            per_page: params.per_page,
+        })
     }
 
     // ── Ops log ───────────────────────────────────────────────────────────────
-
-    async fn append_ops_log(&self, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
+    async fn append_ops_log(
+        &self,
+        op: &str,
+        payload: serde_json::Value,
+        tx_id: Option<&str>,
+    ) -> Result<()> {
         crate::ops_log::append(&self.pool, op, payload, tx_id).await;
+        Ok(())
     }
 }
 
@@ -400,31 +433,51 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
     // Integer fields stored in custom_values JSONB.
     macro_rules! cv_int {
         ($key:literal, $min:expr, $max:expr) => {
-            if let Some(v) = $min { qb.push(concat!(" AND (custom_values->>'", $key, "')::bigint >= ")).push_bind(v); }
-            if let Some(v) = $max { qb.push(concat!(" AND (custom_values->>'", $key, "')::bigint <= ")).push_bind(v); }
+            if let Some(v) = $min {
+                qb.push(concat!(" AND (custom_values->>'", $key, "')::bigint >= "))
+                    .push_bind(v);
+            }
+            if let Some(v) = $max {
+                qb.push(concat!(" AND (custom_values->>'", $key, "')::bigint <= "))
+                    .push_bind(v);
+            }
         };
     }
 
     // Stars-diff windows nested under custom_values->'stars_diff'.
     macro_rules! cv_sdiff {
         ($window:literal, $min:expr, $max:expr) => {
-            if let Some(v) = $min { qb.push(concat!(" AND (custom_values->'stars_diff'->>'", $window, "')::bigint >= ")).push_bind(v); }
-            if let Some(v) = $max { qb.push(concat!(" AND (custom_values->'stars_diff'->>'", $window, "')::bigint <= ")).push_bind(v); }
+            if let Some(v) = $min {
+                qb.push(concat!(
+                    " AND (custom_values->'stars_diff'->>'",
+                    $window,
+                    "')::bigint >= "
+                ))
+                .push_bind(v);
+            }
+            if let Some(v) = $max {
+                qb.push(concat!(
+                    " AND (custom_values->'stars_diff'->>'",
+                    $window,
+                    "')::bigint <= "
+                ))
+                .push_bind(v);
+            }
         };
     }
 
-    cv_int!("stars",     p.stars_min,     p.stars_max);
-    cv_int!("forks",     p.forks_min,     p.forks_max);
+    cv_int!("stars", p.stars_min, p.stars_max);
+    cv_int!("forks", p.forks_min, p.forks_max);
     cv_int!("open_issues", p.open_issues_min, p.open_issues_max);
-    cv_int!("size",      p.size_min,      p.size_max);
+    cv_int!("size", p.size_min, p.size_max);
     cv_int!("stars_now", p.stars_now_min, p.stars_now_max);
 
-    cv_sdiff!("6h",  p.stars_diff_6h_min,  p.stars_diff_6h_max);
+    cv_sdiff!("6h", p.stars_diff_6h_min, p.stars_diff_6h_max);
     cv_sdiff!("12h", p.stars_diff_12h_min, p.stars_diff_12h_max);
     cv_sdiff!("24h", p.stars_diff_24h_min, p.stars_diff_24h_max);
     cv_sdiff!("48h", p.stars_diff_48h_min, p.stars_diff_48h_max);
-    cv_sdiff!("5d",  p.stars_diff_5d_min,  p.stars_diff_5d_max);
-    cv_sdiff!("7d",  p.stars_diff_7d_min,  p.stars_diff_7d_max);
+    cv_sdiff!("5d", p.stars_diff_5d_min, p.stars_diff_5d_max);
+    cv_sdiff!("7d", p.stars_diff_7d_min, p.stars_diff_7d_max);
     cv_sdiff!("10d", p.stars_diff_10d_min, p.stars_diff_10d_max);
     cv_sdiff!("14d", p.stars_diff_14d_min, p.stars_diff_14d_max);
     cv_sdiff!("20d", p.stars_diff_20d_min, p.stars_diff_20d_max);
@@ -434,25 +487,39 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
         ($key:literal, $opt:expr) => {
             if let Some(ref csv) = $opt {
                 let vals: Vec<String> = csv
-                    .split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect();
+                    .split(',')
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 if !vals.is_empty() {
-                    qb.push(concat!(" AND custom_values->>'", $key, "' = ANY(")).push_bind(vals).push(")");
+                    qb.push(concat!(" AND custom_values->>'", $key, "' = ANY("))
+                        .push_bind(vals)
+                        .push(")");
                 }
             }
         };
     }
 
-    cv_text_in!("language",    p.language);
-    cv_text_in!("license",     p.license);
-    cv_text_in!("visibility",  p.visibility);
+    cv_text_in!("language", p.language);
+    cv_text_in!("license", p.license);
+    cv_text_in!("visibility", p.visibility);
     cv_text_in!("owner_login", p.owner_login);
 
-    if let Some(v) = p.archived { qb.push(" AND (custom_values->>'archived')::boolean = ").push_bind(v); }
-    if let Some(v) = p.disabled { qb.push(" AND (custom_values->>'disabled')::boolean = ").push_bind(v); }
+    if let Some(v) = p.archived {
+        qb.push(" AND (custom_values->>'archived')::boolean = ")
+            .push_bind(v);
+    }
+    if let Some(v) = p.disabled {
+        qb.push(" AND (custom_values->>'disabled')::boolean = ")
+            .push_bind(v);
+    }
 
     if let Some(ref csv) = p.topics {
         let vals: Vec<String> = csv
-            .split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect();
+            .split(',')
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect();
         if !vals.is_empty() {
             // ?| checks if any of the text values exist as elements in the JSONB array.
             qb.push(" AND custom_values->'topics' ?| ").push_bind(vals);
@@ -461,7 +528,10 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
 
     if let Some(ref csv) = p.topics_like {
         let patterns: Vec<String> = csv
-            .split(',').map(|s| format!("%{}%", s.trim())).filter(|s| s != "%%").collect();
+            .split(',')
+            .map(|s| format!("%{}%", s.trim()))
+            .filter(|s| s != "%%")
+            .collect();
         if !patterns.is_empty() {
             qb.push(" AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(custom_values->'topics') _t WHERE _t ILIKE ANY(")
               .push_bind(patterns)
@@ -469,18 +539,30 @@ fn push_filters<'q>(qb: &mut QueryBuilder<'q, Postgres>, p: &'q RowQuery) {
         }
     }
 
-    if let Some(v) = p.pushed_after   { qb.push(" AND (custom_values->>'pushed_at')::timestamptz >= ").push_bind(v); }
-    if let Some(v) = p.pushed_before  { qb.push(" AND (custom_values->>'pushed_at')::timestamptz <= ").push_bind(v); }
-    if let Some(v) = p.created_after  { qb.push(" AND (custom_values->>'github_created_at')::timestamptz >= ").push_bind(v); }
-    if let Some(v) = p.created_before { qb.push(" AND (custom_values->>'github_created_at')::timestamptz <= ").push_bind(v); }
+    if let Some(v) = p.pushed_after {
+        qb.push(" AND (custom_values->>'pushed_at')::timestamptz >= ")
+            .push_bind(v);
+    }
+    if let Some(v) = p.pushed_before {
+        qb.push(" AND (custom_values->>'pushed_at')::timestamptz <= ")
+            .push_bind(v);
+    }
+    if let Some(v) = p.created_after {
+        qb.push(" AND (custom_values->>'github_created_at')::timestamptz >= ")
+            .push_bind(v);
+    }
+    if let Some(v) = p.created_before {
+        qb.push(" AND (custom_values->>'github_created_at')::timestamptz <= ")
+            .push_bind(v);
+    }
 
     if let Some(ref q) = p.q {
         let pat = format!("%{q}%");
         qb.push(" AND (custom_values->>'name' ILIKE ")
-          .push_bind(pat.clone())
-          .push(" OR custom_values->>'description' ILIKE ")
-          .push_bind(pat)
-          .push(")");
+            .push_bind(pat.clone())
+            .push(" OR custom_values->>'description' ILIKE ")
+            .push_bind(pat)
+            .push(")");
     }
 }
 
@@ -489,7 +571,9 @@ fn col_to_sort_expr(col: &str) -> Option<String> {
         return None;
     }
     Some(match col {
-        "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => col.to_string(),
+        "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => {
+            col.to_string()
+        }
         _ => format!("custom_values->>'{}'", col.replace('\'', "''")),
     })
 }
@@ -500,10 +584,16 @@ fn validated_sort(sort: Option<&str>) -> String {
         .split(',')
         .filter_map(|s| {
             let s = s.trim();
-            if s.is_empty() { return None; }
+            if s.is_empty() {
+                return None;
+            }
             let (col, dir) = s.split_once(':').unwrap_or((s, "desc"));
             let expr = col_to_sort_expr(col)?;
-            let dir = if dir.eq_ignore_ascii_case("asc") { "ASC" } else { "DESC" };
+            let dir = if dir.eq_ignore_ascii_case("asc") {
+                "ASC"
+            } else {
+                "DESC"
+            };
             Some(format!("{expr} {dir} NULLS LAST"))
         })
         .collect();

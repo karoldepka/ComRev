@@ -20,35 +20,42 @@ pub mod proto {
     tonic::include_proto!("structable");
 }
 
-use proto::{
-    client_op::Payload as OpPayload,
-    sync_client::SyncClient as GrpcSyncClient,
-    *,
-};
+use proto::{client_op::Payload as OpPayload, sync_client::SyncClient as GrpcSyncClient, *};
 use tonic_web_wasm_client::Client as WasmTransport;
 
 // ── Queued operation (stored in IDB) ──────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct QueuedOp {
-    op_id:   String,
-    seq:     u64,
+    op_id: String,
+    seq: u64,
     retries: u32,
     // Discriminant matching ClientOp oneof payload field names
-    kind:    String,
+    kind: String,
     // JSON-encoded payload for this specific op type
-    data:    serde_json::Value,
+    data: serde_json::Value,
+    // Milliseconds since Unix epoch; 0 = unknown (ops from older builds without this field)
+    #[serde(default)]
+    enqueued_at: u64,
 }
 
 fn describe_op(kind: &str, data: &serde_json::Value) -> String {
     let s = |key: &str| data[key].as_str().unwrap_or("").to_string();
-    let i = |key: &str| data[key].as_i64().map(|n| n.to_string()).unwrap_or_default();
+    let i = |key: &str| {
+        data[key]
+            .as_i64()
+            .map(|n| n.to_string())
+            .unwrap_or_default()
+    };
     match kind {
         "upsert_flag" => {
             let color = s("color");
-            let key   = s("key");
-            if color.is_empty() { format!("Set flag [{key}]") }
-            else { format!("Set {color} flag [{key}]") }
+            let key = s("key");
+            if color.is_empty() {
+                format!("Set flag [{key}]")
+            } else {
+                format!("Set {color} flag [{key}]")
+            }
         }
         "delete_flag" => format!("Remove flag [{}]", s("key")),
         "upsert_remark" => {
@@ -59,7 +66,7 @@ fn describe_op(kind: &str, data: &serde_json::Value) -> String {
             format!("Save {kind}: \"{preview}{ellipsis}\"")
         }
         "delete_remark" => "Delete remark".to_string(),
-        "add_hidden_row"    => format!("Hide row #{}", i("repo_id")),
+        "add_hidden_row" => format!("Hide row #{}", i("repo_id")),
         "remove_hidden_row" => format!("Unhide row #{}", i("repo_id")),
         "add_hidden_col" => {
             let col = s("column_id");
@@ -71,10 +78,13 @@ fn describe_op(kind: &str, data: &serde_json::Value) -> String {
         }
         "create_custom_col" => {
             let label = s("label");
-            let name  = s("name");
+            let name = s("name");
             let display = if !label.is_empty() { &label } else { &name };
-            if display.is_empty() { "Create column".to_string() }
-            else { format!("Create column \"{display}\"") }
+            if display.is_empty() {
+                "Create column".to_string()
+            } else {
+                format!("Create column \"{display}\"")
+            }
         }
         "delete_custom_col" => "Delete column".to_string(),
         _ => kind.to_string(),
@@ -82,51 +92,76 @@ fn describe_op(kind: &str, data: &serde_json::Value) -> String {
 }
 
 impl QueuedOp {
+    fn record_id(&self) -> String {
+        self.data["id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| {
+                self.op_id
+                    .rsplit(':')
+                    .next()
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or(&self.op_id)
+                    .to_string()
+            })
+    }
+
     fn into_client_op(self) -> Option<ClientOp> {
         let payload = match self.kind.as_str() {
             "upsert_flag" => Some(OpPayload::UpsertFlag(UpsertFlagOp {
-                key:   self.data["key"].as_str().unwrap_or("").to_string(),
+                id: self.record_id(),
+                key: self.data["key"].as_str().unwrap_or("").to_string(),
                 color: self.data["color"].as_str().unwrap_or("").to_string(),
             })),
             "delete_flag" => Some(OpPayload::DeleteFlag(DeleteFlagOp {
                 key: self.data["key"].as_str().unwrap_or("").to_string(),
             })),
             "upsert_remark" => Some(OpPayload::UpsertRemark(UpsertRemarkOp {
-                id:   self.data["id"].as_str().unwrap_or("").to_string(),
+                id: self.data["id"].as_str().unwrap_or("").to_string(),
                 body: self.data["body"].as_str().unwrap_or("").to_string(),
                 kind: self.data["kind"].as_str().unwrap_or("note").to_string(),
                 targets: self.data["targets"]
                     .as_array()
-                    .map(|arr| arr.iter().filter_map(|t| {
-                        Some(RemarkTarget {
-                            repo_id:   t["repo_id"].as_i64().unwrap_or(0),
-                            column_id: t["column_id"].as_str()?.to_string(),
-                        })
-                    }).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|t| {
+                                Some(RemarkTarget {
+                                    repo_id: t["repo_id"].as_i64().unwrap_or(0),
+                                    column_id: t["column_id"].as_str()?.to_string(),
+                                })
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default(),
             })),
             "delete_remark" => Some(OpPayload::DeleteRemark(DeleteRemarkOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
             })),
             "add_hidden_row" => Some(OpPayload::AddHiddenRow(AddHiddenRowOp {
+                id: self.record_id(),
                 repo_id: self.data["repo_id"].as_i64().unwrap_or(0),
             })),
             "remove_hidden_row" => Some(OpPayload::RemoveHiddenRow(RemoveHiddenRowOp {
                 repo_id: self.data["repo_id"].as_i64().unwrap_or(0),
             })),
             "add_hidden_col" => Some(OpPayload::AddHiddenCol(AddHiddenColumnOp {
+                id: self.record_id(),
                 column_id: self.data["column_id"].as_str().unwrap_or("").to_string(),
             })),
             "remove_hidden_col" => Some(OpPayload::RemoveHiddenCol(RemoveHiddenColumnOp {
                 column_id: self.data["column_id"].as_str().unwrap_or("").to_string(),
             })),
             "create_custom_col" => Some(OpPayload::CreateCustomCol(CreateCustomColOp {
-                id:             self.data["id"].as_str().unwrap_or("").to_string(),
-                name:           self.data["name"].as_str().unwrap_or("").to_string(),
-                label:          self.data["label"].as_str().unwrap_or("").to_string(),
-                expression:     self.data["expression"].as_str().unwrap_or("").to_string(),
-                position_after: self.data["position_after"].as_str().unwrap_or("").to_string(),
-                description:    self.data["description"].as_str().unwrap_or("").to_string(),
+                id: self.data["id"].as_str().unwrap_or("").to_string(),
+                name: self.data["name"].as_str().unwrap_or("").to_string(),
+                label: self.data["label"].as_str().unwrap_or("").to_string(),
+                expression: self.data["expression"].as_str().unwrap_or("").to_string(),
+                position_after: self.data["position_after"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                description: self.data["description"].as_str().unwrap_or("").to_string(),
             })),
             "delete_custom_col" => Some(OpPayload::DeleteCustomCol(DeleteCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
@@ -135,7 +170,7 @@ impl QueuedOp {
         }?;
         Some(ClientOp {
             op_id: self.op_id,
-            seq:   self.seq,
+            seq: self.seq,
             payload: Some(payload),
         })
     }
@@ -144,14 +179,14 @@ impl QueuedOp {
 // ── Inner state ────────────────────────────────────────────────────────────────
 
 struct Inner {
-    base_url:        String,
-    queue:           Vec<QueuedOp>,
-    flushing:        bool,
-    db:              Option<Rc<Rexie>>,
+    base_url: String,
+    queue: Vec<QueuedOp>,
+    flushing: bool,
+    db: Option<Rc<Rexie>>,
     on_queue_change: Option<js_sys::Function>,
-    on_error:        Option<js_sys::Function>,
-    on_event:        Option<js_sys::Function>,
-    next_seq:        u64,
+    on_error: Option<js_sys::Function>,
+    on_event: Option<js_sys::Function>,
+    next_seq: u64,
 }
 
 impl Inner {
@@ -189,7 +224,7 @@ impl Inner {
 
 // ── IDB helpers ────────────────────────────────────────────────────────────────
 
-const IDB_NAME:  &str = "structable_sync";
+const IDB_NAME: &str = "structable_sync";
 const IDB_STORE: &str = "ops";
 
 async fn idb_open() -> Result<Rexie, rexie::Error> {
@@ -313,8 +348,13 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
                     g.notify_queue_change();
                 }
             }
-            Err(_status) => {
-                // Network error — back off and retry
+            Err(status) => {
+                // Network error — log, back off and retry
+                web_sys::console::warn_1(&JsValue::from_str(&format!(
+                    "[sync_core] apply_op '{}' failed (attempt {}): {status}",
+                    op.op_id,
+                    op.retries + 1,
+                )));
                 {
                     let mut g = inner.borrow_mut();
                     if let Some(first) = g.queue.first_mut() {
@@ -337,17 +377,40 @@ async fn do_flush(inner: Rc<RefCell<Inner>>) {
 
 // ── Enqueue helper ─────────────────────────────────────────────────────────────
 
+fn dedup_val(data: &serde_json::Value, fallback: &str) -> String {
+    if let Some(s) = data.get("id").and_then(|v| v.as_str()) {
+        return s.to_string();
+    }
+    if let Some(s) = data.get("key").and_then(|v| v.as_str()) {
+        return s.to_string();
+    }
+    if let Some(s) = data.get("column_id").and_then(|v| v.as_str()) {
+        return s.to_string();
+    }
+    if let Some(n) = data.get("repo_id").and_then(|v| v.as_i64()) {
+        return n.to_string();
+    }
+    fallback.to_string()
+}
+
 async fn enqueue(inner: Rc<RefCell<Inner>>, kind: &str, data: serde_json::Value) -> String {
     let op_id = nanoid::nanoid!();
     let op = {
         let mut g = inner.borrow_mut();
         // Replace any existing op with same logical id (idempotent re-enqueue)
-        let logical_id = format!("{kind}:{}", data.get("id").or(data.get("key")).and_then(|v| v.as_str()).unwrap_or(&op_id));
+        let logical_id = format!("{kind}:{}", dedup_val(&data, &op_id));
         g.queue.retain(|q| q.op_id != logical_id);
 
         let seq = g.next_seq;
         g.next_seq += 1;
-        let op = QueuedOp { op_id: logical_id.clone(), seq, retries: 0, kind: kind.to_string(), data };
+        let op = QueuedOp {
+            op_id: logical_id.clone(),
+            seq,
+            retries: 0,
+            kind: kind.to_string(),
+            data,
+            enqueued_at: js_sys::Date::now() as u64,
+        };
         g.queue.push(op.clone());
         g.notify_queue_change();
         op
@@ -388,14 +451,43 @@ impl SyncClient {
             match idb_open().await {
                 Ok(db) => {
                     let db = Rc::new(db);
-                    let stored = idb_load_all(&db).await;
+                    let mut stored = idb_load_all(&db).await;
+                    stored.sort_by_key(|o| o.seq);
+
+                    // Deduplicate: for each (kind, dedup_key) keep only the
+                    // latest op by seq. Old builds used random op_ids so the
+                    // same logical op could appear multiple times in IDB.
+                    let mut seen: std::collections::HashMap<String, usize> =
+                        std::collections::HashMap::new();
+                    for (i, op) in stored.iter().enumerate() {
+                        let key = format!("{}:{}", op.kind, dedup_val(&op.data, &op.op_id));
+                        seen.insert(key, i); // last write wins (highest seq)
+                    }
+                    let mut keep_indices: Vec<usize> = seen.values().copied().collect();
+                    keep_indices.sort_unstable();
+                    let kept: std::collections::HashSet<&str> = keep_indices
+                        .iter()
+                        .map(|&i| stored[i].op_id.as_str())
+                        .collect();
+
+                    // Delete stale duplicates from IDB asynchronously
+                    for op in &stored {
+                        if !kept.contains(op.op_id.as_str()) {
+                            idb_delete(&db, &op.op_id).await;
+                        }
+                    }
+                    let deduped: Vec<QueuedOp> = keep_indices
+                        .into_iter()
+                        .map(|i| stored[i].clone())
+                        .collect();
+
                     let mut g = inner.borrow_mut();
                     g.db = Some(db);
                     // Merge stored ops that are not already in memory
                     let in_memory_ids: std::collections::HashSet<_> =
                         g.queue.iter().map(|o| o.op_id.clone()).collect();
                     let mut max_seq = g.next_seq;
-                    for op in stored {
+                    for op in deduped {
                         if !in_memory_ids.contains(&op.op_id) {
                             max_seq = max_seq.max(op.seq + 1);
                             g.queue.push(op);
@@ -407,9 +499,9 @@ impl SyncClient {
                 }
                 Err(e) => {
                     // IDB unavailable (private browsing etc.) — queue is memory-only
-                    web_sys::console::warn_1(&JsValue::from_str(
-                        &format!("sync_core: IDB unavailable, queue is memory-only: {e:?}"),
-                    ));
+                    web_sys::console::warn_1(&JsValue::from_str(&format!(
+                        "sync_core: IDB unavailable, queue is memory-only: {e:?}"
+                    )));
                 }
             }
             // Flush anything already in the queue
@@ -467,6 +559,8 @@ impl SyncClient {
                 if inner.borrow().on_event.is_none() {
                     break;
                 }
+                // After reconnect, flush any ops that accumulated while offline
+                do_flush(Rc::clone(&inner)).await;
             }
         });
 
@@ -478,15 +572,28 @@ impl SyncClient {
         self.inner.borrow().queue.len() as u32
     }
 
+    /// Kick off a flush without awaiting it — safe to call from JS event handlers.
+    pub fn trigger_flush(&self) {
+        let inner = Rc::clone(&self.inner);
+        wasm_bindgen_futures::spawn_local(async move {
+            do_flush(inner).await;
+        });
+    }
+
     /// Returns a JSON string: `[{ "id": "…", "description": "…" }, …]`
     pub fn get_queue_summary(&self) -> String {
         let g = self.inner.borrow();
-        let items: Vec<serde_json::Value> = g.queue.iter().map(|op| {
-            serde_json::json!({
-                "id": op.op_id,
-                "description": describe_op(&op.kind, &op.data),
+        let items: Vec<serde_json::Value> = g
+            .queue
+            .iter()
+            .map(|op| {
+                serde_json::json!({
+                    "id": op.op_id,
+                    "description": describe_op(&op.kind, &op.data),
+                    "enqueued_at": op.enqueued_at,
+                })
             })
-        }).collect();
+            .collect();
         serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string())
     }
 
@@ -495,7 +602,14 @@ impl SyncClient {
     pub fn upsert_flag(&self, key: String, color: String) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
-            enqueue(inner, "upsert_flag", serde_json::json!({ "key": key, "color": color })).await;
+            enqueue(
+                inner,
+                "upsert_flag",
+                serde_json::json!({
+                    "id": nanoid::nanoid!(), "key": key, "color": color,
+                }),
+            )
+            .await;
             Ok(JsValue::UNDEFINED)
         })
     }
@@ -525,9 +639,14 @@ impl SyncClient {
             };
             let targets: serde_json::Value =
                 serde_json::from_str(&targets_json).unwrap_or(serde_json::Value::Array(vec![]));
-            enqueue(inner, "upsert_remark", serde_json::json!({
-                "id": id, "kind": kind, "body": body, "targets": targets,
-            })).await;
+            enqueue(
+                inner,
+                "upsert_remark",
+                serde_json::json!({
+                    "id": id, "kind": kind, "body": body, "targets": targets,
+                }),
+            )
+            .await;
             Ok(JsValue::from_str(&id))
         })
     }
@@ -543,7 +662,14 @@ impl SyncClient {
     pub fn add_hidden_row(&self, repo_id: f64) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
-            enqueue(inner, "add_hidden_row", serde_json::json!({ "repo_id": repo_id as i64 })).await;
+            enqueue(
+                inner,
+                "add_hidden_row",
+                serde_json::json!({
+                    "id": nanoid::nanoid!(), "repo_id": repo_id as i64,
+                }),
+            )
+            .await;
             Ok(JsValue::UNDEFINED)
         })
     }
@@ -551,7 +677,12 @@ impl SyncClient {
     pub fn remove_hidden_row(&self, repo_id: f64) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
-            enqueue(inner, "remove_hidden_row", serde_json::json!({ "repo_id": repo_id as i64 })).await;
+            enqueue(
+                inner,
+                "remove_hidden_row",
+                serde_json::json!({ "repo_id": repo_id as i64 }),
+            )
+            .await;
             Ok(JsValue::UNDEFINED)
         })
     }
@@ -559,7 +690,14 @@ impl SyncClient {
     pub fn add_hidden_column(&self, column_id: String) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
-            enqueue(inner, "add_hidden_col", serde_json::json!({ "column_id": column_id })).await;
+            enqueue(
+                inner,
+                "add_hidden_col",
+                serde_json::json!({
+                    "id": nanoid::nanoid!(), "column_id": column_id,
+                }),
+            )
+            .await;
             Ok(JsValue::UNDEFINED)
         })
     }
@@ -567,7 +705,12 @@ impl SyncClient {
     pub fn remove_hidden_column(&self, column_id: String) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
-            enqueue(inner, "remove_hidden_col", serde_json::json!({ "column_id": column_id })).await;
+            enqueue(
+                inner,
+                "remove_hidden_col",
+                serde_json::json!({ "column_id": column_id }),
+            )
+            .await;
             Ok(JsValue::UNDEFINED)
         })
     }
@@ -576,9 +719,14 @@ impl SyncClient {
     pub fn create_custom_column(&self, payload_json: String) -> js_sys::Promise {
         let inner = Rc::clone(&self.inner);
         future_to_promise(async move {
-            let mut data: serde_json::Value =
-                serde_json::from_str(&payload_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
-            if data.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+            let mut data: serde_json::Value = serde_json::from_str(&payload_json)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            if data
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .is_empty()
+            {
                 data["id"] = serde_json::Value::String(nanoid::nanoid!());
             }
             let id = data["id"].as_str().unwrap_or("").to_string();
@@ -601,7 +749,9 @@ impl SyncClient {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
-            let resp = client.list_flags(tonic::Request::new(ListRequest {})).await
+            let resp = client
+                .list_flags(tonic::Request::new(ListRequest {}))
+                .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().flags)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -613,7 +763,9 @@ impl SyncClient {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
-            let resp = client.list_remarks(tonic::Request::new(ListRequest {})).await
+            let resp = client
+                .list_remarks(tonic::Request::new(ListRequest {}))
+                .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().remarks)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -625,7 +777,9 @@ impl SyncClient {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
-            let resp = client.list_hidden_rows(tonic::Request::new(ListRequest {})).await
+            let resp = client
+                .list_hidden_rows(tonic::Request::new(ListRequest {}))
+                .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().rows)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -637,7 +791,9 @@ impl SyncClient {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
-            let resp = client.list_hidden_columns(tonic::Request::new(ListRequest {})).await
+            let resp = client
+                .list_hidden_columns(tonic::Request::new(ListRequest {}))
+                .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().cols)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -649,7 +805,9 @@ impl SyncClient {
         let base_url = self.inner.borrow().base_url.clone();
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
-            let resp = client.list_custom_columns(tonic::Request::new(ListRequest {})).await
+            let resp = client
+                .list_custom_columns(tonic::Request::new(ListRequest {}))
+                .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().cols)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -662,22 +820,24 @@ impl SyncClient {
         future_to_promise(async move {
             #[derive(Deserialize)]
             struct Params {
-                page:     Option<i32>,
+                page: Option<i32>,
                 per_page: Option<i32>,
-                sort:     Option<String>,
+                sort: Option<String>,
                 #[serde(flatten)]
-                filters:  std::collections::HashMap<String, String>,
+                filters: std::collections::HashMap<String, String>,
             }
             let p: Params = serde_json::from_str(&params_json)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let req = ListReposRequest {
-                page:     p.page.unwrap_or(1),
+                page: p.page.unwrap_or(1),
                 per_page: p.per_page.unwrap_or(50),
-                sort:     p.sort.unwrap_or_else(|| "when_created:desc".into()),
-                filters:  p.filters,
+                sort: p.sort.unwrap_or_else(|| "when_created:desc".into()),
+                filters: p.filters,
             };
             let mut client = grpc_client(&base_url);
-            let resp = client.list_repos(tonic::Request::new(req)).await
+            let resp = client
+                .list_repos(tonic::Request::new(req))
+                .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner())
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -693,8 +853,8 @@ impl serde::Serialize for Flag {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("Flag", 3)?;
-        st.serialize_field("id",    &self.id)?;
-        st.serialize_field("key",   &self.key)?;
+        st.serialize_field("id", &self.id)?;
+        st.serialize_field("key", &self.key)?;
         st.serialize_field("color", &self.color)?;
         st.end()
     }
@@ -704,7 +864,7 @@ impl serde::Serialize for RemarkTarget {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("RemarkTarget", 2)?;
-        st.serialize_field("repo_id",   &self.repo_id)?;
+        st.serialize_field("repo_id", &self.repo_id)?;
         st.serialize_field("column_id", &self.column_id)?;
         st.end()
     }
@@ -714,12 +874,12 @@ impl serde::Serialize for Remark {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("Remark", 6)?;
-        st.serialize_field("id",          &self.id)?;
-        st.serialize_field("body",        &self.body)?;
-        st.serialize_field("kind",        &self.kind)?;
-        st.serialize_field("is_private",  &self.is_private)?;
+        st.serialize_field("id", &self.id)?;
+        st.serialize_field("body", &self.body)?;
+        st.serialize_field("kind", &self.kind)?;
+        st.serialize_field("is_private", &self.is_private)?;
         st.serialize_field("resolved_at", &self.resolved_at)?;
-        st.serialize_field("targets",     &self.targets)?;
+        st.serialize_field("targets", &self.targets)?;
         st.end()
     }
 }
@@ -728,7 +888,7 @@ impl serde::Serialize for HiddenRow {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("HiddenRow", 2)?;
-        st.serialize_field("id",      &self.id)?;
+        st.serialize_field("id", &self.id)?;
         st.serialize_field("repo_id", &self.repo_id)?;
         st.end()
     }
@@ -738,7 +898,7 @@ impl serde::Serialize for HiddenCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("HiddenCol", 2)?;
-        st.serialize_field("id",        &self.id)?;
+        st.serialize_field("id", &self.id)?;
         st.serialize_field("column_id", &self.column_id)?;
         st.end()
     }
@@ -748,15 +908,15 @@ impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("CustomCol", 9)?;
-        st.serialize_field("id",             &self.id)?;
-        st.serialize_field("name",           &self.name)?;
-        st.serialize_field("label",          &self.label)?;
-        st.serialize_field("expression",     &self.expression)?;
+        st.serialize_field("id", &self.id)?;
+        st.serialize_field("name", &self.name)?;
+        st.serialize_field("label", &self.label)?;
+        st.serialize_field("expression", &self.expression)?;
         st.serialize_field("position_after", &self.position_after)?;
-        st.serialize_field("description",    &self.description)?;
-        st.serialize_field("read_only",      &self.read_only)?;
-        st.serialize_field("readOnly",       &self.read_only)?;
-        st.serialize_field("types",          &self.types)?;
+        st.serialize_field("description", &self.description)?;
+        st.serialize_field("read_only", &self.read_only)?;
+        st.serialize_field("readOnly", &self.read_only)?;
+        st.serialize_field("types", &self.types)?;
         st.end()
     }
 }
@@ -767,62 +927,83 @@ impl serde::Serialize for ServerEvent {
         let mut map = s.serialize_map(Some(1))?;
         match &self.payload {
             Some(server_event::Payload::Ack(v)) => {
-                map.serialize_entry("ack", &serde_json::json!({
-                    "op_id": v.op_id,
-                    "response": v.response,
-                }))?;
+                map.serialize_entry(
+                    "ack",
+                    &serde_json::json!({
+                        "op_id": v.op_id,
+                        "response": v.response,
+                    }),
+                )?;
             }
             Some(server_event::Payload::Error(v)) => {
-                map.serialize_entry("error", &serde_json::json!({
-                    "op_id": v.op_id, "message": v.message,
-                }))?;
+                map.serialize_entry(
+                    "error",
+                    &serde_json::json!({
+                        "op_id": v.op_id, "message": v.message,
+                    }),
+                )?;
             }
             Some(server_event::Payload::Flag(v)) => {
-                map.serialize_entry("flag", &serde_json::json!({
-                    "kind": v.kind,
-                    "data": v.data.as_ref().map(|d| serde_json::json!({
-                        "id": d.id, "key": d.key, "color": d.color,
-                    })),
-                }))?;
+                map.serialize_entry(
+                    "flag",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "id": d.id, "key": d.key, "color": d.color,
+                        })),
+                    }),
+                )?;
             }
             Some(server_event::Payload::Remark(v)) => {
-                map.serialize_entry("remark", &serde_json::json!({
-                    "kind": v.kind,
-                    "data": v.data.as_ref().map(|d| serde_json::json!({
-                        "id": d.id, "body": d.body, "kind": d.kind,
-                        "is_private": d.is_private, "resolved_at": d.resolved_at,
-                        "targets": d.targets.iter().map(|t| serde_json::json!({
-                            "repo_id": t.repo_id, "column_id": t.column_id,
-                        })).collect::<Vec<_>>(),
-                    })),
-                }))?;
+                map.serialize_entry(
+                    "remark",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "id": d.id, "body": d.body, "kind": d.kind,
+                            "is_private": d.is_private, "resolved_at": d.resolved_at,
+                            "targets": d.targets.iter().map(|t| serde_json::json!({
+                                "repo_id": t.repo_id, "column_id": t.column_id,
+                            })).collect::<Vec<_>>(),
+                        })),
+                    }),
+                )?;
             }
             Some(server_event::Payload::HiddenRow(v)) => {
-                map.serialize_entry("hidden_row", &serde_json::json!({
-                    "kind": v.kind,
-                    "data": v.data.as_ref().map(|d| serde_json::json!({
-                        "id": d.id, "repo_id": d.repo_id,
-                    })),
-                }))?;
+                map.serialize_entry(
+                    "hidden_row",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "id": d.id, "repo_id": d.repo_id,
+                        })),
+                    }),
+                )?;
             }
             Some(server_event::Payload::HiddenCol(v)) => {
-                map.serialize_entry("hidden_col", &serde_json::json!({
-                    "kind": v.kind,
-                    "data": v.data.as_ref().map(|d| serde_json::json!({
-                        "id": d.id, "column_id": d.column_id,
-                    })),
-                }))?;
+                map.serialize_entry(
+                    "hidden_col",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "id": d.id, "column_id": d.column_id,
+                        })),
+                    }),
+                )?;
             }
             Some(server_event::Payload::CustomCol(v)) => {
-                map.serialize_entry("custom_col", &serde_json::json!({
-                    "kind": v.kind,
-                    "data": v.data.as_ref().map(|d| serde_json::json!({
-                        "id": d.id, "name": d.name, "label": d.label,
-                        "expression": d.expression, "position_after": d.position_after,
-                        "description": d.description, "read_only": d.read_only,
-                        "readOnly": d.read_only, "types": d.types,
-                    })),
-                }))?;
+                map.serialize_entry(
+                    "custom_col",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "id": d.id, "name": d.name, "label": d.label,
+                            "expression": d.expression, "position_after": d.position_after,
+                            "description": d.description, "read_only": d.read_only,
+                            "readOnly": d.read_only, "types": d.types,
+                        })),
+                    }),
+                )?;
             }
             None => {
                 map.serialize_entry("unknown", &serde_json::Value::Null)?;
@@ -836,13 +1017,15 @@ impl serde::Serialize for PagedRepos {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         // rows_json elements are raw JSON bytes — parse them back so JS gets real objects
-        let rows: Vec<serde_json::Value> = self.rows_json.iter()
+        let rows: Vec<serde_json::Value> = self
+            .rows_json
+            .iter()
             .filter_map(|b| serde_json::from_slice(b).ok())
             .collect();
         let mut st = s.serialize_struct("PagedRepos", 4)?;
-        st.serialize_field("data",     &rows)?;
-        st.serialize_field("total",    &self.total)?;
-        st.serialize_field("page",     &self.page)?;
+        st.serialize_field("data", &rows)?;
+        st.serialize_field("total", &self.total)?;
+        st.serialize_field("page", &self.page)?;
         st.serialize_field("per_page", &self.per_page)?;
         st.end()
     }

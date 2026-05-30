@@ -12,7 +12,9 @@
         ".specify/scripts/powershell/": true
     },
     "cSpell.words": [
+        "gloo",
         "Prefs",
+        "Rexie",
         "structable"
     ]
 }

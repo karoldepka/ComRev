@@ -31,7 +31,13 @@ function describeOp(op: StoredOp): string {
   const parts = op.id.split(':');
   const type = parts[0];
   const action = parts[1];
-  if (type === 'cell' && action === 'upsert') return parts[3] ? `Edit cell [${parts[3]}]` : 'Edit cell';
+  if (type === 'cell' && action === 'upsert') {
+    const col = parts[3] ?? '';
+    const raw = (op.body as { value?: unknown } | undefined)?.value;
+    const str = raw != null ? String(raw) : '';
+    const preview = str.length > 0 ? `: "${str.slice(0, 40)}${str.length > 40 ? '…' : ''}"` : '';
+    return col ? `Edit cell [${col}]${preview}` : `Edit cell${preview}`;
+  }
   if (type === 'flag')       return action === 'upsert' ? 'Update flag'    : 'Remove flag';
   if (type === 'remark')     return action === 'upsert' ? 'Save remark'    : 'Delete remark';
   if (type === 'custom-col') return action === 'create' ? 'Create column'  : 'Delete column';
@@ -248,7 +254,8 @@ export class TableApi {
   // ── Queued write operations ────────────────────────────────────────────────
 
   upsertFlag(key: string, color: string): void {
-    this.enqueue({ id: `flag:upsert:${key}`, method: 'PUT', path: '/flags', body: { key, color }, retries: 0 });
+    const id = nanoid();
+    this.enqueue({ id: `flag:upsert:${key}`, method: 'PUT', path: '/flags', body: { id, key, color }, retries: 0 });
   }
 
   deleteFlag(key: string): void {
@@ -272,8 +279,9 @@ export class TableApi {
   }
 
   addHiddenRow(rowId: string): void {
+    const id = nanoid();
     this.cancelOp(`hidden-row:remove:${rowId}`);
-    this.enqueue({ id: `hidden-row:add:${rowId}`, method: 'POST', path: '/hidden-rows', body: { row_id: rowId }, retries: 0 });
+    this.enqueue({ id: `hidden-row:add:${rowId}`, method: 'POST', path: '/hidden-rows', body: { id, row_id: rowId }, retries: 0 });
   }
 
   removeHiddenRow(rowId: string): void {
@@ -282,8 +290,9 @@ export class TableApi {
   }
 
   addHiddenColumn(columnId: string): void {
+    const id = nanoid();
     this.cancelOp(`hidden-col:remove:${columnId}`);
-    this.enqueue({ id: `hidden-col:add:${columnId}`, method: 'POST', path: '/hidden-columns', body: { column_id: columnId }, retries: 0 });
+    this.enqueue({ id: `hidden-col:add:${columnId}`, method: 'POST', path: '/hidden-columns', body: { id, column_id: columnId }, retries: 0 });
   }
 
   /**
@@ -389,6 +398,9 @@ export class TableApi {
           op.retries++;
           const reason = cause instanceof Error ? cause.message : String(cause);
           console.warn(`[tableApi] ${op.method} ${this.base}${op.path} failed (retry ${op.retries}): ${reason}`);
+          if (op.retries === 1 || op.retries % 10 === 0) {
+            this.onError(`Syncing "${describeOp(op)}" failed (attempt ${op.retries}): ${reason}`);
+          }
           // Persist incremented retry count so it survives a crash, then retry forever
           await this.idbPut(op);
           this.scheduleRetry();

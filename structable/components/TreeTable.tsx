@@ -186,14 +186,20 @@ export default function TreeTable({ tableId }: Props) {
 
   useEffect(() => {
     if (!api) return;
-    const sub = api.queueLength$.subscribe((count) => {
-      setSyncPending(count);
-      setSyncQueueSummary(
-        api.getQueueSummary().map((item) => ({ ...item, timestamp: Date.now() }))
-      );
-    });
+    const sub = api.queueLength$.subscribe(setSyncPending);
     return () => sub.unsubscribe();
   }, [api]);
+
+  // Fetch queue summary outside the WASM callback to avoid RefCell reentrancy:
+  // notify_queue_change() is called while borrow_mut() is held inside do_flush,
+  // so calling getQueueSummary() (which borrows) synchronously in the subscriber
+  // would panic. A separate effect runs after the React render cycle instead.
+  useEffect(() => {
+    if (!api) return;
+    setSyncQueueSummary(
+      api.getQueueSummary().map((item) => ({ ...item, timestamp: item.enqueued_at || Date.now() }))
+    );
+  }, [api, syncPending]);
 
   // Clear pending changes list 3s after everything is synced
   useEffect(() => {
@@ -787,10 +793,14 @@ export default function TreeTable({ tableId }: Props) {
 
   const isDownloading = loading || bootstrapping;
 
-  // Prefer in-session recorded changes; fall back to actual queue items so the
-  // popup is never empty while the badge shows a non-zero count.
-  const displayChanges: PendingChange[] =
-    pendingChanges.length > 0 ? pendingChanges : [...cellQueueSummary, ...syncQueueSummary];
+  // Always show the real queue contents so the list matches the badge count.
+  // pendingChanges is an in-session activity log; it only fills gaps for items
+  // that somehow have no queue entry (e.g. sent so fast they left the queue
+  // before the summary was fetched).
+  const queueChanges = [...cellQueueSummary, ...syncQueueSummary];
+  const displayChanges: PendingChange[] = queueChanges.length > 0
+    ? queueChanges
+    : pendingChanges;
 
   // Initial empty state: no data yet
   if (rows.length === 0 && !fetchError) {

@@ -55,13 +55,13 @@ message ClientOp {
   }
 }
 
-message UpsertFlagOp         { string key = 1; string color = 2; }
+message UpsertFlagOp         { string id = 1; string key = 2; string color = 3; }
 message DeleteFlagOp         { string key = 1; }
 message UpsertRemarkOp       { string id = 1; string body = 2; string kind = 3; repeated RemarkTarget targets = 4; }
 message DeleteRemarkOp       { string id = 1; }
-message AddHiddenRowOp       { int64  repo_id   = 1; }
+message AddHiddenRowOp       { string id = 1; int64  repo_id   = 2; }
 message RemoveHiddenRowOp    { int64  repo_id   = 1; }
-message AddHiddenColumnOp    { string column_id = 1; }
+message AddHiddenColumnOp    { string id = 1; string column_id = 2; }
 message RemoveHiddenColumnOp { string column_id = 1; }
 message CreateCustomColOp    { string id = 1; string name = 2; string label = 3; string expression = 4; string position_after = 5; string description = 6; }
 message DeleteCustomColOp    { string id = 1; }

@@ -41,6 +41,7 @@ interface WasmSyncClient {
   subscribe(onEvent: (json: string) => void): () => void;
   queue_length(): number;
   get_queue_summary(): string;
+  trigger_flush(): void;
 
   upsert_flag(key: string, color: string): Promise<void>;
   delete_flag(key: string): Promise<void>;
@@ -125,6 +126,11 @@ export class SyncClient {
 
     const client = new SyncClient(inner, events$, queueLength$);
     await inner.init();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => client.triggerFlush());
+    }
+
     return client;
   }
 
@@ -137,8 +143,12 @@ export class SyncClient {
     return this.inner.queue_length();
   }
 
-  getQueueSummary(): { id: string; description: string }[] {
+  getQueueSummary(): { id: string; description: string; enqueued_at: number }[] {
     try { return JSON.parse(this.inner.get_queue_summary()); } catch { return []; }
+  }
+
+  triggerFlush(): void {
+    this.inner.trigger_flush();
   }
 
   // ── Mutations ────────────────────────────────────────────────────────────────
