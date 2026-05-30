@@ -4,9 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import FlagSubmenu from './FlagSubmenu';
 import type { ApiRemark, CellTarget, RemarkTarget } from '../types/table';
-import { colType, colFilterParam, colFilterPlaceholder } from '../utils/columnFilters';
+import { colType, colFilterParam, colFilterPlaceholder, type ColType } from '../utils/columnFilters';
 
-type Column = { id: string; label: string; readOnly?: boolean; subColumns?: Column[] };
+type Column = { id: string; label: string; readOnly?: boolean; filterType?: ColType | null; subColumns?: Column[] };
 
 // ── Discriminated props ────────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ export default function ContextMenu(props: ContextMenuProps) {
     const targets: RemarkTarget[] = [{ row_id: '', column_id: column.id }];
     const existingNote    = cellRemarks[remarkKey]?.find((r) => r.kind === 'note');
     const existingComment = cellRemarks[remarkKey]?.find((r) => r.kind === 'comment');
-    const colHasFilter = () => { const p = colFilterParam(column.id); return !!p && !!filters[p]; };
+    const colHasFilter = () => { const p = colFilterParam(column); return !!p && !!filters[p]; };
 
     content = mode === 'flag' ? (
       <FlagSubmenu
@@ -178,14 +178,14 @@ export default function ContextMenu(props: ContextMenuProps) {
             >
               ↓ Descending
             </button>
-            {isLeaf && colFilterParam(column.id) && (
+            {isLeaf && colFilterParam(column) && (
               <>
                 <div className="menu-divider" />
                 <div className="menu-section-label">Filter</div>
                 <div className="menu-filter">
                   <input
-                    type={colType(column.id) === 'numeric' ? 'number' : 'text'}
-                    placeholder={colFilterPlaceholder(column.id)}
+                    type={colType(column) === 'numeric' ? 'number' : 'text'}
+                    placeholder={colFilterPlaceholder(column)}
                     value={filterDraft[column.id] ?? ''}
                     onChange={(e) =>
                       setFilterDraft((prev) => ({ ...prev, [column.id]: e.target.value }))

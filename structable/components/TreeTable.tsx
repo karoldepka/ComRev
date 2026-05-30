@@ -14,10 +14,10 @@ import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
 import TableToolbar from './TableToolbar';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
-import { colFilterParam } from '../utils/columnFilters';
+import { colFilterParam, type ColType } from '../utils/columnFilters';
 
 import { TableApi } from '../services/tableApi';
-import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, RemarkTarget, RepoRow } from '../types/table';
+import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, RemarkTarget, DataRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,7 @@ type Column = {
   customColumnId?: string;
   readOnly?: boolean;
   types?: string[];
+  filterType?: ColType | null;
   subColumns?: Column[];
 };
 
@@ -45,15 +46,36 @@ function labelFor(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function deriveColumns(row: RepoRow): Column[] {
+/** Resolve a possibly dot-notated column id against a row object. */
+export function rowVal(row: DataRow, id: string): unknown {
+  const dot = id.indexOf('.');
+  if (dot === -1) return row[id];
+  const parent = row[id.slice(0, dot)];
+  if (parent === null || typeof parent !== 'object' || Array.isArray(parent)) return undefined;
+  return (parent as Record<string, unknown>)[id.slice(dot + 1)];
+}
+
+function deriveColumns(row: DataRow): Column[] {
   const keys = Object.keys(row);
   const sorted = [...(keys.includes(PINNED_COL) ? [PINNED_COL] : []), ...keys.filter((k) => k !== PINNED_COL)];
-  return sorted.map((key) => ({
-    id: key,
-    label: labelFor(key),
-    width: 120,
-    minWidth: 60,
-  }));
+  return sorted.map((key) => {
+    const val = row[key];
+    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      return {
+        id: key,
+        label: labelFor(key),
+        width: 80,
+        minWidth: 40,
+        subColumns: Object.keys(val as Record<string, unknown>).map((sub) => ({
+          id: `${key}.${sub}`,
+          label: sub,
+          width: 70,
+          minWidth: 40,
+        })),
+      };
+    }
+    return { id: key, label: labelFor(key), width: 120, minWidth: 60 };
+  });
 }
 
 function isColumnReadOnly(cc: ApiCustomColumn): boolean {
@@ -74,6 +96,7 @@ function columnsFromMetadata(customColumns: ApiCustomColumn[]): Column[] {
       minWidth: 60,
       readOnly: isColumnReadOnly(cc),
       types: cc.types ?? ['text'],
+      filterType: (cc.data_types?.[0] as ColType | undefined) ?? null,
     });
   }
   return result;
@@ -209,7 +232,7 @@ export default function TreeTable({ tableId }: Props) {
   }, [pendingUploads]);
 
   // ── Repo data ──────────────────────────────────────────────────────────────
-  const [rows, setRows] = useState<RepoRow[]>([]);
+  const [rows, setRows] = useState<DataRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -272,7 +295,7 @@ export default function TreeTable({ tableId }: Props) {
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
-  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'when_created', dir: 'desc' });
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'stars_diff.14d', dir: 'desc' });
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
 
@@ -429,7 +452,8 @@ export default function TreeTable({ tableId }: Props) {
   // ── Sync filter draft when column menu opens ───────────────────────────────
   useEffect(() => {
     if (!openMenuColumn) return;
-    const param = colFilterParam(openMenuColumn);
+    const col = allLeafColumns.find((c) => c.id === openMenuColumn) ?? { id: openMenuColumn };
+    const param = colFilterParam(col);
     if (param) setFilterDraft((prev) => ({ ...prev, [openMenuColumn]: filters[param] ?? '' }));
   }, [openMenuColumn]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -480,12 +504,12 @@ export default function TreeTable({ tableId }: Props) {
   }, [selectKeyHook]);
 
   const compiledExprs = useMemo(() => {
-    const map = new Map<string, (row: RepoRow) => unknown>();
+    const map = new Map<string, (row: DataRow) => unknown>();
     for (const cc of customColumns) {
       if (cc.expression?.trim()) {
         try {
           // eslint-disable-next-line no-new-func
-          map.set(cc.name, new Function('row', `"use strict"; return (${cc.expression})`) as (row: RepoRow) => unknown);
+          map.set(cc.name, new Function('row', `"use strict"; return (${cc.expression})`) as (row: DataRow) => unknown);
         } catch { /* invalid expression */ }
       }
     }
@@ -569,7 +593,8 @@ export default function TreeTable({ tableId }: Props) {
   };
 
   const applyFilter = (colId: string) => {
-    const param = colFilterParam(colId);
+    const col = allLeafColumns.find((c) => c.id === colId) ?? { id: colId };
+    const param = colFilterParam(col);
     if (!param) return;
     const value = (filterDraft[colId] ?? '').trim();
     setFilters((prev) => {
@@ -582,7 +607,8 @@ export default function TreeTable({ tableId }: Props) {
   };
 
   const clearColFilter = (colId: string) => {
-    const param = colFilterParam(colId);
+    const col = allLeafColumns.find((c) => c.id === colId) ?? { id: colId };
+    const param = colFilterParam(col);
     if (!param) return;
     setFilters((prev) => { const { [param]: _, ...rest } = prev; return rest; });
     setFilterDraft((prev) => { const { [colId]: _, ...rest } = prev; return rest; });
@@ -870,7 +896,7 @@ export default function TreeTable({ tableId }: Props) {
                     const showMenu = leafIdsToHide.length > 0 || isLeaf;
                     const isSticky = column.id === PINNED_COL;
                     const colHasFilter = () => {
-                      const p = colFilterParam(column.id);
+                      const p = colFilterParam(column);
                       return !!p && !!filters[p];
                     };
 
@@ -1046,7 +1072,7 @@ export default function TreeTable({ tableId }: Props) {
               ))}
             </thead>
             <tbody>
-              {rows.map((row: RepoRow, rowIndex: number) => {
+              {rows.map((row: DataRow, rowIndex: number) => {
                 const rowId = String(row['id'] ?? '');
                 if (hiddenRowIds.has(rowId)) return null;
                 return (

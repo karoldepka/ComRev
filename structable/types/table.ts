@@ -56,6 +56,7 @@ export type ApiCustomColumn = {
   read_only?: boolean;
   readOnly?: boolean;
   types?: string[];
+  data_types?: string[];
   /** Backward compatibility for older API responses. Prefer read_only. */
   is_editable?: boolean;
 };
@@ -70,10 +71,10 @@ export type ApiHiddenColumn = {
   column_id: string;
 };
 
-export type RepoRow = Record<string, unknown>;
+export type DataRow = Record<string, unknown>;
 
 export type PagedResponse = {
-  data: RepoRow[];
+  data: DataRow[];
   total: number;
   page: number;
   per_page: number;

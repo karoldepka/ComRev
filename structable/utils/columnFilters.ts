@@ -1,27 +1,19 @@
 export type ColType = 'numeric' | 'text' | 'categorical' | 'boolean';
 
-export function colType(key: string): ColType | null {
-  if (key.endsWith('_at') || key === 'id' || key === 'gh_id') return null;
-  if (key === 'archived' || key === 'disabled') return 'boolean';
-  if (['name', 'description'].includes(key)) return 'text';
-  if (['language', 'license', 'visibility', 'owner_login'].includes(key)) return 'categorical';
-  if (
-    key === 'stars' || key === 'forks' || key === 'open_issues' || key === 'size' ||
-    key === 'stars_now' || key.startsWith('stars_diff_')
-  ) return 'numeric';
-  return null;
+export function colType(col: { filterType?: ColType | null }): ColType | null {
+  return col.filterType ?? null;
 }
 
-export function colFilterParam(key: string): string | null {
-  const t = colType(key);
+export function colFilterParam(col: { id: string; filterType?: ColType | null }): string | null {
+  const t = col.filterType;
   if (t === 'text') return 'q';
-  if (t === 'numeric') return `${key}_min`;
-  if (t === 'categorical' || t === 'boolean') return key;
+  if (t === 'numeric') return `${col.id}_min`;
+  if (t === 'categorical' || t === 'boolean') return col.id;
   return null;
 }
 
-export function colFilterPlaceholder(key: string): string {
-  const t = colType(key);
+export function colFilterPlaceholder(col: { filterType?: ColType | null }): string {
+  const t = col.filterType;
   if (t === 'numeric') return 'Min value…';
   if (t === 'text') return 'Search name / description…';
   if (t === 'categorical') return 'Exact value (comma = OR)…';

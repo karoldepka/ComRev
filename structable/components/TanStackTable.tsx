@@ -9,19 +9,19 @@ import {
   useReactTable,
   type SortingState,
 } from '@tanstack/react-table';
-import type { RepoRow } from '../types/table';
+import type { DataRow } from '../types/table';
 import TableToolbar from './TableToolbar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-const helper = createColumnHelper<RepoRow>();
+const helper = createColumnHelper<DataRow>();
 
 function labelFor(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default function TanStackTable() {
-  const [data, setData] = useState<RepoRow[]>([]);
+  const [data, setData] = useState<DataRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);

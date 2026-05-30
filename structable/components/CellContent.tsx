@@ -1,12 +1,13 @@
 'use client';
 
-import type { RepoRow } from '../types/table';
+import type { DataRow } from '../types/table';
+import { rowVal } from './TreeTable';
 
 const PINNED_COL = 'name';
 
-export function formatCell(value: unknown, columnId: string): string {
+export function formatCell(value: unknown): string {
   if (value === null || value === undefined) return '-';
-  if (columnId.endsWith('_at')) {
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/.test(String(value))) {
     const d = new Date(value as string);
     return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
   }
@@ -16,9 +17,9 @@ export function formatCell(value: unknown, columnId: string): string {
 }
 
 type Props = {
-  row: RepoRow;
+  row: DataRow;
   colId: string;
-  compiledExpr?: (row: RepoRow) => unknown;
+  compiledExpr?: (row: DataRow) => unknown;
   hasNote?: boolean;
   hasComment?: boolean;
 };
@@ -29,11 +30,11 @@ export default function CellContent({ row, colId, compiledExpr, hasNote, hasComm
   if (colId === PINNED_COL) {
     content = (
       <a
-        href={`https://github.com/${String(row[colId])}`}
+        href={`https://github.com/${String(rowVal(row, colId))}`}
         target="_blank"
         rel="noopener noreferrer"
       >
-        {String(row[colId] ?? '-')}
+        {String(rowVal(row, colId) ?? '-')}
       </a>
     );
   } else if (compiledExpr) {
@@ -44,7 +45,7 @@ export default function CellContent({ row, colId, compiledExpr, hasNote, hasComm
       content = '#ERR';
     }
   } else {
-    content = formatCell(row[colId], colId);
+    content = formatCell(rowVal(row, colId));
   }
 
   return (
