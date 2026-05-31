@@ -16,7 +16,8 @@ TOPICS_RAW = [
     *"react agent open-source typescript ai js reactjs nextjs ts assistant copilot agents assistant-chat-bots ai-assistant ai-agent llm copilot-chat generative-ui agentic-ai agent-native".split(" "),
     *"reinforcement-learning transformers pytorch diffusion dit video-generation world-models sana text-to-video linear-transformer text-to-image-generation system-algorithm-deisgn ystem-algorithm-design nvfp4".split(" "),
     *"ui ai mcp openapi self-hosted openai webui rag llm llms ollama llm-ui ollama-webui llm-webui open-webui".split(" "),
-   "mobx",
+    *"sql database web serverless nosql devtools distributed database-as-a-service developer-tools graph-database distributed-database document-database realtime-database backend-as-a-service cloud-database surreal surrealdb iot-database".split(" "),
+    "mobx",
     "redux",
     "zustand",
     "state-management",
@@ -338,15 +339,7 @@ counts = Counter(TOPICS_RAW)
 duplicates = [item for item, count in counts.items() if count > 1]
 
 if duplicates:
-    print("⚠️ Duplicate topics detected:", duplicates)
-
-# --- Deduplication while preserving order ---
-TOPICS = list(dict.fromkeys(TOPICS_RAW))# --- Duplicate detection ---
-counts = Counter(TOPICS_RAW)
-duplicates = [item for item, count in counts.items() if count > 1]
-
-if duplicates:
-    print("⚠️ Duplicate topics detected:", duplicates)
+    print(f"⚠️ {len(duplicates)} duplicate topic(s) detected:", duplicates)
 
 # --- Deduplication while preserving order ---
 TOPICS = list(dict.fromkeys(TOPICS_RAW))
