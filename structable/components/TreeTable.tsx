@@ -584,6 +584,19 @@ export default function TreeTable({ tableId }: Props) {
 
   const handleTableKeyDown = (e: React.KeyboardEvent) => {
     if (editingCell) return; // let the input handle keys
+    if (e.key === 'Enter') {
+      if (cursorPos && cursorPos.row >= 0) {
+        const col = visibleLeafColumns[cursorPos.col];
+        const row = rows[cursorPos.row];
+        if (col && row && isCellEditable(col.id)) {
+          e.preventDefault();
+          const rowId = String(row['id'] ?? '');
+          const strVal = row[col.id] == null ? '' : String(row[col.id]);
+          setEditingCell({ rowIndex: cursorPos.row, rowId, colId: col.id, value: strVal });
+        }
+      }
+      return;
+    }
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
