@@ -339,6 +339,7 @@ export default function TreeTable({ tableId }: Props) {
   const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; targets: CellTarget[] } | null>(null);
   const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment' | 'flag'>('menu');
   const [draftText, setDraftText] = useState('');
+  const [addColFocused, setAddColFocused] = useState(false);
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
   const perPage = 50;
@@ -553,6 +554,7 @@ export default function TreeTable({ tableId }: Props) {
 
   const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
     selectKeyHook(key, multi, shift);
+    setAddColFocused(false);
     wrapperRef.current?.focus();
   }, [selectKeyHook]);
 
@@ -584,7 +586,17 @@ export default function TreeTable({ tableId }: Props) {
 
   const handleTableKeyDown = (e: React.KeyboardEvent) => {
     if (editingCell) return; // let the input handle keys
+
     if (e.key === 'Enter') {
+      if (addColFocused) {
+        e.preventDefault();
+        const lastCol = allLeafColumns[allLeafColumns.length - 1];
+        setAddColAfter(lastCol?.id ?? '');
+        setOpenMenuColumn(null);
+        setMenuAnchor(null);
+        setAddColFocused(false);
+        return;
+      }
       if (cursorPos && cursorPos.row >= 0) {
         const col = visibleLeafColumns[cursorPos.col];
         const row = rows[cursorPos.row];
@@ -597,8 +609,26 @@ export default function TreeTable({ tableId }: Props) {
       }
       return;
     }
+
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
+
+    if (addColFocused) {
+      if (e.key === 'ArrowLeft') {
+        setAddColFocused(false);
+        return;
+      }
+      // ArrowUp/Down: exit virtual col and move normally
+      setAddColFocused(false);
+      moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
+      return;
+    }
+
+    if (e.key === 'ArrowRight' && cursorPos && cursorPos.col === visibleLeafColumns.length - 1) {
+      setAddColFocused(true);
+      return;
+    }
+
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
   };
 
@@ -921,6 +951,7 @@ export default function TreeTable({ tableId }: Props) {
               {visibleLeafColumns.map((col) => (
                 <col key={col.id} style={{ width: `${columnWidths[col.id] ?? 120}px`, minWidth: '8px' }} />
               ))}
+              <col key="__add-col__" style={{ width: '48px', minWidth: '48px' }} />
             </colgroup>
             <thead>
               {headerRows.map((row, rowIndex) => (
@@ -1117,6 +1148,25 @@ export default function TreeTable({ tableId }: Props) {
                       </th>
                     );
                   })}
+                  {rowIndex === 0 && (
+                    <th
+                      key="__add-col__"
+                      rowSpan={headerRows.length}
+                      className={`add-col-th${addColFocused ? ' add-col-th--focused' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="add-col-button"
+                        title="Add column"
+                        onClick={() => {
+                          const lastCol = allLeafColumns[allLeafColumns.length - 1];
+                          setAddColAfter(lastCol?.id ?? '');
+                          setOpenMenuColumn(null);
+                          setMenuAnchor(null);
+                        }}
+                      >+</button>
+                    </th>
+                  )}
                 </tr>
               ))}
             </thead>
@@ -1180,8 +1230,8 @@ export default function TreeTable({ tableId }: Props) {
                               onChange={(e) => setEditingCell((prev) => prev ? { ...prev, value: e.target.value } : null)}
                               onBlur={commitEdit}
                               onKeyDown={(e) => {
-                                if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-                                if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                                if (e.key === 'Enter') { e.preventDefault(); commitEdit(); wrapperRef.current?.focus(); }
+                                if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); wrapperRef.current?.focus(); }
                               }}
                             />
                           ) : (
@@ -1200,6 +1250,7 @@ export default function TreeTable({ tableId }: Props) {
                         </td>
                       );
                     })}
+                    <td key="__add-col__" className="add-col-td" />
                   </tr>
                 );
               })}
