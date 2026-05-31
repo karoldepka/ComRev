@@ -101,23 +101,9 @@ impl DataStore for SqliteStore {
         &self,
         _table_id: &str,
         _column_id: &str,
-        is_frozen: bool,
+        _is_frozen: bool,
     ) -> Result<crate::custom_column::CustomColumn> {
-        Ok(crate::custom_column::CustomColumn {
-            id: "".into(),
-            name: "".into(),
-            label: None,
-            description: None,
-            expression: None,
-            position_after: None,
-            read_only: false,
-            types: vec![],
-            source_path: None,
-            data_types: vec![],
-            is_group: false,
-            parent_ids: vec![],
-            is_frozen,
-        })
+        not_impl!()
     }
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
@@ -145,6 +131,16 @@ impl DataStore for SqliteStore {
         not_impl!()
     }
 
+    async fn create_row(
+        &self,
+        _table_id: &str,
+        _row_id: &str,
+        _title: Option<&str>,
+        _who_created: Option<&str>,
+    ) -> Result<crate::data_row::TableRow> {
+        not_impl!()
+    }
+
     async fn list_data_rows(&self, _table_id: &str, _params: &RowQuery) -> Result<PagedResponse> {
         not_impl!()
     }
@@ -155,6 +151,10 @@ impl DataStore for SqliteStore {
         _col_id: &str,
         _value: serde_json::Value,
     ) -> Result<()> {
+        not_impl!()
+    }
+
+    async fn upsert_github_repos_batch(&self, _repos: &[serde_json::Value]) -> Result<usize> {
         not_impl!()
     }
 

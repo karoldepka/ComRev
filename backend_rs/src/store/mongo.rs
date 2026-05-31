@@ -131,6 +131,16 @@ impl DataStore for MongoStore {
         not_impl!()
     }
 
+    async fn create_row(
+        &self,
+        _table_id: &str,
+        _row_id: &str,
+        _title: Option<&str>,
+        _who_created: Option<&str>,
+    ) -> Result<crate::data_row::TableRow> {
+        not_impl!()
+    }
+
     async fn list_data_rows(&self, _table_id: &str, _params: &RowQuery) -> Result<PagedResponse> {
         not_impl!()
     }
@@ -141,6 +151,10 @@ impl DataStore for MongoStore {
         _col_id: &str,
         _value: serde_json::Value,
     ) -> Result<()> {
+        not_impl!()
+    }
+
+    async fn upsert_github_repos_batch(&self, _repos: &[serde_json::Value]) -> Result<usize> {
         not_impl!()
     }
 

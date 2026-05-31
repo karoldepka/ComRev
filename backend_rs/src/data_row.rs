@@ -4,7 +4,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{error::db_err, store::DataStore};
@@ -23,7 +24,7 @@ pub struct ApiError(anyhow::Error);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        tracing::error!("list_data_rows: {}", self.0);
+        tracing::error!("{}", self.0);
         (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
     }
 }
@@ -58,6 +59,71 @@ pub async fn list_data_rows_for_table(
         "list rows completed"
     );
     Ok(Json(page))
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TableRow {
+    pub id: String,
+    pub table_id: String,
+    pub who_created: Option<String>,
+    pub when_created: DateTime<Utc>,
+    pub who_last_modified: Option<String>,
+    pub when_last_modified: DateTime<Utc>,
+    pub custom_values: serde_json::Value,
+    pub modify_count: i32,
+}
+
+// ─── Handlers ─────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct CreateRowBody {
+    pub id: String,
+    pub title: Option<String>,
+    pub who_created: Option<String>,
+}
+
+pub async fn create_row(
+    State(state): State<AppState>,
+    Path(table_id): Path<String>,
+    Json(body): Json<CreateRowBody>,
+) -> Result<(StatusCode, Json<TableRow>), (StatusCode, String)> {
+    let row = state
+        .store
+        .create_row(&table_id, &body.id, body.title.as_deref(), body.who_created.as_deref())
+        .await
+        .map_err(|e| db_err("row.create", e))?;
+    state
+        .store
+        .append_ops_log("row.create", serde_json::json!({ "id": row.id, "table_id": table_id }), None)
+        .await;
+    Ok((StatusCode::CREATED, Json(row)))
+}
+
+#[derive(Deserialize)]
+pub struct UpsertGithubReposBatchBody {
+    pub repos: Vec<serde_json::Value>,
+}
+
+pub async fn upsert_github_repos_batch(
+    State(state): State<AppState>,
+    Json(body): Json<UpsertGithubReposBatchBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    let count = state
+        .store
+        .upsert_github_repos_batch(&body.repos)
+        .await
+        .map_err(|e| db_err("github_repos_batch", e))?;
+    state
+        .store
+        .append_ops_log(
+            "github_repos.upsert_batch",
+            serde_json::json!({ "count": count }),
+            None,
+        )
+        .await;
+    Ok((StatusCode::OK, Json(serde_json::json!({ "upserted": count }))))
 }
 
 #[derive(Deserialize)]

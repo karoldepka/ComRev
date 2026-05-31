@@ -25,9 +25,13 @@ async fn main() -> anyhow::Result<()> {
     structable_logger::init("backend_rs=debug,tower_http=info");
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
+    let surreal_url = std::env::var("SURREAL_URL").ok();
     structable_logger::info("backend_rs", "starting backend_rs");
 
-    let data_store = store::open(&database_url).await?;
+    let data_store = store::open_multi(
+        &database_url,
+        surreal_url.as_deref(),
+    ).await?;
     structable_logger::info("backend_rs", "data store connected");
     data_store.ensure_schema().await?;
     structable_logger::info("backend_rs", "schema ready");
@@ -47,6 +51,8 @@ async fn main() -> anyhow::Result<()> {
         // Compatibility route for older frontend builds.
         .route("/repos", get(data_row::list_data_rows))
         .route("/tables/:table_id/data-rows", get(data_row::list_data_rows_for_table))
+        .route("/tables/:table_id/rows", axum::routing::post(data_row::create_row))
+        .route("/github-repos/upsert-batch", axum::routing::post(data_row::upsert_github_repos_batch))
         .route(
             "/tables/:table_id/rows/:row_id/values",
             axum::routing::patch(data_row::patch_cell_value),

@@ -371,14 +371,24 @@ impl DataStore for PgStore {
         description: Option<&str>,
         who_created: Option<&str>,
     ) -> Result<Table> {
-        Ok(sqlx::query_as::<_, Table>(
+        const SEL: &str = "SELECT id, title, description, who_created, when_created, \
+                           who_last_modified, when_last_modified, modify_count \
+                           FROM tables WHERE id = $1";
+        let row = sqlx::query_as::<_, Table>(
             "INSERT INTO tables (id, title, description, who_created)
              VALUES ($1, $2, $3, $4)
-             RETURNING id, title, description, who_created, when_created, who_last_modified, when_last_modified, modify_count",
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id, title, description, who_created, when_created,
+                       who_last_modified, when_last_modified, modify_count",
         )
         .bind(id).bind(title).bind(description).bind(who_created)
-        .fetch_one(&self.pool)
-        .await?)
+        .fetch_optional(&self.pool)
+        .await?;
+        match row {
+            Some(t) => Ok(t),
+            // Conflict: another request already inserted this id — return existing row.
+            None => Ok(sqlx::query_as::<_, Table>(SEL).bind(id).fetch_one(&self.pool).await?),
+        }
     }
 
     async fn patch_table(
@@ -448,6 +458,36 @@ impl DataStore for PgStore {
             .await?;
         }
         Ok(())
+    }
+
+    async fn create_row(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        title: Option<&str>,
+        who_created: Option<&str>,
+    ) -> Result<crate::data_row::TableRow> {
+        use crate::data_row::TableRow;
+        const SEL: &str = "SELECT id, table_id, who_created, when_created, \
+                           who_last_modified, when_last_modified, custom_values, modify_count \
+                           FROM table_rows WHERE id = $1";
+        let initial = title
+            .map(|t| serde_json::json!({ "title": t }))
+            .unwrap_or_else(|| serde_json::json!({}));
+        let row = sqlx::query_as::<_, TableRow>(
+            "INSERT INTO table_rows (id, table_id, who_created, custom_values)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id, table_id, who_created, when_created,
+                       who_last_modified, when_last_modified, custom_values, modify_count",
+        )
+        .bind(row_id).bind(table_id).bind(who_created).bind(initial)
+        .fetch_optional(&self.pool)
+        .await?;
+        match row {
+            Some(r) => Ok(r),
+            None => Ok(sqlx::query_as::<_, TableRow>(SEL).bind(row_id).fetch_one(&self.pool).await?),
+        }
     }
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
@@ -562,6 +602,41 @@ impl DataStore for PgStore {
         })
     }
 
+    // ── GitHub repos batch upsert ─────────────────────────────────────────────
+    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
+        if repos.is_empty() { return Ok(0); }
+        let json_array = serde_json::Value::Array(repos.to_vec());
+        // Each element has github_id + all other GitHub fields.
+        // Store id = github_id::text; all fields go into custom_values (minus the id key).
+        // DISTINCT ON deduplicates within the batch itself — Postgres raises an error if the
+        // same primary key appears twice in a single INSERT, so we must deduplicate first.
+        let count: i64 = sqlx::query_scalar(
+            "WITH deduped AS (
+               SELECT DISTINCT ON (github_id) github_id, custom_values
+               FROM (
+                 SELECT
+                   (r->>'github_id') AS github_id,
+                   (r - 'id')        AS custom_values
+                 FROM jsonb_array_elements($1::jsonb) AS r
+                 WHERE r->>'github_id' IS NOT NULL
+               ) sub
+               ORDER BY github_id
+             ),
+             upserted AS (
+               INSERT INTO github_repos (id, custom_values)
+               SELECT github_id, custom_values FROM deduped
+               ON CONFLICT (id) DO UPDATE SET
+                 custom_values      = EXCLUDED.custom_values,
+                 when_last_modified = NOW()
+               RETURNING 1
+             ) SELECT COUNT(*) FROM upserted",
+        )
+        .bind(json_array)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count as usize)
+    }
+
     // ── Ops log ───────────────────────────────────────────────────────────────
     async fn append_ops_log(
         &self,
@@ -579,7 +654,7 @@ fn col_has_type(col_types: &std::collections::HashMap<String, Vec<String>>, name
     col_types.get(name).map_or(false, |types| types.iter().any(|t| t == target))
 }
 
-fn table_registry_columns() -> Vec<CustomColumn> {
+pub fn table_registry_columns() -> Vec<CustomColumn> {
     [
         ("id", "ID", "text"),
         ("title", "Title", "text"),
@@ -674,14 +749,21 @@ fn push_filters<'q>(
     }
 }
 
-/// Returns a JSONB expression (all `->` navigation, last segment also `->`)
-/// for use with operators like `?|` that need a JSONB value, not text.
-fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
+/// Validate and split a dot-path into segments.
+/// Each segment must be non-empty and contain only alphanumeric/underscore chars
+/// (SQL-injection guard). Returns None if any segment is invalid.
+fn validated_path_parts(path: &str) -> Option<Vec<&str>> {
     let parts: Vec<&str> = path.split('.').collect();
-    if parts.is_empty() { return None; }
     if parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
         return None;
     }
+    Some(parts)
+}
+
+/// Returns a JSONB expression (all `->` navigation, last segment also `->`)
+/// for use with operators like `?|` that need a JSONB value, not text.
+fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
+    let parts = validated_path_parts(path)?;
     let mut expr = String::from("custom_values");
     for &seg in &parts { expr.push_str(&format!("->'{seg}'")); }
     Some(expr)
@@ -693,11 +775,7 @@ fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
 /// "stars_diff.6h"   → custom_values->'stars_diff'->>'6h'
 /// "a.b.c"           → custom_values->'a'->'b'->>'c'
 fn path_to_jsonb_expr(path: &str) -> Option<String> {
-    let parts: Vec<&str> = path.split('.').collect();
-    if parts.is_empty() { return None; }
-    if parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
-        return None;
-    }
+    let parts = validated_path_parts(path)?;
     let n = parts.len();
     let mut expr = String::from("custom_values");
     for &seg in &parts[..n - 1] {
@@ -728,7 +806,7 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
     Some(if cast.is_empty() { base } else { format!("({base}){cast}") })
 }
 
-fn validated_sort(sort: Option<&str>) -> String {
+pub(super) fn validated_sort(sort: Option<&str>) -> String {
     // Sort param format: "col:dir[:type]" where type is a custom_columns.types element.
     // Multiple sorts are comma-separated.
     let parts: Vec<String> = sort
@@ -751,5 +829,198 @@ fn validated_sort(sort: Option<&str>) -> String {
         "when_created DESC NULLS LAST".to_string()
     } else {
         parts.join(", ")
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── validated_path_parts ──────────────────────────────────────────────────
+
+    #[test]
+    fn valid_single_segment() {
+        assert_eq!(validated_path_parts("stars"), Some(vec!["stars"]));
+    }
+
+    #[test]
+    fn valid_two_segments() {
+        assert_eq!(validated_path_parts("stars_diff.6h"), Some(vec!["stars_diff", "6h"]));
+    }
+
+    #[test]
+    fn valid_three_segments() {
+        assert_eq!(validated_path_parts("a.b.c"), Some(vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn rejects_empty_path() {
+        assert!(validated_path_parts("").is_none());
+    }
+
+    #[test]
+    fn rejects_empty_segment() {
+        assert!(validated_path_parts("a..b").is_none());
+    }
+
+    #[test]
+    fn rejects_special_chars() {
+        assert!(validated_path_parts("'; DROP TABLE --").is_none());
+        assert!(validated_path_parts("a.b-c").is_none());
+        assert!(validated_path_parts("a.b c").is_none());
+    }
+
+    // ── path_to_jsonb_expr ────────────────────────────────────────────────────
+
+    #[test]
+    fn jsonb_expr_single() {
+        assert_eq!(
+            path_to_jsonb_expr("stars"),
+            Some("custom_values->>'stars'".into())
+        );
+    }
+
+    #[test]
+    fn jsonb_expr_two_segments() {
+        assert_eq!(
+            path_to_jsonb_expr("stars_diff.6h"),
+            Some("custom_values->'stars_diff'->>'6h'".into())
+        );
+    }
+
+    #[test]
+    fn jsonb_expr_three_segments() {
+        assert_eq!(
+            path_to_jsonb_expr("a.b.c"),
+            Some("custom_values->'a'->'b'->>'c'".into())
+        );
+    }
+
+    #[test]
+    fn jsonb_expr_rejects_injection() {
+        assert!(path_to_jsonb_expr("'; DROP TABLE --").is_none());
+        assert!(path_to_jsonb_expr("").is_none());
+    }
+
+    // ── path_to_jsonb_value_expr ──────────────────────────────────────────────
+
+    #[test]
+    fn jsonb_value_expr_single() {
+        assert_eq!(
+            path_to_jsonb_value_expr("stars"),
+            Some("custom_values->'stars'".into())
+        );
+    }
+
+    #[test]
+    fn jsonb_value_expr_two_segments() {
+        assert_eq!(
+            path_to_jsonb_value_expr("topics.name"),
+            Some("custom_values->'topics'->'name'".into())
+        );
+    }
+
+    #[test]
+    fn jsonb_value_expr_rejects_injection() {
+        assert!(path_to_jsonb_value_expr("bad-key").is_none());
+    }
+
+    // ── col_to_sort_expr ──────────────────────────────────────────────────────
+
+    #[test]
+    fn sort_expr_builtin_id() {
+        assert_eq!(col_to_sort_expr("id", None), Some("id".into()));
+    }
+
+    #[test]
+    fn sort_expr_builtin_when_created() {
+        assert_eq!(col_to_sort_expr("when_created", None), Some("when_created".into()));
+    }
+
+    #[test]
+    fn sort_expr_custom_no_type() {
+        assert_eq!(
+            col_to_sort_expr("name", None),
+            Some("custom_values->>'name'".into())
+        );
+    }
+
+    #[test]
+    fn sort_expr_custom_integer() {
+        assert_eq!(
+            col_to_sort_expr("stars", Some("integer")),
+            Some("(custom_values->>'stars')::numeric".into())
+        );
+    }
+
+    #[test]
+    fn sort_expr_custom_timestamptz() {
+        assert_eq!(
+            col_to_sort_expr("pushed_at", Some("timestamptz")),
+            Some("(custom_values->>'pushed_at')::timestamptz".into())
+        );
+    }
+
+    #[test]
+    fn sort_expr_rejects_injection() {
+        assert!(col_to_sort_expr("'; DROP TABLE", None).is_none());
+    }
+
+    // ── validated_sort ────────────────────────────────────────────────────────
+
+    #[test]
+    fn sort_defaults_to_when_created_desc() {
+        assert_eq!(validated_sort(None), "when_created DESC NULLS LAST");
+        assert_eq!(validated_sort(Some("")), "when_created DESC NULLS LAST");
+    }
+
+    #[test]
+    fn sort_single_column_desc() {
+        assert_eq!(
+            validated_sort(Some("stars:desc:integer")),
+            "(custom_values->>'stars')::numeric DESC NULLS LAST"
+        );
+    }
+
+    #[test]
+    fn sort_single_column_asc() {
+        assert_eq!(
+            validated_sort(Some("name:asc")),
+            "custom_values->>'name' ASC NULLS LAST"
+        );
+    }
+
+    #[test]
+    fn sort_builtin_column() {
+        assert_eq!(
+            validated_sort(Some("when_created:asc")),
+            "when_created ASC NULLS LAST"
+        );
+    }
+
+    #[test]
+    fn sort_multi_column() {
+        let result = validated_sort(Some("stars:desc:integer,name:asc"));
+        assert_eq!(
+            result,
+            "(custom_values->>'stars')::numeric DESC NULLS LAST, custom_values->>'name' ASC NULLS LAST"
+        );
+    }
+
+    #[test]
+    fn sort_skips_invalid_columns() {
+        // A column name with SQL-injection chars is silently dropped; valid ones survive.
+        let result = validated_sort(Some("'; DROP TABLE:asc,name:asc"));
+        assert_eq!(result, "custom_values->>'name' ASC NULLS LAST");
+    }
+
+    #[test]
+    fn sort_all_invalid_falls_back_to_default() {
+        assert_eq!(
+            validated_sort(Some("'; DROP TABLE:asc")),
+            "when_created DESC NULLS LAST"
+        );
     }
 }

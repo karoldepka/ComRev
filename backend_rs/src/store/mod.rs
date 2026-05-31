@@ -10,6 +10,8 @@ pub mod mongo;
 pub mod pg;
 pub mod sqlite;
 pub mod surreal;
+#[cfg(test)]
+pub mod tests_integration;
 
 pub use pg::PgStore;
 
@@ -102,6 +104,15 @@ pub trait DataStore: Send + Sync {
         params: &crate::types::RowQuery,
     ) -> Result<crate::types::PagedResponse>;
 
+    /// Create a new row (idempotent: if `row_id` already exists the existing row is returned).
+    async fn create_row(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        title: Option<&str>,
+        who_created: Option<&str>,
+    ) -> Result<crate::data_row::TableRow>;
+
     /// Updates a single column value for a row without touching other columns.
     /// Implementations must ensure concurrent edits to different columns do not overwrite each other.
     async fn patch_row_value(
@@ -116,18 +127,47 @@ pub trait DataStore: Send + Sync {
     // Fire-and-forget: errors are logged internally; callers do not need to handle them.
     // tx_id groups related operations from one client transaction; None for standalone ops.
     async fn append_ops_log(&self, op: &str, payload: serde_json::Value, tx_id: Option<&str>);
+
+    // ── GitHub repos batch upsert ─────────────────────────────────────────────
+    /// Upsert a batch of raw GitHub repo objects (from star_diff_rs). Returns the upserted count.
+    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize>;
 }
+
+pub mod multi;
 
 /// Construct the appropriate store from DATABASE_URL.
 pub async fn open(url: &str) -> Result<Arc<dyn DataStore>> {
     if url.starts_with("sqlite") {
         Ok(Arc::new(sqlite::SqliteStore))
-    } else if url.starts_with("surreal") {
-        Ok(Arc::new(surreal::SurrealStore))
+    } else if url.starts_with("surreal") || url.starts_with("wss://") || url.starts_with("ws://") {
+        Ok(Arc::new(surreal::SurrealStore::connect(url).await?))
     } else if url.starts_with("mongodb") {
         Ok(Arc::new(mongo::MongoStore))
     } else {
         // Covers postgres:// and postgresql://
         Ok(Arc::new(PgStore::connect(url).await?))
     }
+}
+
+/// Construct a multi-store when secondary URLs are provided, or a single store otherwise.
+/// `secondary_urls` is a comma-separated list of additional database URLs.
+pub async fn open_multi(
+    primary_url: &str,
+    secondary_urls: Option<&str>,
+) -> Result<Arc<dyn DataStore>> {
+    let primary = open(primary_url).await?;
+    let secondaries: Vec<&str> = secondary_urls
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if secondaries.is_empty() {
+        return Ok(primary);
+    }
+    let mut stores = vec![primary];
+    for url in secondaries {
+        stores.push(open(url).await?);
+    }
+    Ok(Arc::new(multi::MultiStore::new(stores)))
 }

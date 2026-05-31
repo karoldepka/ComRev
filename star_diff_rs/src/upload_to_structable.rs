@@ -166,27 +166,25 @@ fn load_repos(path: &PathBuf) -> Result<Vec<YamlRepo>> {
     Ok(repos)
 }
 
-async fn upsert_batch(
+async fn upload_batch_to_comrev(
     client: &reqwest::Client,
-    url: &str,
-    key: &str,
+    backend_url: &str,
     batch: &[DbRepo],
 ) -> Result<()> {
+    let endpoint = format!("{}/github-repos/upsert-batch", backend_url.trim_end_matches('/'));
+    let payload = serde_json::json!({ "repos": batch });
     let resp = client
-        .post(url)
-        .header("apikey", key)
-        .header("Authorization", format!("Bearer {key}"))
+        .post(&endpoint)
         .header("Content-Type", "application/json")
-        .header("Prefer", "resolution=merge-duplicates,return=minimal")
-        .json(batch)
+        .json(&payload)
         .send()
         .await
-        .context("sending upsert request")?;
+        .context("sending upsert request to backend")?;
 
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        bail!("upsert failed ({status}): {body}");
+        bail!("backend upsert failed ({status}): {body}");
     }
     Ok(())
 }
@@ -200,22 +198,28 @@ async fn main() -> Result<()> {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    // env
-    let supabase_url = std::env::var("SUPABASE_URL")
-        .context("SUPABASE_URL not set")?;
-    let service_key = std::env::var("SUPABASE_SERVICE_ROLE_KEY")
-        .context("SUPABASE_SERVICE_ROLE_KEY not set")?;
-
-    let endpoint = format!("{}/rest/v1/github_repos", supabase_url.trim_end_matches('/'));
+    // Route through the ComRev backend API so data reaches all configured stores (MultiStore).
+    let backend_url = std::env::var("BACKEND_URL")
+        .unwrap_or_else(|_| "http://localhost:3001".to_string());
 
     // load
     let path = yaml_path();
     info!("📂 Loading {}", path.display());
     let t0 = Instant::now();
     let yaml_repos = load_repos(&path)?;
-    info!("📦 {:>10?}  {} repos loaded", t0.elapsed(), yaml_repos.len());
+    let raw_count = yaml_repos.len();
+    info!("📦 {:>10?}  {} repos loaded", t0.elapsed(), raw_count);
 
-    let db_repos: Vec<DbRepo> = yaml_repos.into_iter().map(DbRepo::from).collect();
+    // Deduplicate by github_id — last entry in the file wins if the same id appears twice.
+    let unique: std::collections::HashMap<i64, DbRepo> = yaml_repos
+        .into_iter()
+        .map(|r| (r.id, DbRepo::from(r)))
+        .collect();
+    let duplicate_count = raw_count - unique.len();
+    if duplicate_count > 0 {
+        warn!("⚠️  Skipped {} duplicate github_id entries", duplicate_count);
+    }
+    let db_repos: Vec<DbRepo> = unique.into_values().collect();
 
     // upload in batches
     let client = reqwest::Client::new();
@@ -224,7 +228,7 @@ async fn main() -> Result<()> {
 
     for (i, chunk) in db_repos.chunks(BATCH_SIZE).enumerate() {
         let t = Instant::now();
-        upsert_batch(&client, &endpoint, &service_key, chunk)
+        upload_batch_to_comrev(&client, &backend_url, chunk)
             .await
             .with_context(|| format!("batch {}", i + 1))?;
         uploaded += chunk.len();

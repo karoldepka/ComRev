@@ -23,6 +23,8 @@ type QueuedOp = {
   retries: number;
   seq: number;      // monotonic insertion order — used to sort after IDB getAll
   enqueuedAt?: number; // optional: absent in ops persisted by older code
+  /** Set on 4xx response: kept in IDB for reference but never retried. */
+  failedAt?: number;
   onSuccess?: (data: unknown) => void; // in-memory only; stripped before IDB write
 };
 
@@ -116,13 +118,18 @@ export class TableApi {
       const stored = await this.db.getAll(OPS_STORE);
       stored.sort((a, b) => a.seq - b.seq);
 
+      const pending = stored.filter((op) => !op.failedAt);
+      const failed  = stored.filter((op) =>  op.failedAt);
+      if (failed.length > 0)
+        logger.info({ count: failed.length }, 'skipping previously-failed (4xx) ops on startup');
+
       // Ops enqueued before IDB loaded (rare race): merge after IDB ops
       const storedIds = new Set(stored.map((op) => op.id));
       const preInitOps = this.queue.filter((op) => !storedIds.has(op.id));
 
-      this.queue = [...stored, ...preInitOps];
-      this.nextSeq = this.queue.length > 0
-        ? Math.max(...this.queue.map((op) => op.seq)) + 1
+      this.queue = [...pending, ...preInitOps];
+      this.nextSeq = stored.length > 0
+        ? Math.max(...stored.map((op) => op.seq)) + 1
         : 0;
 
       // Assign correct seq to pre-init ops and persist them
@@ -410,14 +417,14 @@ export class TableApi {
             body: op.body ? JSON.stringify(op.body) : undefined,
           });
           if (res.status >= 400 && res.status < 500) {
-            // Client error: unrecoverable — drop and report
+            // Client error: not retried — stamp failedAt in IDB for reference, drop from queue
             let errBody = '';
             try { errBody = await res.text(); } catch { /* no body */ }
+            await this.idbPut({ ...op, failedAt: Date.now() });
             this.queue.shift();
-            await this.db.delete(OPS_STORE, op.id);
             this.onQueueChange?.(this.queue.length);
             this.onError(`Sync error ${res.status} for ${op.method} ${this.base}${op.path}${errBody ? `: ${errBody.slice(0, 300)}` : ''}`);
-            logger.info({ id: op.id, status: res.status, queueLength: this.queue.length }, 'dropped unrecoverable table api operation');
+            logger.warn({ id: op.id, status: res.status, queueLength: this.queue.length }, 'table api operation failed (4xx); kept in IDB, will not retry');
             continue;
           }
           if (!res.ok) throw new Error(`HTTP ${res.status} for ${op.method} ${this.base}${op.path}`);

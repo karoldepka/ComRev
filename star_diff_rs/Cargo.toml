@@ -8,8 +8,8 @@ name = "star_diff"
 path = "src/main.rs"
 
 [[bin]]
-name = "upload_supabase"
-path = "src/upload_supabase.rs"
+name = "upload_to_structable"
+path = "src/upload_to_structable.rs"
 
 [dependencies]
 anyhow = "1.0"

@@ -120,7 +120,7 @@ async def main():
     repo = ensure_git_repo()
 
     repos = await fetch_repos()
-    print(f"📦 Fetched {len(repos)} repos")
+    print(f" ========= 📦 Fetched {len(repos)} repos ========")
 
     if not repos:
         print("⚠️ No data found")
