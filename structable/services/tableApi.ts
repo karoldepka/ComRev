@@ -339,6 +339,16 @@ export class TableApi {
     this.enqueue({ id: `hidden-col:remove:${columnId}`, method: 'DELETE', path: `/hidden-columns/${encodeURIComponent(columnId)}`, retries: 0 });
   }
 
+  createRow(tableId: string, rowId: string, values: Record<string, unknown>): void {
+    this.enqueue({
+      id: `row:create:${rowId}`,
+      method: 'POST',
+      path: `/tables/${encodeURIComponent(tableId)}/rows`,
+      body: { id: rowId, ...values },
+      retries: 0,
+    });
+  }
+
   // ── Retry timer ────────────────────────────────────────────────────────────
 
   private clearRetryTimer(): void {

@@ -9,6 +9,8 @@ import type { ColumnGroup } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
 import AddColumnDialog from './AddColumnDialog';
+import AddRowDialog from './AddRowDialog';
+import type { AddRowPayload } from './AddRowDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
@@ -321,8 +323,9 @@ export default function TreeTable({ tableId }: Props) {
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
   const [headerMenuMode, setHeaderMenuMode] = useState<'menu' | 'flag' | 'note' | 'comment'>('menu');
-  // ── Add-column dialog ─────────────────────────────────────────────────────
+  // ── Add-column / add-row dialogs ──────────────────────────────────────────
   const [addColAfter, setAddColAfter] = useState<string | null>(null);
+  const [showAddRowDialog, setShowAddRowDialog] = useState(false);
   type PendingDelete = { colId: string; label: string; notes: number; comments: number; flags: number };
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
 
@@ -597,6 +600,11 @@ export default function TreeTable({ tableId }: Props) {
         setAddColFocused(false);
         return;
       }
+      if (cursorPos && cursorPos.row === rows.length) {
+        e.preventDefault();
+        setShowAddRowDialog(true);
+        return;
+      }
       if (cursorPos && cursorPos.row >= 0) {
         const col = visibleLeafColumns[cursorPos.col];
         const row = rows[cursorPos.row];
@@ -859,6 +867,15 @@ export default function TreeTable({ tableId }: Props) {
     setHiddenColumns((prev) => prev.filter((c) => c !== colId));
     setPendingDeleteCol(null);
   }, [api, customColByName, pendingDeleteCol]);
+
+  const handleAddRowConfirm = useCallback((payload: AddRowPayload) => {
+    if (!cellApiRef.current) return;
+    setRows((prev) => [...prev, { id: payload.id, title: payload.title }]);
+    setTotal((t) => t + 1);
+    recordChange(`Add row "${payload.title}"`);
+    cellApiRef.current.createRow(tableId, payload.id, { title: payload.title });
+    setShowAddRowDialog(false);
+  }, [recordChange, tableId]);
 
   const handleFlagsChange = useCallback((toSet: Record<string, string>, toDelete: string[]) => {
     if (!api) return;
@@ -1254,6 +1271,30 @@ export default function TreeTable({ tableId }: Props) {
                   </tr>
                 );
               })}
+              <tr
+                className="add-row-tr"
+                onDoubleClick={() => setShowAddRowDialog(true)}
+              >
+                {visibleLeafColumns.map((col, colIdx) => {
+                  const addRowKey = `add-row:${col.id}`;
+                  const isFocused = selectedSet.has(addRowKey);
+                  return (
+                    <td
+                      key={col.id}
+                      className={[
+                        'add-row-td',
+                        isFocused ? 'add-row-td--focused' : '',
+                        col.isFrozen ? 'sticky-col' : '',
+                      ].filter(Boolean).join(' ')}
+                      style={col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined}
+                      onClick={(e) => selectKey(addRowKey, e.metaKey || e.ctrlKey)}
+                    >
+                      {colIdx === 0 ? '+ Add row' : ''}
+                    </td>
+                  );
+                })}
+                <td className="add-row-td add-col-td" />
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1321,6 +1362,12 @@ export default function TreeTable({ tableId }: Props) {
           flagsCount={pendingDeleteCol.flags}
           onConfirm={confirmDeleteCustomColumn}
           onCancel={() => setPendingDeleteCol(null)}
+        />
+      )}
+      {showAddRowDialog && (
+        <AddRowDialog
+          onConfirm={handleAddRowConfirm}
+          onClose={() => setShowAddRowDialog(false)}
         />
       )}
     </>

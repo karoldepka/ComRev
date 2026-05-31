@@ -25,6 +25,7 @@ function cursorToKey(
   if (pos.col < 0 || pos.col >= leafCols.length) return null;
   const col = leafCols[pos.col];
   if (pos.row === -1) return leafHeaderKey.get(col.id) ?? null;
+  if (pos.row === numRows) return `add-row:${col.id}`;
   if (pos.row < 0 || pos.row >= numRows) return null;
   return `cell:${pos.row}:${col.id}`;
 }
@@ -67,8 +68,8 @@ export function useTableSelection(
       const pos = cur ?? (numRows > 0 && visibleLeafColumns.length > 0 ? { row: 0, col: 0 } : null);
       if (!pos) return cur;
       let { row, col } = pos;
-      if (direction === 'ArrowUp')    { if (row > 0) row--; else if (row === 0) row = -1; }
-      if (direction === 'ArrowDown')  { if (row === -1) row = 0; else if (row < numRows - 1) row++; }
+      if (direction === 'ArrowUp')    { if (row === numRows) row = numRows > 0 ? numRows - 1 : -1; else if (row > 0) row--; else if (row === 0) row = -1; }
+      if (direction === 'ArrowDown')  { if (row === -1) row = 0; else if (row < numRows) row++; }
       if (direction === 'ArrowLeft')  { if (col > 0) col--; }
       if (direction === 'ArrowRight') { if (col < visibleLeafColumns.length - 1) col++; }
       const newPos = { row, col };
