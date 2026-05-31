@@ -17,6 +17,7 @@ TOPICS_RAW = [
     *"reinforcement-learning transformers pytorch diffusion dit video-generation world-models sana text-to-video linear-transformer text-to-image-generation system-algorithm-deisgn ystem-algorithm-design nvfp4".split(" "),
     *"ui ai mcp openapi self-hosted openai webui rag llm llms ollama llm-ui ollama-webui llm-webui open-webui".split(" "),
     *"sql database web serverless nosql devtools distributed database-as-a-service developer-tools graph-database distributed-database document-database realtime-database backend-as-a-service cloud-database surreal surrealdb iot-database".split(" "),
+    *"search search-engine machine-learning neural-network nearest-neighbor-search image-search recommender-system search-engines similarity-search ai-search knn-algorithm mlops hnsw vector-search vector-database neural-search vector-search-engine embeddings-similarity hybrid-search ai-search-engine".split(" "),
     "mobx",
     "redux",
     "zustand",
