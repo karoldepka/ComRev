@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{error::db_err, data_row::AppState};
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CellFlag {
     pub id: String,
     pub key: String,

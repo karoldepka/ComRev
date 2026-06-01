@@ -20,6 +20,10 @@ use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // rustls 0.22+ requires an explicit crypto provider when multiple crates
+    // (sqlx, surrealdb) each pull it in without agreeing on one.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     dotenvy::dotenv().ok();
 
     structable_logger::init("backend_rs=debug,tower_http=info");

@@ -45,6 +45,11 @@ pub struct RowQuery {
     /// Patterns are pre-split on comma; '%' wrapping is added in SQL.
     /// Each entry: (dot-path, [pattern, ...])
     pub like_filters: Vec<(String, Vec<String>)>,
+
+    /// Per-request fan-read timeout override for MultiStore reads (seconds).
+    /// Passed as `?read_timeout_secs=N` in the query string.
+    /// Falls back to the `FAN_READ_TIMEOUT_SECS` env var, then 60 s.
+    pub read_timeout_secs: Option<u64>,
 }
 
 impl RowQuery {
@@ -105,6 +110,7 @@ impl RowQuery {
             date_filters,
             value_filters: value_map.into_iter().collect(),
             like_filters:  like_map.into_iter().collect(),
+            read_timeout_secs: map.get("read_timeout_secs").and_then(|v| v.parse().ok()),
         }
     }
 }
