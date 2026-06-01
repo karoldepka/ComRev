@@ -243,15 +243,16 @@ export class TableApi {
   createCustomColumn(
     tableId: string,
     payload: Omit<ApiCustomColumn, 'id' | 'read_only' | 'readOnly' | 'is_editable' | 'types'>,
+    id?: string,
     onConfirmed?: (confirmed: ApiCustomColumn) => void,
   ): ApiCustomColumn {
-    const id = nanoid();
-    const temp: ApiCustomColumn = { ...payload, id, read_only: false, readOnly: false, types: ['text'] };
+    const columnId = id ?? nanoid();
+    const temp: ApiCustomColumn = { ...payload, id: columnId, read_only: false, readOnly: false, types: ['text'] };
     this.enqueue({
-      id: `custom-col:create:${id}`,
+      id: `custom-col:create:${columnId}`,
       method: 'POST',
       path: `/tables/${encodeURIComponent(tableId)}/custom-columns`,
-      body: { id, ...payload },
+      body: { id: columnId, ...payload },
       retries: 0,
       onSuccess: onConfirmed ? (data) => onConfirmed(data as ApiCustomColumn) : undefined,
     });

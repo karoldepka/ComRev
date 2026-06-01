@@ -91,27 +91,18 @@ function insertAfter(list: Column[], col: Column, positionAfter: string | null |
 
 /** Resolve the row-data key for a column.
  *  1. source_path from backend (authoritative)
- *  2. Heuristic: if cc.name isn't a direct row key but starts with a nested-object key + '_',
- *     build the dot-path.  Handles old backends that don't yet return source_path. */
-function resolveColumnId(cc: ApiCustomColumn, rowSample?: DataRow): string {
+ *  2. Stable column id for user-created values. `name` is user-facing/renameable. */
+function resolveColumnId(cc: ApiCustomColumn): string {
   if ((cc.source_path?.length ?? 0) > 1) return cc.source_path!.join('.');
   if (cc.source_path?.[0]) return cc.source_path[0];
-  if (rowSample && !(cc.name in rowSample)) {
-    for (const key of Object.keys(rowSample)) {
-      const val = rowSample[key];
-      if (val !== null && typeof val === 'object' && !Array.isArray(val) && cc.name.startsWith(key + '_')) {
-        return `${key}.${cc.name.slice(key.length + 1)}`;
-      }
-    }
-  }
-  return cc.name;
+  return cc.id;
 }
 
-function columnsFromMetadata(customColumns: ApiCustomColumn[], rowSample?: DataRow): Column[] {
+function columnsFromMetadata(customColumns: ApiCustomColumn[], _rowSample?: DataRow): Column[] {
   const colMap = new Map<string, Column>();
   for (const cc of customColumns) {
     colMap.set(cc.id, {
-      id: resolveColumnId(cc, rowSample),
+      id: resolveColumnId(cc),
       customColumnId: cc.id,
       label: cc.label ?? labelFor(cc.name),
       width: 150,
@@ -567,7 +558,7 @@ export default function TreeTable({ tableId }: Props) {
       if (cc.expression?.trim()) {
         try {
           // eslint-disable-next-line no-new-func
-          map.set(cc.name, new Function('row', `"use strict"; return (${cc.expression})`) as (row: DataRow) => unknown);
+          map.set(resolveColumnId(cc), new Function('row', `"use strict"; return (${cc.expression})`) as (row: DataRow) => unknown);
         } catch { /* invalid expression */ }
       }
     }
@@ -575,13 +566,13 @@ export default function TreeTable({ tableId }: Props) {
   }, [customColumns]);
 
   // Lookup maps for column metadata
-  const customColByName = useMemo(() => new Map(customColumns.map((cc) => [cc.name, cc])), [customColumns]);
+  const customColByColumnId = useMemo(() => new Map(customColumns.map((cc) => [resolveColumnId(cc), cc])), [customColumns]);
 
   const isCellEditable = useCallback((colId: string): boolean => {
     if (compiledExprs.has(colId)) return false; // computed — not user-editable
-    const cc = customColByName.get(colId);
+    const cc = customColByColumnId.get(colId);
     return cc ? !isColumnReadOnly(cc) : true; // no metadata yet → fallback columns are editable
-  }, [compiledExprs, customColByName]);
+  }, [compiledExprs, customColByColumnId]);
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
@@ -789,10 +780,10 @@ export default function TreeTable({ tableId }: Props) {
     return () => window.removeEventListener('pointerdown', onDown);
   }, [cellMenu]);
 
-  // All column names currently visible, used for duplicate-ID validation.
+  // All stable column ids currently visible, used for duplicate-ID validation.
   const existingColNames = useMemo<Set<string>>(() => new Set([
     ...allLeafColumns.map((c) => c.id),
-    ...customColumns.map((cc) => cc.name),
+    ...customColumns.map((cc) => cc.id),
   ]), [allLeafColumns, customColumns]);
 
   const handleDialogConfirm = useCallback((afterColId: string, payload: import('./AddColumnDialog').AddColumnPayload) => {
@@ -800,12 +791,12 @@ export default function TreeTable({ tableId }: Props) {
     setAddColAfter(null);
     setOpenMenuColumn(null);
     setMenuAnchor(null);
-    const derivedName = payload.title.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    const id = nanoid();
+    const derivedName = payload.title.trim();
+    const id = payload.customId ?? nanoid();
     const positionAfter = afterColId || null;
     const col: ApiCustomColumn = {
       id,
-      name: payload.customId ?? derivedName,
+      name: derivedName,
       label: payload.title.trim(),
       description: payload.description,
       expression: payload.expression,
@@ -822,17 +813,17 @@ export default function TreeTable({ tableId }: Props) {
 
   const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {
     const col = allLeafColumns.find((c) => c.id === colId);
-    const customId = col?.customColumnId ?? customColByName.get(colId)?.id;
+    const customId = col?.customColumnId ?? customColByColumnId.get(colId)?.id;
     if (!customId || !cellApiRef.current) return;
     setCustomColumns((prev) => prev.map((cc) => cc.id === customId ? { ...cc, is_frozen: isFrozen } : cc));
     recordChange(`${isFrozen ? 'Freeze' : 'Unfreeze'} column "${col?.label ?? colId}"`);
     cellApiRef.current.setColumnFrozen(tableId, customId, isFrozen)
       .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
       .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
-  }, [allLeafColumns, customColByName, recordChange, tableId]);
+  }, [allLeafColumns, customColByColumnId, recordChange, tableId]);
 
   const deleteCustomColumn = useCallback((colId: string) => {
-    const colMeta = customColByName.get(colId);
+    const colMeta = customColByColumnId.get(colId);
     if (!colMeta || isColumnReadOnly(colMeta)) return;
     // Count associated remarks and flags from local state, then show confirmation.
     const suffix = `:${colId}`;
@@ -854,19 +845,19 @@ export default function TreeTable({ tableId }: Props) {
     setOpenMenuColumn(null);
     setMenuAnchor(null);
     setPendingDeleteCol({ colId, label, notes: noteIds.size, comments: commentIds.size, flags: flagCount });
-  }, [customColByName, cellRemarks, cellFlags, allLeafColumns]);
+  }, [customColByColumnId, cellRemarks, cellFlags, allLeafColumns]);
 
   const confirmDeleteCustomColumn = useCallback(() => {
     if (!pendingDeleteCol || !api) return;
     const { colId } = pendingDeleteCol;
-    const colMeta = customColByName.get(colId);
+    const colMeta = customColByColumnId.get(colId);
     if (!colMeta || isColumnReadOnly(colMeta)) return;
     recordChange(`Delete column "${pendingDeleteCol.label}"`);
     api.deleteCustomColumn(colMeta.id);
     setCustomColumns((prev) => prev.filter((c) => c.id !== colMeta.id));
     setHiddenColumns((prev) => prev.filter((c) => c !== colId));
     setPendingDeleteCol(null);
-  }, [api, customColByName, pendingDeleteCol]);
+  }, [api, customColByColumnId, pendingDeleteCol]);
 
   const handleAddRowConfirm = useCallback((payload: AddRowPayload) => {
     if (!cellApiRef.current) return;

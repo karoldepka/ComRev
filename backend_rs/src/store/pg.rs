@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row, postgres::PgPoolOptions};
 
 use super::DataStore;
 use crate::{
@@ -33,13 +33,10 @@ impl PgStore {
 #[async_trait]
 impl DataStore for PgStore {
     async fn ensure_schema(&self) -> Result<()> {
-        // Add applied_at column to operations_log if not yet present (idempotent).
-        sqlx::query(
-            "ALTER TABLE operations_log ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ",
-        )
-        .execute(&self.pool)
-        .await
-        .ok();
+        for sql in super::pg_schema::POSTGRES_SCHEMA {
+            sqlx::query(sql).execute(&self.pool).await?;
+        }
+        super::pg_schema::seed_builtin_columns(&self.pool).await?;
         Ok(())
     }
 
@@ -310,26 +307,39 @@ impl DataStore for PgStore {
         .fetch_one(&self.pool)
         .await?;
 
-        // Per-column JSONB index. Uses source_path when available (nested JSONB),
-        // otherwise falls back to column name as a top-level key.
+        // Per-column JSONB index. Uses source_path when available (nested/read-only data),
+        // otherwise falls back to the stable column id as a top-level key.
         // Partial index on table_id keeps it small when multiple tables share table_rows.
-        let jsonb_expr = build_index_expr(input);
+        let jsonb_expr = build_index_expr(id, input);
         let types = input.effective_types();
-        let (cast, direction) = if types.iter().any(|t| matches!(t.as_str(), "integer"|"bigint"|"numeric")) {
+        let (cast, direction) = if types
+            .iter()
+            .any(|t| matches!(t.as_str(), "integer" | "bigint" | "numeric"))
+        {
             ("::numeric", " DESC NULLS LAST")
         } else if types.iter().any(|t| t == "timestamptz") {
             ("::timestamptz", " DESC NULLS LAST")
         } else {
             ("", "")
         };
-        let cast_expr = if cast.is_empty() { jsonb_expr.clone() } else { format!("({jsonb_expr}){cast}") };
+        let cast_expr = if cast.is_empty() {
+            jsonb_expr.clone()
+        } else {
+            format!("({jsonb_expr}){cast}")
+        };
         let safe_tid = table_id.replace('\'', "''");
-        for (suffix, dir) in [("", direction), ("_asc", " ASC NULLS LAST")] {
-            if suffix == "_asc" && direction != " DESC NULLS LAST" { break; } // only add _asc when _default is DESC
+        for suffix in ["", "_asc"] {
+            if suffix == "_asc" && direction != " DESC NULLS LAST" {
+                break;
+            } // only add _asc when _default is DESC
             let idx = format!("idx_cv_{id}{suffix}");
             let sql = format!(
                 r#"CREATE INDEX IF NOT EXISTS "{idx}" ON table_rows (({cast_expr}){dir}) WHERE table_id = '{safe_tid}'"#,
-                dir = if suffix.is_empty() { direction } else { " ASC NULLS LAST" },
+                dir = if suffix.is_empty() {
+                    direction
+                } else {
+                    " ASC NULLS LAST"
+                },
             );
             if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
                 tracing::warn!("could not create index \"{idx}\": {e}");
@@ -345,10 +355,11 @@ impl DataStore for PgStore {
             .execute(&self.pool)
             .await?;
 
-        let idx = format!("idx_cv_{id}");
-        let sql = format!(r#"DROP INDEX IF EXISTS "{idx}""#);
-        if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
-            tracing::warn!("could not drop index \"{idx}\": {e}");
+        for idx in [format!("idx_cv_{id}"), format!("idx_cv_{id}_asc")] {
+            let sql = format!(r#"DROP INDEX IF EXISTS "{idx}""#);
+            if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
+                tracing::warn!("could not drop index \"{idx}\": {e}");
+            }
         }
         Ok(())
     }
@@ -413,13 +424,19 @@ impl DataStore for PgStore {
              RETURNING id, title, description, who_created, when_created,
                        who_last_modified, when_last_modified, modify_count",
         )
-        .bind(id).bind(title).bind(description).bind(who_created)
+        .bind(id)
+        .bind(title)
+        .bind(description)
+        .bind(who_created)
         .fetch_optional(&self.pool)
         .await?;
         match row {
             Some(t) => Ok(t),
             // Conflict: another request already inserted this id — return existing row.
-            None => Ok(sqlx::query_as::<_, Table>(SEL).bind(id).fetch_one(&self.pool).await?),
+            None => Ok(sqlx::query_as::<_, Table>(SEL)
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await?),
         }
     }
 
@@ -500,12 +517,18 @@ impl DataStore for PgStore {
              RETURNING id, table_id, who_created, when_created,
                        who_last_modified, when_last_modified, custom_values, modify_count",
         )
-        .bind(row_id).bind(table_id).bind(who_created).bind(initial)
+        .bind(row_id)
+        .bind(table_id)
+        .bind(who_created)
+        .bind(initial)
         .fetch_optional(&self.pool)
         .await?;
         match row {
             Some(r) => Ok(r),
-            None => Ok(sqlx::query_as::<_, TableRow>(SEL).bind(row_id).fetch_one(&self.pool).await?),
+            None => Ok(sqlx::query_as::<_, TableRow>(SEL)
+                .bind(row_id)
+                .fetch_one(&self.pool)
+                .await?),
         }
     }
 
@@ -536,7 +559,12 @@ impl DataStore for PgStore {
             .iter()
             .map(|r| r.try_get::<serde_json::Value, _>(0))
             .collect::<Result<_, _>>()?;
-            return Ok(PagedResponse { data: rows, total, page: params.page, per_page: params.per_page });
+            return Ok(PagedResponse {
+                data: rows,
+                total,
+                page: params.page,
+                per_page: params.per_page,
+            });
         }
 
         {
@@ -555,9 +583,7 @@ impl DataStore for PgStore {
                 .collect();
 
             let total: i64 = {
-                let mut qb = QueryBuilder::new(
-                    "SELECT COUNT(*) FROM table_rows WHERE table_id = "
-                );
+                let mut qb = QueryBuilder::new("SELECT COUNT(*) FROM table_rows WHERE table_id = ");
                 qb.push_bind(table_id);
                 qb.push(" AND id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
@@ -573,7 +599,7 @@ impl DataStore for PgStore {
                        'who_created', who_created, \
                        'when_last_modified', when_last_modified, \
                        'who_last_modified', who_last_modified\
-                     ) || custom_values) FROM table_rows WHERE table_id = "
+                     ) || custom_values) FROM table_rows WHERE table_id = ",
                 );
                 qb.push_bind(table_id);
                 qb.push(" AND id NOT IN (SELECT row_id FROM hidden_rows)");
@@ -588,13 +614,20 @@ impl DataStore for PgStore {
                     .map(|r| r.try_get::<serde_json::Value, _>(0))
                     .collect::<Result<_, _>>()?
             };
-            return Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page });
+            return Ok(PagedResponse {
+                data,
+                total,
+                page: params.page,
+                per_page: params.per_page,
+            });
         }
     }
 
     // ── GitHub repos batch upsert ─────────────────────────────────────────────
     async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-        if repos.is_empty() { return Ok(0); }
+        if repos.is_empty() {
+            return Ok(0);
+        }
         let json_array = serde_json::Value::Array(repos.to_vec());
         // Each element has github_id + all other GitHub fields.
         // Store id = github_id::text; all fields go into custom_values (minus the id key).
@@ -628,7 +661,9 @@ impl DataStore for PgStore {
     }
 
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
-        if rows.is_empty() { return Ok(0); }
+        if rows.is_empty() {
+            return Ok(0);
+        }
         let json_array = serde_json::Value::Array(rows.to_vec());
         let count: i64 = sqlx::query_scalar(
             "WITH rows AS (
@@ -657,7 +692,13 @@ impl DataStore for PgStore {
     }
 
     // ── Ops log ───────────────────────────────────────────────────────────────
-    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
+    async fn begin_ops_log(
+        &self,
+        id: &str,
+        op: &str,
+        payload: serde_json::Value,
+        tx_id: Option<&str>,
+    ) {
         crate::ops_log::begin(&self.pool, id, op, payload, tx_id).await;
     }
 
@@ -672,10 +713,15 @@ impl DataStore for PgStore {
 
 // ── Query helpers (PG-specific) ───────────────────────────────────────────────
 
-fn col_has_type(col_types: &std::collections::HashMap<String, Vec<String>>, name: &str, target: &str) -> bool {
-    col_types.get(name).map_or(false, |types| types.iter().any(|t| t == target))
+fn col_has_type(
+    col_types: &std::collections::HashMap<String, Vec<String>>,
+    name: &str,
+    target: &str,
+) -> bool {
+    col_types
+        .get(name)
+        .map_or(false, |types| types.iter().any(|t| t == target))
 }
-
 
 /// Shared AND-clause conditions used by both push_filters and push_table_row_filters.
 fn push_filter_conditions<'q>(
@@ -685,30 +731,51 @@ fn push_filter_conditions<'q>(
 ) {
     for (path, min, max) in &p.range_filters {
         if let Some(expr) = path_to_jsonb_expr(path) {
-            if let Some(v) = min { qb.push(format!(" AND ({expr})::numeric >= ")).push_bind(*v); }
-            if let Some(v) = max { qb.push(format!(" AND ({expr})::numeric <= ")).push_bind(*v); }
+            if let Some(v) = min {
+                qb.push(format!(" AND ({expr})::numeric >= ")).push_bind(*v);
+            }
+            if let Some(v) = max {
+                qb.push(format!(" AND ({expr})::numeric <= ")).push_bind(*v);
+            }
         }
     }
     for (path, after, before) in &p.date_filters {
         if let Some(expr) = path_to_jsonb_expr(path) {
-            if let Some(v) = after  { qb.push(format!(" AND ({expr})::timestamptz >= ")).push_bind(*v); }
-            if let Some(v) = before { qb.push(format!(" AND ({expr})::timestamptz <= ")).push_bind(*v); }
+            if let Some(v) = after {
+                qb.push(format!(" AND ({expr})::timestamptz >= "))
+                    .push_bind(*v);
+            }
+            if let Some(v) = before {
+                qb.push(format!(" AND ({expr})::timestamptz <= "))
+                    .push_bind(*v);
+            }
         }
     }
     for (path, vals) in &p.value_filters {
-        if vals.is_empty() { continue; }
+        if vals.is_empty() {
+            continue;
+        }
         let col_name = path.split('.').next().unwrap_or(path.as_str());
         if col_has_type(col_types, col_name, "array") {
             if let Some(obj_expr) = path_to_jsonb_value_expr(path) {
-                qb.push(format!(" AND {obj_expr} ?| ")).push_bind(vals.clone());
+                qb.push(format!(" AND {obj_expr} ?| "))
+                    .push_bind(vals.clone());
             }
         } else if let Some(expr) = path_to_jsonb_expr(path) {
-            qb.push(format!(" AND ({expr}) = ANY(")).push_bind(vals.clone()).push(")");
+            qb.push(format!(" AND ({expr}) = ANY("))
+                .push_bind(vals.clone())
+                .push(")");
         }
     }
     for (path, patterns) in &p.like_filters {
-        let wrapped: Vec<String> = patterns.iter().filter(|p| !p.is_empty()).map(|p| format!("%{p}%")).collect();
-        if wrapped.is_empty() { continue; }
+        let wrapped: Vec<String> = patterns
+            .iter()
+            .filter(|p| !p.is_empty())
+            .map(|p| format!("%{p}%"))
+            .collect();
+        if wrapped.is_empty() {
+            continue;
+        }
         let col_name = path.split('.').next().unwrap_or(path.as_str());
         if col_has_type(col_types, col_name, "array") {
             if let Some(obj_expr) = path_to_jsonb_value_expr(path) {
@@ -716,7 +783,9 @@ fn push_filter_conditions<'q>(
                   .push_bind(wrapped).push("))");
             }
         } else if let Some(expr) = path_to_jsonb_expr(path) {
-            qb.push(format!(" AND ({expr}) ILIKE ANY(")).push_bind(wrapped).push(")");
+            qb.push(format!(" AND ({expr}) ILIKE ANY("))
+                .push_bind(wrapped)
+                .push(")");
         }
     }
     if let Some(ref q) = p.q {
@@ -730,18 +799,21 @@ fn push_filter_conditions<'q>(
 }
 
 /// Build the JSONB expression for a column index, using source_path when available.
-fn build_index_expr(input: &crate::custom_column::CustomColumnInput) -> String {
+/// User-created columns default to their stable column id, not the renameable name/title.
+fn build_index_expr(id: &str, input: &crate::custom_column::CustomColumnInput) -> String {
     let path = input.source_path.as_deref().unwrap_or(&[]);
     if path.len() >= 2 {
         let n = path.len();
         let mut expr = String::from("custom_values");
-        for key in &path[..n - 1] { expr.push_str(&format!("->'{}'", key.replace('\'', "''"))); }
+        for key in &path[..n - 1] {
+            expr.push_str(&format!("->'{}'", key.replace('\'', "''")));
+        }
         expr.push_str(&format!("->>'{}'", path[n - 1].replace('\'', "''")));
         expr
     } else if path.len() == 1 {
-        format!("custom_values->>'{}'" , path[0].replace('\'', "''"))
+        format!("custom_values->>'{}'", path[0].replace('\'', "''"))
     } else {
-        format!("custom_values->>'{}'" , input.name.replace('\'', "''"))
+        format!("custom_values->>'{}'", id.replace('\'', "''"))
     }
 }
 
@@ -769,7 +841,10 @@ fn push_table_row_filters<'q>(
 /// (SQL-injection guard). Returns None if any segment is invalid.
 fn validated_path_parts(path: &str) -> Option<Vec<&str>> {
     let parts: Vec<&str> = path.split('.').collect();
-    if parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+    if parts
+        .iter()
+        .any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+    {
         return None;
     }
     Some(parts)
@@ -780,7 +855,9 @@ fn validated_path_parts(path: &str) -> Option<Vec<&str>> {
 fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
     let parts = validated_path_parts(path)?;
     let mut expr = String::from("custom_values");
-    for &seg in &parts { expr.push_str(&format!("->'{seg}'")); }
+    for &seg in &parts {
+        expr.push_str(&format!("->'{seg}'"));
+    }
     Some(expr)
 }
 
@@ -803,7 +880,10 @@ fn path_to_jsonb_expr(path: &str) -> Option<String> {
 /// Build a sort expression from a dot-path and an optional type hint.
 /// col_type values match custom_columns.types elements: "integer", "text", "timestamptz", …
 fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
-    if col.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.') {
+    if col
+        .chars()
+        .any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
+    {
         return None;
     }
     let base = match col {
@@ -814,11 +894,15 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
     };
     let cast = match col_type {
         Some("integer") | Some("bigint") | Some("numeric") => "::numeric",
-        Some("timestamptz")                                 => "::timestamptz",
-        Some("boolean")                                     => "::boolean",
-        _                                                   => "",
+        Some("timestamptz") => "::timestamptz",
+        Some("boolean") => "::boolean",
+        _ => "",
     };
-    Some(if cast.is_empty() { base } else { format!("({base}){cast}") })
+    Some(if cast.is_empty() {
+        base
+    } else {
+        format!("({base}){cast}")
+    })
 }
 
 pub(super) fn validated_sort(sort: Option<&str>) -> String {
@@ -829,13 +913,19 @@ pub(super) fn validated_sort(sort: Option<&str>) -> String {
         .split(',')
         .filter_map(|s| {
             let s = s.trim();
-            if s.is_empty() { return None; }
+            if s.is_empty() {
+                return None;
+            }
             let mut it = s.splitn(3, ':');
-            let col      = it.next()?;
-            let dir      = it.next().unwrap_or("desc");
+            let col = it.next()?;
+            let dir = it.next().unwrap_or("desc");
             let col_type = it.next();
             let expr = col_to_sort_expr(col, col_type)?;
-            let dir_sql = if dir.eq_ignore_ascii_case("asc") { "ASC" } else { "DESC" };
+            let dir_sql = if dir.eq_ignore_ascii_case("asc") {
+                "ASC"
+            } else {
+                "DESC"
+            };
             Some(format!("{expr} {dir_sql} NULLS LAST"))
         })
         .collect();
@@ -862,7 +952,10 @@ mod tests {
 
     #[test]
     fn valid_two_segments() {
-        assert_eq!(validated_path_parts("stars_diff.6h"), Some(vec!["stars_diff", "6h"]));
+        assert_eq!(
+            validated_path_parts("stars_diff.6h"),
+            Some(vec!["stars_diff", "6h"])
+        );
     }
 
     #[test]
@@ -919,6 +1012,31 @@ mod tests {
         assert!(path_to_jsonb_expr("").is_none());
     }
 
+    #[test]
+    fn index_expr_defaults_to_stable_column_id() {
+        let input = crate::custom_column::CustomColumnInput {
+            name: "User-facing title".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_index_expr("col_123", &input),
+            "custom_values->>'col_123'"
+        );
+    }
+
+    #[test]
+    fn index_expr_uses_source_path_when_present() {
+        let input = crate::custom_column::CustomColumnInput {
+            name: "Stars diff 24h".into(),
+            source_path: Some(vec!["stars_diff".into(), "24h".into()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_index_expr("gh_stars_diff_24h", &input),
+            "custom_values->'stars_diff'->>'24h'"
+        );
+    }
+
     // ── path_to_jsonb_value_expr ──────────────────────────────────────────────
 
     #[test]
@@ -951,7 +1069,10 @@ mod tests {
 
     #[test]
     fn sort_expr_builtin_when_created() {
-        assert_eq!(col_to_sort_expr("when_created", None), Some("when_created".into()));
+        assert_eq!(
+            col_to_sort_expr("when_created", None),
+            Some("when_created".into())
+        );
     }
 
     #[test]

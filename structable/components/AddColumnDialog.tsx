@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-// Column names that are reserved by the built-in table schema.
-const BUILTIN_NAMES = new Set([
+// Column ids that are reserved by the built-in table schema.
+const BUILTIN_IDS = new Set([
   'id', 'when_created', 'who_created', 'when_last_modified', 'who_last_modified', 'custom_values',
 ]);
 
@@ -18,7 +18,7 @@ export type AddColumnPayload = {
 
 type Props = {
   afterColId: string;
-  /** All column names already in use (derived from row data + existing custom columns). */
+  /** All stable column ids already in use. */
   existingNames: Set<string>;
   onConfirm: (afterColId: string, payload: AddColumnPayload) => void;
   onClose: () => void;
@@ -37,7 +37,7 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
   const idError: string | null = (() => {
     if (!showAdvanced || !customId.trim()) return null;
     const id = customId.trim();
-    if (BUILTIN_NAMES.has(id)) return `"${id}" is a built-in reserved column name`;
+    if (BUILTIN_IDS.has(id)) return `"${id}" is a built-in reserved column id`;
     if (existingNames.has(id))  return `"${id}" already exists in this table`;
     return null;
   })();

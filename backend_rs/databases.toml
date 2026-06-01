@@ -16,12 +16,12 @@ host   = "aws-0-eu-west-1.pooler.supabase.com"
 port   = 5432
 dbname = "postgres"
 
-# [[database]]
-# id      = "postgres_neon"
-# driver  = "postgres"
-# host    = "ep-quiet-silence-apo1zgem-pooler.c-7.us-east-1.aws.neon.tech"
-# dbname  = "neondb"
-# options = "sslmode=require&channel_binding=require"
+[[database]]
+id      = "postgres_neon"
+driver  = "postgres"
+host    = "ep-quiet-silence-apo1zgem-pooler.c-7.us-east-1.aws.neon.tech"
+dbname  = "neondb"
+options = "sslmode=require&channel_binding=require"
 
 # [[database]]
 # id        = "surreal_local"

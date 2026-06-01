@@ -21,7 +21,7 @@ Exception to the nanoid rule is when power user directly assigns a human-readabl
 
 Try using existing popular open-source powerful libraries for common functionality, instead of coming up with our own implementation (example: notification toast). If something requires custom implementation, it will be stated as such explicitly. We should have multiple pages for testing our own table vs existing library.
 
-We are using Supabase on the backend, so use its tooling and workflow and best practices and philosophy, e.g. migrations.
+We are using Supabase on the backend, but schema creation/evolution should live in the Rust store/service layer (`ensure_schema` and related helpers), including indexes for new columns. Do not add SQL migration files for normal schema changes.
 
 When grepping files, skip node_modules normally (unless needed).
 

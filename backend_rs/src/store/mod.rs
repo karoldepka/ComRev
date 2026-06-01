@@ -50,6 +50,7 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
 pub mod couch;
 pub mod mongo;
 pub mod pg;
+mod pg_schema;
 pub mod sqlite;
 pub mod surreal;
 #[cfg(test)]

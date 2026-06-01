@@ -37,13 +37,14 @@ struct DbEntry {
     options: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 struct DbCredentials {
     username: Option<String>,
     password: Option<String>,
 }
 
 /// Parsed secrets file: per-db credentials + optional extra env vars.
+#[derive(Debug)]
 struct SecretsFile {
     db_creds: HashMap<String, DbCredentials>,
     extra_env: HashMap<String, String>,
