@@ -39,16 +39,6 @@ pub async fn add(
         .add_hidden_row(&body.id, &body.row_id)
         .await
         .map_err(|e| db_err("hidden_row", e))?;
-    state
-        .store
-        .append_ops_log(
-            "hidden_row.add",
-            serde_json::json!({
-                "id": row.id, "row_id": row.row_id,
-            }),
-            None,
-        )
-        .await;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -61,15 +51,5 @@ pub async fn remove(
         .remove_hidden_row(&row_id)
         .await
         .map_err(|e| db_err("hidden_row", e))?;
-    state
-        .store
-        .append_ops_log(
-            "hidden_row.remove",
-            serde_json::json!({
-                "row_id": row_id,
-            }),
-            None,
-        )
-        .await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -395,7 +395,7 @@ impl DataStore for CouchStore {
 
     async fn list_custom_columns(&self, table_id: &str) -> Result<Vec<crate::custom_column::CustomColumn>> {
         if table_id == "tables" {
-            return Ok(crate::store::pg::table_registry_columns());
+            return Ok(crate::store::table_registry_columns());
         }
         let docs = self.find(
             json!({ "_collection": "custom_columns", "table_id": table_id }),
@@ -409,28 +409,24 @@ impl DataStore for CouchStore {
         &self,
         table_id: &str,
         id: &str,
-        name: &str,
-        label: Option<&str>,
-        description: Option<&str>,
-        expression: Option<&str>,
-        position_after: Option<&str>,
+        input: &crate::custom_column::CustomColumnInput,
     ) -> Result<crate::custom_column::CustomColumn> {
-        // Preserve when_created on update.
         let when_created = self.get_doc("custom_columns", id).await?
             .and_then(|d| d["when_created"].as_str().map(str::to_owned))
             .unwrap_or_else(|| Utc::now().to_rfc3339());
         let doc = self.put_doc("custom_columns", id, json!({
             "table_id": table_id,
-            "name": name,
-            "label": label,
-            "description": description,
-            "expression": expression,
-            "position_after": position_after,
+            "name": input.name,
+            "label": input.label,
+            "description": input.description,
+            "expression": input.expression,
+            "position_after": input.position_after,
             "read_only": false,
-            "types": ["text"],
-            "data_types": ["text"],
-            "is_group": false,
-            "parent_ids": [],
+            "types": input.effective_types(),
+            "data_types": input.effective_data_types(),
+            "is_group": input.is_group,
+            "parent_ids": input.parent_ids,
+            "source_path": input.source_path,
             "is_frozen": false,
             "when_created": when_created,
         })).await?;
@@ -567,6 +563,26 @@ impl DataStore for CouchStore {
         Ok(())
     }
 
+    async fn upsert_rows_batch(&self, table_id: &str, rows: &[Value]) -> Result<usize> {
+        let mut count = 0usize;
+        for row in rows {
+            let id = match row.get("id").and_then(|v| v.as_str()).map(str::to_owned)
+                .or_else(|| row.get("github_id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
+            {
+                Some(id) => id,
+                None => { tracing::warn!("couch upsert_rows_batch: row missing id/github_id"); continue; }
+            };
+            let doc = json!({ "table_id": table_id, "custom_values": row,
+                "when_created": Utc::now().to_rfc3339(), "when_last_modified": Utc::now().to_rfc3339() });
+            if let Err(e) = self.put_doc("table_rows", &id, doc).await {
+                tracing::warn!("couch upsert_rows_batch id={id}: {e}");
+            } else {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
     // ── GitHub repos batch upsert ─────────────────────────────────────────────
 
     async fn upsert_github_repos_batch(&self, repos: &[Value]) -> Result<usize> {
@@ -592,16 +608,68 @@ impl DataStore for CouchStore {
 
     // ── Ops log ───────────────────────────────────────────────────────────────
 
-    async fn append_ops_log(&self, op: &str, payload: Value, tx_id: Option<&str>) {
-        let id = nanoid::nanoid!();
+    async fn begin_ops_log(&self, id: &str, op: &str, payload: Value, tx_id: Option<&str>) {
+        // Idempotent: if document already exists, put_doc will update it (preserving applied_at if set).
+        // We only insert when the document doesn't yet exist to preserve idempotency.
+        if self.get_doc("ops_log", id).await.ok().flatten().is_some() {
+            return;
+        }
         let doc = json!({
             "op": op,
             "payload": payload,
             "tx_id": tx_id,
             "when_created": Utc::now().to_rfc3339(),
+            "applied_at": null,
         });
-        if let Err(e) = self.put_doc("ops_log", &id, doc).await {
-            tracing::error!(op = %op, "couch ops_log insert failed: {e}");
+        if let Err(e) = self.put_doc("ops_log", id, doc).await {
+            tracing::error!(op = %op, "couch ops_log begin failed: {e}");
+        }
+    }
+
+    async fn pending_ops(&self) -> anyhow::Result<Vec<crate::store::PendingOp>> {
+        // Query via the ops_log index for docs where applied_at is null.
+        let resp = self
+            .client
+            .post(self.db_url("_find"))
+            .json(&serde_json::json!({
+                "selector": { "_collection": "ops_log", "applied_at": null },
+                "sort": [{ "_id": "asc" }],
+                "limit": 10000
+            }))
+            .send()
+            .await
+            .context("CouchDB pending_ops find")?
+            .error_for_status()
+            .context("CouchDB pending_ops find status")?
+            .json::<serde_json::Value>()
+            .await
+            .context("CouchDB pending_ops json")?;
+        let docs = resp["docs"].as_array().cloned().unwrap_or_default();
+        Ok(docs
+            .into_iter()
+            .map(|d| crate::store::PendingOp {
+                id:      d["_id"].as_str().unwrap_or("").trim_start_matches("ops_log:").to_owned(),
+                op:      d["op"].as_str().unwrap_or("").to_owned(),
+                payload: d["payload"].clone(),
+                tx_id:   d["tx_id"].as_str().map(str::to_owned),
+            })
+            .collect())
+    }
+
+    async fn mark_op_applied(&self, id: &str) {
+        let doc = match self.get_doc("ops_log", id).await {
+            Ok(Some(d)) => d,
+            Ok(None) => { tracing::warn!("couch ops_log mark_applied: id={id} not found"); return; }
+            Err(e) => { tracing::error!("couch ops_log mark_applied GET failed for id={id}: {e}"); return; }
+        };
+        // Skip if already marked (idempotent).
+        if doc.get("applied_at").and_then(|v| v.as_str()).is_some() {
+            return;
+        }
+        let mut updated = doc;
+        updated["applied_at"] = json!(Utc::now().to_rfc3339());
+        if let Err(e) = self.put_doc("ops_log", id, updated).await {
+            tracing::error!("couch ops_log mark_applied PUT failed for id={id}: {e}");
         }
     }
 }

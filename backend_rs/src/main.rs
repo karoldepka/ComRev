@@ -1,4 +1,5 @@
 mod custom_column;
+mod db_config;
 mod data_row;
 mod error;
 mod flag;
@@ -28,17 +29,36 @@ async fn main() -> anyhow::Result<()> {
 
     structable_logger::init("backend_rs=debug,tower_http=info");
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
-    let surreal_url = std::env::var("SURREAL_URL").ok();
+    // Resolve DB URLs: databases.toml > DB_URLS > DATABASE_URL (+ SURREAL_URL fallback).
+    let db_urls_owned: Vec<String> = match db_config::load()? {
+        Some(urls) => {
+            structable_logger::info("backend_rs", "loaded DB config from databases.toml");
+            urls
+        }
+        None => {
+            let raw = std::env::var("DB_URLS").unwrap_or_else(|_| {
+                let primary = std::env::var("DATABASE_URL")
+                    .expect("databases.toml, DB_URLS, or DATABASE_URL must be set");
+                match std::env::var("SURREAL_URL").ok().filter(|s| !s.is_empty()) {
+                    Some(surreal) => format!("{primary},{surreal}"),
+                    None => primary,
+                }
+            });
+            raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+        }
+    };
+    let db_urls: Vec<&str> = db_urls_owned.iter().map(String::as_str).collect();
     structable_logger::info("backend_rs", "starting backend_rs");
 
-    let data_store = store::open_multi(
-        &database_url,
-        surreal_url.as_deref(),
-    ).await?;
+    let data_store = store::open_all(&db_urls).await?;
     structable_logger::info("backend_rs", "data store connected");
     data_store.ensure_schema().await?;
     structable_logger::info("backend_rs", "schema ready");
+
+    // Replay any ops that were logged before a previous crash (applied_at IS NULL).
+    // No reads are served until recovery completes.
+    ops_log::recover_pending(&data_store).await;
+    structable_logger::info("backend_rs", "crash recovery complete");
 
     let event_tx = sync_service::make_channel();
 
@@ -56,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/repos", get(data_row::list_data_rows))
         .route("/tables/:table_id/data-rows", get(data_row::list_data_rows_for_table))
         .route("/tables/:table_id/rows", axum::routing::post(data_row::create_row))
+        .route("/tables/:table_id/rows/batch-upsert", axum::routing::post(data_row::batch_upsert_rows))
         .route("/github-repos/upsert-batch", axum::routing::post(data_row::upsert_github_repos_batch))
         .route(
             "/tables/:table_id/rows/:row_id/values",

@@ -56,12 +56,18 @@ impl SurrealStore {
             .with_context(|| format!("SurrealDB: cannot connect to {connect_url}"))?;
 
         if !username.is_empty() {
+            tracing::debug!("SurrealDB: signing in as user '{username}' at {connect_url}");
             db.signin(Root {
                 username: username.clone(),
                 password: password.clone(),
             })
             .await
-            .context("SurrealDB: signin failed")?;
+            .with_context(|| format!(
+                "SurrealDB: signin failed for user '{username}' at {connect_url} \
+                 — if the server runs unauthenticated, leave SURREAL_USER empty"
+            ))?;
+        } else {
+            tracing::debug!("SurrealDB: no credentials configured, connecting unauthenticated to {connect_url}");
         }
 
         db.use_ns(namespace)
@@ -351,7 +357,7 @@ impl DataStore for SurrealStore {
         table_id: &str,
     ) -> Result<Vec<crate::custom_column::CustomColumn>> {
         if table_id == "tables" {
-            return Ok(crate::store::pg::table_registry_columns());
+            return Ok(crate::store::table_registry_columns());
         }
         let rows: Vec<serde_json::Value> = self
             .db
@@ -369,24 +375,21 @@ impl DataStore for SurrealStore {
         &self,
         table_id: &str,
         id: &str,
-        name: &str,
-        label: Option<&str>,
-        description: Option<&str>,
-        expression: Option<&str>,
-        position_after: Option<&str>,
+        input: &crate::custom_column::CustomColumnInput,
     ) -> Result<crate::custom_column::CustomColumn> {
         let content = serde_json::json!({
             "table_id": table_id,
-            "name": name,
-            "label": label,
-            "description": description,
-            "expression": expression,
-            "position_after": position_after,
+            "name": input.name,
+            "label": input.label,
+            "description": input.description,
+            "expression": input.expression,
+            "position_after": input.position_after,
             "read_only": false,
-            "types": ["text"],
-            "data_types": ["text"],
-            "is_group": false,
-            "parent_ids": [],
+            "types": input.effective_types(),
+            "data_types": input.effective_data_types(),
+            "is_group": input.is_group,
+            "parent_ids": input.parent_ids,
+            "source_path": input.source_path,
             "is_frozen": false,
         });
         let rec: Option<serde_json::Value> = self
@@ -652,6 +655,25 @@ impl DataStore for SurrealStore {
         Ok(())
     }
 
+    async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
+        let mut count = 0usize;
+        for row in rows {
+            let id = match row.get("id").and_then(|v| v.as_str()).map(str::to_owned)
+                .or_else(|| row.get("github_id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
+            {
+                Some(id) => id,
+                None => { tracing::warn!("surreal upsert_rows_batch: row missing id/github_id"); continue; }
+            };
+            let _: Option<serde_json::Value> = self
+                .db
+                .upsert(("table_rows", id.as_str()))
+                .content(serde_json::json!({ "table_id": table_id, "custom_values": row }))
+                .await?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
     // ── GitHub repos batch upsert ─────────────────────────────────────────────
 
     async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
@@ -681,26 +703,54 @@ impl DataStore for SurrealStore {
 
     // ── Ops log ───────────────────────────────────────────────────────────────
 
-    async fn append_ops_log(
-        &self,
-        op: &str,
-        payload: serde_json::Value,
-        tx_id: Option<&str>,
-    ) {
+    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
+        // INSERT IGNORE: no-op if record with this id already exists (idempotent).
         if let Err(e) = self
             .db
             .query(
-                "INSERT INTO ops_log { \
-                   op: $op, payload: $payload, tx_id: $tx_id, when_created: time::now() \
+                "INSERT IGNORE INTO ops_log { \
+                   id: $id, op: $op, payload: $payload, tx_id: $tx_id, \
+                   when_created: time::now(), applied_at: NONE \
                  }",
             )
+            .bind(("id", id))
             .bind(("op", op))
             .bind(("payload", payload))
             .bind(("tx_id", tx_id))
             .await
         {
-            tracing::error!(op = %op, "surreal ops_log insert failed: {e}");
+            tracing::error!(op = %op, "surreal ops_log begin failed: {e}");
         }
+    }
+
+    async fn mark_op_applied(&self, id: &str) {
+        if let Err(e) = self
+            .db
+            .query("UPDATE ops_log SET applied_at = time::now() WHERE id = $id AND applied_at IS NONE")
+            .bind(("id", id))
+            .await
+        {
+            tracing::error!("surreal ops_log mark_applied failed for id={id}: {e}");
+        }
+    }
+
+    async fn pending_ops(&self) -> anyhow::Result<Vec<crate::store::PendingOp>> {
+        let mut res = self
+            .db
+            .query("SELECT id, op, payload, tx_id FROM ops_log WHERE applied_at IS NONE ORDER BY id")
+            .await
+            .map_err(|e| anyhow::anyhow!("surreal pending_ops: {e}"))?;
+        let rows: Vec<serde_json::Value> = res.take(0)
+            .map_err(|e| anyhow::anyhow!("surreal pending_ops take: {e}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|v| crate::store::PendingOp {
+                id:      v["id"].as_str().unwrap_or("").to_owned(),
+                op:      v["op"].as_str().unwrap_or("").to_owned(),
+                payload: v["payload"].clone(),
+                tx_id:   v["tx_id"].as_str().map(str::to_owned),
+            })
+            .collect())
     }
 }
 

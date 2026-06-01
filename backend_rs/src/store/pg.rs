@@ -33,6 +33,13 @@ impl PgStore {
 #[async_trait]
 impl DataStore for PgStore {
     async fn ensure_schema(&self) -> Result<()> {
+        // Add applied_at column to operations_log if not yet present (idempotent).
+        sqlx::query(
+            "ALTER TABLE operations_log ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ",
+        )
+        .execute(&self.pool)
+        .await
+        .ok();
         Ok(())
     }
 
@@ -221,7 +228,7 @@ impl DataStore for PgStore {
 
     async fn list_custom_columns(&self, table_id: &str) -> Result<Vec<CustomColumn>> {
         if table_id == "tables" {
-            return Ok(table_registry_columns());
+            return Ok(super::table_registry_columns());
         }
 
         Ok(sqlx::query_as::<_, CustomColumn>(
@@ -246,20 +253,25 @@ impl DataStore for PgStore {
         &self,
         table_id: &str,
         id: &str,
-        name: &str,
-        label: Option<&str>,
-        description: Option<&str>,
-        expression: Option<&str>,
-        position_after: Option<&str>,
+        input: &crate::custom_column::CustomColumnInput,
     ) -> Result<CustomColumn> {
+        let types = input.effective_types();
+        let data_types = input.effective_data_types();
         let col = sqlx::query_as::<_, CustomColumn>(
             "WITH upsert_col AS (
-               INSERT INTO custom_columns (id, name, label, description, expression, position_after, read_only, is_frozen)
-               VALUES ($1, $2, $3, $4, $5, $6, false, false)
+               INSERT INTO custom_columns
+                 (id, name, label, description, expression, position_after,
+                  read_only, is_frozen, is_group, parent_ids, source_path, types, data_types)
+               VALUES ($1, $2, $3, $4, $5, $6, false, false, $8, $9, $10, $11, $12)
                ON CONFLICT (id) DO UPDATE
                  SET name = EXCLUDED.name, label = EXCLUDED.label,
                      description = EXCLUDED.description,
                      expression = EXCLUDED.expression,
+                     is_group = EXCLUDED.is_group,
+                     parent_ids = EXCLUDED.parent_ids,
+                     source_path = EXCLUDED.source_path,
+                     types = EXCLUDED.types,
+                     data_types = EXCLUDED.data_types,
                      when_last_modified = NOW(),
                      modify_count = custom_columns.modify_count + 1
                RETURNING *
@@ -284,12 +296,17 @@ impl DataStore for PgStore {
              JOIN attach a ON a.column_id = c.id",
         )
         .bind(id)
-        .bind(name)
-        .bind(label)
-        .bind(description)
-        .bind(expression)
-        .bind(position_after)
+        .bind(&input.name)
+        .bind(input.label.as_deref())
+        .bind(input.description.as_deref())
+        .bind(input.expression.as_deref())
+        .bind(input.position_after.as_deref())
         .bind(table_id)
+        .bind(input.is_group)
+        .bind(&input.parent_ids)
+        .bind(&input.source_path)
+        .bind(&types)
+        .bind(&data_types)
         .fetch_one(&self.pool)
         .await?;
 
@@ -297,7 +314,7 @@ impl DataStore for PgStore {
         // Index name uses the column id (unique, stable). Key is single-quote-escaped.
         // We always try to CREATE INDEX when a column is upserted/created.
         let idx = format!("idx_cv_{id}");
-        let safe_key = name.replace('\'', "''");
+        let safe_key = input.name.replace('\'', "''");
         let indexed_table = if table_id == "gh_repos" { "github_repos" } else { "table_rows" };
         let sql = format!(r#"CREATE INDEX IF NOT EXISTS "{idx}" ON {indexed_table} ((custom_values->>'{}'))"#, safe_key);
         if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
@@ -637,14 +654,46 @@ impl DataStore for PgStore {
         Ok(count as usize)
     }
 
+    async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
+        if rows.is_empty() { return Ok(0); }
+        let json_array = serde_json::Value::Array(rows.to_vec());
+        let count: i64 = sqlx::query_scalar(
+            "WITH rows AS (
+               SELECT DISTINCT ON (row_id)
+                 COALESCE(r->>'id', r->>'github_id') AS row_id,
+                 r AS custom_values
+               FROM jsonb_array_elements($1::jsonb) AS r
+               WHERE COALESCE(r->>'id', r->>'github_id') IS NOT NULL
+               ORDER BY row_id
+             ),
+             upserted AS (
+               INSERT INTO table_rows (id, table_id, custom_values, when_created, when_last_modified)
+               SELECT row_id, $2, custom_values, NOW(), NOW() FROM rows
+               ON CONFLICT (id) DO UPDATE SET
+                 custom_values      = EXCLUDED.custom_values,
+                 when_last_modified = NOW(),
+                 modify_count       = table_rows.modify_count + 1
+               RETURNING 1
+             ) SELECT COUNT(*) FROM upserted",
+        )
+        .bind(json_array)
+        .bind(table_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count as usize)
+    }
+
     // ── Ops log ───────────────────────────────────────────────────────────────
-    async fn append_ops_log(
-        &self,
-        op: &str,
-        payload: serde_json::Value,
-        tx_id: Option<&str>,
-    ) {
-        crate::ops_log::append(&self.pool, op, payload, tx_id).await;
+    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
+        crate::ops_log::begin(&self.pool, id, op, payload, tx_id).await;
+    }
+
+    async fn mark_op_applied(&self, id: &str) {
+        crate::ops_log::mark_applied(&self.pool, id).await;
+    }
+
+    async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> {
+        crate::ops_log::pending(&self.pool).await
     }
 }
 
@@ -654,35 +703,6 @@ fn col_has_type(col_types: &std::collections::HashMap<String, Vec<String>>, name
     col_types.get(name).map_or(false, |types| types.iter().any(|t| t == target))
 }
 
-pub fn table_registry_columns() -> Vec<CustomColumn> {
-    [
-        ("id", "ID", "text"),
-        ("title", "Title", "text"),
-        ("description", "Description", "text"),
-        ("who_created", "Created by", "text"),
-        ("when_created", "Created", "timestamptz"),
-        ("who_last_modified", "Modified by", "text"),
-        ("when_last_modified", "Modified", "timestamptz"),
-        ("modify_count", "Modify count", "integer"),
-    ]
-    .into_iter()
-    .map(|(name, label, ty)| CustomColumn {
-        id: name.to_string(),
-        name: name.to_string(),
-        label: Some(label.to_string()),
-        description: None,
-        expression: None,
-        position_after: None,
-        read_only: true,
-        types: vec![ty.to_string()],
-        source_path: None,
-        data_types: vec![if ty == "integer" { "numeric" } else { "text" }.to_string()],
-        is_group: false,
-        parent_ids: vec![],
-        is_frozen: name == "title",
-    })
-    .collect()
-}
 
 fn push_filters<'q>(
     qb: &mut QueryBuilder<'q, Postgres>,

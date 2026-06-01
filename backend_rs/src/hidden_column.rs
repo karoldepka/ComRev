@@ -39,16 +39,6 @@ pub async fn add(
         .add_hidden_column(&body.id, &body.column_id)
         .await
         .map_err(|e| db_err("hidden_column", e))?;
-    state
-        .store
-        .append_ops_log(
-            "hidden_column.add",
-            serde_json::json!({
-                "id": col.id, "column_id": col.column_id,
-            }),
-            None,
-        )
-        .await;
     Ok((StatusCode::CREATED, Json(col)))
 }
 
@@ -61,15 +51,5 @@ pub async fn remove(
         .remove_hidden_column(&column_id)
         .await
         .map_err(|e| db_err("hidden_column", e))?;
-    state
-        .store
-        .append_ops_log(
-            "hidden_column.remove",
-            serde_json::json!({
-                "column_id": column_id,
-            }),
-            None,
-        )
-        .await;
     Ok(StatusCode::NO_CONTENT)
 }

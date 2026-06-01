@@ -86,11 +86,7 @@ impl DataStore for SqliteStore {
         &self,
         _table_id: &str,
         _id: &str,
-        _name: &str,
-        _label: Option<&str>,
-        _description: Option<&str>,
-        _expression: Option<&str>,
-        _position_after: Option<&str>,
+        _input: &crate::custom_column::CustomColumnInput,
     ) -> Result<crate::custom_column::CustomColumn> {
         not_impl!()
     }
@@ -157,6 +153,11 @@ impl DataStore for SqliteStore {
     async fn upsert_github_repos_batch(&self, _repos: &[serde_json::Value]) -> Result<usize> {
         not_impl!()
     }
+    async fn upsert_rows_batch(&self, _table_id: &str, _rows: &[serde_json::Value]) -> Result<usize> {
+        not_impl!()
+    }
 
-    async fn append_ops_log(&self, _op: &str, _payload: serde_json::Value, _tx_id: Option<&str>) {}
+    async fn begin_ops_log(&self, _id: &str, _op: &str, _payload: serde_json::Value, _tx_id: Option<&str>) {}
+    async fn mark_op_applied(&self, _id: &str) {}
+    async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> { Ok(vec![]) }
 }

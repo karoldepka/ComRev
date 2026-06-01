@@ -38,10 +38,13 @@ impl<E: Into<anyhow::Error>> From<E> for ApiError {
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 pub async fn list_data_rows(
-    State(state): State<AppState>,
-    Query(raw): Query<HashMap<String, String>>,
+    _state: State<AppState>,
+    _raw: Query<HashMap<String, String>>,
 ) -> Result<Json<crate::types::PagedResponse>, ApiError> {
-    list_data_rows_for_table(State(state), Path("gh_repos".to_string()), Query(raw)).await
+    // Legacy route — callers must migrate to /tables/:table_id/data-rows.
+    Err(ApiError(anyhow::anyhow!(
+        "Use /tables/:table_id/data-rows — table_id is required"
+    )))
 }
 
 pub async fn list_data_rows_for_table(
@@ -94,10 +97,6 @@ pub async fn create_row(
         .create_row(&table_id, &body.id, body.title.as_deref(), body.who_created.as_deref())
         .await
         .map_err(|e| db_err("row.create", e))?;
-    state
-        .store
-        .append_ops_log("row.create", serde_json::json!({ "id": row.id, "table_id": table_id }), None)
-        .await;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -115,14 +114,24 @@ pub async fn upsert_github_repos_batch(
         .upsert_github_repos_batch(&body.repos)
         .await
         .map_err(|e| db_err("github_repos_batch", e))?;
-    state
+    Ok((StatusCode::OK, Json(serde_json::json!({ "upserted": count }))))
+}
+
+#[derive(Deserialize)]
+pub struct BatchUpsertRowsBody {
+    pub rows: Vec<serde_json::Value>,
+}
+
+pub async fn batch_upsert_rows(
+    State(state): State<AppState>,
+    Path(table_id): Path<String>,
+    Json(body): Json<BatchUpsertRowsBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    let count = state
         .store
-        .append_ops_log(
-            "github_repos.upsert_batch",
-            serde_json::json!({ "count": count }),
-            None,
-        )
-        .await;
+        .upsert_rows_batch(&table_id, &body.rows)
+        .await
+        .map_err(|e| db_err("rows_batch", e))?;
     Ok((StatusCode::OK, Json(serde_json::json!({ "upserted": count }))))
 }
 

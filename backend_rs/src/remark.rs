@@ -4,7 +4,6 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::{error::db_err, data_row::AppState};
 
@@ -95,17 +94,6 @@ pub async fn upsert(
         .await
         .map_err(|e| db_err("remark", e))?;
 
-    state
-        .store
-        .append_ops_log(
-            "remark.upsert",
-            json!({
-                "id": id, "kind": kind, "targets": body.targets.len(),
-            }),
-            None,
-        )
-        .await;
-
     Ok(Json(remark))
 }
 
@@ -118,9 +106,5 @@ pub async fn delete(
         .delete_remark(&id)
         .await
         .map_err(|e| db_err("remark", e))?;
-    state
-        .store
-        .append_ops_log("remark.delete", json!({ "id": id }), None)
-        .await;
     Ok(StatusCode::NO_CONTENT)
 }

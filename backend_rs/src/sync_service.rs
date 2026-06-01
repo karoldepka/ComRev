@@ -79,11 +79,11 @@ fn remark_to_proto(r: &remark::Remark) -> Remark {
     }
 }
 
-fn table_id_or_default(table_id: String) -> String {
+fn require_table_id(table_id: String, ctx: &str) -> Result<String, Status> {
     if table_id.is_empty() {
-        "gh_repos".to_string()
+        Err(Status::invalid_argument(format!("{ctx}: table_id is required")))
     } else {
-        table_id
+        Ok(table_id)
     }
 }
 
@@ -172,7 +172,7 @@ impl Sync for SyncServiceImpl {
         &self,
         request: Request<ListRequest>,
     ) -> Result<Response<CustomColumnList>, Status> {
-        let table_id = table_id_or_default(request.into_inner().table_id);
+        let table_id = require_table_id(request.into_inner().table_id, "list_custom_columns")?;
         tracing::debug!(%table_id, "grpc list_custom_columns requested");
         let cols = self
             .state
@@ -204,7 +204,7 @@ impl Sync for SyncServiceImpl {
         request: Request<ListReposRequest>,
     ) -> Result<Response<PagedRepos>, Status> {
         let req = request.into_inner();
-        let table_id = table_id_or_default(req.table_id);
+        let table_id = require_table_id(req.table_id, "list_repos")?;
         tracing::debug!(
             %table_id,
             page = req.page,
@@ -333,16 +333,6 @@ impl SyncServiceImpl {
                 tracing::debug!(%op_id, key = %p.key, color = %p.color, "dispatch flag upsert");
                 let id = Self::record_id(&op_id, &p.id);
                 let f = self.state.store.upsert_flag(&id, &p.key, &p.color).await?;
-                self.state
-                    .store
-                    .append_ops_log(
-                        "flag.upsert",
-                        serde_json::json!({
-                            "op_id": op_id, "id": f.id, "key": f.key, "color": f.color,
-                        }),
-                        None,
-                    )
-                    .await;
                 let resp = serde_json::to_vec(&serde_json::json!({
                     "id": f.id, "key": f.key, "color": f.color,
                 }))?;
@@ -351,16 +341,6 @@ impl SyncServiceImpl {
             OpPayload::DeleteFlag(p) => {
                 tracing::debug!(%op_id, key = %p.key, "dispatch flag delete");
                 self.state.store.delete_flag(&p.key).await?;
-                self.state
-                    .store
-                    .append_ops_log(
-                        "flag.delete",
-                        serde_json::json!({
-                            "op_id": op_id, "key": p.key,
-                        }),
-                        None,
-                    )
-                    .await;
                 let event = flag_event(
                     EventKind::Delete,
                     Flag {
@@ -392,16 +372,6 @@ impl SyncServiceImpl {
                     .store
                     .upsert_remark(&p.id, &p.body, &p.kind, false, None, &targets)
                     .await?;
-                self.state
-                    .store
-                    .append_ops_log(
-                        "remark.upsert",
-                        serde_json::json!({
-                            "op_id": op_id, "id": r.id, "kind": r.kind,
-                        }),
-                        None,
-                    )
-                    .await;
                 let resp = serde_json::to_vec(&serde_json::json!({
                     "id": r.id, "body": r.body, "kind": r.kind,
                 }))?;
@@ -410,16 +380,6 @@ impl SyncServiceImpl {
             OpPayload::DeleteRemark(p) => {
                 tracing::debug!(%op_id, id = %p.id, "dispatch remark delete");
                 self.state.store.delete_remark(&p.id).await?;
-                self.state
-                    .store
-                    .append_ops_log(
-                        "remark.delete",
-                        serde_json::json!({
-                            "op_id": op_id, "id": p.id,
-                        }),
-                        None,
-                    )
-                    .await;
                 let event = remark_event(
                     EventKind::Delete,
                     Remark {
@@ -435,16 +395,6 @@ impl SyncServiceImpl {
                 let row_id_str = p.repo_id.to_string();
                 let id = Self::record_id(&op_id, &p.id);
                 let row = self.state.store.add_hidden_row(&id, &row_id_str).await?;
-                self.state
-                    .store
-                    .append_ops_log(
-                        "hidden_row.add",
-                        serde_json::json!({
-                            "op_id": op_id, "id": row.id, "row_id": row.row_id,
-                        }),
-                        None,
-                    )
-                    .await;
                 let event = hidden_row_event(
                     EventKind::Upsert,
                     HiddenRow {
@@ -480,16 +430,6 @@ impl SyncServiceImpl {
                     .store
                     .add_hidden_column(&id, &p.column_id)
                     .await?;
-                self.state
-                    .store
-                    .append_ops_log(
-                        "hidden_column.add",
-                        serde_json::json!({
-                            "op_id": op_id, "id": col.id, "column_id": col.column_id,
-                        }),
-                        None,
-                    )
-                    .await;
                 let event = hidden_col_event(
                     EventKind::Upsert,
                     HiddenCol {
@@ -515,36 +455,20 @@ impl SyncServiceImpl {
                 Ok((event, vec![]))
             }
             OpPayload::CreateCustomCol(p) => {
-                let table_id = table_id_or_default(p.table_id);
+                let table_id = require_table_id(p.table_id, "CreateCustomCol")?;
                 tracing::debug!(%op_id, %table_id, id = %p.id, name = %p.name, "dispatch custom column create");
+                let input = crate::custom_column::CustomColumnInput {
+                    name: p.name.clone(),
+                    label: (!p.label.is_empty()).then(|| p.label.clone()),
+                    description: (!p.description.is_empty()).then(|| p.description.clone()),
+                    expression: (!p.expression.is_empty()).then(|| p.expression.clone()),
+                    position_after: (!p.position_after.is_empty()).then(|| p.position_after.clone()),
+                    ..Default::default()
+                };
                 let col = self
                     .state
                     .store
-                    .upsert_custom_column(
-                        &table_id,
-                        &p.id,
-                        &p.name,
-                        if p.label.is_empty() {
-                            None
-                        } else {
-                            Some(p.label.as_str())
-                        },
-                        if p.description.is_empty() {
-                            None
-                        } else {
-                            Some(p.description.as_str())
-                        },
-                        if p.expression.is_empty() {
-                            None
-                        } else {
-                            Some(p.expression.as_str())
-                        },
-                        if p.position_after.is_empty() {
-                            None
-                        } else {
-                            Some(p.position_after.as_str())
-                        },
-                    )
+                    .upsert_custom_column(&table_id, &p.id, &input)
                     .await?;
                 let event = custom_col_event(
                     EventKind::Upsert,

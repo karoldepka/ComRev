@@ -41,16 +41,6 @@ pub async fn upsert(
         .upsert_flag(&body.id, &body.key, &body.color)
         .await
         .map_err(|e| db_err("flag", e))?;
-    state
-        .store
-        .append_ops_log(
-            "flag.upsert",
-            serde_json::json!({
-                "id": flag.id, "key": flag.key, "color": flag.color,
-            }),
-            None,
-        )
-        .await;
     Ok(Json(flag))
 }
 
@@ -63,9 +53,5 @@ pub async fn delete(
         .delete_flag(&key)
         .await
         .map_err(|e| db_err("flag", e))?;
-    state
-        .store
-        .append_ops_log("flag.delete", serde_json::json!({ "key": key }), None)
-        .await;
     Ok(StatusCode::NO_CONTENT)
 }

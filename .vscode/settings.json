@@ -15,6 +15,7 @@
         "gloo",
         "Prefs",
         "Rexie",
-        "structable"
+        "structable",
+        "surrealdb"
     ]
 }

@@ -69,13 +69,12 @@ fn data_repo_dir() -> Result<PathBuf> {
 }
 
 fn load_yaml_from_file(path: &Path) -> Result<Vec<Value>> {
-    if !path.exists() {
-        return Ok(vec![]);
-    }
     debug!("Reading YAML file: {}", path.display());
-    let s = fs::read_to_string(path)?;
+    let s = fs::read_to_string(path)
+        .with_context(|| format!("reading {}", path.display()))?;
     debug!("Read {} bytes from {}", s.len(), path.display());
-    let v: Vec<Value> = serde_yaml::from_str(&s).unwrap_or_default();
+    let v: Vec<Value> = serde_yaml::from_str(&s)
+        .with_context(|| format!("parsing YAML from {}", path.display()))?;
     Ok(v)
 }
 
@@ -129,7 +128,8 @@ fn load_yaml_from_commit(repo: &Repository, commit_oid: Oid, rel_path: &Path) ->
     let blob = repo.find_blob(entry.id())?;
     let content = std::str::from_utf8(blob.content())?;
     trace!("Loaded blob {} ({} bytes) from commit {} for {}", entry.id(), content.len(), commit_oid, rel_path.display());
-    let v: Vec<Value> = serde_yaml::from_str(content).unwrap_or_default();
+    let v: Vec<Value> = serde_yaml::from_str(content)
+        .with_context(|| format!("parsing YAML from commit {} at {}", commit_oid, rel_path.display()))?;
     Ok(v)
 }
 
@@ -257,6 +257,308 @@ fn sort_repos(repos: &mut Vec<Value>) {
     });
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── fmt_bytes ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn fmt_bytes_zero_and_sub_thousand() {
+        assert_eq!(fmt_bytes(0), "0");
+        assert_eq!(fmt_bytes(999), "999");
+    }
+
+    #[test]
+    fn fmt_bytes_thousands() {
+        assert_eq!(fmt_bytes(1_000), "1 000");
+        assert_eq!(fmt_bytes(1_234_567), "1 234 567");
+        assert_eq!(fmt_bytes(1_000_000_000), "1 000 000 000");
+    }
+
+    // ── get_i64_field ────────────────────────────────────────────────────────
+
+    #[test]
+    fn get_i64_field_present() {
+        let v: Value = serde_yaml::from_str("stars: 42").unwrap();
+        assert_eq!(get_i64_field(&v, "stars"), Some(42));
+    }
+
+    #[test]
+    fn get_i64_field_missing_key() {
+        let v: Value = serde_yaml::from_str("name: foo").unwrap();
+        assert_eq!(get_i64_field(&v, "stars"), None);
+    }
+
+    #[test]
+    fn get_i64_field_not_a_mapping() {
+        assert_eq!(get_i64_field(&Value::from("string"), "stars"), None);
+    }
+
+    // ── get_nested_i64 ───────────────────────────────────────────────────────
+
+    #[test]
+    fn get_nested_i64_present() {
+        let v: Value = serde_yaml::from_str("stars_diff:\n  7d: 99").unwrap();
+        assert_eq!(get_nested_i64(&v, &["stars_diff", "7d"]), Some(99));
+    }
+
+    #[test]
+    fn get_nested_i64_missing_middle_key() {
+        let v: Value = serde_yaml::from_str("foo: bar").unwrap();
+        assert_eq!(get_nested_i64(&v, &["stars_diff", "7d"]), None);
+    }
+
+    #[test]
+    fn get_nested_i64_middle_not_a_mapping() {
+        // stars_diff is a scalar, not a mapping
+        let v: Value = serde_yaml::from_str("stars_diff: 5").unwrap();
+        assert_eq!(get_nested_i64(&v, &["stars_diff", "7d"]), None);
+    }
+
+    // ── compute_star_diff ────────────────────────────────────────────────────
+
+    #[test]
+    fn compute_star_diff_no_old_repo_missing_as_zero() {
+        // MISSING_AS_ZERO = true → returns 0 regardless of stars_now
+        assert_eq!(compute_star_diff(500, None), 0);
+        assert_eq!(compute_star_diff(0, None), 0);
+    }
+
+    #[test]
+    fn compute_star_diff_with_old_stars() {
+        let old: Value = serde_yaml::from_str("stars: 400").unwrap();
+        assert_eq!(compute_star_diff(500, Some(&old)), 100);
+        assert_eq!(compute_star_diff(400, Some(&old)), 0);
+        assert_eq!(compute_star_diff(300, Some(&old)), -100);
+    }
+
+    #[test]
+    fn compute_star_diff_old_repo_lacks_stars_field() {
+        let old: Value = serde_yaml::from_str("name: foo").unwrap();
+        assert_eq!(compute_star_diff(500, Some(&old)), 500);
+    }
+
+    // ── has_any_change ───────────────────────────────────────────────────────
+
+    #[test]
+    fn has_any_change_all_zeros() {
+        let mut m = Mapping::new();
+        m.insert(Value::from("6h"), Value::from(0i64));
+        m.insert(Value::from("30d"), Value::from(0i64));
+        assert!(!has_any_change(&m));
+    }
+
+    #[test]
+    fn has_any_change_one_positive() {
+        let mut m = Mapping::new();
+        m.insert(Value::from("6h"), Value::from(0i64));
+        m.insert(Value::from("30d"), Value::from(5i64));
+        assert!(has_any_change(&m));
+    }
+
+    #[test]
+    fn has_any_change_negative_counts() {
+        let mut m = Mapping::new();
+        m.insert(Value::from("6h"), Value::from(-3i64));
+        assert!(has_any_change(&m));
+    }
+
+    #[test]
+    fn has_any_change_empty_mapping() {
+        let m = Mapping::new();
+        assert!(!has_any_change(&m));
+    }
+
+    // ── yaml_to_csv_str ──────────────────────────────────────────────────────
+
+    #[test]
+    fn yaml_to_csv_str_null() {
+        assert_eq!(yaml_to_csv_str(&Value::Null), "");
+    }
+
+    #[test]
+    fn yaml_to_csv_str_booleans() {
+        assert_eq!(yaml_to_csv_str(&Value::Bool(true)), "true");
+        assert_eq!(yaml_to_csv_str(&Value::Bool(false)), "false");
+    }
+
+    #[test]
+    fn yaml_to_csv_str_numbers() {
+        assert_eq!(yaml_to_csv_str(&Value::from(42i64)), "42");
+        assert_eq!(yaml_to_csv_str(&Value::from(-7i64)), "-7");
+    }
+
+    #[test]
+    fn yaml_to_csv_str_string() {
+        assert_eq!(yaml_to_csv_str(&Value::from("hello world")), "hello world");
+    }
+
+    #[test]
+    fn yaml_to_csv_str_complex_is_json() {
+        let v: Value = serde_yaml::from_str("key: val").unwrap();
+        let s = yaml_to_csv_str(&v);
+        assert!(s.contains("key") && s.contains("val"));
+    }
+
+    // ── parse_yaml_to_index ──────────────────────────────────────────────────
+
+    #[test]
+    fn parse_yaml_to_index_basic() {
+        let yaml: Vec<Value> =
+            serde_yaml::from_str("- id: 1\n  name: foo\n- id: 2\n  name: bar").unwrap();
+        let idx = parse_yaml_to_index(&yaml);
+        assert_eq!(idx.len(), 2);
+        assert!(idx.contains_key(&1));
+        assert!(idx.contains_key(&2));
+    }
+
+    #[test]
+    fn parse_yaml_to_index_skips_entries_without_id() {
+        let yaml: Vec<Value> =
+            serde_yaml::from_str("- name: no_id\n- id: 5\n  name: has_id").unwrap();
+        let idx = parse_yaml_to_index(&yaml);
+        assert_eq!(idx.len(), 1);
+        assert!(idx.contains_key(&5));
+    }
+
+    #[test]
+    fn parse_yaml_to_index_last_entry_wins_on_duplicate_id() {
+        let yaml: Vec<Value> =
+            serde_yaml::from_str("- id: 1\n  name: first\n- id: 1\n  name: second").unwrap();
+        let idx = parse_yaml_to_index(&yaml);
+        assert_eq!(idx.len(), 1);
+        let name = idx[&1].get("name").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(name, "second");
+    }
+
+    // ── WindowDef::from_label ────────────────────────────────────────────────
+
+    #[test]
+    fn window_def_hours() {
+        let w = WindowDef::from_label("6h");
+        assert_eq!(w.duration, Duration::from_secs(6 * 3600));
+        assert_eq!(w.label, "6h");
+    }
+
+    #[test]
+    fn window_def_days() {
+        let w = WindowDef::from_label("30d");
+        assert_eq!(w.duration, Duration::from_secs(30 * 86400));
+    }
+
+    #[test]
+    #[should_panic]
+    fn window_def_invalid_unit_panics() {
+        WindowDef::from_label("3w");
+    }
+
+    // ── build_output_repo ────────────────────────────────────────────────────
+
+    #[test]
+    fn build_output_repo_adds_stars_now_and_diffs() {
+        let base: Value = serde_yaml::from_str("id: 1\nname: foo").unwrap();
+        let mut diffs = Mapping::new();
+        diffs.insert(Value::from("7d"), Value::from(42i64));
+        let out = build_output_repo(base, 1000, diffs);
+        assert_eq!(get_i64_field(&out, "stars_now"), Some(1000));
+        assert_eq!(get_nested_i64(&out, &["stars_diff", "7d"]), Some(42));
+    }
+
+    #[test]
+    fn build_output_repo_preserves_existing_fields() {
+        let base: Value = serde_yaml::from_str("id: 99\nname: bar").unwrap();
+        let out = build_output_repo(base, 0, Mapping::new());
+        assert_eq!(get_i64_field(&out, "id"), Some(99));
+    }
+
+    // ── sort_repos ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn sort_repos_orders_by_first_window_descending() {
+        let mut repos: Vec<Value> = vec![
+            serde_yaml::from_str("id: 1\nstars_diff:\n  6h: 1").unwrap(),
+            serde_yaml::from_str("id: 2\nstars_diff:\n  6h: 10").unwrap(),
+            serde_yaml::from_str("id: 3\nstars_diff:\n  6h: 5").unwrap(),
+        ];
+        sort_repos(&mut repos);
+        assert_eq!(get_i64_field(&repos[0], "id"), Some(2));
+        assert_eq!(get_i64_field(&repos[1], "id"), Some(3));
+        assert_eq!(get_i64_field(&repos[2], "id"), Some(1));
+    }
+
+    #[test]
+    fn sort_repos_tiebreaks_on_next_window() {
+        // both have 6h=5; differ on 12h
+        let mut repos: Vec<Value> = vec![
+            serde_yaml::from_str("id: 1\nstars_diff:\n  6h: 5\n  12h: 2").unwrap(),
+            serde_yaml::from_str("id: 2\nstars_diff:\n  6h: 5\n  12h: 8").unwrap(),
+        ];
+        sort_repos(&mut repos);
+        assert_eq!(get_i64_field(&repos[0], "id"), Some(2));
+        assert_eq!(get_i64_field(&repos[1], "id"), Some(1));
+    }
+
+    // ── result_to_csv ────────────────────────────────────────────────────────
+
+    #[test]
+    fn result_to_csv_headers_include_all_windows() {
+        let repos: Vec<Value> =
+            vec![serde_yaml::from_str("id: 1\nstars_diff:\n  6h: 5").unwrap()];
+        let csv = result_to_csv(&repos).unwrap();
+        let s = String::from_utf8(csv).unwrap();
+        for w in windows() {
+            assert!(s.contains(&format!("stars_{}", w.label)), "missing header stars_{}", w.label);
+        }
+    }
+
+    #[test]
+    fn result_to_csv_row_values() {
+        let repos: Vec<Value> =
+            vec![serde_yaml::from_str("id: 1\nname: testRepo\nstars_diff:\n  6h: 7").unwrap()];
+        let csv = result_to_csv(&repos).unwrap();
+        let s = String::from_utf8(csv).unwrap();
+        assert!(s.contains("testRepo"));
+        assert!(s.contains('7'));
+    }
+
+    #[test]
+    fn result_to_csv_empty_input_only_header() {
+        let csv = result_to_csv(&[]).unwrap();
+        let s = String::from_utf8(csv).unwrap();
+        // header row must still exist with window columns
+        assert!(s.contains("stars_6h"));
+        // only one line (the header)
+        let lines: Vec<&str> = s.lines().collect();
+        assert_eq!(lines.len(), 1);
+    }
+
+    // ── build_repo_diffs ─────────────────────────────────────────────────────
+
+    #[test]
+    fn build_repo_diffs_no_snapshots_all_zero() {
+        let snapshots: HashMap<String, HashMap<i64, Value>> = HashMap::new();
+        let diffs = build_repo_diffs(1, 500, &snapshots);
+        for w in windows() {
+            let val = diffs.get(&Value::from(w.label)).and_then(|v| v.as_i64());
+            assert_eq!(val, Some(0), "window {} should be 0 when missing", w.label);
+        }
+    }
+
+    #[test]
+    fn build_repo_diffs_with_snapshot() {
+        let old_repo: Value = serde_yaml::from_str("id: 42\nstars: 300").unwrap();
+        let mut window_snap: HashMap<i64, Value> = HashMap::new();
+        window_snap.insert(42, old_repo);
+        let mut snapshots: HashMap<String, HashMap<i64, Value>> = HashMap::new();
+        snapshots.insert("6h".to_string(), window_snap);
+
+        let diffs = build_repo_diffs(42, 500, &snapshots);
+        let diff_6h = diffs.get(&Value::from("6h")).and_then(|v| v.as_i64());
+        assert_eq!(diff_6h, Some(200)); // 500 - 300
+    }
+}
+
 fn main() -> Result<()> {
     // initialize logger (respect RUST_LOG or default to info)
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -278,6 +580,7 @@ fn main() -> Result<()> {
 
     let t0 = Instant::now();
     let new_data = load_yaml_from_file(&current_yaml)?;
+    anyhow::ensure!(!new_data.is_empty(), "repos.yaml loaded 0 entries — aborting");
     let input_bytes = fs::metadata(&current_yaml).map(|m| m.len()).unwrap_or(0);
     info!("📦 {:>10?}  Current repos: {}  ({} bytes)", t0.elapsed(), new_data.len(), fmt_bytes(input_bytes));
 

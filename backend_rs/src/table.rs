@@ -60,16 +60,6 @@ pub async fn create(
         )
         .await
         .map_err(|e| db_err("table", e))?;
-    state
-        .store
-        .append_ops_log(
-            "table.create",
-            serde_json::json!({
-                "id": t.id, "title": t.title,
-            }),
-            None,
-        )
-        .await;
     Ok((StatusCode::CREATED, Json(t)))
 }
 
@@ -88,16 +78,6 @@ pub async fn patch(
         )
         .await
         .map_err(|e| db_err("table", e))?;
-    state
-        .store
-        .append_ops_log(
-            "table.patch",
-            serde_json::json!({
-                "id": t.id,
-            }),
-            None,
-        )
-        .await;
     Ok(Json(t))
 }
 
@@ -110,9 +90,5 @@ pub async fn delete(
         .delete_table(&id)
         .await
         .map_err(|e| db_err("table", e))?;
-    state
-        .store
-        .append_ops_log("table.delete", serde_json::json!({ "id": id }), None)
-        .await;
     Ok(StatusCode::NO_CONTENT)
 }

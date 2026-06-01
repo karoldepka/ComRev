@@ -24,14 +24,57 @@ pub struct CustomColumn {
     pub is_frozen: bool,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateCustomColumn {
-    pub id: Option<String>,
+/// Full mutable spec for a custom column. Used both in the store trait and as the HTTP wire type.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CustomColumnInput {
     pub name: String,
     pub label: Option<String>,
     pub description: Option<String>,
     pub expression: Option<String>,
     pub position_after: Option<String>,
+    #[serde(default)]
+    pub is_group: bool,
+    #[serde(default)]
+    pub parent_ids: Vec<String>,
+    pub source_path: Option<Vec<String>>,
+    /// Column display/filter type (e.g. "text", "numeric", "boolean", "array", "timestamptz").
+    /// Defaults to ["text"].
+    pub types: Option<Vec<String>>,
+    /// Underlying data type for queries. Defaults to same as `types`.
+    pub data_types: Option<Vec<String>>,
+}
+
+impl Default for CustomColumnInput {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            label: None,
+            description: None,
+            expression: None,
+            position_after: None,
+            is_group: false,
+            parent_ids: vec![],
+            source_path: None,
+            types: None,
+            data_types: None,
+        }
+    }
+}
+
+impl CustomColumnInput {
+    pub fn effective_types(&self) -> Vec<String> {
+        self.types.clone().unwrap_or_else(|| vec!["text".to_string()])
+    }
+    pub fn effective_data_types(&self) -> Vec<String> {
+        self.data_types.clone().unwrap_or_else(|| self.effective_types())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCustomColumn {
+    pub id: Option<String>,
+    #[serde(flatten)]
+    pub input: CustomColumnInput,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,9 +83,10 @@ pub struct PatchTableColumn {
 }
 
 pub async fn list(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<CustomColumn>>, (StatusCode, String)> {
-    list_for_table(State(state), Path("gh_repos".to_string())).await
+    _state: axum::extract::State<AppState>,
+) -> (StatusCode, String) {
+    // Legacy route — callers must migrate to /tables/:table_id/custom-columns.
+    (StatusCode::BAD_REQUEST, "Use /tables/:table_id/custom-columns — table_id is required".to_string())
 }
 
 pub async fn list_for_table(
@@ -58,10 +102,11 @@ pub async fn list_for_table(
 }
 
 pub async fn create(
-    State(state): State<AppState>,
-    Json(body): Json<CreateCustomColumn>,
-) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
-    create_for_table(State(state), Path("gh_repos".to_string()), Json(body)).await
+    _state: axum::extract::State<AppState>,
+    _body: Json<CreateCustomColumn>,
+) -> (StatusCode, String) {
+    // Legacy route — callers must migrate to /tables/:table_id/custom-columns.
+    (StatusCode::BAD_REQUEST, "Use /tables/:table_id/custom-columns — table_id is required".to_string())
 }
 
 pub async fn create_for_table(
@@ -69,43 +114,21 @@ pub async fn create_for_table(
     Path(table_id): Path<String>,
     Json(body): Json<CreateCustomColumn>,
 ) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
-    let CreateCustomColumn {
-        id,
-        name,
-        label,
-        description,
-        expression,
-        position_after,
-    } = body;
-    // Client should always provide a nanoid.
-    let id = id
+    let id = body.input.name.clone(); // fallback: use name as id if not provided
+    let id = body
+        .id
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing column id".to_string()))?;
+        .unwrap_or(id)
+        .replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_");
+    if id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "missing column id or name".to_string()));
+    }
 
     let col = state
         .store
-        .upsert_custom_column(
-            &table_id,
-            &id,
-            &name,
-            label.as_deref(),
-            description.as_deref(),
-            expression.as_deref(),
-            position_after.as_deref(),
-        )
+        .upsert_custom_column(&table_id, &id, &body.input)
         .await
         .map_err(|e| db_err("custom_column", e))?;
-
-    state
-        .store
-        .append_ops_log(
-            "custom_column.create",
-            serde_json::json!({
-                "id": col.id, "table_id": table_id, "name": col.name,
-            }),
-            None,
-        )
-        .await;
 
     Ok((StatusCode::CREATED, Json(col)))
 }
@@ -119,15 +142,74 @@ pub async fn delete(
         .delete_custom_column(&id)
         .await
         .map_err(|e| db_err("custom_column", e))?;
-    state
-        .store
-        .append_ops_log(
-            "custom_column.delete",
-            serde_json::json!({ "id": id }),
-            None,
-        )
-        .await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input_defaults() -> CustomColumnInput {
+        CustomColumnInput::default()
+    }
+
+    // ── effective_types ───────────────────────────────────────────────────────
+
+    #[test]
+    fn effective_types_defaults_to_text() {
+        assert_eq!(input_defaults().effective_types(), vec!["text"]);
+    }
+
+    #[test]
+    fn effective_types_uses_provided_value() {
+        let input = CustomColumnInput { types: Some(vec!["numeric".into()]), ..input_defaults() };
+        assert_eq!(input.effective_types(), vec!["numeric"]);
+    }
+
+    #[test]
+    fn effective_types_multiple() {
+        let input = CustomColumnInput {
+            types: Some(vec!["boolean".into(), "text".into()]),
+            ..input_defaults()
+        };
+        assert_eq!(input.effective_types(), vec!["boolean", "text"]);
+    }
+
+    // ── effective_data_types ──────────────────────────────────────────────────
+
+    #[test]
+    fn effective_data_types_falls_back_to_types() {
+        let input = CustomColumnInput { types: Some(vec!["numeric".into()]), ..input_defaults() };
+        assert_eq!(input.effective_data_types(), vec!["numeric"]);
+    }
+
+    #[test]
+    fn effective_data_types_defaults_to_text_when_both_unset() {
+        assert_eq!(input_defaults().effective_data_types(), vec!["text"]);
+    }
+
+    #[test]
+    fn effective_data_types_uses_own_value() {
+        let input = CustomColumnInput {
+            types: Some(vec!["timestamptz".into()]),
+            data_types: Some(vec!["text".into()]),
+            ..input_defaults()
+        };
+        assert_eq!(input.effective_types(), vec!["timestamptz"]);
+        assert_eq!(input.effective_data_types(), vec!["text"]);
+    }
+
+    // ── Default ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn default_is_non_group_text_column() {
+        let d = input_defaults();
+        assert!(!d.is_group);
+        assert!(d.parent_ids.is_empty());
+        assert!(d.source_path.is_none());
+        assert!(d.types.is_none());      // None → "text" via effective_types()
+        assert!(d.data_types.is_none());
+    }
 }
 
 pub async fn patch_for_table(

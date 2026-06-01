@@ -1,0 +1,41 @@
+# Database connections — committed to version control.
+# Credentials go in databases.secrets.toml (gitignored).
+#
+# Supported drivers: postgres, mongodb, surrealdb, couchdb, sqlite
+# All [[database]] entries are equal-standing — writes fan out to all, reads are merged.
+#
+# Override file paths via env vars:
+#   DATABASES_TOML         (default: databases.toml)
+#   DATABASES_SECRETS_TOML (default: databases.secrets.toml)
+# Fallback when this file is absent: DB_URLS or DATABASE_URL env vars.
+
+# [[database]]
+# id     = "postgres-supabase"
+# driver = "postgres"
+# host   = "aws-0-eu-west-1.pooler.supabase.com"
+# port   = 5432
+# dbname = "postgres"
+
+# [[database]]
+# id      = "postgres-neon"
+# driver  = "postgres"
+# host    = "ep-quiet-silence-apo1zgem-pooler.c-7.us-east-1.aws.neon.tech"
+# dbname  = "neondb"
+# options = "sslmode=require&channel_binding=require"
+
+# [[database]]
+# id        = "surreal_local"
+# driver    = "surrealdb"
+# host      = "localhost"
+# port      = 8000
+# tls       = false
+# namespace = "structable"
+# database  = "production"
+
+[[database]]
+id        = "surreal_cloud"
+driver    = "surrealdb"
+host      = "lucky-comet-06f7sb1d11ue10jg3vdkj82psc.aws-use1.surreal.cloud"
+tls       = true
+namespace = "structable"
+database  = "production"
