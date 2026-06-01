@@ -310,15 +310,30 @@ impl DataStore for PgStore {
         .fetch_one(&self.pool)
         .await?;
 
-        // Per-key JSONB index for fast filtering/sorting on this column.
-        // Index name uses the column id (unique, stable). Key is single-quote-escaped.
-        // We always try to CREATE INDEX when a column is upserted/created.
-        let idx = format!("idx_cv_{id}");
-        let safe_key = input.name.replace('\'', "''");
-        let indexed_table = if table_id == "gh_repos" { "github_repos" } else { "table_rows" };
-        let sql = format!(r#"CREATE INDEX IF NOT EXISTS "{idx}" ON {indexed_table} ((custom_values->>'{}'))"#, safe_key);
-        if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
-            tracing::warn!("could not create index \"{idx}\": {e}");
+        // Per-column JSONB index. Uses source_path when available (nested JSONB),
+        // otherwise falls back to column name as a top-level key.
+        // Partial index on table_id keeps it small when multiple tables share table_rows.
+        let jsonb_expr = build_index_expr(input);
+        let types = input.effective_types();
+        let (cast, direction) = if types.iter().any(|t| matches!(t.as_str(), "integer"|"bigint"|"numeric")) {
+            ("::numeric", " DESC NULLS LAST")
+        } else if types.iter().any(|t| t == "timestamptz") {
+            ("::timestamptz", " DESC NULLS LAST")
+        } else {
+            ("", "")
+        };
+        let cast_expr = if cast.is_empty() { jsonb_expr.clone() } else { format!("({jsonb_expr}){cast}") };
+        let safe_tid = table_id.replace('\'', "''");
+        for (suffix, dir) in [("", direction), ("_asc", " ASC NULLS LAST")] {
+            if suffix == "_asc" && direction != " DESC NULLS LAST" { break; } // only add _asc when _default is DESC
+            let idx = format!("idx_cv_{id}{suffix}");
+            let sql = format!(
+                r#"CREATE INDEX IF NOT EXISTS "{idx}" ON table_rows (({cast_expr}){dir}) WHERE table_id = '{safe_tid}'"#,
+                dir = if suffix.is_empty() { direction } else { " ASC NULLS LAST" },
+            );
+            if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
+                tracing::warn!("could not create index \"{idx}\": {e}");
+            }
         }
 
         Ok(col)
@@ -447,33 +462,20 @@ impl DataStore for PgStore {
         col_id: &str,
         value: serde_json::Value,
     ) -> Result<()> {
-        if table_id == "gh_repos" {
-            sqlx::query(
-                "UPDATE github_repos
-                 SET custom_values = custom_values || jsonb_build_object($2::text, $3::jsonb)
-                 WHERE id = $1",
-            )
-            .bind(row_id)
-            .bind(col_id)
-            .bind(value)
-            .execute(&self.pool)
-            .await?;
-        } else {
-            sqlx::query(
-                "INSERT INTO table_rows (id, table_id, custom_values)
-                 VALUES ($1, $2, jsonb_build_object($3::text, $4::jsonb))
-                 ON CONFLICT (id) DO UPDATE
-                   SET custom_values = table_rows.custom_values || jsonb_build_object($3::text, $4::jsonb),
-                       when_last_modified = NOW(),
-                       modify_count = table_rows.modify_count + 1",
-            )
-            .bind(row_id)
-            .bind(table_id)
-            .bind(col_id)
-            .bind(value)
-            .execute(&self.pool)
-            .await?;
-        }
+        sqlx::query(
+            "INSERT INTO table_rows (id, table_id, custom_values)
+             VALUES ($1, $2, jsonb_build_object($3::text, $4::jsonb))
+             ON CONFLICT (id) DO UPDATE
+               SET custom_values = table_rows.custom_values || jsonb_build_object($3::text, $4::jsonb),
+                   when_last_modified = NOW(),
+                   modify_count = table_rows.modify_count + 1",
+        )
+        .bind(row_id)
+        .bind(table_id)
+        .bind(col_id)
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -537,86 +539,57 @@ impl DataStore for PgStore {
             return Ok(PagedResponse { data: rows, total, page: params.page, per_page: params.per_page });
         }
 
-        if table_id != "gh_repos" {
-            let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM table_rows WHERE table_id = $1")
+        {
+            // Generic table_rows query: full sort + hidden-row filtering.
+            let col_types: std::collections::HashMap<String, Vec<String>> =
+                sqlx::query_as::<_, (String, Vec<String>)>(
+                    "SELECT c.name, c.types
+                     FROM custom_columns c
+                     JOIN table_custom_columns tcc ON tcc.column_id = c.id
+                     WHERE tcc.table_id = $1",
+                )
                 .bind(table_id)
-                .fetch_one(&self.pool)
-                .await?;
-            let rows = sqlx::query(
-                "SELECT (jsonb_build_object(
-                   'id', id,
-                   'when_created', when_created,
-                   'who_created', who_created,
-                   'when_last_modified', when_last_modified,
-                   'who_last_modified', who_last_modified
-                 ) || custom_values)
-                 FROM table_rows
-                 WHERE table_id = $1
-                 ORDER BY when_created DESC
-                 LIMIT $2 OFFSET $3",
-            )
-            .bind(table_id)
-            .bind(per_page)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(|r| r.try_get::<serde_json::Value, _>(0))
-            .collect::<Result<_, _>>()?;
-            return Ok(PagedResponse { data: rows, total, page: params.page, per_page: params.per_page });
-        }
-
-        // Column type map drives filter SQL (array vs. scalar vs. date operators).
-        let col_types: std::collections::HashMap<String, Vec<String>> =
-            sqlx::query_as::<_, (String, Vec<String>)>(
-                "SELECT c.name, c.types
-                 FROM custom_columns c
-                 JOIN table_custom_columns tcc ON tcc.column_id = c.id
-                 WHERE tcc.table_id = $1",
-            )
-            .bind(table_id)
-            .fetch_all(&self.pool)
-            .await?
-            .into_iter()
-            .collect();
-
-        let total: i64 = {
-            let mut qb = QueryBuilder::new("SELECT COUNT(*) FROM github_repos");
-            push_filters(&mut qb, params, &col_types);
-            qb.build_query_scalar().fetch_one(&self.pool).await?
-        };
-
-        let order = validated_sort(params.sort.as_deref());
-        let data: Vec<serde_json::Value> = {
-            // Merge built-in columns with custom_values so the frontend sees a flat object.
-            let mut qb = QueryBuilder::new(
-                "SELECT (jsonb_build_object(\
-                   'id', id, \
-                   'when_created', when_created, \
-                   'who_created', who_created, \
-                   'when_last_modified', when_last_modified, \
-                   'who_last_modified', who_last_modified\
-                 ) || custom_values) FROM github_repos",
-            );
-            push_filters(&mut qb, params, &col_types);
-            qb.push(format!(" ORDER BY {order}"));
-            qb.push(" LIMIT ").push_bind(per_page);
-            qb.push(" OFFSET ").push_bind(offset);
-
-            qb.build()
                 .fetch_all(&self.pool)
                 .await?
-                .iter()
-                .map(|r| r.try_get::<serde_json::Value, _>(0))
-                .collect::<Result<_, _>>()?
-        };
+                .into_iter()
+                .collect();
 
-        Ok(PagedResponse {
-            data,
-            total,
-            page: params.page,
-            per_page: params.per_page,
-        })
+            let total: i64 = {
+                let mut qb = QueryBuilder::new(
+                    "SELECT COUNT(*) FROM table_rows WHERE table_id = "
+                );
+                qb.push_bind(table_id);
+                qb.push(" AND id NOT IN (SELECT row_id FROM hidden_rows)");
+                push_table_row_filters(&mut qb, params, &col_types);
+                qb.build_query_scalar().fetch_one(&self.pool).await?
+            };
+
+            let order = validated_sort(params.sort.as_deref());
+            let data: Vec<serde_json::Value> = {
+                let mut qb = QueryBuilder::new(
+                    "SELECT (jsonb_build_object(\
+                       'id', id, \
+                       'when_created', when_created, \
+                       'who_created', who_created, \
+                       'when_last_modified', when_last_modified, \
+                       'who_last_modified', who_last_modified\
+                     ) || custom_values) FROM table_rows WHERE table_id = "
+                );
+                qb.push_bind(table_id);
+                qb.push(" AND id NOT IN (SELECT row_id FROM hidden_rows)");
+                push_table_row_filters(&mut qb, params, &col_types);
+                qb.push(format!(" ORDER BY {order}"));
+                qb.push(" LIMIT ").push_bind(per_page);
+                qb.push(" OFFSET ").push_bind(offset);
+                qb.build()
+                    .fetch_all(&self.pool)
+                    .await?
+                    .iter()
+                    .map(|r| r.try_get::<serde_json::Value, _>(0))
+                    .collect::<Result<_, _>>()?
+            };
+            return Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page });
+        }
     }
 
     // ── GitHub repos batch upsert ─────────────────────────────────────────────
@@ -704,31 +677,24 @@ fn col_has_type(col_types: &std::collections::HashMap<String, Vec<String>>, name
 }
 
 
-fn push_filters<'q>(
+/// Shared AND-clause conditions used by both push_filters and push_table_row_filters.
+fn push_filter_conditions<'q>(
     qb: &mut QueryBuilder<'q, Postgres>,
     p: &'q RowQuery,
     col_types: &std::collections::HashMap<String, Vec<String>>,
 ) {
-    qb.push(" WHERE id NOT IN (SELECT row_id FROM hidden_rows)");
-
-    // Numeric range filters: `{dot-path}_min` / `{dot-path}_max`
     for (path, min, max) in &p.range_filters {
         if let Some(expr) = path_to_jsonb_expr(path) {
             if let Some(v) = min { qb.push(format!(" AND ({expr})::numeric >= ")).push_bind(*v); }
             if let Some(v) = max { qb.push(format!(" AND ({expr})::numeric <= ")).push_bind(*v); }
         }
     }
-
-    // Date range filters: `{dot-path}_after` / `{dot-path}_before`
     for (path, after, before) in &p.date_filters {
         if let Some(expr) = path_to_jsonb_expr(path) {
             if let Some(v) = after  { qb.push(format!(" AND ({expr})::timestamptz >= ")).push_bind(*v); }
             if let Some(v) = before { qb.push(format!(" AND ({expr})::timestamptz <= ")).push_bind(*v); }
         }
     }
-
-    // Exact / categorical / array-containment filters: `{dot-path}=val1,val2`
-    // Operator chosen by column type: array → ?|, otherwise → = ANY(text[])
     for (path, vals) in &p.value_filters {
         if vals.is_empty() { continue; }
         let col_name = path.split('.').next().unwrap_or(path.as_str());
@@ -740,9 +706,6 @@ fn push_filters<'q>(
             qb.push(format!(" AND ({expr}) = ANY(")).push_bind(vals.clone()).push(")");
         }
     }
-
-    // ILIKE filters: `{dot-path}_like=pattern`; % wrapping added here
-    // Array columns: element-level ILIKE via jsonb_array_elements_text
     for (path, patterns) in &p.like_filters {
         let wrapped: Vec<String> = patterns.iter().filter(|p| !p.is_empty()).map(|p| format!("%{p}%")).collect();
         if wrapped.is_empty() { continue; }
@@ -750,15 +713,12 @@ fn push_filters<'q>(
         if col_has_type(col_types, col_name, "array") {
             if let Some(obj_expr) = path_to_jsonb_value_expr(path) {
                 qb.push(format!(" AND EXISTS (SELECT 1 FROM jsonb_array_elements_text({obj_expr}) _t WHERE _t ILIKE ANY("))
-                  .push_bind(wrapped)
-                  .push("))");
+                  .push_bind(wrapped).push("))");
             }
         } else if let Some(expr) = path_to_jsonb_expr(path) {
             qb.push(format!(" AND ({expr}) ILIKE ANY(")).push_bind(wrapped).push(")");
         }
     }
-
-    // Full-text search across the table's indexed text columns (q param)
     if let Some(ref q) = p.q {
         let pat = format!("%{q}%");
         qb.push(" AND (custom_values->>'name' ILIKE ")
@@ -767,6 +727,41 @@ fn push_filters<'q>(
             .push_bind(pat)
             .push(")");
     }
+}
+
+/// Build the JSONB expression for a column index, using source_path when available.
+fn build_index_expr(input: &crate::custom_column::CustomColumnInput) -> String {
+    let path = input.source_path.as_deref().unwrap_or(&[]);
+    if path.len() >= 2 {
+        let n = path.len();
+        let mut expr = String::from("custom_values");
+        for key in &path[..n - 1] { expr.push_str(&format!("->'{}'", key.replace('\'', "''"))); }
+        expr.push_str(&format!("->>'{}'", path[n - 1].replace('\'', "''")));
+        expr
+    } else if path.len() == 1 {
+        format!("custom_values->>'{}'" , path[0].replace('\'', "''"))
+    } else {
+        format!("custom_values->>'{}'" , input.name.replace('\'', "''"))
+    }
+}
+
+/// Filters for a query that starts with no WHERE clause (emits WHERE id NOT IN hidden_rows first).
+fn push_filters<'q>(
+    qb: &mut QueryBuilder<'q, Postgres>,
+    p: &'q RowQuery,
+    col_types: &std::collections::HashMap<String, Vec<String>>,
+) {
+    qb.push(" WHERE id NOT IN (SELECT row_id FROM hidden_rows)");
+    push_filter_conditions(qb, p, col_types);
+}
+
+/// Additional AND-conditions for `table_rows` (WHERE table_id=? AND hidden_rows already applied).
+fn push_table_row_filters<'q>(
+    qb: &mut QueryBuilder<'q, Postgres>,
+    p: &'q RowQuery,
+    col_types: &std::collections::HashMap<String, Vec<String>>,
+) {
+    push_filter_conditions(qb, p, col_types);
 }
 
 /// Validate and split a dot-path into segments.

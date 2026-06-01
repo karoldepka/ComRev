@@ -9,15 +9,15 @@
 #   DATABASES_SECRETS_TOML (default: databases.secrets.toml)
 # Fallback when this file is absent: DB_URLS or DATABASE_URL env vars.
 
-# [[database]]
-# id     = "postgres-supabase"
-# driver = "postgres"
-# host   = "aws-0-eu-west-1.pooler.supabase.com"
-# port   = 5432
-# dbname = "postgres"
+[[database]]
+id     = "postgres_supabase"
+driver = "postgres"
+host   = "aws-0-eu-west-1.pooler.supabase.com"
+port   = 5432
+dbname = "postgres"
 
 # [[database]]
-# id      = "postgres-neon"
+# id      = "postgres_neon"
 # driver  = "postgres"
 # host    = "ep-quiet-silence-apo1zgem-pooler.c-7.us-east-1.aws.neon.tech"
 # dbname  = "neondb"
@@ -32,10 +32,10 @@
 # namespace = "structable"
 # database  = "production"
 
-[[database]]
-id        = "surreal_cloud"
-driver    = "surrealdb"
-host      = "lucky-comet-06f7sb1d11ue10jg3vdkj82psc.aws-use1.surreal.cloud"
-tls       = true
-namespace = "structable"
-database  = "production"
+# [[database]]
+# id        = "surreal_cloud"
+# driver    = "surrealdb"
+# host      = "lucky-comet-06f7sb1d11ue10jg3vdkj82psc.aws-use1.surreal.cloud"
+# tls       = true
+# namespace = "structable"
+# database  = "production"
