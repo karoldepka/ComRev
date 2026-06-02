@@ -20,6 +20,13 @@ pub struct PgStore {
     db_id: String,
 }
 
+/// Returns the double-quoted PG identifier for a user table, e.g. `"t_gh_repos"`.
+/// The table_id is already validated to `[a-zA-Z0-9_-]+` at the API boundary,
+/// but we strip any double-quotes defensively.
+fn user_table_ident(table_id: &str) -> String {
+    format!("\"t_{}\"", table_id.replace('"', ""))
+}
+
 impl PgStore {
     pub async fn connect(db_id: &str, url: &str) -> Result<Self> {
         let short = url.split('@').last().unwrap_or(url);
@@ -39,6 +46,52 @@ impl PgStore {
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
         tracing::info!(db_id, url = short, max_conn, acquire_timeout_secs = acquire_secs, "PgStore: connected");
         Ok(Self { pool, db_id: db_id.to_string() })
+    }
+
+    /// Create a physical PG table for a user table if it doesn't yet exist.
+    /// Also adds a GIN index on `custom_vals` for fast JSONB lookups.
+    pub async fn ensure_user_table(&self, table_id: &str) -> Result<()> {
+        let tname = user_table_ident(table_id);
+        sqlx::query(&format!(
+            r#"CREATE TABLE IF NOT EXISTS {tname} (
+                id                TEXT        PRIMARY KEY,
+                when_created      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                when_last_modified TIMESTAMPTZ,
+                who_created       TEXT,
+                who_last_modified TEXT,
+                modify_count      INTEGER     NOT NULL DEFAULT 0,
+                custom_vals       JSONB       NOT NULL DEFAULT '{{}}'
+            )"#
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{table_id}_custom_vals\" \
+             ON {tname} USING GIN (custom_vals)"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table index({table_id}): {e}"))?;
+
+        Ok(())
+    }
+
+    /// Add a btree index for a specific custom column on a user table.
+    /// Called automatically when a column is first added to a table.
+    pub async fn ensure_column_index(&self, table_id: &str, col_id: &str) -> Result<()> {
+        let tname = user_table_ident(table_id);
+        let col_safe = col_id.replace('"', "");
+        let idx = format!("idx_{table_id}_{col_safe}");
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"{idx}\" ON {tname} \
+             USING btree ((custom_vals->>{col_safe:?}))"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_column_index({table_id}.{col_id}): {e}"))?;
+        Ok(())
     }
 }
 
@@ -350,9 +403,8 @@ impl DataStore for PgStore {
         .fetch_one(&self.pool)
         .await?;
 
-        // Per-column JSONB index. Uses source_path when available (nested/read-only data),
-        // otherwise falls back to the stable column id as a top-level key.
-        // Partial index on table_id keeps it small when multiple tables share table_rows.
+        // Per-column index on the physical user table.
+        // Uses source_path when available (nested/read-only data), otherwise the stable column id.
         let jsonb_expr = build_index_expr(id, input);
         let types = input.effective_types();
         let (cast, direction) = if types
@@ -370,20 +422,14 @@ impl DataStore for PgStore {
         } else {
             format!("({jsonb_expr}){cast}")
         };
-        let safe_tid = table_id.replace('\'', "''");
+        let tname = user_table_ident(table_id);
         for suffix in ["", "_asc"] {
             if suffix == "_asc" && direction != " DESC NULLS LAST" {
                 break;
-            } // only add _asc when _default is DESC
-            let idx = format!("idx_cv_{id}{suffix}");
-            let sql = format!(
-                r#"CREATE INDEX IF NOT EXISTS "{idx}" ON table_rows (({cast_expr}){dir}) WHERE table_id = '{safe_tid}'"#,
-                dir = if suffix.is_empty() {
-                    direction
-                } else {
-                    " ASC NULLS LAST"
-                },
-            );
+            }
+            let idx = format!("idx_cv_{}_{id}{suffix}", table_id.replace('-', "_"));
+            let dir = if suffix.is_empty() { direction } else { " ASC NULLS LAST" };
+            let sql = format!(r#"CREATE INDEX IF NOT EXISTS "{idx}" ON {tname} (({cast_expr}){dir})"#);
             if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
                 tracing::warn!("could not create index \"{idx}\": {e}");
             }
@@ -495,9 +541,10 @@ impl DataStore for PgStore {
         .bind(who_created)
         .fetch_optional(&self.pool)
         .await?;
+        // Always ensure the physical data table exists (idempotent).
+        self.ensure_user_table(id).await?;
         match row {
             Some(t) => Ok(t),
-            // Conflict: another request already inserted this id — return existing row.
             None => Ok(sqlx::query_as::<_, Table>(SEL)
                 .bind(id)
                 .fetch_one(&self.pool)
@@ -528,10 +575,15 @@ impl DataStore for PgStore {
     }
 
     async fn delete_table(&self, id: &str) -> Result<()> {
+        let tname = user_table_ident(id);
         sqlx::query("DELETE FROM tables WHERE id = $1")
             .bind(id)
             .execute(&self.pool)
             .await?;
+        sqlx::query(&format!("DROP TABLE IF EXISTS {tname}"))
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("delete_table: drop {id}: {e}"))?;
         Ok(())
     }
 
@@ -544,7 +596,7 @@ impl DataStore for PgStore {
         col_id: &str,
         value: serde_json::Value,
     ) -> Result<()> {
-        // Tables are stored in the `tables` table, not in `table_rows`.
+        // The `tables` registry table is patched directly.
         if table_id == "tables" {
             let sql = match col_id {
                 "title" => "UPDATE tables SET title = $2::text,
@@ -553,7 +605,7 @@ impl DataStore for PgStore {
                 "description" => "UPDATE tables SET description = $2::text,
                                     when_last_modified = NOW(), modify_count = modify_count + 1
                                   WHERE id = $1",
-                _ => return Ok(()), // read-only columns silently ignored
+                _ => return Ok(()),
             };
             sqlx::query(sql)
                 .bind(row_id)
@@ -562,16 +614,17 @@ impl DataStore for PgStore {
                 .await?;
             return Ok(());
         }
-        sqlx::query(
-            "INSERT INTO table_rows (id, table_id, custom_values)
-             VALUES ($1, $2, jsonb_build_object($3::text, $4::jsonb))
+        self.ensure_user_table(table_id).await?;
+        let tname = user_table_ident(table_id);
+        sqlx::query(&format!(
+            "INSERT INTO {tname} (id, custom_vals)
+             VALUES ($1, jsonb_build_object($2::text, $3::jsonb))
              ON CONFLICT (id) DO UPDATE
-               SET custom_values = table_rows.custom_values || jsonb_build_object($3::text, $4::jsonb),
+               SET custom_vals = {tname}.custom_vals || jsonb_build_object($2::text, $3::jsonb),
                    when_last_modified = NOW(),
-                   modify_count = table_rows.modify_count + 1",
-        )
+                   modify_count = {tname}.modify_count + 1",
+        ))
         .bind(row_id)
-        .bind(table_id)
         .bind(col_id)
         .bind(value)
         .execute(&self.pool)
@@ -585,34 +638,41 @@ impl DataStore for PgStore {
         row_id: &str,
         title: Option<&str>,
         who_created: Option<&str>,
-    ) -> Result<crate::data_row::TableRow> {
-        use crate::data_row::TableRow;
-        const SEL: &str = "SELECT id, table_id, who_created, when_created, \
-                           who_last_modified, when_last_modified, custom_values, modify_count \
-                           FROM table_rows WHERE id = $1";
+    ) -> Result<serde_json::Value> {
+        self.ensure_user_table(table_id).await?;
+        let tname = user_table_ident(table_id);
         let initial = title
             .map(|t| serde_json::json!({ "title": t }))
             .unwrap_or_else(|| serde_json::json!({}));
-        let row = sqlx::query_as::<_, TableRow>(
-            "INSERT INTO table_rows (id, table_id, who_created, custom_values)
-             VALUES ($1, $2, $3, $4)
+        let row_json_expr = format!(
+            "jsonb_build_object(\
+               'id', id, 'table_id', '{table_id}', \
+               'who_created', who_created, \
+               'when_created', when_created, \
+               'when_last_modified', when_last_modified, \
+               'modify_count', modify_count) || custom_vals"
+        );
+        let inserted: Option<serde_json::Value> = sqlx::query_scalar(&format!(
+            "INSERT INTO {tname} (id, who_created, custom_vals)
+             VALUES ($1, $2, $3)
              ON CONFLICT (id) DO NOTHING
-             RETURNING id, table_id, who_created, when_created,
-                       who_last_modified, when_last_modified, custom_values, modify_count",
-        )
+             RETURNING ({row_json_expr})",
+        ))
         .bind(row_id)
-        .bind(table_id)
         .bind(who_created)
         .bind(initial)
         .fetch_optional(&self.pool)
         .await?;
-        match row {
-            Some(r) => Ok(r),
-            None => Ok(sqlx::query_as::<_, TableRow>(SEL)
-                .bind(row_id)
-                .fetch_one(&self.pool)
-                .await?),
-        }
+        let row = match inserted {
+            Some(v) => v,
+            None => sqlx::query_scalar(&format!(
+                "SELECT ({row_json_expr}) FROM {tname} WHERE id = $1"
+            ))
+            .bind(row_id)
+            .fetch_one(&self.pool)
+            .await?,
+        };
+        Ok(row)
     }
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
@@ -652,7 +712,7 @@ impl DataStore for PgStore {
         }
 
         {
-            // Generic table_rows query: full sort + hidden-row filtering.
+            let tname = user_table_ident(table_id);
             let col_types: std::collections::HashMap<String, Vec<String>> =
                 sqlx::query_as::<_, (String, Vec<String>)>(
                     "SELECT c.id, c.types
@@ -667,26 +727,24 @@ impl DataStore for PgStore {
                 .collect();
 
             let total: i64 = {
-                let mut qb = QueryBuilder::new("SELECT COUNT(*) FROM table_rows WHERE table_id = ");
-                qb.push_bind(table_id);
-                qb.push(" AND id NOT IN (SELECT row_id FROM hidden_rows)");
+                let mut qb = QueryBuilder::new(format!("SELECT COUNT(*) FROM {tname} WHERE "));
+                qb.push("id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
                 qb.build_query_scalar().fetch_one(&self.pool).await?
             };
 
             let order = validated_sort(params.sort.as_deref());
             let data: Vec<serde_json::Value> = {
-                let mut qb = QueryBuilder::new(
+                let mut qb = QueryBuilder::new(format!(
                     "SELECT (jsonb_build_object(\
                        'id', id, \
                        'when_created', when_created, \
                        'who_created', who_created, \
                        'when_last_modified', when_last_modified, \
                        'who_last_modified', who_last_modified\
-                     ) || custom_values) FROM table_rows WHERE table_id = ",
-                );
-                qb.push_bind(table_id);
-                qb.push(" AND id NOT IN (SELECT row_id FROM hidden_rows)");
+                     ) || custom_vals) FROM {tname} WHERE ",
+                ));
+                qb.push("id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
                 qb.push(format!(" ORDER BY {order}"));
                 qb.push(" LIMIT ").push_bind(per_page);
@@ -749,30 +807,29 @@ impl DataStore for PgStore {
         if rows.is_empty() {
             return Ok(0);
         }
+        self.ensure_user_table(table_id).await?;
+        let tname = user_table_ident(table_id);
         let json_array = serde_json::Value::Array(rows.to_vec());
-        let count: i64 = sqlx::query_scalar(
-            "WITH rows AS (
+        let count: i64 = sqlx::query_scalar(&format!(
+            "WITH incoming AS (
                SELECT DISTINCT ON (row_id)
                  COALESCE(r->>'id', r->>'github_id') AS row_id,
-                 r AS custom_values
+                 r AS custom_vals
                FROM jsonb_array_elements($1::jsonb) AS r
                WHERE COALESCE(r->>'id', r->>'github_id') IS NOT NULL
                ORDER BY row_id
              ),
              upserted AS (
-               INSERT INTO table_rows (id, table_id, custom_values, when_created, when_last_modified)
-               SELECT row_id, $2, custom_values, NOW(), NOW() FROM rows
+               INSERT INTO {tname} (id, custom_vals, when_created, when_last_modified)
+               SELECT row_id, custom_vals, NOW(), NOW() FROM incoming
                ON CONFLICT (id) DO UPDATE SET
-                 -- Merge: existing keys not in the upload are preserved (user-added columns survive).
-                 -- Incoming keys win, so GitHub data is always refreshed.
-                 custom_values      = table_rows.custom_values || EXCLUDED.custom_values,
+                 custom_vals        = {tname}.custom_vals || EXCLUDED.custom_vals,
                  when_last_modified = NOW(),
-                 modify_count       = table_rows.modify_count + 1
+                 modify_count       = {tname}.modify_count + 1
                RETURNING 1
              ) SELECT COUNT(*) FROM upserted",
-        )
+        ))
         .bind(json_array)
-        .bind(table_id)
         .fetch_one(&self.pool)
         .await?;
         Ok(count as usize)
@@ -877,9 +934,9 @@ fn push_filter_conditions<'q>(
     }
     if let Some(ref q) = p.q {
         let pat = format!("%{q}%");
-        qb.push(" AND (custom_values->>'name' ILIKE ")
+        qb.push(" AND (custom_vals->>'name' ILIKE ")
             .push_bind(pat.clone())
-            .push(" OR custom_values->>'description' ILIKE ")
+            .push(" OR custom_vals->>'description' ILIKE ")
             .push_bind(pat)
             .push(")");
     }
@@ -891,16 +948,16 @@ fn build_index_expr(id: &str, input: &crate::custom_column::CustomColumnInput) -
     let path = input.source_path.as_deref().unwrap_or(&[]);
     if path.len() >= 2 {
         let n = path.len();
-        let mut expr = String::from("custom_values");
+        let mut expr = String::from("custom_vals");
         for key in &path[..n - 1] {
             expr.push_str(&format!("->'{}'", key.replace('\'', "''")));
         }
         expr.push_str(&format!("->>'{}'", path[n - 1].replace('\'', "''")));
         expr
     } else if path.len() == 1 {
-        format!("custom_values->>'{}'", path[0].replace('\'', "''"))
+        format!("custom_vals->>'{}'", path[0].replace('\'', "''"))
     } else {
-        format!("custom_values->>'{}'", id.replace('\'', "''"))
+        format!("custom_vals->>'{}'", id.replace('\'', "''"))
     }
 }
 
@@ -931,22 +988,22 @@ fn validated_path_parts(path: &str) -> Option<Vec<&str>> {
 /// for use with operators like `?|` that need a JSONB value, not text.
 fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
     let parts = validated_path_parts(path)?;
-    let mut expr = String::from("custom_values");
+    let mut expr = String::from("custom_vals");
     for &seg in &parts {
         expr.push_str(&format!("->'{seg}'"));
     }
     Some(expr)
 }
 
-/// Build a PostgreSQL text expression for navigating `custom_values` by a dot-path.
+/// Build a PostgreSQL text expression for navigating `custom_vals` by a dot-path.
 /// Each segment must be alphanumeric/underscore only (SQL-injection guard).
-/// "stars"           → custom_values->>'stars'
-/// "stars_diff.6h"   → custom_values->'stars_diff'->>'6h'
-/// "a.b.c"           → custom_values->'a'->'b'->>'c'
+/// "stars"           → custom_vals->>'stars'
+/// "stars_diff.6h"   → custom_vals->'stars_diff'->>'6h'
+/// "a.b.c"           → custom_vals->'a'->'b'->>'c'
 fn path_to_jsonb_expr(path: &str) -> Option<String> {
     let parts = validated_path_parts(path)?;
     let n = parts.len();
-    let mut expr = String::from("custom_values");
+    let mut expr = String::from("custom_vals");
     for &seg in &parts[..n - 1] {
         expr.push_str(&format!("->'{seg}'"));
     }
@@ -1063,7 +1120,7 @@ mod tests {
     fn jsonb_expr_single() {
         assert_eq!(
             path_to_jsonb_expr("stars"),
-            Some("custom_values->>'stars'".into())
+            Some("custom_vals->>'stars'".into())
         );
     }
 
@@ -1071,7 +1128,7 @@ mod tests {
     fn jsonb_expr_two_segments() {
         assert_eq!(
             path_to_jsonb_expr("stars_diff.6h"),
-            Some("custom_values->'stars_diff'->>'6h'".into())
+            Some("custom_vals->'stars_diff'->>'6h'".into())
         );
     }
 
@@ -1079,7 +1136,7 @@ mod tests {
     fn jsonb_expr_three_segments() {
         assert_eq!(
             path_to_jsonb_expr("a.b.c"),
-            Some("custom_values->'a'->'b'->>'c'".into())
+            Some("custom_vals->'a'->'b'->>'c'".into())
         );
     }
 
@@ -1097,7 +1154,7 @@ mod tests {
         };
         assert_eq!(
             build_index_expr("col_123", &input),
-            "custom_values->>'col_123'"
+            "custom_vals->>'col_123'"
         );
     }
 
@@ -1110,7 +1167,7 @@ mod tests {
         };
         assert_eq!(
             build_index_expr("gh_stars_diff_24h", &input),
-            "custom_values->'stars_diff'->>'24h'"
+            "custom_vals->'stars_diff'->>'24h'"
         );
     }
 
@@ -1120,7 +1177,7 @@ mod tests {
     fn jsonb_value_expr_single() {
         assert_eq!(
             path_to_jsonb_value_expr("stars"),
-            Some("custom_values->'stars'".into())
+            Some("custom_vals->'stars'".into())
         );
     }
 
@@ -1128,7 +1185,7 @@ mod tests {
     fn jsonb_value_expr_two_segments() {
         assert_eq!(
             path_to_jsonb_value_expr("topics.name"),
-            Some("custom_values->'topics'->'name'".into())
+            Some("custom_vals->'topics'->'name'".into())
         );
     }
 
@@ -1156,7 +1213,7 @@ mod tests {
     fn sort_expr_custom_no_type() {
         assert_eq!(
             col_to_sort_expr("name", None),
-            Some("custom_values->>'name'".into())
+            Some("custom_vals->>'name'".into())
         );
     }
 
@@ -1164,7 +1221,7 @@ mod tests {
     fn sort_expr_custom_integer() {
         assert_eq!(
             col_to_sort_expr("stars", Some("integer")),
-            Some("(custom_values->>'stars')::numeric".into())
+            Some("(custom_vals->>'stars')::numeric".into())
         );
     }
 
@@ -1172,7 +1229,7 @@ mod tests {
     fn sort_expr_custom_timestamptz() {
         assert_eq!(
             col_to_sort_expr("pushed_at", Some("timestamptz")),
-            Some("(custom_values->>'pushed_at')::timestamptz".into())
+            Some("(custom_vals->>'pushed_at')::timestamptz".into())
         );
     }
 
@@ -1193,7 +1250,7 @@ mod tests {
     fn sort_single_column_desc() {
         assert_eq!(
             validated_sort(Some("stars:desc:integer")),
-            "(custom_values->>'stars')::numeric DESC NULLS LAST"
+            "(custom_vals->>'stars')::numeric DESC NULLS LAST"
         );
     }
 
@@ -1201,7 +1258,7 @@ mod tests {
     fn sort_single_column_asc() {
         assert_eq!(
             validated_sort(Some("name:asc")),
-            "custom_values->>'name' ASC NULLS LAST"
+            "custom_vals->>'name' ASC NULLS LAST"
         );
     }
 
@@ -1218,7 +1275,7 @@ mod tests {
         let result = validated_sort(Some("stars:desc:integer,name:asc"));
         assert_eq!(
             result,
-            "(custom_values->>'stars')::numeric DESC NULLS LAST, custom_values->>'name' ASC NULLS LAST"
+            "(custom_vals->>'stars')::numeric DESC NULLS LAST, custom_vals->>'name' ASC NULLS LAST"
         );
     }
 
@@ -1226,7 +1283,7 @@ mod tests {
     fn sort_skips_invalid_columns() {
         // A column name with SQL-injection chars is silently dropped; valid ones survive.
         let result = validated_sort(Some("'; DROP TABLE:asc,name:asc"));
-        assert_eq!(result, "custom_values->>'name' ASC NULLS LAST");
+        assert_eq!(result, "custom_vals->>'name' ASC NULLS LAST");
     }
 
     #[test]

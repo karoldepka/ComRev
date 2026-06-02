@@ -4,8 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{error::db_err, store::DataStore};
@@ -64,20 +63,6 @@ pub async fn list_data_rows_for_table(
     Ok(Json(page))
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct TableRow {
-    pub id: String,
-    pub table_id: String,
-    pub who_created: Option<String>,
-    pub when_created: DateTime<Utc>,
-    pub who_last_modified: Option<String>,
-    pub when_last_modified: DateTime<Utc>,
-    pub custom_values: serde_json::Value,
-    pub modify_count: i32,
-}
-
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -91,7 +76,7 @@ pub async fn create_row(
     State(state): State<AppState>,
     Path(table_id): Path<String>,
     Json(body): Json<CreateRowBody>,
-) -> Result<(StatusCode, Json<TableRow>), (StatusCode, String)> {
+) -> Result<(StatusCode, axum::Json<serde_json::Value>), (StatusCode, String)> {
     let row = state
         .store
         .create_row(
@@ -102,7 +87,7 @@ pub async fn create_row(
         )
         .await
         .map_err(|e| db_err("row.create", e))?;
-    Ok((StatusCode::CREATED, Json(row)))
+    Ok((StatusCode::CREATED, axum::Json(row)))
 }
 
 #[derive(Deserialize)]

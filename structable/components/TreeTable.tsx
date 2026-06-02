@@ -18,12 +18,10 @@ import SyncIndicator from './SyncIndicator';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
 import logger from '../utils/logger';
 
-import { TableApi } from '../services/tableApi';
 import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, DataRow } from '../types/table';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 // ── Local types ────────────────────────────────────────────────────────────────
 
 type Column = {
@@ -212,21 +210,6 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     setPendingChanges((prev) => [{ id, description, timestamp: Date.now() }, ...prev].slice(0, 50));
   }, []);
 
-  // Separate TableApi instance for cell-value edits (REST + IDB queue).
-  // Created once; stable setter ref keeps onQueueChange wiring correct.
-  const cellApiRef = useRef<TableApi | null>(null);
-  if (!cellApiRef.current && typeof window !== 'undefined') {
-    cellApiRef.current = new TableApi({
-      baseUrl: API_BASE,
-      tableId,
-      onError: (msg) => toast.error(msg),
-      onQueueChange: (count) => {
-        setCellPending(count);
-        setCellQueueSummary(cellApiRef.current?.getQueueSummary() ?? []);
-      },
-    });
-  }
-  cellApiRef.current?.setTableId(tableId);
 
   // ── Inline cell editing ────────────────────────────────────────────────────
   type EditingCell = { rowIndex: number; rowId: string; colId: string; value: string };
@@ -655,14 +638,14 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   };
 
   const commitEdit = useCallback(() => {
-    if (!editingCell || !cellApiRef.current) return;
+    if (!editingCell || !api) return;
     const { rowIndex, rowId, colId, value } = editingCell;
     setEditingCell(null);
     // Optimistic local update
     setRows((prev) => prev.map((r, i) => i === rowIndex ? { ...r, [colId]: value } : r));
     recordChange(`Edit cell [${colId}]`);
-    cellApiRef.current.upsertCellValue(rowId, colId, value);
-  }, [editingCell, recordChange]);
+    api.upsertCellValue(rowId, colId, value, tableId);
+  }, [editingCell, recordChange, api, tableId]);
 
   const cancelEdit = useCallback(() => setEditingCell(null), []);
 
@@ -836,20 +819,20 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {
     const col = allLeafColumns.find((c) => c.id === colId);
     const customId = col?.customColumnId ?? customColByColumnId.get(colId)?.id;
-    if (!customId || !cellApiRef.current) return;
+    if (!customId || !api) return;
     setCustomColumns((prev) => prev.map((cc) => cc.id === customId ? { ...cc, is_frozen: isFrozen } : cc));
     recordChange(`${isFrozen ? 'Freeze' : 'Unfreeze'} column "${col?.label ?? colId}"`);
-    cellApiRef.current.setColumnFrozen(tableId, customId, isFrozen)
+    api.setColumnFrozen(tableId, customId, isFrozen)
       .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
       .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
-  }, [allLeafColumns, customColByColumnId, recordChange, tableId]);
+  }, [allLeafColumns, customColByColumnId, recordChange, tableId, api]);
 
   const saveColumnProperties = useCallback((columnId: string, payload: ColumnPropertiesPayload) => {
-    if (!cellApiRef.current) return;
-    cellApiRef.current.setColumnSourcePath(tableId, columnId, payload.source_path)
+    if (!api) return;
+    api.setColumnSourcePath(tableId, columnId, payload.source_path)
       .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
       .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
-  }, [tableId]);
+  }, [api, tableId]);
 
   const deleteCustomColumn = useCallback((colId: string) => {
     const colMeta = customColByColumnId.get(colId);
@@ -889,13 +872,13 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   }, [api, customColByColumnId, pendingDeleteCol]);
 
   const handleAddRowConfirm = useCallback((payload: AddRowPayload) => {
-    if (!cellApiRef.current) return;
+    if (!api) return;
     setRows((prev) => [...prev, { id: payload.id, title: payload.title }]);
     setTotal((t) => t + 1);
     recordChange(`Add row "${payload.title}"`);
-    cellApiRef.current.createRow(tableId, payload.id, { title: payload.title });
+    api.createRow(tableId, payload.id, { title: payload.title });
     setShowAddRowDialog(false);
-  }, [recordChange, tableId]);
+  }, [api, recordChange, tableId]);
 
   const handleFlagsChange = useCallback((toSet: Record<string, string>, toDelete: string[]) => {
     if (!api) return;

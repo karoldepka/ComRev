@@ -1,28 +1,22 @@
 /// Integration tests against real database instances.
 ///
-/// These tests are skipped by default. Run with:
+/// Tests run automatically when `databases.toml` (and `databases.secrets.toml`)
+/// are present and credentials are valid. They skip gracefully otherwise.
 ///
-///   cargo test -- --include-ignored
-///   cargo test integration  -- --include-ignored
+///   cargo test integration
 ///
-/// Configure `.env` (backend_rs/.env) with any combination of stores:
+/// Credentials are loaded from `databases.toml` / `databases.secrets.toml` in the
+/// backend_rs/ directory (the same files the server uses at startup).
+/// Legacy env vars still work as a fallback:
+///   DB_URLS, DATABASE_URL, SURREAL_URL
 ///
-///   DB_URLS=postgresql://...supabase.com:5432/postgres,wss://...surreal.cloud
+/// SurrealDB always uses the isolated test namespace/database:
+///   SURREAL_TEST_NS=_test  (default)
+///   SURREAL_TEST_DB=_test  (default)
 ///
-/// Or using legacy separate vars (still supported):
-///
-///   DATABASE_URL=postgresql://...supabase.com:5432/postgres
-///   SURREAL_URL=wss://...surreal.cloud
-///
-/// SurrealDB extras:
-///   SURREAL_USER=root
-///   SURREAL_PASS=secret
-///   SURREAL_TEST_NS=_test   ← isolated test namespace (default: _test)
-///   SURREAL_TEST_DB=_test   ← isolated test database  (default: _test)
-///
-/// Tests always write to the _test namespace/database, never to production.
-/// All Postgres data is written to tables/records prefixed with `_test_`.
-/// At the start of each test, leftover data from previous runs is deleted.
+/// Tests always write to the `_test` namespace/DB for Surreal and to
+/// `_test_`-prefixed table IDs for Postgres (which creates `t__test_*` physical
+/// tables). Cleanup runs before each test.
 use super::{open_all, DataStore};
 use crate::types::RowQuery;
 use std::sync::Arc;
@@ -33,40 +27,34 @@ fn load_env() {
     dotenvy::dotenv().ok();
 }
 
-/// Returns all configured DB URLs (from DB_URLS, or DATABASE_URL + optional SURREAL_URL).
-fn db_urls() -> Vec<String> {
+/// All configured DB URLs — tries databases.toml first, then env vars.
+fn all_db_urls() -> Vec<String> {
     load_env();
-    if let Ok(raw) = std::env::var("DB_URLS") {
-        return raw
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-            .collect();
+    // databases.toml takes precedence (same source the server uses).
+    if let Ok(Some(entries)) = crate::db_config::load() {
+        if !entries.is_empty() {
+            return entries.into_iter().map(|(_, url)| url).collect();
+        }
+    }
+    // Fall back to legacy env vars.
+    if let Ok(raw) = std::env::var("rem") {
+        let urls: Vec<String> = raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect();
+        if !urls.is_empty() { return urls; }
     }
     let mut urls = Vec::new();
-    if let Ok(u) = std::env::var("DATABASE_URL") {
-        if !u.is_empty() {
-            urls.push(u);
-        }
-    }
-    if let Ok(u) = std::env::var("SURREAL_URL") {
-        if !u.is_empty() {
-            urls.push(u);
-        }
-    }
+    if let Ok(u) = std::env::var("DATABASE_URL") { if !u.is_empty() { urls.push(u); } }
+    if let Ok(u) = std::env::var("SURREAL_URL")  { if !u.is_empty() { urls.push(u); } }
     urls
 }
 
-/// Returns the first Postgres URL from the configured list (for direct cleanup queries).
+/// Returns the first Postgres URL (for direct cleanup queries).
 fn pg_url() -> Option<String> {
-    db_urls().into_iter().find(|u| u.starts_with("postgres"))
+    all_db_urls().into_iter().find(|u| u.starts_with("postgres"))
 }
 
-/// Returns the first SurrealDB URL from the configured list (for direct cleanup queries).
+/// Returns the first SurrealDB URL (for direct cleanup queries).
 fn surreal_url() -> Option<String> {
-    db_urls()
-        .into_iter()
+    all_db_urls().into_iter()
         .find(|u| u.starts_with("surreal") || u.starts_with("wss://") || u.starts_with("ws://"))
 }
 
@@ -83,45 +71,83 @@ fn use_test_surreal_db() {
     }
 }
 
-/// Build a store from .env credentials. Returns None if no URLs are configured.
+/// Build a store from `databases.toml` credentials (falling back to env vars).
+/// Returns None if no URLs are configured, so callers can skip gracefully.
 async fn make_store() -> Option<Arc<dyn DataStore>> {
     // Tests don't call main(), so we install the rustls provider here.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     use_test_surreal_db();
-    let urls = db_urls();
-    if urls.is_empty() {
-        eprintln!("skip: no DB URLs configured (DB_URLS / DATABASE_URL)");
+
+    // Prefer databases.toml (same file the server uses); fall back to env vars.
+    let entries: Vec<(String, String)> = match crate::db_config::load() {
+        Ok(Some(entries)) => entries,
+        Ok(None) => {
+            let urls = all_db_urls();
+            if urls.is_empty() {
+                eprintln!("skip: no DB URLs configured (databases.toml absent and no DB_URLS/DATABASE_URL)");
+                return None;
+            }
+            urls.into_iter().enumerate().map(|(i, u)| (format!("db_{i}"), u)).collect()
+        }
+        Err(e) => {
+            eprintln!("db_config::load error: {e}");
+            return None;
+        }
+    };
+
+    if entries.is_empty() {
+        eprintln!("skip: databases.toml has no [[database]] entries");
         return None;
     }
-    let url_refs: Vec<(&str, &str)> = urls.iter().map(|u| ("db", u.as_str())).collect();
-    match open_all(&url_refs, None).await {
-        Ok(s) => Some(s),
-        Err(e) => {
-            eprintln!("Failed to open store: {e}");
-            None
-        }
+
+    let entry_refs: Vec<(&str, &str)> =
+        entries.iter().map(|(id, url)| (id.as_str(), url.as_str())).collect();
+    let store = match open_all(&entry_refs, None).await {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Failed to open store: {e}"); return None; }
+    };
+    if let Err(e) = store.ensure_schema().await {
+        eprintln!("ensure_schema failed: {e}");
+        return None;
     }
+    Some(store)
 }
 
 // ── Postgres cleanup helpers (direct sqlx) ────────────────────────────────────
 
 async fn pg_cleanup(url: &str) {
-    let Ok(pool) = sqlx::PgPool::connect(url).await else {
-        return;
-    };
+    let Ok(pool) = sqlx::PgPool::connect(url).await else { return };
+
+    // Drop per-user physical tables for test table IDs (named t__test_*).
+    // LEFT() avoids LIKE underscore-wildcard escaping issues.
+    let test_tables: Vec<String> = sqlx::query_scalar::<_, String>(
+        "SELECT tablename FROM pg_tables \
+         WHERE schemaname = 'public' AND LEFT(tablename, 8) = 't__test_'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+    for tbl in &test_tables {
+        let tbl_safe = tbl.replace('"', "");
+        if let Err(e) = sqlx::query(&format!("DROP TABLE IF EXISTS \"{tbl_safe}\" CASCADE"))
+            .execute(&pool).await
+        {
+            eprintln!("pg_cleanup: drop {tbl_safe}: {e}");
+        }
+    }
+
     for q in [
-        "DELETE FROM table_rows        WHERE table_id   LIKE '_test_%'",
-        "DELETE FROM flags             WHERE key        LIKE '_test_%'",
-        "DELETE FROM remark_targets    WHERE remark_id  LIKE '_test_%'",
-        "DELETE FROM remarks           WHERE id         LIKE '_test_%'",
-        "DELETE FROM hidden_rows       WHERE row_id     LIKE '_test_%'",
-        "DELETE FROM hidden_columns    WHERE column_id  LIKE '_test_%'",
-        "DELETE FROM table_custom_columns WHERE table_id LIKE '_test_%'",
-        "DELETE FROM custom_columns    WHERE id         LIKE '_test_%'",
-        "DELETE FROM tables            WHERE id         LIKE '_test_%'",
-        "DELETE FROM github_repos      WHERE id         LIKE '-999%'",
-        "DELETE FROM operations_log    WHERE op         LIKE '_test_%'",
+        "DELETE FROM cell_flags           WHERE key        LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM remark_targets       WHERE remark_id  LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM remarks              WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM hidden_rows          WHERE row_id     LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM hidden_columns       WHERE column_id  LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM table_custom_columns WHERE table_id   LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM custom_columns       WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM tables               WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
+        "DELETE FROM github_repos         WHERE id         LIKE '-999%'",
+        "DELETE FROM operations_log       WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
     ] {
         if let Err(e) = sqlx::query(q).execute(&pool).await {
             eprintln!("pg_cleanup: {e}");
@@ -185,7 +211,6 @@ macro_rules! setup {
 // ── Row tests ─────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_create_and_read_row() {
     let store = setup!();
     let (table_id, row_id) = ("_test_rows", "_test_row_001");
@@ -194,8 +219,8 @@ async fn integration_create_and_read_row() {
         .create_row(table_id, row_id, Some("Integration test row"), None)
         .await
         .expect("create_row failed");
-    assert_eq!(row.id, row_id);
-    assert_eq!(row.table_id, table_id);
+    assert_eq!(row["id"].as_str().unwrap_or(""), row_id);
+    assert_eq!(row["table_id"].as_str().unwrap_or(""), table_id);
 
     let page = store
         .list_data_rows(
@@ -216,7 +241,6 @@ async fn integration_create_and_read_row() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_create_row_idempotent() {
     let store = setup!();
     let (table_id, row_id) = ("_test_rows", "_test_row_idem");
@@ -250,7 +274,6 @@ async fn integration_create_row_idempotent() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_patch_row_value_reflects() {
     let store = setup!();
     let (table_id, row_id) = ("_test_rows", "_test_row_patch");
@@ -284,7 +307,6 @@ async fn integration_patch_row_value_reflects() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_patch_different_columns_no_overwrite() {
     // Two consecutive patches to different columns must not overwrite each other.
     let store = setup!();
@@ -324,7 +346,6 @@ async fn integration_patch_different_columns_no_overwrite() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_upsert_rows_batch_idempotent() {
     let store = setup!();
     let table_id = "_test_batch_rows";
@@ -361,7 +382,6 @@ async fn integration_upsert_rows_batch_idempotent() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_upsert_rows_batch_preserves_user_columns() {
     let store = setup!();
     let table_id = "_test_batch_user_cols";
@@ -405,7 +425,6 @@ async fn integration_upsert_rows_batch_preserves_user_columns() {
 // ── Flag tests ────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_upsert_flag_no_duplicates() {
     let store = setup!();
     let (flag_id, flag_key) = (nanoid::nanoid!(), "_test_flag_dedup");
@@ -423,7 +442,6 @@ async fn integration_upsert_flag_no_duplicates() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_delete_flag_removes_from_list() {
     let store = setup!();
     let (flag_id, flag_key) = (nanoid::nanoid!(), "_test_flag_delete");
@@ -451,7 +469,6 @@ async fn integration_delete_flag_removes_from_list() {
 // ── Remark tests ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_remark_lifecycle() {
     let store = setup!();
     let id = "_test_remark_001";
@@ -492,7 +509,6 @@ async fn integration_remark_lifecycle() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_remark_with_targets() {
     let store = setup!();
     let id = "_test_remark_targets";
@@ -523,7 +539,6 @@ async fn integration_remark_with_targets() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_remark_resolve() {
     let store = setup!();
     let id = "_test_remark_resolve";
@@ -559,7 +574,6 @@ async fn integration_remark_resolve() {
 // ── Hidden row/column tests ───────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_hidden_row_add_list_remove() {
     let store = setup!();
     let (id, row_id) = (nanoid::nanoid!(), "_test_hidden_row_001");
@@ -588,7 +602,6 @@ async fn integration_hidden_row_add_list_remove() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_hidden_row_idempotent() {
     let store = setup!();
     let (id, row_id) = (nanoid::nanoid!(), "_test_hidden_row_idem");
@@ -607,7 +620,6 @@ async fn integration_hidden_row_idempotent() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_hidden_column_add_list_remove() {
     let store = setup!();
     let (id, col_id) = (nanoid::nanoid!(), "_test_hidden_col_001");
@@ -638,7 +650,6 @@ async fn integration_hidden_column_add_list_remove() {
 // ── Table registry tests ──────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_table_create_list_patch_delete() {
     let store = setup!();
     let id = "_test_table_001";
@@ -680,7 +691,6 @@ async fn integration_table_create_list_patch_delete() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_table_create_idempotent() {
     let store = setup!();
     let id = "_test_table_idem";
@@ -715,7 +725,6 @@ fn text_col(display_title: &str) -> crate::custom_column::CustomColumnInput {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_custom_column_upsert_and_list() {
     let store = setup!();
     let table_id = "_test_table_cols";
@@ -738,7 +747,6 @@ async fn integration_custom_column_upsert_and_list() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_custom_column_group_with_sub_columns() {
     let store = setup!();
     let table_id = "_test_table_groups";
@@ -785,7 +793,6 @@ async fn integration_custom_column_group_with_sub_columns() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_custom_column_delete() {
     let store = setup!();
     let table_id = "_test_table_coldel";
@@ -818,7 +825,6 @@ async fn integration_custom_column_delete() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_custom_column_freeze() {
     let store = setup!();
     let table_id = "_test_table_freeze";
@@ -845,7 +851,6 @@ async fn integration_custom_column_freeze() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_custom_column_full_metadata_round_trips() {
     let store = setup!();
     let table_id = "_test_table_meta";
@@ -874,7 +879,6 @@ async fn integration_custom_column_full_metadata_round_trips() {
 // ── Ops log tests ─────────────────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_ops_log_applied_at_set_after_write() {
     let pg = match pg_url() {
         Some(u) => u,
@@ -909,7 +913,6 @@ async fn integration_ops_log_applied_at_set_after_write() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_ops_log_no_pending_after_all_writes_succeed() {
     let store = setup!();
 
@@ -935,7 +938,6 @@ async fn integration_ops_log_no_pending_after_all_writes_succeed() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_ops_log_full_payload_for_remark() {
     // Verify that remark.upsert ops log stores body + targets so crash recovery works.
     let pg = match pg_url() {
@@ -993,7 +995,6 @@ async fn integration_ops_log_full_payload_for_remark() {
 // ── Multi-store merge tests ───────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn live_db_read_merges_from_both_stores() {
     let store = setup!();
     let flag_key = "_test_flag_merge_read";
@@ -1015,7 +1016,6 @@ async fn live_db_read_merges_from_both_stores() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn live_db_timing_is_logged_for_reads_and_writes() {
     let store = setup!();
     let (table_id, row_id) = ("_test_timing", "_test_row_timing");
@@ -1024,7 +1024,7 @@ async fn live_db_timing_is_logged_for_reads_and_writes() {
         .create_row(table_id, row_id, Some("Timing test"), None)
         .await
         .unwrap();
-    assert_eq!(row.id, row_id);
+    assert_eq!(row["id"].as_str().unwrap_or(""), row_id);
 
     let page = store
         .list_data_rows(
@@ -1041,7 +1041,6 @@ async fn live_db_timing_is_logged_for_reads_and_writes() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn live_db_per_request_timeout_override() {
     let store = setup!();
     store
@@ -1070,7 +1069,6 @@ async fn live_db_per_request_timeout_override() {
 }
 
 #[tokio::test]
-#[ignore = "requires real .env credentials"]
 async fn integration_upsert_github_repos_no_duplicates() {
     let store = setup!();
     let repo = serde_json::json!({ "github_id": -999001, "name": "_test_/repo-dedup", "stars": 1 });

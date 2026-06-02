@@ -563,29 +563,32 @@ impl DataStore for SurrealStore {
         row_id: &str,
         title: Option<&str>,
         who_created: Option<&str>,
-    ) -> Result<crate::data_row::TableRow> {
-        let existing: Option<serde_json::Value> = self.db.select(("table_rows", row_id)).await?;
+    ) -> Result<serde_json::Value> {
+        let collection = format!("t_{table_id}");
+        let existing: Option<serde_json::Value> = self.db.select((&collection, row_id)).await?;
         if let Some(v) = existing {
-            return Ok(row_to_table_row(&v));
+            let mut row = v;
+            row["table_id"] = serde_json::Value::String(table_id.to_string());
+            return Ok(row);
         }
         let now = Utc::now();
-        let custom_values = title
+        let custom_vals = title
             .map(|t| serde_json::json!({ "title": t }))
             .unwrap_or_else(|| serde_json::json!({}));
         let rec: Option<serde_json::Value> = self
             .db
-            .create(("table_rows", row_id))
+            .create((&collection, row_id))
             .content(serde_json::json!({
-                "table_id": table_id,
                 "who_created": who_created,
                 "when_created": now,
                 "when_last_modified": now,
-                "custom_values": custom_values,
+                "custom_vals": custom_vals,
                 "modify_count": 0,
             }))
             .await?;
-        let v = rec.ok_or_else(|| anyhow::anyhow!("create_row returned no record"))?;
-        Ok(row_to_table_row(&v))
+        let mut v = rec.ok_or_else(|| anyhow::anyhow!("create_row returned no record"))?;
+        v["table_id"] = serde_json::Value::String(table_id.to_string());
+        Ok(v)
     }
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
@@ -817,9 +820,12 @@ impl DataStore for SurrealStore {
         Ok(rows
             .into_iter()
             .map(|v| crate::store::PendingOp {
+                seq: None,
                 id: v["id"].as_str().unwrap_or("").to_owned(),
                 op: v["op"].as_str().unwrap_or("").to_owned(),
                 payload: v["payload"].clone(),
+                when_created: chrono::Utc::now(),
+                who_created: v["who_created"].as_str().map(str::to_owned),
                 tx_id: v["tx_id"].as_str().map(str::to_owned),
             })
             .collect())
@@ -880,18 +886,6 @@ fn row_to_table(v: &serde_json::Value) -> crate::table::Table {
     }
 }
 
-fn row_to_table_row(v: &serde_json::Value) -> crate::data_row::TableRow {
-    crate::data_row::TableRow {
-        id: id_str(&v["id"]),
-        table_id: str_field(v, "table_id"),
-        who_created: opt_str_field(v, "who_created"),
-        when_created: datetime_field(v, "when_created"),
-        who_last_modified: opt_str_field(v, "who_last_modified"),
-        when_last_modified: datetime_field(v, "when_last_modified"),
-        custom_values: v["custom_values"].clone(),
-        modify_count: i32_field(v, "modify_count"),
-    }
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

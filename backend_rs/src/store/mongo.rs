@@ -196,28 +196,6 @@ fn doc_to_table(doc: &Document) -> crate::table::Table {
     }
 }
 
-fn doc_to_table_row(doc: &Document) -> crate::data_row::TableRow {
-    let custom_values = doc
-        .get_document("custom_values")
-        .map(|cv| {
-            serde_json::Value::Object(
-                cv.iter()
-                    .map(|(k, v)| (k.clone(), bson_to_json(v)))
-                    .collect(),
-            )
-        })
-        .unwrap_or_else(|_| serde_json::json!({}));
-    crate::data_row::TableRow {
-        id: doc_id(doc),
-        table_id: str_val(doc, "table_id"),
-        who_created: opt_str_val(doc, "who_created"),
-        when_created: datetime_val(doc, "when_created"),
-        who_last_modified: opt_str_val(doc, "who_last_modified"),
-        when_last_modified: datetime_val(doc, "when_last_modified"),
-        custom_values,
-        modify_count: i32_val(doc, "modify_count"),
-    }
-}
 
 fn doc_to_row_json(doc: &Document) -> serde_json::Value {
     let mut obj: serde_json::Map<String, serde_json::Value> = doc
@@ -720,22 +698,21 @@ impl DataStore for MongoStore {
         row_id: &str,
         title: Option<&str>,
         who_created: Option<&str>,
-    ) -> Result<crate::data_row::TableRow> {
+    ) -> Result<serde_json::Value> {
         let now = bson::DateTime::now();
-        let custom_values = title
+        let custom_vals = title
             .map(|t| doc! { "title": t })
             .unwrap_or_else(Document::new);
         let doc = self
             .db
-            .collection::<Document>("table_rows")
+            .collection::<Document>(&format!("t_{table_id}"))
             .find_one_and_update(
                 doc! { "_id": row_id },
                 doc! { "$setOnInsert": {
-                    "table_id": table_id,
                     "who_created": opt_bson(who_created),
                     "when_created": now.clone(),
                     "when_last_modified": now,
-                    "custom_values": custom_values,
+                    "custom_vals": custom_vals,
                     "modify_count": 0i32,
                 }},
             )
@@ -744,7 +721,9 @@ impl DataStore for MongoStore {
             .await
             .context("MongoDB: create_row")?
             .ok_or_else(|| anyhow::anyhow!("create_row: no document returned"))?;
-        Ok(doc_to_table_row(&doc))
+        let mut row = doc_to_row_json(&doc);
+        row["table_id"] = serde_json::Value::String(table_id.to_string());
+        Ok(row)
     }
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
@@ -971,12 +950,15 @@ impl DataStore for MongoStore {
         Ok(docs
             .into_iter()
             .map(|d| crate::store::PendingOp {
+                seq: None,
                 id: doc_id(&d),
                 op: str_val(&d, "op"),
                 payload: d
                     .get_document("payload")
                     .map(|p| bson_to_json(&Bson::Document(p.clone())))
                     .unwrap_or(serde_json::Value::Null),
+                when_created: chrono::Utc::now(),
+                who_created: opt_str_val(&d, "who_created"),
                 tx_id: opt_str_val(&d, "tx_id"),
             })
             .collect())

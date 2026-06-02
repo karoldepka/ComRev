@@ -206,7 +206,12 @@ export class TableApi {
 
   async nukeDb(): Promise<void> {
     const url = `${this.base}/NUKE__DB`;
-    const res = await fetch(url, { method: 'DELETE' });
+    let res: Response;
+    try {
+      res = await fetch(url, { method: 'DELETE' });
+    } catch (cause) {
+      throw new Error(`NUKE__DB: cannot reach server (${cause instanceof Error ? cause.message : String(cause)})`);
+    }
     if (!res.ok) {
       let text = '';
       try { text = await res.text(); } catch { /* no body */ }

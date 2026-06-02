@@ -77,6 +77,17 @@ interface WasmSyncClient {
   fetch_hidden_columns(): Promise<string>;
   fetch_custom_columns(tableId: string): Promise<string>;
   fetch_data_rows(tableId: string, paramsJson: string): Promise<string>;
+
+  // REST table/row operations
+  fetch_tables(): Promise<string>;
+  create_table(payloadJson: string): Promise<string>;
+  patch_table(id: string, patchJson: string): Promise<string>;
+  delete_table(id: string): Promise<void>;
+  nuke_db(): Promise<void>;
+  create_row(tableId: string, rowId: string, valuesJson: string): Promise<string>;
+  upsert_cell_value(tableId: string, rowId: string, colId: string, valueJson: string): Promise<void>;
+  set_column_frozen(tableId: string, columnId: string, isFrozen: boolean): Promise<string>;
+  set_column_source_path(tableId: string, columnId: string, pathJson: string): Promise<string>;
 }
 
 interface WasmModule {
@@ -222,6 +233,39 @@ export class SyncClient {
     const obj: Record<string, string | number> = {};
     params.forEach((v, k) => { obj[k] = NUM_PARAMS.has(k) ? Number(v) : v; });
     return JSON.parse(await this.inner.fetch_data_rows(tableId, JSON.stringify(obj)));
+  }
+
+  // ── Table CRUD ────────────────────────────────────────────────────────────────
+
+  async fetchTables(): Promise<import('../types/table').ApiTable[]> {
+    return JSON.parse(await this.inner.fetch_tables());
+  }
+  async createTable(payload: { id: string; title: string; description?: string | null }): Promise<void> {
+    await this.inner.create_table(JSON.stringify(payload));
+  }
+  async patchTable(id: string, updates: { title?: string; description?: string | null }): Promise<void> {
+    await this.inner.patch_table(id, JSON.stringify(updates));
+  }
+  async deleteTable(id: string): Promise<void> {
+    await this.inner.delete_table(id);
+  }
+  async nukeDb(): Promise<void> {
+    await this.inner.nuke_db();
+  }
+
+  // ── Row / cell operations ─────────────────────────────────────────────────────
+
+  async createRow(tableId: string, rowId: string, values: Record<string, unknown> = {}): Promise<void> {
+    await this.inner.create_row(tableId, rowId, JSON.stringify(values));
+  }
+  async upsertCellValue(rowId: string, colId: string, value: unknown, tableId: string): Promise<void> {
+    await this.inner.upsert_cell_value(tableId, rowId, colId, JSON.stringify(value));
+  }
+  async setColumnFrozen(tableId: string, columnId: string, isFrozen: boolean): Promise<import('../types/table').ApiCustomColumn> {
+    return JSON.parse(await this.inner.set_column_frozen(tableId, columnId, isFrozen));
+  }
+  async setColumnSourcePath(tableId: string, columnId: string, sourcePath: string[] | null): Promise<import('../types/table').ApiCustomColumn> {
+    return JSON.parse(await this.inner.set_column_source_path(tableId, columnId, JSON.stringify(sourcePath)));
   }
 }
 

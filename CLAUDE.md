@@ -106,3 +106,6 @@ Columns (and thus indexes) should be added dynamically by the backend, upon enco
 # Testing
 make the big write an read tests work with our 2-postgres setup (supabase and neon).
 take the credentials from the toml with databases. Make sure tests get their own _test_ prefix and its own namespace/DB.
+
+# WASM
+As much as possible code should be in sync_core wasm

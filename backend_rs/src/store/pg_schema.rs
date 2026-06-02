@@ -201,17 +201,19 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE TRIGGER trg_hidden_columns_when_last_modified BEFORE UPDATE ON hidden_columns FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     r#"
     CREATE TABLE IF NOT EXISTS operations_log (
-      id TEXT PRIMARY KEY,
-      op TEXT NOT NULL,
-      payload JSONB NOT NULL,
-      tx_id TEXT,
-      client_id TEXT,
+      seq         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id          TEXT NOT NULL UNIQUE,
+      op          TEXT NOT NULL,
+      payload     JSONB NOT NULL,
+      tx_id       TEXT,
+      client_id   TEXT,
       who_created TEXT,
       when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      applied_at TIMESTAMPTZ
+      applied_at  TIMESTAMPTZ
     );
     "#,
     "ALTER TABLE operations_log ADD COLUMN IF NOT EXISTS tx_id TEXT, ADD COLUMN IF NOT EXISTS client_id TEXT, ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ;",
+    "ALTER TABLE operations_log ADD COLUMN IF NOT EXISTS seq BIGINT GENERATED ALWAYS AS IDENTITY;",
     "CREATE INDEX IF NOT EXISTS idx_ops_log_created ON operations_log (when_created DESC);",
     "CREATE INDEX IF NOT EXISTS idx_ops_log_op ON operations_log (op);",
     r#"
@@ -331,6 +333,48 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE POLICY table_custom_columns_auth_write ON table_custom_columns FOR ALL TO authenticated USING (true) WITH CHECK (true);",
     "CREATE POLICY table_rows_public_read ON table_rows FOR SELECT USING (true);",
     "CREATE POLICY table_rows_auth_write ON table_rows FOR ALL TO authenticated USING (true) WITH CHECK (true);",
+    // ── Per-user-table physical tables ────────────────────────────────────────
+    // For every entry in the `tables` registry, ensure a physical PG table exists
+    // (named "t_<id>") with a custom_vals JSONB column and GIN index.
+    // Also migrates any legacy rows from the old flat `table_rows` table.
+    r#"
+    DO $$
+    DECLARE
+      t   RECORD;
+      tbl TEXT;
+    BEGIN
+      FOR t IN SELECT id FROM tables LOOP
+        tbl := 't_' || t.id;
+        EXECUTE format($sql$
+          CREATE TABLE IF NOT EXISTS %I (
+            id                TEXT        PRIMARY KEY,
+            when_created      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            when_last_modified TIMESTAMPTZ,
+            who_created       TEXT,
+            who_last_modified TEXT,
+            modify_count      INTEGER     NOT NULL DEFAULT 0,
+            custom_vals       JSONB       NOT NULL DEFAULT '{}'::jsonb
+          )
+        $sql$, tbl);
+        EXECUTE format(
+          'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (custom_vals)',
+          'idx_' || t.id || '_custom_vals', tbl
+        );
+        -- Migrate legacy rows from the flat table_rows table if it exists.
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema = 'public' AND table_name = 'table_rows') THEN
+          EXECUTE format($sql$
+            INSERT INTO %I (id, when_created, when_last_modified,
+                            who_created, who_last_modified, modify_count, custom_vals)
+            SELECT id, when_created, when_last_modified,
+                   who_created, who_last_modified, modify_count, custom_values
+            FROM table_rows WHERE table_id = %L
+            ON CONFLICT (id) DO NOTHING
+          $sql$, tbl, t.id);
+        END IF;
+      END LOOP;
+    END $$;
+    "#,
 ];
 // Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore
 // trait and therefore works on all backends (Postgres, Mongo, Surreal, CouchDB, SQLite).

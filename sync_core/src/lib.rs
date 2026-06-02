@@ -303,6 +303,71 @@ fn grpc_client(base_url: &str) -> GrpcSyncClient<WasmTransport> {
     GrpcSyncClient::new(WasmTransport::new(base_url.to_string()))
 }
 
+// ── REST HTTP helpers (browser fetch via gloo-net) ────────────────────────────
+
+/// Derive the REST base URL from the gRPC base URL.
+/// By convention the REST server runs on port 3001 and gRPC on 3002.
+fn rest_base(grpc_base: &str) -> String {
+    std::env::var("NEXT_PUBLIC_API_URL")
+        .unwrap_or_else(|_| grpc_base.replace(":3002", ":3001"))
+}
+
+async fn http_get_text(url: &str) -> Result<JsValue, JsValue> {
+    let resp = gloo_net::http::Request::get(url)
+        .send()
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if !resp.ok() {
+        return Err(JsValue::from_str(&format!("GET {url} — HTTP {}", resp.status())));
+    }
+    resp.text().await
+        .map(|t| JsValue::from_str(&t))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+async fn http_post_json(url: &str, body: &str) -> Result<JsValue, JsValue> {
+    let resp = gloo_net::http::Request::post(url)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?
+        .send()
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if !resp.ok() {
+        return Err(JsValue::from_str(&format!("POST {url} — HTTP {}", resp.status())));
+    }
+    resp.text().await
+        .map(|t| JsValue::from_str(&t))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+async fn http_patch_json(url: &str, body: &str) -> Result<JsValue, JsValue> {
+    let resp = gloo_net::http::Request::patch(url)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?
+        .send()
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if !resp.ok() {
+        return Err(JsValue::from_str(&format!("PATCH {url} — HTTP {}", resp.status())));
+    }
+    resp.text().await
+        .map(|t| JsValue::from_str(&t))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+async fn http_delete(url: &str) -> Result<JsValue, JsValue> {
+    let resp = gloo_net::http::Request::delete(url)
+        .send()
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    if !resp.ok() {
+        return Err(JsValue::from_str(&format!("DELETE {url} — HTTP {}", resp.status())));
+    }
+    Ok(JsValue::UNDEFINED)
+}
+
 // ── Flush logic ────────────────────────────────────────────────────────────────
 
 async fn do_flush(inner: Rc<RefCell<Inner>>) {
@@ -932,6 +997,70 @@ impl SyncClient {
             let json = serde_json::to_string(&resp.into_inner().cols)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             Ok(JsValue::from_str(&json))
+        })
+    }
+
+    // ── REST helpers ──────────────────────────────────────────────────────────
+
+    pub fn fetch_tables(&self) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move { http_get_text(&format!("{base}/tables")).await })
+    }
+
+    pub fn create_table(&self, payload_json: String) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            http_post_json(&format!("{base}/tables"), &payload_json).await
+        })
+    }
+
+    pub fn patch_table(&self, id: String, patch_json: String) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            http_patch_json(&format!("{base}/tables/{id}"), &patch_json).await
+        })
+    }
+
+    pub fn delete_table(&self, id: String) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move { http_delete(&format!("{base}/tables/{id}")).await })
+    }
+
+    pub fn nuke_db(&self) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move { http_delete(&format!("{base}/NUKE__DB")).await })
+    }
+
+    pub fn create_row(&self, table_id: String, row_id: String, values_json: String) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            let payload = serde_json::json!({ "id": row_id, "values": serde_json::from_str::<serde_json::Value>(&values_json).unwrap_or_default() });
+            http_post_json(&format!("{base}/tables/{table_id}/rows"), &payload.to_string()).await
+        })
+    }
+
+    pub fn upsert_cell_value(&self, table_id: String, row_id: String, col_id: String, value_json: String) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            let payload = serde_json::json!({ "col_id": col_id, "value": serde_json::from_str::<serde_json::Value>(&value_json).unwrap_or_default() });
+            http_patch_json(&format!("{base}/tables/{table_id}/rows/{row_id}/values"), &payload.to_string()).await
+        })
+    }
+
+    pub fn set_column_frozen(&self, table_id: String, column_id: String, is_frozen: bool) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            let payload = serde_json::json!({ "is_frozen": is_frozen }).to_string();
+            http_patch_json(&format!("{base}/tables/{table_id}/custom-columns/{column_id}"), &payload).await
+        })
+    }
+
+    pub fn set_column_source_path(&self, table_id: String, column_id: String, path_json: String) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            let path: serde_json::Value = serde_json::from_str(&path_json).unwrap_or(serde_json::Value::Null);
+            let payload = serde_json::json!({ "source_path": path }).to_string();
+            http_patch_json(&format!("{base}/tables/{table_id}/custom-columns/{column_id}"), &payload).await
         })
     }
 

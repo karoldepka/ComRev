@@ -629,7 +629,7 @@ impl DataStore for MultiStore {
         row_id: &str,
         title: Option<&str>,
         who_created: Option<&str>,
-    ) -> Result<crate::data_row::TableRow> {
+    ) -> Result<serde_json::Value> {
         fan_out!(
             self,
             "row.create",
@@ -1045,20 +1045,16 @@ mod tests {
             row_id: &str,
             _title: Option<&str>,
             _who_created: Option<&str>,
-        ) -> Result<crate::data_row::TableRow> {
+        ) -> Result<serde_json::Value> {
             self.record("create_row");
             self.fail()?;
-            let now = chrono::Utc::now();
-            Ok(crate::data_row::TableRow {
-                id: row_id.into(),
-                table_id: table_id.into(),
-                who_created: None,
-                when_created: now,
-                who_last_modified: None,
-                when_last_modified: now,
-                custom_values: serde_json::json!({}),
-                modify_count: 0,
-            })
+            Ok(serde_json::json!({
+                "id": row_id,
+                "table_id": table_id,
+                "who_created": null,
+                "custom_vals": {},
+                "modify_count": 0,
+            }))
         }
         async fn patch_row_value(
             &self,

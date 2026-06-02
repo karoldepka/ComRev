@@ -148,7 +148,7 @@ impl DataStore for SqliteStore {
         _row_id: &str,
         _title: Option<&str>,
         _who_created: Option<&str>,
-    ) -> Result<crate::data_row::TableRow> {
+    ) -> Result<serde_json::Value> {
         not_impl!()
     }
 

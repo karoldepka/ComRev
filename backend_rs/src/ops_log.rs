@@ -21,22 +21,37 @@ pub async fn begin(pool: &sqlx::PgPool, id: &str, op: &str, payload: Value, tx_i
     }
 }
 
-/// Return all ops log entries with applied_at IS NULL.
+/// Return all ops log entries with applied_at IS NULL, ordered by seq (insertion order).
 pub async fn pending(pool: &sqlx::PgPool) -> anyhow::Result<Vec<PendingOp>> {
-    let rows = sqlx::query_as::<_, (String, String, serde_json::Value, Option<String>)>(
-        "SELECT id, op, payload, tx_id FROM operations_log WHERE applied_at IS NULL ORDER BY id",
+    let rows = sqlx::query_as::<_, (Option<i64>, String, String, serde_json::Value, chrono::DateTime<chrono::Utc>, Option<String>, Option<String>)>(
+        "SELECT seq, id, op, payload, \
+         COALESCE(when_created, NOW()) AS when_created, \
+         who_created, tx_id \
+         FROM operations_log WHERE applied_at IS NULL ORDER BY seq NULLS LAST, id",
     )
     .fetch_all(pool)
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, op, payload, tx_id)| PendingOp {
-            id,
-            op,
-            payload,
-            tx_id,
+        .map(|(seq, id, op, payload, when_created, who_created, tx_id)| PendingOp {
+            seq, id, op, payload, when_created, who_created, tx_id,
         })
         .collect())
+}
+
+/// Dependency priority for replay ordering: tables must exist before rows, rows before cells.
+fn op_priority(op: &str) -> u8 {
+    match op {
+        "table.create" | "table.patch" | "table.delete" => 0,
+        "row.create" | "row.patch" | "rows.batch_upsert" | "github_repos.batch_upsert" => 1,
+        _ => 2,
+    }
+}
+
+/// Whether a DB error is a foreign-key violation (the parent record no longer exists).
+fn is_fk_violation(e: &anyhow::Error) -> bool {
+    let msg = e.to_string();
+    msg.contains("foreign key constraint") || msg.contains("violates foreign key")
 }
 
 /// On startup: replay any ops that have applied_at = NULL (i.e. logged before a previous crash).
@@ -58,10 +73,25 @@ pub async fn recover_pending(store: &Arc<dyn DataStore>) {
 
     tracing::warn!("crash recovery: replaying {} pending op(s)", pending.len());
 
-    for op in &pending {
-        if let Err(e) = replay_op(store, op).await {
-            tracing::error!(op_id = %op.id, op_name = %op.op, "crash recovery: replay failed: {e}");
-            // Continue with other ops — partial recovery is better than none.
+    // Sort by seq (DB insertion order) when available; fall back to op-type priority + id
+    // for stores that don't emit seq (e.g. MongoDB, SurrealDB).
+    let mut sorted = pending;
+    sorted.sort_by_key(|op| (op.seq, op_priority(&op.op), op.id.clone()));
+
+    for op in &sorted {
+        match replay_op(store, op).await {
+            Ok(()) => {}
+            Err(e) if is_fk_violation(&e) => {
+                tracing::warn!(
+                    op_id = %op.id, op_name = %op.op,
+                    "crash recovery: stale op (parent record deleted), marking applied: {e}"
+                );
+                store.mark_op_applied(&op.id).await;
+            }
+            Err(e) => {
+                tracing::error!(op_id = %op.id, op_name = %op.op, "crash recovery: replay failed: {e}");
+                // Continue with other ops — partial recovery is better than none.
+            }
         }
     }
 }

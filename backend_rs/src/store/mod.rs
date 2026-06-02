@@ -11,9 +11,13 @@ use crate::custom_column::CustomColumn;
 /// An ops log entry that has not yet been applied (applied_at IS NULL).
 #[derive(Debug, Clone)]
 pub struct PendingOp {
+    /// DB-generated monotonic serial — authoritative insertion order for replay.
+    pub seq: Option<i64>,
     pub id: String,
     pub op: String,
     pub payload: serde_json::Value,
+    pub when_created: chrono::DateTime<chrono::Utc>,
+    pub who_created: Option<String>,
     /// Populated for future transaction-grouped crash recovery; not yet consumed by the replayer.
     #[allow(dead_code)]
     pub tx_id: Option<String>,
@@ -178,7 +182,7 @@ pub trait DataStore: Send + Sync {
         row_id: &str,
         title: Option<&str>,
         who_created: Option<&str>,
-    ) -> Result<crate::data_row::TableRow>;
+    ) -> Result<serde_json::Value>;
 
     /// Updates a single column value for a row without touching other columns.
     /// Implementations must ensure concurrent edits to different columns do not overwrite each other.
