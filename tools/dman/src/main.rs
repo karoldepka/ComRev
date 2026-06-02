@@ -119,7 +119,24 @@ struct CommandSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StatLinesEntryMode {
     DirsOnly,
+    FilesOnly,
     IncludeFiles,
+}
+
+impl StatLinesEntryMode {
+    fn includes_dirs(self) -> bool {
+        matches!(
+            self,
+            StatLinesEntryMode::DirsOnly | StatLinesEntryMode::IncludeFiles
+        )
+    }
+
+    fn includes_files(self) -> bool {
+        matches!(
+            self,
+            StatLinesEntryMode::FilesOnly | StatLinesEntryMode::IncludeFiles
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +144,22 @@ struct StatLinesOptions {
     roots: Vec<PathBuf>,
     entry_mode: StatLinesEntryMode,
     respect_gitignore: bool,
+    path_separator: StatLinesPathSeparator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatLinesPathSeparator {
+    Slash,
+    Backslash,
+}
+
+impl StatLinesPathSeparator {
+    fn char(self) -> char {
+        match self {
+            StatLinesPathSeparator::Slash => '/',
+            StatLinesPathSeparator::Backslash => '\\',
+        }
+    }
 }
 
 const PLATFORM_DEFINITIONS: &[PlatformDefinition] = &[
@@ -294,13 +327,16 @@ fn print_usage() {
 fn print_stat_lines_usage() {
     println!("Usage: dman stat-lines [OPTIONS] [DIR...]");
     println!();
-    println!("Recursively count lines in code files. Directories are shown by default.");
+    println!("Recursively count lines in code files. Directories and files are shown by default.");
     println!();
     println!("Options:");
     println!("  -h, --help          Show this help message");
-    println!("  --files             Include code files as rows, alongside directories");
-    println!("  --dirs-only         Show only directory rows (default)");
+    println!("  --files             Show directory and code-file rows (default)");
+    println!("  --dirs-only         Show only directory rows");
+    println!("  --files-only        Show only code-file rows");
     println!("  --no-gitignore      Include paths ignored by .gitignore/.ignore");
+    println!("  --path-separator-is-backslash");
+    println!("                      Print paths with backslashes instead of slashes");
     println!();
     println!("If no directories are specified, the current directory is scanned.");
 }
@@ -457,8 +493,9 @@ async fn parse_args(args: &[String]) -> Result<(Mode, Vec<RepoJob>, Vec<String>)
 
 fn parse_stat_lines_args(args: &[String]) -> Result<StatLinesOptions> {
     let mut roots = Vec::new();
-    let mut entry_mode = StatLinesEntryMode::DirsOnly;
+    let mut entry_mode = StatLinesEntryMode::IncludeFiles;
     let mut respect_gitignore = true;
+    let mut path_separator = StatLinesPathSeparator::Slash;
 
     for arg in args {
         match arg.as_str() {
@@ -475,8 +512,16 @@ fn parse_stat_lines_args(args: &[String]) -> Result<StatLinesOptions> {
                 entry_mode = StatLinesEntryMode::DirsOnly;
             }
 
+            "--files-only" => {
+                entry_mode = StatLinesEntryMode::FilesOnly;
+            }
+
             "--no-gitignore" => {
                 respect_gitignore = false;
+            }
+
+            "--path-separator-is-backslash" => {
+                path_separator = StatLinesPathSeparator::Backslash;
             }
 
             arg if arg.starts_with('-') => {
@@ -497,6 +542,7 @@ fn parse_stat_lines_args(args: &[String]) -> Result<StatLinesOptions> {
         roots,
         entry_mode,
         respect_gitignore,
+        path_separator,
     })
 }
 
@@ -1537,9 +1583,11 @@ fn print_stat_lines(options: StatLinesOptions) -> Result<()> {
     let mut entries = stats.entries;
 
     entries.sort_by(|a, b| {
-        a.lines
-            .cmp(&b.lines)
-            .then_with(|| a.path.to_lowercase().cmp(&b.path.to_lowercase()))
+        a.lines.cmp(&b.lines).then_with(|| {
+            a.formatted_path(options.path_separator)
+                .to_lowercase()
+                .cmp(&b.formatted_path(options.path_separator).to_lowercase())
+        })
     });
 
     let width = entries
@@ -1551,7 +1599,10 @@ fn print_stat_lines(options: StatLinesOptions) -> Result<()> {
 
     for entry in entries {
         let lines = format_lines(entry.lines);
-        println!("{lines:>width$} {}", entry.path);
+        println!(
+            "{lines:>width$} {}",
+            entry.formatted_path(options.path_separator)
+        );
     }
 
     let total = format_lines(stats.total);
@@ -1564,6 +1615,19 @@ fn print_stat_lines(options: StatLinesOptions) -> Result<()> {
 struct LineStatEntry {
     path: String,
     lines: u64,
+    kind: LineStatEntryKind,
+}
+
+impl LineStatEntry {
+    fn formatted_path(&self, separator: StatLinesPathSeparator) -> String {
+        format_stat_path(&self.path, self.kind, separator)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineStatEntryKind {
+    Dir,
+    File,
 }
 
 #[derive(Debug, Clone)]
@@ -1588,10 +1652,11 @@ fn stat_lines(options: &StatLinesOptions) -> Result<LineStats> {
 
                 add_parent_directory_counts(&mut directories, &root, &root, &cwd, lines);
 
-                if options.entry_mode == StatLinesEntryMode::IncludeFiles {
+                if options.entry_mode.includes_files() {
                     files.push(LineStatEntry {
                         path: display_stat_path(&root, &cwd),
                         lines,
+                        kind: LineStatEntryKind::File,
                     });
                 }
             }
@@ -1640,22 +1705,31 @@ fn stat_lines(options: &StatLinesOptions) -> Result<LineStats> {
 
             add_parent_directory_counts(&mut directories, path, &root, &cwd, lines);
 
-            if options.entry_mode == StatLinesEntryMode::IncludeFiles {
+            if options.entry_mode.includes_files() {
                 files.push(LineStatEntry {
                     path: display_stat_path(path, &cwd),
                     lines,
+                    kind: LineStatEntryKind::File,
                 });
             }
         }
     }
 
-    let mut entries: Vec<LineStatEntry> = directories
-        .into_iter()
-        .filter(|(path, _)| path != ".")
-        .map(|(path, lines)| LineStatEntry { path, lines })
-        .collect();
+    let mut entries: Vec<LineStatEntry> = if options.entry_mode.includes_dirs() {
+        directories
+            .into_iter()
+            .filter(|(path, _)| path != ".")
+            .map(|(path, lines)| LineStatEntry {
+                path,
+                lines,
+                kind: LineStatEntryKind::Dir,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    if options.entry_mode == StatLinesEntryMode::IncludeFiles {
+    if options.entry_mode.includes_files() {
         entries.extend(files);
     }
 
@@ -1735,6 +1809,21 @@ fn display_stat_path(path: &Path, cwd: &Path) -> String {
     } else {
         display_path.display().to_string()
     }
+}
+
+fn format_stat_path(
+    path: &str,
+    kind: LineStatEntryKind,
+    separator: StatLinesPathSeparator,
+) -> String {
+    let separator = separator.char();
+    let mut formatted = path.replace(['/', '\\'], &separator.to_string());
+
+    if kind == LineStatEntryKind::Dir && formatted != "." && !formatted.ends_with(separator) {
+        formatted.push(separator);
+    }
+
+    formatted
 }
 
 fn is_code_file(path: &Path) -> bool {
@@ -1865,6 +1954,49 @@ mod tests {
         assert!(!is_code_file(Path::new("Cargo.lock")));
         assert!(!is_code_file(Path::new("dist/app.min.js")));
         assert!(!is_code_file(Path::new("README.md")));
+    }
+
+    #[test]
+    fn formats_stat_paths_with_configured_separator_and_dir_suffix() {
+        assert_eq!(
+            format_stat_path(
+                r"workspace\tokio\src",
+                LineStatEntryKind::Dir,
+                StatLinesPathSeparator::Slash
+            ),
+            "workspace/tokio/src/"
+        );
+        assert_eq!(
+            format_stat_path(
+                "workspace/tokio/src/main.rs",
+                LineStatEntryKind::File,
+                StatLinesPathSeparator::Backslash
+            ),
+            r"workspace\tokio\src\main.rs"
+        );
+        assert_eq!(
+            format_stat_path(".", LineStatEntryKind::Dir, StatLinesPathSeparator::Slash),
+            "."
+        );
+    }
+
+    #[test]
+    fn stat_lines_defaults_to_file_rows_and_slashes() {
+        let options = parse_stat_lines_args(&[]).unwrap();
+
+        assert_eq!(options.entry_mode, StatLinesEntryMode::IncludeFiles);
+        assert_eq!(options.path_separator, StatLinesPathSeparator::Slash);
+        assert!(options.respect_gitignore);
+    }
+
+    #[test]
+    fn stat_lines_accepts_files_only_mode() {
+        let args = vec!["--files-only".to_string()];
+        let options = parse_stat_lines_args(&args).unwrap();
+
+        assert_eq!(options.entry_mode, StatLinesEntryMode::FilesOnly);
+        assert!(options.entry_mode.includes_files());
+        assert!(!options.entry_mode.includes_dirs());
     }
 }
 
