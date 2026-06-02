@@ -12,6 +12,7 @@ import AddColumnDialog from './AddColumnDialog';
 import AddRowDialog from './AddRowDialog';
 import type { AddRowPayload } from './AddRowDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
+import ColumnPropertiesDialog, { type ColumnPropertiesPayload } from './ColumnPropertiesDialog';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
@@ -104,7 +105,7 @@ function columnsFromMetadata(customColumns: ApiCustomColumn[], _rowSample?: Data
     colMap.set(cc.id, {
       id: resolveColumnId(cc),
       customColumnId: cc.id,
-      label: cc.label ?? labelFor(cc.name),
+      label: cc.title ?? labelFor(cc.id),
       width: 150,
       minWidth: 60,
       readOnly: isColumnReadOnly(cc),
@@ -319,6 +320,7 @@ export default function TreeTable({ tableId }: Props) {
   const [showAddRowDialog, setShowAddRowDialog] = useState(false);
   type PendingDelete = { colId: string; label: string; notes: number; comments: number; flags: number };
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
+  const [propertiesCol, setPropertiesCol] = useState<ApiCustomColumn | null>(null);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
   const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff.14d', dir: 'desc' });
@@ -433,7 +435,7 @@ export default function TreeTable({ tableId }: Props) {
       .then((cols) => {
         if (!active) return;
         logger.debug({ count: cols.length, stars_diff: cols.filter((c) => c.id.startsWith('gh_stars_diff')) }, 'custom columns loaded');
-        logger.debug(cols.reduce<Record<string, unknown>>((acc, c) => { acc[c.id] = { name: c.name, source_path: c.source_path, parent_ids: c.parent_ids, types: c.types }; return acc; }, {}), 'column metadata');
+        logger.debug(cols.reduce<Record<string, unknown>>((acc, c) => { acc[c.id] = { title: c.title, source_path: c.source_path, parent_ids: c.parent_ids, types: c.types }; return acc; }, {}), 'column metadata');
         setCustomColumns(cols);
       })
       .catch((err: unknown) => {
@@ -796,8 +798,7 @@ export default function TreeTable({ tableId }: Props) {
     const positionAfter = afterColId || null;
     const col: ApiCustomColumn = {
       id,
-      name: derivedName,
-      label: payload.title.trim(),
+      title: payload.title.trim(),
       description: payload.description,
       expression: payload.expression,
       position_after: positionAfter,
@@ -807,8 +808,8 @@ export default function TreeTable({ tableId }: Props) {
       types: ['text'],
     };
     setCustomColumns((prev) => [...prev, col]);
-    recordChange(`Create column "${col.label ?? col.name}"`);
-    api.createCustomColumn(tableId, { name: col.name, label: col.label, description: col.description, expression: col.expression, position_after: col.position_after }, id);
+    recordChange(`Create column "${col.title ?? col.id}"`);
+    api.createCustomColumn(tableId, { title: col.title, description: col.description, expression: col.expression, position_after: col.position_after }, id);
   }, [api, recordChange, tableId]);
 
   const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {
@@ -821,6 +822,13 @@ export default function TreeTable({ tableId }: Props) {
       .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
       .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
   }, [allLeafColumns, customColByColumnId, recordChange, tableId]);
+
+  const saveColumnProperties = useCallback((columnId: string, payload: ColumnPropertiesPayload) => {
+    if (!cellApiRef.current) return;
+    cellApiRef.current.setColumnSourcePath(tableId, columnId, payload.source_path)
+      .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
+      .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
+  }, [tableId]);
 
   const deleteCustomColumn = useCallback((colId: string) => {
     const colMeta = customColByColumnId.get(colId);
@@ -1141,6 +1149,11 @@ export default function TreeTable({ tableId }: Props) {
                                   onToggleFrozen={toggleColumnFrozen}
                                   onDeleteCol={deleteCustomColumn}
                                   onUngroup={!isLeaf ? (groupId) => { removeColumnGroup(groupId); setOpenMenuColumn(null); setMenuAnchor(null); } : undefined}
+                                  onProperties={(colId) => {
+                                    const cc = customColumns.find((c) => c.id === colId) ?? customColByColumnId.get(colId);
+                                    if (cc) setPropertiesCol(cc);
+                                    setOpenMenuColumn(null); setMenuAnchor(null);
+                                  }}
                                   onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
                                 />
                               )}
@@ -1359,6 +1372,13 @@ export default function TreeTable({ tableId }: Props) {
         <AddRowDialog
           onConfirm={handleAddRowConfirm}
           onClose={() => setShowAddRowDialog(false)}
+        />
+      )}
+      {propertiesCol && (
+        <ColumnPropertiesDialog
+          column={propertiesCol}
+          onSave={saveColumnProperties}
+          onClose={() => setPropertiesCol(null)}
         />
       )}
     </>

@@ -94,7 +94,12 @@ pub async fn create_row(
 ) -> Result<(StatusCode, Json<TableRow>), (StatusCode, String)> {
     let row = state
         .store
-        .create_row(&table_id, &body.id, body.title.as_deref(), body.who_created.as_deref())
+        .create_row(
+            &table_id,
+            &body.id,
+            body.title.as_deref(),
+            body.who_created.as_deref(),
+        )
         .await
         .map_err(|e| db_err("row.create", e))?;
     Ok((StatusCode::CREATED, Json(row)))
@@ -114,7 +119,10 @@ pub async fn upsert_github_repos_batch(
         .upsert_github_repos_batch(&body.repos)
         .await
         .map_err(|e| db_err("github_repos_batch", e))?;
-    Ok((StatusCode::OK, Json(serde_json::json!({ "upserted": count }))))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "upserted": count })),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -132,7 +140,10 @@ pub async fn batch_upsert_rows(
         .upsert_rows_batch(&table_id, &body.rows)
         .await
         .map_err(|e| db_err("rows_batch", e))?;
-    Ok((StatusCode::OK, Json(serde_json::json!({ "upserted": count }))))
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "upserted": count })),
+    ))
 }
 
 #[derive(Deserialize)]

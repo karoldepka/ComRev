@@ -1,5 +1,5 @@
 # Database connections — committed to version control.
-# Credentials go in databases.secrets.toml (gitignored).
+# Passwords go in databases.secrets.toml (gitignored); usernames live here.
 #
 # Supported drivers: postgres, mongodb, surrealdb, couchdb, sqlite
 # All [[database]] entries are equal-standing — writes fan out to all, reads are merged.
@@ -11,6 +11,7 @@
 
 [[database]]
 id     = "postgres_supabase"
+username = "postgres.peiabfabxjrxaadvsxxw"
 driver = "postgres"
 host   = "aws-0-eu-west-1.pooler.supabase.com"
 port   = 5432
@@ -21,10 +22,12 @@ id      = "postgres_neon"
 driver  = "postgres"
 host    = "ep-quiet-silence-apo1zgem-pooler.c-7.us-east-1.aws.neon.tech"
 dbname  = "neondb"
+username = "neondb_owner"
 options = "sslmode=require&channel_binding=require"
 
 # [[database]]
 # id        = "surreal_local"
+# username = "admin"
 # driver    = "surrealdb"
 # host      = "localhost"
 # port      = 8000
@@ -34,6 +37,7 @@ options = "sslmode=require&channel_binding=require"
 
 # [[database]]
 # id        = "surreal_cloud"
+# username = "admin"
 # driver    = "surrealdb"
 # host      = "lucky-comet-06f7sb1d11ue10jg3vdkj82psc.aws-use1.surreal.cloud"
 # tls       = true

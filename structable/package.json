@@ -9,6 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@copilotkit/react-core": "^1.59.2",
+    "@copilotkit/react-ui": "^1.59.2",
+    "@copilotkit/runtime": "^1.59.2",
+    "@react-aria/focus": "^3.22.1",
+    "@react-aria/interactions": "^3.28.1",
     "@tanstack/react-table": "^8.21.3",
     "idb": "^8.0.3",
     "nanoid": "^5.1.11",

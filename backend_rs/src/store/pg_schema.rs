@@ -1,5 +1,5 @@
-use anyhow::Result;
-use sqlx::PgPool;
+// DDL-only schema statements for Postgres.
+// Seed data (builtin tables/columns) lives in seed::upload_to_structable.
 
 pub const POSTGRES_SCHEMA: &[&str] = &[
     r#"
@@ -140,6 +140,30 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE TRIGGER trg_custom_columns_when_last_modified BEFORE UPDATE ON custom_columns FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     "CREATE INDEX IF NOT EXISTS idx_custom_columns_parent_ids ON custom_columns USING gin(parent_ids);",
     r#"
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'title'
+      ) THEN
+        ALTER TABLE custom_columns ADD COLUMN title TEXT;
+      END IF;
+      UPDATE custom_columns SET title = COALESCE(title, label, name) WHERE title IS NULL;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'name'
+      ) THEN
+        ALTER TABLE custom_columns DROP COLUMN name;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'label'
+      ) THEN
+        ALTER TABLE custom_columns DROP COLUMN label;
+      END IF;
+    END $$;
+    "#,
+    r#"
     CREATE TABLE IF NOT EXISTS cell_flags (
       id TEXT PRIMARY KEY,
       key TEXT NOT NULL UNIQUE,
@@ -277,11 +301,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_table_rows_table_id ON table_rows (table_id, when_created DESC);",
     "CREATE INDEX IF NOT EXISTS idx_table_rows_custom_values_gin ON table_rows USING gin (custom_values);",
     r#"
-    INSERT INTO tables (id, title, description)
-    VALUES ('gh_repos', 'GitHub Repositories', 'Comparison table for GitHub repositories, auto-populated from the GitHub API.')
-    ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, description = EXCLUDED.description;
-    "#,
-    r#"
     DO $$
     DECLARE
       t TEXT;
@@ -289,6 +308,19 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       FOREACH t IN ARRAY ARRAY['remarks','remark_targets','custom_columns','cell_flags','hidden_rows','hidden_columns','operations_log','tables','github_repos','table_custom_columns','table_rows'] LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
       END LOOP;
+    END $$;
+    "#,
+    // Ensure Supabase JWT roles exist so RLS policies compile on plain Postgres (Neon, local dev).
+    // On real Supabase these roles already exist; the DO block is a no-op there.
+    r#"
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        CREATE ROLE authenticated NOLOGIN;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        CREATE ROLE anon NOLOGIN;
+      END IF;
     END $$;
     "#,
     "DROP POLICY IF EXISTS remarks_public_read ON remarks;",
@@ -322,582 +354,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE POLICY table_rows_public_read ON table_rows FOR SELECT USING (true);",
     "CREATE POLICY table_rows_auth_write ON table_rows FOR ALL TO authenticated USING (true) WITH CHECK (true);",
 ];
+// Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore
+// trait and therefore works on all backends (Postgres, Mongo, Surreal, CouchDB, SQLite).
 
-const BUILTIN_COLUMNS: &[(
-    &str,
-    &str,
-    &str,
-    &str,
-    Option<&str>,
-    bool,
-    bool,
-    &[&str],
-    &[&str],
-    &[&str],
-)] = &[
-    (
-        "gh_group",
-        "github",
-        "GitHub",
-        "text",
-        None,
-        true,
-        true,
-        &[],
-        &[],
-        &[],
-    ),
-    (
-        "gh_github_id",
-        "github_id",
-        "GitHub ID",
-        "integer",
-        None,
-        true,
-        false,
-        &["gh_group"],
-        &["github_id"],
-        &["numeric"],
-    ),
-    (
-        "gh_name",
-        "name",
-        "Repository",
-        "text",
-        Some("gh_github_id"),
-        true,
-        false,
-        &["gh_group"],
-        &["name"],
-        &["text"],
-    ),
-    (
-        "gh_url",
-        "url",
-        "URL",
-        "url",
-        Some("gh_name"),
-        true,
-        false,
-        &["gh_group"],
-        &["url"],
-        &["text"],
-    ),
-    (
-        "gh_description",
-        "description",
-        "Description",
-        "text",
-        Some("gh_url"),
-        true,
-        false,
-        &["gh_group"],
-        &["description"],
-        &["text"],
-    ),
-    (
-        "gh_homepage",
-        "homepage",
-        "Homepage",
-        "url",
-        Some("gh_description"),
-        true,
-        false,
-        &["gh_group"],
-        &["homepage"],
-        &["text"],
-    ),
-    (
-        "gh_stars",
-        "stars",
-        "Stars",
-        "integer",
-        Some("gh_homepage"),
-        true,
-        false,
-        &["gh_group"],
-        &["stars"],
-        &["numeric"],
-    ),
-    (
-        "gh_forks",
-        "forks",
-        "Forks",
-        "integer",
-        Some("gh_stars"),
-        true,
-        false,
-        &["gh_group"],
-        &["forks"],
-        &["numeric"],
-    ),
-    (
-        "gh_open_issues",
-        "open_issues",
-        "Open Issues",
-        "integer",
-        Some("gh_forks"),
-        true,
-        false,
-        &["gh_group"],
-        &["open_issues"],
-        &["numeric"],
-    ),
-    (
-        "gh_watchers",
-        "watchers",
-        "Watchers",
-        "integer",
-        Some("gh_open_issues"),
-        true,
-        false,
-        &["gh_group"],
-        &["watchers"],
-        &["numeric"],
-    ),
-    (
-        "gh_size",
-        "size",
-        "Size (KB)",
-        "integer",
-        Some("gh_watchers"),
-        true,
-        false,
-        &["gh_group"],
-        &["size"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_now",
-        "stars_now",
-        "Stars Now",
-        "integer",
-        Some("gh_size"),
-        true,
-        false,
-        &["gh_group"],
-        &["stars_now"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff",
-        "stars_diff",
-        "GitHub Stars diff",
-        "jsonb",
-        Some("gh_stars_now"),
-        true,
-        true,
-        &["gh_group"],
-        &["stars_diff"],
-        &[],
-    ),
-    (
-        "gh_stars_diff_6h",
-        "stars_diff_6h",
-        "6h",
-        "integer",
-        None,
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "6h"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_12h",
-        "stars_diff_12h",
-        "12h",
-        "integer",
-        Some("gh_stars_diff_6h"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "12h"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_24h",
-        "stars_diff_24h",
-        "24h",
-        "integer",
-        Some("gh_stars_diff_12h"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "24h"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_48h",
-        "stars_diff_48h",
-        "48h",
-        "integer",
-        Some("gh_stars_diff_24h"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "48h"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_5d",
-        "stars_diff_5d",
-        "5d",
-        "integer",
-        Some("gh_stars_diff_48h"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "5d"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_7d",
-        "stars_diff_7d",
-        "7d",
-        "integer",
-        Some("gh_stars_diff_5d"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "7d"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_10d",
-        "stars_diff_10d",
-        "10d",
-        "integer",
-        Some("gh_stars_diff_7d"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "10d"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_14d",
-        "stars_diff_14d",
-        "14d",
-        "integer",
-        Some("gh_stars_diff_10d"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "14d"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_20d",
-        "stars_diff_20d",
-        "20d",
-        "integer",
-        Some("gh_stars_diff_14d"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "20d"],
-        &["numeric"],
-    ),
-    (
-        "gh_stars_diff_30d",
-        "stars_diff_30d",
-        "30d",
-        "integer",
-        Some("gh_stars_diff_20d"),
-        true,
-        false,
-        &["gh_stars_diff"],
-        &["stars_diff", "30d"],
-        &["numeric"],
-    ),
-    (
-        "gh_language",
-        "language",
-        "Language",
-        "text",
-        Some("gh_stars_diff"),
-        true,
-        false,
-        &["gh_group"],
-        &["language"],
-        &["categorical"],
-    ),
-    (
-        "gh_license",
-        "license",
-        "License",
-        "text",
-        Some("gh_language"),
-        true,
-        false,
-        &["gh_group"],
-        &["license"],
-        &["categorical"],
-    ),
-    (
-        "gh_topics",
-        "topics",
-        "Topics",
-        "array",
-        Some("gh_license"),
-        true,
-        false,
-        &["gh_group"],
-        &["topics"],
-        &["categorical"],
-    ),
-    (
-        "gh_visibility",
-        "visibility",
-        "Visibility",
-        "text",
-        Some("gh_topics"),
-        true,
-        false,
-        &["gh_group"],
-        &["visibility"],
-        &["categorical"],
-    ),
-    (
-        "gh_default_branch",
-        "default_branch",
-        "Default Branch",
-        "text",
-        Some("gh_visibility"),
-        true,
-        false,
-        &["gh_group"],
-        &["default_branch"],
-        &["categorical"],
-    ),
-    (
-        "gh_archived",
-        "archived",
-        "Archived",
-        "boolean",
-        Some("gh_default_branch"),
-        true,
-        false,
-        &["gh_group"],
-        &["archived"],
-        &["boolean"],
-    ),
-    (
-        "gh_disabled",
-        "disabled",
-        "Disabled",
-        "boolean",
-        Some("gh_archived"),
-        true,
-        false,
-        &["gh_group"],
-        &["disabled"],
-        &["boolean"],
-    ),
-    (
-        "gh_has_issues",
-        "has_issues",
-        "Has Issues",
-        "boolean",
-        Some("gh_disabled"),
-        true,
-        false,
-        &["gh_group"],
-        &["has_issues"],
-        &["boolean"],
-    ),
-    (
-        "gh_has_projects",
-        "has_projects",
-        "Has Projects",
-        "boolean",
-        Some("gh_has_issues"),
-        true,
-        false,
-        &["gh_group"],
-        &["has_projects"],
-        &["boolean"],
-    ),
-    (
-        "gh_has_wiki",
-        "has_wiki",
-        "Has Wiki",
-        "boolean",
-        Some("gh_has_projects"),
-        true,
-        false,
-        &["gh_group"],
-        &["has_wiki"],
-        &["boolean"],
-    ),
-    (
-        "gh_has_pages",
-        "has_pages",
-        "Has Pages",
-        "boolean",
-        Some("gh_has_wiki"),
-        true,
-        false,
-        &["gh_group"],
-        &["has_pages"],
-        &["boolean"],
-    ),
-    (
-        "gh_has_downloads",
-        "has_downloads",
-        "Has Downloads",
-        "boolean",
-        Some("gh_has_pages"),
-        true,
-        false,
-        &["gh_group"],
-        &["has_downloads"],
-        &["boolean"],
-    ),
-    (
-        "gh_pushed_at",
-        "pushed_at",
-        "Last Push",
-        "timestamptz",
-        Some("gh_has_downloads"),
-        true,
-        false,
-        &["gh_group"],
-        &["pushed_at"],
-        &["text"],
-    ),
-    (
-        "gh_github_created",
-        "github_created_at",
-        "GitHub Created",
-        "timestamptz",
-        Some("gh_pushed_at"),
-        true,
-        false,
-        &["gh_group"],
-        &["github_created_at"],
-        &["text"],
-    ),
-    (
-        "gh_github_updated",
-        "github_updated_at",
-        "GitHub Updated",
-        "timestamptz",
-        Some("gh_github_created"),
-        true,
-        false,
-        &["gh_group"],
-        &["github_updated_at"],
-        &["text"],
-    ),
-    (
-        "gh_fetched_at",
-        "fetched_at",
-        "Last Fetched",
-        "timestamptz",
-        Some("gh_github_updated"),
-        true,
-        false,
-        &["gh_group"],
-        &["fetched_at"],
-        &["text"],
-    ),
-    (
-        "gh_owner_login",
-        "owner_login",
-        "Owner",
-        "text",
-        Some("gh_fetched_at"),
-        true,
-        false,
-        &["gh_group"],
-        &["owner_login"],
-        &["categorical"],
-    ),
-    (
-        "gh_owner_avatar",
-        "owner_avatar",
-        "Owner Avatar",
-        "url",
-        Some("gh_owner_login"),
-        true,
-        false,
-        &["gh_group"],
-        &["owner_avatar"],
-        &["text"],
-    ),
-    (
-        "gh_owner_url",
-        "owner_url",
-        "Owner URL",
-        "url",
-        Some("gh_owner_avatar"),
-        true,
-        false,
-        &["gh_group"],
-        &["owner_url"],
-        &["text"],
-    ),
-];
-
-pub async fn seed_builtin_columns(pool: &PgPool) -> Result<()> {
-    for (
-        id,
-        name,
-        label,
-        ty,
-        position_after,
-        read_only,
-        is_group,
-        parent_ids,
-        source_path,
-        data_types,
-    ) in BUILTIN_COLUMNS
-    {
-        sqlx::query(
-            "INSERT INTO custom_columns
-               (id, name, label, types, position_after, read_only, is_group, parent_ids, source_path, data_types)
-             VALUES ($1, $2, $3, ARRAY[$4]::TEXT[], $5, $6, $7, $8, $9, $10)
-             ON CONFLICT (id) DO UPDATE
-               SET name = EXCLUDED.name,
-                   label = EXCLUDED.label,
-                   types = EXCLUDED.types,
-                   position_after = EXCLUDED.position_after,
-                   read_only = EXCLUDED.read_only,
-                   is_group = EXCLUDED.is_group,
-                   parent_ids = EXCLUDED.parent_ids,
-                   source_path = EXCLUDED.source_path,
-                   data_types = EXCLUDED.data_types,
-                   when_last_modified = NOW(),
-                   modify_count = custom_columns.modify_count + 1",
-        )
-        .bind(id)
-        .bind(name)
-        .bind(label)
-        .bind(ty)
-        .bind(position_after)
-        .bind(read_only)
-        .bind(is_group)
-        .bind(parent_ids)
-        .bind(source_path)
-        .bind(data_types)
-        .execute(pool)
-        .await?;
-    }
-
-    sqlx::query(
-        "INSERT INTO table_custom_columns (table_id, column_id, position_after, is_frozen)
-         SELECT 'gh_repos', id, position_after, name = 'name'
-         FROM custom_columns
-         WHERE id LIKE 'gh_%'
-         ON CONFLICT (table_id, column_id) DO UPDATE
-           SET position_after = EXCLUDED.position_after,
-               is_frozen = EXCLUDED.is_frozen,
-               when_last_modified = NOW()",
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}

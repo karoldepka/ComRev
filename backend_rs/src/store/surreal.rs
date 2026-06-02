@@ -10,6 +10,7 @@ use crate::types::{PagedResponse, RowQuery};
 
 pub struct SurrealStore {
     db: Surreal<Any>,
+    db_id: String,
 }
 
 impl SurrealStore {
@@ -28,7 +29,7 @@ impl SurrealStore {
     /// SURREAL_NS=main
     /// SURREAL_DB=main
     /// ```
-    pub async fn connect(raw_url: &str) -> Result<Self> {
+    pub async fn connect(db_id: &str, raw_url: &str) -> Result<Self> {
         // ── Normalise URL ─────────────────────────────────────────────────────
         // Strip any user:pass@ embedded in surreal:// URLs and convert the
         // scheme so that surrealdb::engine::any::connect can handle it.
@@ -45,10 +46,8 @@ impl SurrealStore {
             .filter(|s| !s.is_empty())
             .or(embedded_pass)
             .unwrap_or_default();
-        let namespace = std::env::var("SURREAL_NS")
-            .unwrap_or_else(|_| "structable".into());
-        let database = std::env::var("SURREAL_DB")
-            .unwrap_or_else(|_| "structable".into());
+        let namespace = std::env::var("SURREAL_NS").unwrap_or_else(|_| "structable".into());
+        let database = std::env::var("SURREAL_DB").unwrap_or_else(|_| "structable".into());
 
         // ── Connect ───────────────────────────────────────────────────────────
         let db = surrealdb::engine::any::connect(&connect_url)
@@ -62,12 +61,16 @@ impl SurrealStore {
                 password: password.clone(),
             })
             .await
-            .with_context(|| format!(
-                "SurrealDB: signin failed for user '{username}' at {connect_url} \
+            .with_context(|| {
+                format!(
+                    "SurrealDB: signin failed for user '{username}' at {connect_url} \
                  — if the server runs unauthenticated, leave SURREAL_USER empty"
-            ))?;
+                )
+            })?;
         } else {
-            tracing::debug!("SurrealDB: no credentials configured, connecting unauthenticated to {connect_url}");
+            tracing::debug!(
+                "SurrealDB: no credentials configured, connecting unauthenticated to {connect_url}"
+            );
         }
 
         db.use_ns(namespace)
@@ -75,7 +78,7 @@ impl SurrealStore {
             .await
             .context("SurrealDB: use_ns/use_db failed")?;
 
-        let store = SurrealStore { db };
+        let store = SurrealStore { db, db_id: db_id.to_string() };
         store.ensure_schema().await?;
         Ok(store)
     }
@@ -157,13 +160,21 @@ fn bool_field(v: &serde_json::Value, field: &str) -> bool {
 fn str_vec_field(v: &serde_json::Value, field: &str) -> Vec<String> {
     v[field]
         .as_array()
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn opt_str_vec_field(v: &serde_json::Value, field: &str) -> Option<Vec<String>> {
     let arr = v[field].as_array()?;
-    Some(arr.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+    Some(
+        arr.iter()
+            .filter_map(|x| x.as_str().map(str::to_owned))
+            .collect(),
+    )
 }
 
 // ── DataStore impl ────────────────────────────────────────────────────────────
@@ -171,6 +182,7 @@ fn opt_str_vec_field(v: &serde_json::Value, field: &str) -> Option<Vec<String>> 
 #[async_trait]
 impl DataStore for SurrealStore {
     async fn ensure_schema(&self) -> Result<()> {
+        tracing::info!(db_id = %self.db_id, "SurrealStore: applying schema");
         self.db
             .query(
                 "DEFINE TABLE IF NOT EXISTS flags SCHEMALESS;
@@ -203,23 +215,56 @@ impl DataStore for SurrealStore {
         Ok(())
     }
 
+    async fn set_column_source_path(
+        &self,
+        column_id: &str,
+        path: Option<&[String]>,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        let path_val = serde_json::to_value(path).unwrap_or(serde_json::Value::Null);
+        let content = serde_json::json!({ "source_path": path_val });
+        let rec: Option<serde_json::Value> = self.db
+            .update(("custom_columns", column_id))
+            .merge(content)
+            .await?;
+        let v = rec.ok_or_else(|| anyhow::anyhow!("column not found: {column_id}"))?;
+        Ok(row_to_custom_column(&v))
+    }
+
+    async fn nuke_db(&self) -> Result<()> {
+        tracing::warn!(db_id = %self.db_id, "NUKE__DB: removing all SurrealDB tables");
+        self.db
+            .query(
+                "REMOVE TABLE IF EXISTS flags;
+                 REMOVE TABLE IF EXISTS hidden_rows;
+                 REMOVE TABLE IF EXISTS hidden_columns;
+                 REMOVE TABLE IF EXISTS remarks;
+                 REMOVE TABLE IF EXISTS remark_targets;
+                 REMOVE TABLE IF EXISTS custom_columns;
+                 REMOVE TABLE IF EXISTS app_tables;
+                 REMOVE TABLE IF EXISTS table_rows;
+                 REMOVE TABLE IF EXISTS ops_log;",
+            )
+            .await
+            .context("NUKE__DB: SurrealDB REMOVE TABLE failed")?;
+        tracing::warn!(db_id = %self.db_id, "NUKE__DB: complete");
+        Ok(())
+    }
+
     // ── Flags ─────────────────────────────────────────────────────────────────
 
     async fn list_flags(&self) -> Result<Vec<crate::flag::CellFlag>> {
         let rows: Vec<serde_json::Value> = self.db.select("flags").await?;
-        Ok(rows.iter().map(|v| crate::flag::CellFlag {
-            id: id_str(&v["id"]),
-            key: str_field(v, "key"),
-            color: str_field(v, "color"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|v| crate::flag::CellFlag {
+                id: id_str(&v["id"]),
+                key: str_field(v, "key"),
+                color: str_field(v, "color"),
+            })
+            .collect())
     }
 
-    async fn upsert_flag(
-        &self,
-        id: &str,
-        key: &str,
-        color: &str,
-    ) -> Result<crate::flag::CellFlag> {
+    async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> Result<crate::flag::CellFlag> {
         let rec: Option<serde_json::Value> = self
             .db
             .upsert(("flags", id))
@@ -264,11 +309,8 @@ impl DataStore for SurrealStore {
             "resolved_at": resolved_at,
             "targets": serde_json::to_value(targets)?,
         });
-        let rec: Option<serde_json::Value> = self
-            .db
-            .upsert(("remarks", id))
-            .content(content)
-            .await?;
+        let rec: Option<serde_json::Value> =
+            self.db.upsert(("remarks", id)).content(content).await?;
         let v = rec.ok_or_else(|| anyhow::anyhow!("remark upsert returned no record"))?;
         Ok(row_to_remark(&v))
     }
@@ -284,17 +326,16 @@ impl DataStore for SurrealStore {
 
     async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>> {
         let rows: Vec<serde_json::Value> = self.db.select("hidden_rows").await?;
-        Ok(rows.iter().map(|v| crate::hidden_row::HiddenRow {
-            id: id_str(&v["id"]),
-            row_id: str_field(v, "row_id"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|v| crate::hidden_row::HiddenRow {
+                id: id_str(&v["id"]),
+                row_id: str_field(v, "row_id"),
+            })
+            .collect())
     }
 
-    async fn add_hidden_row(
-        &self,
-        id: &str,
-        row_id: &str,
-    ) -> Result<crate::hidden_row::HiddenRow> {
+    async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<crate::hidden_row::HiddenRow> {
         let rec: Option<serde_json::Value> = self
             .db
             .upsert(("hidden_rows", id))
@@ -319,10 +360,13 @@ impl DataStore for SurrealStore {
 
     async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> {
         let rows: Vec<serde_json::Value> = self.db.select("hidden_columns").await?;
-        Ok(rows.iter().map(|v| crate::hidden_column::HiddenColumn {
-            id: id_str(&v["id"]),
-            column_id: str_field(v, "column_id"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|v| crate::hidden_column::HiddenColumn {
+                id: id_str(&v["id"]),
+                column_id: str_field(v, "column_id"),
+            })
+            .collect())
     }
 
     async fn add_hidden_column(
@@ -379,12 +423,11 @@ impl DataStore for SurrealStore {
     ) -> Result<crate::custom_column::CustomColumn> {
         let content = serde_json::json!({
             "table_id": table_id,
-            "name": input.name,
-            "label": input.label,
+            "title": input.title,
             "description": input.description,
             "expression": input.expression,
             "position_after": input.position_after,
-            "read_only": false,
+            "read_only": input.read_only,
             "types": input.effective_types(),
             "data_types": input.effective_data_types(),
             "is_group": input.is_group,
@@ -452,8 +495,7 @@ impl DataStore for SurrealStore {
         who_created: Option<&str>,
     ) -> Result<crate::table::Table> {
         // Idempotent: return existing row if already present.
-        let existing: Option<serde_json::Value> =
-            self.db.select(("app_tables", id)).await?;
+        let existing: Option<serde_json::Value> = self.db.select(("app_tables", id)).await?;
         if let Some(v) = existing {
             return Ok(row_to_table(&v));
         }
@@ -521,8 +563,7 @@ impl DataStore for SurrealStore {
         title: Option<&str>,
         who_created: Option<&str>,
     ) -> Result<crate::data_row::TableRow> {
-        let existing: Option<serde_json::Value> =
-            self.db.select(("table_rows", row_id)).await?;
+        let existing: Option<serde_json::Value> = self.db.select(("table_rows", row_id)).await?;
         if let Some(v) = existing {
             return Ok(row_to_table_row(&v));
         }
@@ -546,11 +587,7 @@ impl DataStore for SurrealStore {
         Ok(row_to_table_row(&v))
     }
 
-    async fn list_data_rows(
-        &self,
-        table_id: &str,
-        params: &RowQuery,
-    ) -> Result<PagedResponse> {
+    async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
         let per_page = params.per_page.clamp(1, 200) as i64;
         let offset = (params.page.max(1) - 1) as i64 * per_page;
 
@@ -586,14 +623,17 @@ impl DataStore for SurrealStore {
                     })
                 })
                 .collect();
-            return Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page });
+            return Ok(PagedResponse {
+                data,
+                total,
+                page: params.page,
+                per_page: params.per_page,
+            });
         }
 
         let totals: Vec<serde_json::Value> = self
             .db
-            .query(
-                "SELECT count() AS c FROM table_rows WHERE table_id = $table_id GROUP ALL",
-            )
+            .query("SELECT count() AS c FROM table_rows WHERE table_id = $table_id GROUP ALL")
             .bind(("table_id", table_id))
             .await?
             .take(0)?;
@@ -614,10 +654,7 @@ impl DataStore for SurrealStore {
         let data = rows
             .iter()
             .map(|v| {
-                let mut obj = v["custom_values"]
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default();
+                let mut obj = v["custom_values"].as_object().cloned().unwrap_or_default();
                 obj.insert("id".into(), serde_json::Value::String(id_str(&v["id"])));
                 obj.insert("when_created".into(), v["when_created"].clone());
                 obj.insert("when_last_modified".into(), v["when_last_modified"].clone());
@@ -631,7 +668,12 @@ impl DataStore for SurrealStore {
             })
             .collect();
 
-        Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page })
+        Ok(PagedResponse {
+            data,
+            total,
+            page: params.page,
+            per_page: params.per_page,
+        })
     }
 
     async fn patch_row_value(
@@ -658,16 +700,27 @@ impl DataStore for SurrealStore {
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
         let mut count = 0usize;
         for row in rows {
-            let id = match row.get("id").and_then(|v| v.as_str()).map(str::to_owned)
-                .or_else(|| row.get("github_id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
-            {
+            let id = match row
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+                .or_else(|| {
+                    row.get("github_id")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n.to_string())
+                }) {
                 Some(id) => id,
-                None => { tracing::warn!("surreal upsert_rows_batch: row missing id/github_id"); continue; }
+                None => {
+                    tracing::warn!("surreal upsert_rows_batch: row missing id/github_id");
+                    continue;
+                }
             };
+            // MERGE does a deep object merge: existing keys inside custom_values that are
+            // not in this upload are preserved; incoming keys overwrite the existing value.
             let _: Option<serde_json::Value> = self
                 .db
                 .upsert(("table_rows", id.as_str()))
-                .content(serde_json::json!({ "table_id": table_id, "custom_values": row }))
+                .merge(serde_json::json!({ "table_id": table_id, "custom_values": row }))
                 .await?;
             count += 1;
         }
@@ -685,11 +738,16 @@ impl DataStore for SurrealStore {
                 .or_else(|| repo["id"].as_str().map(str::to_owned));
             let id = match github_id {
                 Some(id) => id,
-                None => { tracing::warn!("upsert_github_repos_batch: repo missing github_id"); continue; }
+                None => {
+                    tracing::warn!("upsert_github_repos_batch: repo missing github_id");
+                    continue;
+                }
             };
             let custom_values = {
                 let mut cv = repo.clone();
-                if let Some(obj) = cv.as_object_mut() { obj.remove("id"); }
+                if let Some(obj) = cv.as_object_mut() {
+                    obj.remove("id");
+                }
                 cv
             };
             self.db
@@ -703,7 +761,13 @@ impl DataStore for SurrealStore {
 
     // ── Ops log ───────────────────────────────────────────────────────────────
 
-    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
+    async fn begin_ops_log(
+        &self,
+        id: &str,
+        op: &str,
+        payload: serde_json::Value,
+        tx_id: Option<&str>,
+    ) {
         // INSERT IGNORE: no-op if record with this id already exists (idempotent).
         if let Err(e) = self
             .db
@@ -726,7 +790,9 @@ impl DataStore for SurrealStore {
     async fn mark_op_applied(&self, id: &str) {
         if let Err(e) = self
             .db
-            .query("UPDATE ops_log SET applied_at = time::now() WHERE id = $id AND applied_at IS NONE")
+            .query(
+                "UPDATE ops_log SET applied_at = time::now() WHERE id = $id AND applied_at IS NONE",
+            )
             .bind(("id", id))
             .await
         {
@@ -737,18 +803,21 @@ impl DataStore for SurrealStore {
     async fn pending_ops(&self) -> anyhow::Result<Vec<crate::store::PendingOp>> {
         let mut res = self
             .db
-            .query("SELECT id, op, payload, tx_id FROM ops_log WHERE applied_at IS NONE ORDER BY id")
+            .query(
+                "SELECT id, op, payload, tx_id FROM ops_log WHERE applied_at IS NONE ORDER BY id",
+            )
             .await
             .map_err(|e| anyhow::anyhow!("surreal pending_ops: {e}"))?;
-        let rows: Vec<serde_json::Value> = res.take(0)
+        let rows: Vec<serde_json::Value> = res
+            .take(0)
             .map_err(|e| anyhow::anyhow!("surreal pending_ops take: {e}"))?;
         Ok(rows
             .into_iter()
             .map(|v| crate::store::PendingOp {
-                id:      v["id"].as_str().unwrap_or("").to_owned(),
-                op:      v["op"].as_str().unwrap_or("").to_owned(),
+                id: v["id"].as_str().unwrap_or("").to_owned(),
+                op: v["op"].as_str().unwrap_or("").to_owned(),
                 payload: v["payload"].clone(),
-                tx_id:   v["tx_id"].as_str().map(str::to_owned),
+                tx_id: v["tx_id"].as_str().map(str::to_owned),
             })
             .collect())
     }
@@ -781,8 +850,7 @@ fn row_to_remark(v: &serde_json::Value) -> crate::remark::Remark {
 fn row_to_custom_column(v: &serde_json::Value) -> crate::custom_column::CustomColumn {
     crate::custom_column::CustomColumn {
         id: id_str(&v["id"]),
-        name: str_field(v, "name"),
-        label: opt_str_field(v, "label"),
+        title: opt_str_field(v, "title"),
         description: opt_str_field(v, "description"),
         expression: opt_str_field(v, "expression"),
         position_after: opt_str_field(v, "position_after"),
@@ -878,8 +946,7 @@ mod tests {
 
     #[test]
     fn strips_path_with_credentials() {
-        let (url, user, pass) =
-            parse_surreal_url("surreal://root:pass@host.example.com/ns/db");
+        let (url, user, pass) = parse_surreal_url("surreal://root:pass@host.example.com/ns/db");
         assert_eq!(url, "wss://host.example.com");
         assert_eq!(user.as_deref(), Some("root"));
         assert_eq!(pass.as_deref(), Some("pass"));

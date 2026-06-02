@@ -81,7 +81,9 @@ fn remark_to_proto(r: &remark::Remark) -> Remark {
 
 fn require_table_id(table_id: String, ctx: &str) -> Result<String, Status> {
     if table_id.is_empty() {
-        Err(Status::invalid_argument(format!("{ctx}: table_id is required")))
+        Err(Status::invalid_argument(format!(
+            "{ctx}: table_id is required"
+        )))
     } else {
         Ok(table_id)
     }
@@ -186,8 +188,7 @@ impl Sync for SyncServiceImpl {
                 .iter()
                 .map(|c| CustomCol {
                     id: c.id.clone(),
-                    name: c.name.clone(),
-                    label: c.label.clone().unwrap_or_default(),
+                    title: c.title.clone().unwrap_or_default(),
                     description: c.description.clone().unwrap_or_default(),
                     expression: c.expression.clone().unwrap_or_default(),
                     position_after: c.position_after.clone().unwrap_or_default(),
@@ -456,13 +457,13 @@ impl SyncServiceImpl {
             }
             OpPayload::CreateCustomCol(p) => {
                 let table_id = require_table_id(p.table_id, "CreateCustomCol")?;
-                tracing::debug!(%op_id, %table_id, id = %p.id, name = %p.name, "dispatch custom column create");
+                tracing::debug!(%op_id, %table_id, id = %p.id, title = %p.title, "dispatch custom column create");
                 let input = crate::custom_column::CustomColumnInput {
-                    name: p.name.clone(),
-                    label: (!p.label.is_empty()).then(|| p.label.clone()),
+                    title: (!p.title.is_empty()).then(|| p.title.clone()),
                     description: (!p.description.is_empty()).then(|| p.description.clone()),
                     expression: (!p.expression.is_empty()).then(|| p.expression.clone()),
-                    position_after: (!p.position_after.is_empty()).then(|| p.position_after.clone()),
+                    position_after: (!p.position_after.is_empty())
+                        .then(|| p.position_after.clone()),
                     ..Default::default()
                 };
                 let col = self
@@ -474,8 +475,7 @@ impl SyncServiceImpl {
                     EventKind::Upsert,
                     CustomCol {
                         id: col.id.clone(),
-                        name: col.name.clone(),
-                        label: col.label.clone().unwrap_or_default(),
+                        title: col.title.clone().unwrap_or_default(),
                         description: col.description.clone().unwrap_or_default(),
                         expression: col.expression.clone().unwrap_or_default(),
                         position_after: col.position_after.clone().unwrap_or_default(),
@@ -485,7 +485,7 @@ impl SyncServiceImpl {
                     },
                 );
                 let resp = serde_json::to_vec(&serde_json::json!({
-                    "id": col.id, "name": col.name,
+                    "id": col.id,
                 }))?;
                 Ok((event, resp))
             }

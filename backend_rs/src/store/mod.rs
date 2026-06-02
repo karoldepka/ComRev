@@ -14,6 +14,8 @@ pub struct PendingOp {
     pub id: String,
     pub op: String,
     pub payload: serde_json::Value,
+    /// Populated for future transaction-grouped crash recovery; not yet consumed by the replayer.
+    #[allow(dead_code)]
     pub tx_id: Option<String>,
 }
 
@@ -29,10 +31,9 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
         ("modify_count", "Modify count", "integer"),
     ]
     .into_iter()
-    .map(|(name, label, ty)| CustomColumn {
-        id: name.to_string(),
-        name: name.to_string(),
-        label: Some(label.to_string()),
+    .map(|(id, display, ty)| CustomColumn {
+        id: id.to_string(),
+        title: Some(display.to_string()),
         description: None,
         expression: None,
         position_after: None,
@@ -42,12 +43,11 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
         data_types: vec![if ty == "integer" { "numeric" } else { "text" }.to_string()],
         is_group: false,
         parent_ids: vec![],
-        is_frozen: name == "title",
+        is_frozen: id == "title",
     })
     .collect()
 }
 
-pub mod couch;
 pub mod mongo;
 pub mod pg;
 mod pg_schema;
@@ -61,6 +61,10 @@ pub use pg::PgStore;
 #[async_trait]
 pub trait DataStore: Send + Sync {
     async fn ensure_schema(&self) -> Result<()>;
+
+    /// Drop every table / collection owned by this application. IRREVERSIBLE.
+    /// Named conspicuously to prevent accidental calls.
+    async fn nuke_db(&self) -> Result<()>;
 
     // ── Flags ─────────────────────────────────────────────────────────────────
 
@@ -116,6 +120,13 @@ pub trait DataStore: Send + Sync {
         is_frozen: bool,
     ) -> Result<crate::custom_column::CustomColumn>;
 
+    /// Directly set (or clear) the source_path for a column. None = clear.
+    async fn set_column_source_path(
+        &self,
+        column_id: &str,
+        path: Option<&[String]>,
+    ) -> Result<crate::custom_column::CustomColumn>;
+
     // ── Tables registry ───────────────────────────────────────────────────────
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>>;
@@ -168,7 +179,13 @@ pub trait DataStore: Send + Sync {
     // `tx_id` groups related operations from one client transaction; None for standalone ops.
 
     /// Insert a pending log entry (applied_at = NULL) before the write. Idempotent.
-    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>);
+    async fn begin_ops_log(
+        &self,
+        id: &str,
+        op: &str,
+        payload: serde_json::Value,
+        tx_id: Option<&str>,
+    );
 
     /// Mark the log entry applied (applied_at = now()) after a successful write. Idempotent.
     async fn mark_op_applied(&self, id: &str);
@@ -188,39 +205,47 @@ pub trait DataStore: Send + Sync {
 
 pub mod multi_db;
 
-/// Construct the appropriate store from DATABASE_URL.
-pub async fn open(url: &str) -> Result<Arc<dyn DataStore>> {
+/// Construct the appropriate store from a DB URL.
+/// Dispatch order: sqlite → surreal/wss/ws → mongodb → postgres.
+pub async fn open(db_id: &str, url: &str) -> Result<Arc<dyn DataStore>> {
+    let short = url.split('@').last().unwrap_or(url);
+    tracing::debug!(db_id, url = short, "store: opening connection");
     if url.starts_with("sqlite") {
         Ok(Arc::new(sqlite::SqliteStore))
     } else if url.starts_with("surreal") || url.starts_with("wss://") || url.starts_with("ws://") {
-        Ok(Arc::new(surreal::SurrealStore::connect(url).await?))
+        Ok(Arc::new(surreal::SurrealStore::connect(db_id, url).await?))
     } else if url.starts_with("mongodb") {
-        Ok(Arc::new(mongo::MongoStore::connect(url).await?))
-    } else if url.starts_with("http://") || url.starts_with("https://") {
-        Ok(Arc::new(couch::CouchStore::connect(url).await?))
+        Ok(Arc::new(mongo::MongoStore::connect(db_id, url).await?))
     } else {
         // Covers postgres:// and postgresql://
-        Ok(Arc::new(PgStore::connect(url).await?))
+        Ok(Arc::new(PgStore::connect(db_id, url).await?))
     }
 }
 
-/// Construct a MultiStore from a list of DB URLs. All stores have equal standing.
-/// Always returns a MultiStore (even for one URL) so ops log wrapping is guaranteed.
+/// Construct a MultiStore from a list of `(db_id, url)` pairs. All stores have equal standing.
+/// Always returns a MultiStore (even for one entry) so ops log wrapping is guaranteed.
 /// Stores that fail to connect are logged and skipped; at least one must succeed.
-pub async fn open_all(urls: &[&str]) -> Result<Arc<dyn DataStore>> {
-    anyhow::ensure!(!urls.is_empty(), "DB_URLS must contain at least one URL");
-    let mut stores = Vec::with_capacity(urls.len());
-    for url in urls {
-        match open(url).await {
-            Ok(s) => stores.push(s),
+pub async fn open_all(entries: &[(&str, &str)]) -> Result<Arc<dyn DataStore>> {
+    anyhow::ensure!(!entries.is_empty(), "DB_URLS must contain at least one URL");
+    let mut stores = Vec::with_capacity(entries.len());
+    for (db_id, url) in entries {
+        let short = url.split('@').last().unwrap_or(url);
+        match open(db_id, url).await {
+            Ok(s) => {
+                tracing::info!(db_id, url = short, "store: connected");
+                stores.push(s);
+            }
             Err(e) => {
-                let short = url.split('@').last().unwrap_or(url);
-                tracing::error!("store connection failed for {short}, skipping: {e:#}");
-                eprintln!("[store] FAILED to connect to {short}: {e:#}");
+                tracing::error!(db_id, url = short, error = %e, "store: connection failed, skipping");
             }
         }
     }
-    anyhow::ensure!(!stores.is_empty(), "all store connections failed — cannot start");
+    anyhow::ensure!(
+        !stores.is_empty(),
+        "all {} store connection(s) failed — cannot start",
+        entries.len()
+    );
+    tracing::info!(connected = stores.len(), attempted = entries.len(), "store: open_all complete");
     Ok(Arc::new(multi_db::MultiStore::new(stores)))
 }
 
@@ -238,54 +263,63 @@ mod tests {
     #[test]
     fn registry_columns_include_id_and_title() {
         let cols = table_registry_columns();
-        let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"id"),    "missing id column");
-        assert!(names.contains(&"title"), "missing title column");
+        let ids: Vec<&str> = cols.iter().map(|c| c.id.as_str()).collect();
+        assert!(ids.contains(&"id"), "missing id column");
+        assert!(ids.contains(&"title"), "missing title column");
     }
 
     #[test]
     fn registry_columns_all_read_only() {
         for col in table_registry_columns() {
-            assert!(col.read_only, "column '{}' should be read_only", col.name);
+            assert!(col.read_only, "column '{}' should be read_only", col.id);
         }
     }
 
     #[test]
     fn registry_columns_title_is_frozen() {
         let cols = table_registry_columns();
-        let title = cols.iter().find(|c| c.name == "title").expect("title column missing");
+        let title = cols
+            .iter()
+            .find(|c| c.id == "title")
+            .expect("title column missing");
         assert!(title.is_frozen, "title column should be frozen");
     }
 
     #[test]
     fn registry_columns_non_title_not_frozen() {
         for col in table_registry_columns() {
-            if col.name != "title" {
-                assert!(!col.is_frozen, "column '{}' should not be frozen", col.name);
+            if col.id != "title" {
+                assert!(!col.is_frozen, "column '{}' should not be frozen", col.id);
             }
         }
     }
 
     #[test]
-    fn registry_columns_ids_match_names() {
+    fn registry_columns_all_have_titles() {
         for col in table_registry_columns() {
-            assert_eq!(col.id, col.name, "id and name must match for column '{}'", col.name);
-        }
-    }
-
-    #[test]
-    fn registry_columns_all_have_labels() {
-        for col in table_registry_columns() {
-            assert!(col.label.is_some(), "column '{}' missing label", col.name);
+            assert!(col.title.is_some(), "column '{}' missing title", col.id);
         }
     }
 
     #[test]
     fn registry_columns_have_valid_types() {
-        let valid = ["text", "timestamptz", "integer", "numeric", "boolean", "array", "jsonb", "url"];
+        let valid = [
+            "text",
+            "timestamptz",
+            "integer",
+            "numeric",
+            "boolean",
+            "array",
+            "jsonb",
+            "url",
+        ];
         for col in table_registry_columns() {
             for t in &col.types {
-                assert!(valid.contains(&t.as_str()), "column '{}' has unknown type '{t}'", col.name);
+                assert!(
+                    valid.contains(&t.as_str()),
+                    "column '{}' has unknown type '{t}'",
+                    col.id
+                );
             }
         }
     }
@@ -293,8 +327,16 @@ mod tests {
     #[test]
     fn registry_columns_no_groups_no_parents() {
         for col in table_registry_columns() {
-            assert!(!col.is_group, "registry column '{}' should not be a group", col.name);
-            assert!(col.parent_ids.is_empty(), "registry column '{}' should have no parents", col.name);
+            assert!(
+                !col.is_group,
+                "registry column '{}' should not be a group",
+                col.id
+            );
+            assert!(
+                col.parent_ids.is_empty(),
+                "registry column '{}' should have no parents",
+                col.id
+            );
         }
     }
 }

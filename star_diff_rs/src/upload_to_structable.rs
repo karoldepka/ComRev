@@ -22,8 +22,7 @@ const DIFF_WINDOWS: &[&str] = &[
 
 struct ColDef {
     id: &'static str,
-    name: &'static str,
-    label: &'static str,
+    title: &'static str,
     types: &'static [&'static str],
     is_group: bool,
     parent_id: Option<&'static str>,
@@ -32,20 +31,20 @@ struct ColDef {
 }
 
 impl ColDef {
-    const fn text(id: &'static str, label: &'static str) -> Self {
-        Self { id, name: id, label, types: &["text"], is_group: false, parent_id: None, source_path: None }
+    const fn text(id: &'static str, title: &'static str) -> Self {
+        Self { id, title, types: &["text"], is_group: false, parent_id: None, source_path: None }
     }
-    const fn numeric(id: &'static str, label: &'static str) -> Self {
-        Self { id, name: id, label, types: &["numeric"], is_group: false, parent_id: None, source_path: None }
+    const fn numeric(id: &'static str, title: &'static str) -> Self {
+        Self { id, title, types: &["numeric"], is_group: false, parent_id: None, source_path: None }
     }
-    const fn boolean(id: &'static str, label: &'static str) -> Self {
-        Self { id, name: id, label, types: &["boolean"], is_group: false, parent_id: None, source_path: None }
+    const fn boolean(id: &'static str, title: &'static str) -> Self {
+        Self { id, title, types: &["boolean"], is_group: false, parent_id: None, source_path: None }
     }
-    const fn timestamp(id: &'static str, label: &'static str) -> Self {
-        Self { id, name: id, label, types: &["timestamptz"], is_group: false, parent_id: None, source_path: None }
+    const fn timestamp(id: &'static str, title: &'static str) -> Self {
+        Self { id, title, types: &["timestamptz"], is_group: false, parent_id: None, source_path: None }
     }
-    const fn group(id: &'static str, label: &'static str) -> Self {
-        Self { id, name: id, label, types: &[], is_group: true, parent_id: None, source_path: None }
+    const fn group(id: &'static str, title: &'static str) -> Self {
+        Self { id, title, types: &[], is_group: true, parent_id: None, source_path: None }
     }
 }
 
@@ -83,15 +82,15 @@ static STATIC_COLS: &[ColDef] = &[
     ColDef::timestamp("created_at", "Created at"),
     ColDef::timestamp("updated_at", "Updated at"),
     // Array
-    ColDef { id: "topics", name: "topics", label: "Topics",
+    ColDef { id: "topics", title: "Topics",
              types: &["array"], is_group: false, parent_id: None, source_path: None },
     // Owner group
     ColDef::group("owner",            "Owner"),
-    ColDef { id: "owner_login",  name: "owner_login",  label: "Login",
+    ColDef { id: "owner_login",  title: "Login",
              types: &["text"],  is_group: false, parent_id: Some("owner"), source_path: None },
-    ColDef { id: "owner_avatar", name: "owner_avatar", label: "Avatar",
+    ColDef { id: "owner_avatar", title: "Avatar",
              types: &["text"],  is_group: false, parent_id: Some("owner"), source_path: None },
-    ColDef { id: "owner_url",    name: "owner_url",    label: "Owner URL",
+    ColDef { id: "owner_url",    title: "Owner URL",
              types: &["text"],  is_group: false, parent_id: Some("owner"), source_path: None },
 ];
 
@@ -100,7 +99,7 @@ async fn upsert_column(
     backend_url: &str,
     table_id: &str,
     id: &str,
-    label: &str,
+    title: &str,
     types: &[&str],
     is_group: bool,
     parent_id: Option<&str>,
@@ -112,8 +111,7 @@ async fn upsert_column(
     );
     let body = serde_json::json!({
         "id": id,
-        "name": id,
-        "label": label,
+        "title": title,
         "types": types,
         "data_types": if types.iter().any(|t| *t == "numeric") { vec!["numeric"] } else { vec!["text"] },
         "is_group": is_group,
@@ -141,7 +139,7 @@ async fn upsert_github_columns(client: &reqwest::Client, backend_url: &str) -> R
     for col in STATIC_COLS {
         upsert_column(
             client, backend_url, TABLE_ID,
-            col.id, col.label, col.types,
+            col.id, col.title, col.types,
             col.is_group, col.parent_id, col.source_path,
         )
         .await

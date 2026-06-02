@@ -18,6 +18,18 @@ impl DataStore for SqliteStore {
         not_impl!()
     }
 
+    async fn nuke_db(&self) -> Result<()> {
+        not_impl!()
+    }
+
+    async fn set_column_source_path(
+        &self,
+        _column_id: &str,
+        _path: Option<&[String]>,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        not_impl!()
+    }
+
     async fn list_flags(&self) -> Result<Vec<crate::flag::CellFlag>> {
         not_impl!()
     }
@@ -79,7 +91,10 @@ impl DataStore for SqliteStore {
         not_impl!()
     }
 
-    async fn list_custom_columns(&self, _table_id: &str) -> Result<Vec<crate::custom_column::CustomColumn>> {
+    async fn list_custom_columns(
+        &self,
+        _table_id: &str,
+    ) -> Result<Vec<crate::custom_column::CustomColumn>> {
         not_impl!()
     }
     async fn upsert_custom_column(
@@ -153,11 +168,24 @@ impl DataStore for SqliteStore {
     async fn upsert_github_repos_batch(&self, _repos: &[serde_json::Value]) -> Result<usize> {
         not_impl!()
     }
-    async fn upsert_rows_batch(&self, _table_id: &str, _rows: &[serde_json::Value]) -> Result<usize> {
+    async fn upsert_rows_batch(
+        &self,
+        _table_id: &str,
+        _rows: &[serde_json::Value],
+    ) -> Result<usize> {
         not_impl!()
     }
 
-    async fn begin_ops_log(&self, _id: &str, _op: &str, _payload: serde_json::Value, _tx_id: Option<&str>) {}
+    async fn begin_ops_log(
+        &self,
+        _id: &str,
+        _op: &str,
+        _payload: serde_json::Value,
+        _tx_id: Option<&str>,
+    ) {
+    }
     async fn mark_op_applied(&self, _id: &str) {}
-    async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> { Ok(vec![]) }
+    async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> {
+        Ok(vec![])
+    }
 }

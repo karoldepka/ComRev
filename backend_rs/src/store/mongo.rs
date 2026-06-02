@@ -15,14 +15,17 @@ use crate::types::{PagedResponse, RowQuery};
 
 pub struct MongoStore {
     db: Database,
+    db_id: String,
 }
 
 impl MongoStore {
-    pub async fn connect(url: &str) -> Result<Self> {
+    pub async fn connect(db_id: &str, url: &str) -> Result<Self> {
         let db_name = std::env::var("MONGO_DB").unwrap_or_else(|_| "structable".into());
-        let client = Client::with_uri_str(url).await.context("MongoDB: invalid URI")?;
+        let client = Client::with_uri_str(url)
+            .await
+            .context("MongoDB: invalid URI")?;
         let db = client.database(&db_name);
-        let store = MongoStore { db };
+        let store = MongoStore { db, db_id: db_id.to_string() };
         store.ensure_schema().await?;
         Ok(store)
     }
@@ -62,13 +65,21 @@ fn opt_datetime_val(doc: &Document, key: &str) -> Option<DateTime<Utc>> {
 
 fn str_vec_val(doc: &Document, key: &str) -> Vec<String> {
     doc.get_array(key)
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn opt_str_vec_val(doc: &Document, key: &str) -> Option<Vec<String>> {
     let arr = doc.get_array(key).ok()?;
-    Some(arr.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+    Some(
+        arr.iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect(),
+    )
 }
 
 fn doc_id(doc: &Document) -> String {
@@ -95,7 +106,9 @@ fn bson_to_json(v: &Bson) -> serde_json::Value {
         Bson::String(s) => serde_json::Value::String(s.clone()),
         Bson::Array(arr) => serde_json::Value::Array(arr.iter().map(bson_to_json).collect()),
         Bson::Document(d) => serde_json::Value::Object(
-            d.iter().map(|(k, v)| (k.clone(), bson_to_json(v))).collect(),
+            d.iter()
+                .map(|(k, v)| (k.clone(), bson_to_json(v)))
+                .collect(),
         ),
         Bson::DateTime(dt) => serde_json::Value::String(
             DateTime::from_timestamp_millis(dt.timestamp_millis())
@@ -156,8 +169,7 @@ fn doc_to_hidden_column(doc: &Document) -> crate::hidden_column::HiddenColumn {
 fn doc_to_custom_column(doc: &Document) -> crate::custom_column::CustomColumn {
     crate::custom_column::CustomColumn {
         id: doc_id(doc),
-        name: str_val(doc, "name"),
-        label: opt_str_val(doc, "label"),
+        title: opt_str_val(doc, "title"),
         description: opt_str_val(doc, "description"),
         expression: opt_str_val(doc, "expression"),
         position_after: opt_str_val(doc, "position_after"),
@@ -189,7 +201,9 @@ fn doc_to_table_row(doc: &Document) -> crate::data_row::TableRow {
         .get_document("custom_values")
         .map(|cv| {
             serde_json::Value::Object(
-                cv.iter().map(|(k, v)| (k.clone(), bson_to_json(v))).collect(),
+                cv.iter()
+                    .map(|(k, v)| (k.clone(), bson_to_json(v)))
+                    .collect(),
             )
         })
         .unwrap_or_else(|_| serde_json::json!({}));
@@ -208,7 +222,11 @@ fn doc_to_table_row(doc: &Document) -> crate::data_row::TableRow {
 fn doc_to_row_json(doc: &Document) -> serde_json::Value {
     let mut obj: serde_json::Map<String, serde_json::Value> = doc
         .get_document("custom_values")
-        .map(|cv| cv.iter().map(|(k, v)| (k.clone(), bson_to_json(v))).collect())
+        .map(|cv| {
+            cv.iter()
+                .map(|(k, v)| (k.clone(), bson_to_json(v)))
+                .collect()
+        })
         .unwrap_or_default();
     obj.insert("id".into(), serde_json::Value::String(doc_id(doc)));
     obj.insert(
@@ -233,6 +251,7 @@ fn doc_to_row_json(doc: &Document) -> serde_json::Value {
 #[async_trait]
 impl DataStore for MongoStore {
     async fn ensure_schema(&self) -> Result<()> {
+        tracing::info!(db_id = %self.db_id, "MongoStore: applying schema");
         let unique = IndexOptions::builder().unique(true).build();
 
         self.db
@@ -270,24 +289,47 @@ impl DataStore for MongoStore {
 
         self.db
             .collection::<Document>("custom_columns")
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "table_id": 1 })
-                    .build(),
-            )
+            .create_index(IndexModel::builder().keys(doc! { "table_id": 1 }).build())
             .await
             .context("MongoDB: custom_columns.table_id index")?;
 
         self.db
             .collection::<Document>("table_rows")
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "table_id": 1 })
-                    .build(),
-            )
+            .create_index(IndexModel::builder().keys(doc! { "table_id": 1 }).build())
             .await
             .context("MongoDB: table_rows.table_id index")?;
 
+        Ok(())
+    }
+
+    async fn set_column_source_path(
+        &self,
+        column_id: &str,
+        path: Option<&[String]>,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        let path_bson = path.map(|p| bson::to_bson(p).unwrap_or(Bson::Null)).unwrap_or(Bson::Null);
+        let doc = self.db.collection::<Document>("custom_columns")
+            .find_one_and_update(
+                doc! { "_id": column_id },
+                doc! { "$set": { "source_path": path_bson } },
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .context("MongoDB: set_column_source_path")?
+            .ok_or_else(|| anyhow::anyhow!("column not found: {column_id}"))?;
+        Ok(doc_to_custom_column(&doc))
+    }
+
+    async fn nuke_db(&self) -> Result<()> {
+        tracing::warn!(db_id = %self.db_id, "NUKE__DB: dropping MongoDB database");
+        for coll in &[
+            "flags", "hidden_rows", "hidden_columns", "remarks", "remark_targets",
+            "custom_columns", "app_tables", "table_rows", "github_repos", "ops_log",
+        ] {
+            self.db.collection::<Document>(coll).drop().await
+                .with_context(|| format!("NUKE__DB: drop collection {coll}"))?;
+        }
+        tracing::warn!(db_id = %self.db_id, "NUKE__DB: complete");
         Ok(())
     }
 
@@ -416,10 +458,7 @@ impl DataStore for MongoStore {
         let doc = self
             .db
             .collection::<Document>("hidden_rows")
-            .find_one_and_update(
-                doc! { "_id": id },
-                doc! { "$set": { "row_id": row_id } },
-            )
+            .find_one_and_update(doc! { "_id": id }, doc! { "$set": { "row_id": row_id } })
             .upsert(true)
             .return_document(ReturnDocument::After)
             .await
@@ -509,10 +548,24 @@ impl DataStore for MongoStore {
         id: &str,
         input: &crate::custom_column::CustomColumnInput,
     ) -> Result<crate::custom_column::CustomColumn> {
-        let types_bson: Vec<Bson> = input.effective_types().into_iter().map(Bson::String).collect();
-        let data_types_bson: Vec<Bson> = input.effective_data_types().into_iter().map(Bson::String).collect();
-        let parent_ids_bson: Vec<Bson> = input.parent_ids.iter().map(|s| Bson::String(s.clone())).collect();
-        let source_path_bson: Bson = input.source_path.as_ref()
+        let types_bson: Vec<Bson> = input
+            .effective_types()
+            .into_iter()
+            .map(Bson::String)
+            .collect();
+        let data_types_bson: Vec<Bson> = input
+            .effective_data_types()
+            .into_iter()
+            .map(Bson::String)
+            .collect();
+        let parent_ids_bson: Vec<Bson> = input
+            .parent_ids
+            .iter()
+            .map(|s| Bson::String(s.clone()))
+            .collect();
+        let source_path_bson: Bson = input
+            .source_path
+            .as_ref()
             .map(|v| Bson::Array(v.iter().map(|s| Bson::String(s.clone())).collect()))
             .unwrap_or(Bson::Null);
         let doc = self
@@ -524,12 +577,11 @@ impl DataStore for MongoStore {
                     "$setOnInsert": { "when_created": bson::DateTime::now() },
                     "$set": {
                         "table_id": table_id,
-                        "name": &input.name,
-                        "label": opt_bson(input.label.as_deref()),
+                        "title": opt_bson(input.title.as_deref()),
                         "description": opt_bson(input.description.as_deref()),
                         "expression": opt_bson(input.expression.as_deref()),
                         "position_after": opt_bson(input.position_after.as_deref()),
-                        "read_only": false,
+                        "read_only": input.read_only,
                         "types": types_bson,
                         "data_types": data_types_bson,
                         "is_group": input.is_group,
@@ -572,7 +624,9 @@ impl DataStore for MongoStore {
             .return_document(ReturnDocument::After)
             .await
             .context("MongoDB: set_table_column_frozen")?
-            .ok_or_else(|| anyhow::anyhow!("set_table_column_frozen: column {column_id} not found"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("set_table_column_frozen: column {column_id} not found")
+            })?;
         Ok(doc_to_custom_column(&doc))
     }
 
@@ -732,7 +786,12 @@ impl DataStore for MongoStore {
                     })
                 })
                 .collect();
-            return Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page });
+            return Ok(PagedResponse {
+                data,
+                total,
+                page: params.page,
+                per_page: params.per_page,
+            });
         }
 
         let coll = self.db.collection::<Document>("table_rows");
@@ -752,7 +811,12 @@ impl DataStore for MongoStore {
             .await
             .context("MongoDB: collect table_rows")?;
         let data = docs.iter().map(doc_to_row_json).collect();
-        Ok(PagedResponse { data, total, page: params.page, per_page: params.per_page })
+        Ok(PagedResponse {
+            data,
+            total,
+            page: params.page,
+            per_page: params.per_page,
+        })
     }
 
     async fn patch_row_value(
@@ -782,19 +846,37 @@ impl DataStore for MongoStore {
         let coll = self.db.collection::<Document>("table_rows");
         let mut count = 0usize;
         for row in rows {
-            let id = match row.get("id").and_then(|v| v.as_str()).map(str::to_owned)
-                .or_else(|| row.get("github_id").and_then(|v| v.as_i64()).map(|n| n.to_string()))
-            {
+            let id = match row
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+                .or_else(|| {
+                    row.get("github_id")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n.to_string())
+                }) {
                 Some(id) => id,
-                None => { tracing::warn!("mongo upsert_rows_batch: row missing id/github_id"); continue; }
+                None => {
+                    tracing::warn!("mongo upsert_rows_batch: row missing id/github_id");
+                    continue;
+                }
             };
             let bson_cv = bson::to_bson(row).context("mongo upsert_rows_batch: row to BSON")?;
+            // Aggregation pipeline update: $mergeObjects preserves existing user-added keys
+            // while the incoming data refreshes the keys it owns.
             coll.update_one(
                 doc! { "_id": &id },
-                doc! {
-                    "$setOnInsert": { "when_created": bson::DateTime::now() },
-                    "$set": { "table_id": table_id, "custom_values": bson_cv, "when_last_modified": bson::DateTime::now() },
-                },
+                vec![doc! {
+                    "$set": {
+                        "table_id": table_id,
+                        "custom_values": { "$mergeObjects": [
+                            { "$ifNull": ["$custom_values", {}] },
+                            bson_cv
+                        ]},
+                        "when_last_modified": bson::DateTime::now(),
+                        "when_created": { "$ifNull": ["$when_created", bson::DateTime::now()] },
+                    }
+                }],
             )
             .upsert(true)
             .await
@@ -836,7 +918,13 @@ impl DataStore for MongoStore {
 
     // ── Ops log ───────────────────────────────────────────────────────────────
 
-    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
+    async fn begin_ops_log(
+        &self,
+        id: &str,
+        op: &str,
+        payload: serde_json::Value,
+        tx_id: Option<&str>,
+    ) {
         let bson_payload = bson::to_bson(&payload).unwrap_or(Bson::Null);
         let doc = doc! {
             "op": op,
@@ -887,7 +975,8 @@ impl DataStore for MongoStore {
             .map(|d| crate::store::PendingOp {
                 id: doc_id(&d),
                 op: str_val(&d, "op"),
-                payload: d.get_document("payload")
+                payload: d
+                    .get_document("payload")
                     .map(|p| bson_to_json(&Bson::Document(p.clone())))
                     .unwrap_or(serde_json::Value::Null),
                 tx_id: opt_str_val(&d, "tx_id"),
