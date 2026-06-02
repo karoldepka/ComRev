@@ -16,7 +16,7 @@ The app should work well offline or on unreliable connection, as well as gracefu
 App should always display in top-right corner a status of sync. Any operation that user takes should go via central code that updates the cloud sync indicator.
 We try hard to not lose user data (example: ) and to not lure the User into a false sense of security that data has been saved (hence the sync indicator).
 But we don't want the indicator to get distracting/annoying, so it should animate transitions smoothly, so as to not distract the user's peripheral vision which is very sensitive to movement/changes.
-There should be no sequence numbers. It's supposed to be fully distributed and fault-tolerant (what if it crashes and gets the sequence number wrong). Use nanoid.
+No id-s should be sequence number (but sequence number is allowed as a local helper metadata). It's supposed to be fully distributed and fault-tolerant (what if it crashes and gets the sequence number wrong). Use nanoid.
 Exception to the nanoid rule is when power user directly assigns a human-readable column id (by default hidden under "advanced" options).
 
 Try using existing popular open-source powerful libraries for common functionality, instead of coming up with our own implementation (example: notification toast). If something requires custom implementation, it will be stated as such explicitly. We should have multiple pages for testing our own table vs existing library.
@@ -92,6 +92,13 @@ Client should be responsible for generating id (or manually provided by user, as
 ## Error handling
 * errors should not be ignored silently; at the least they should be logged, with some details.
 
-Each cell should have its own url ( .../table-id/#rowId--columnId )
+Each cell should have its own url ( .../table_id/#rowId--column_id )
 
 Later AI will edit table cells; so we need to facilitate this in the design.
+
+# DB Architecture - indexes
+* each user-visible table has a corresponding real physical SQL table ( / Mongo collection). This is to facilitate indexes. Each row has custom_vals JSONB field, which facilitates values in custom columns. Whenever a new custom column is added, an index on its field is added (field inside JSONB). Nested objects like stars_diff should get its own columns (and thus sort ascending+descending index) per sub-field, with id with double underscore e.g. stars_diff__7d.
+Columns (and thus indexes) should be added dynamically by the backend, upon encountering a new sub-field. While backend has the full user-defined schema in memory after launching. So upload_to_structable should not worry about creating columns.
+
+# Operation-log operation's sequence number
+* keep in mind that this is local number, and not id. As we become more decentralized, it will become more important to keep this number local.
