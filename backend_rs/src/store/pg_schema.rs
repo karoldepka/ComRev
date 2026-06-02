@@ -1,5 +1,7 @@
 // DDL-only schema statements for Postgres.
 // Seed data (builtin tables/columns) lives in seed::upload_to_structable.
+// DDL-only schema statements for Postgres.
+// Seed data (builtin tables/columns) lives in seed::upload_to_structable.
 
 pub const POSTGRES_SCHEMA: &[&str] = &[
     r#"
@@ -139,32 +141,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "DROP TRIGGER IF EXISTS trg_custom_columns_when_last_modified ON custom_columns;",
     "CREATE TRIGGER trg_custom_columns_when_last_modified BEFORE UPDATE ON custom_columns FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     "CREATE INDEX IF NOT EXISTS idx_custom_columns_parent_ids ON custom_columns USING gin(parent_ids);",
-    r#"
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'title'
-      ) THEN
-        ALTER TABLE custom_columns ADD COLUMN title TEXT;
-      END IF;
-      -- Migrate data and drop old columns in one guarded block so the UPDATE never
-      -- references columns that were already dropped on a previous startup.
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'name'
-      ) THEN
-        UPDATE custom_columns SET title = COALESCE(title, label, name) WHERE title IS NULL;
-        ALTER TABLE custom_columns DROP COLUMN name;
-      END IF;
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'label'
-      ) THEN
-        ALTER TABLE custom_columns DROP COLUMN label;
-      END IF;
-    END $$;
-    "#,
     r#"
     CREATE TABLE IF NOT EXISTS cell_flags (
       id TEXT PRIMARY KEY,
