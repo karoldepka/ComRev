@@ -11,6 +11,8 @@ use crate::types::{PagedResponse, RowQuery};
 pub struct SurrealStore {
     db: Surreal<Any>,
     db_id: String,
+    surreal_ns: String,
+    surreal_db: String,
 }
 
 impl SurrealStore {
@@ -73,12 +75,12 @@ impl SurrealStore {
             );
         }
 
-        db.use_ns(namespace)
-            .use_db(database)
+        db.use_ns(&namespace)
+            .use_db(&database)
             .await
             .context("SurrealDB: use_ns/use_db failed")?;
 
-        let store = SurrealStore { db, db_id: db_id.to_string() };
+        let store = SurrealStore { db, db_id: db_id.to_string(), surreal_ns: namespace, surreal_db: database };
         store.ensure_schema().await?;
         Ok(store)
     }
@@ -231,21 +233,20 @@ impl DataStore for SurrealStore {
     }
 
     async fn nuke_db(&self) -> Result<()> {
-        tracing::warn!(db_id = %self.db_id, "NUKE__DB: removing all SurrealDB tables");
+        let db_name = &self.surreal_db;
+        let ns_name = &self.surreal_ns;
+        tracing::warn!(db_id = %self.db_id, db_name, "NUKE__DB: removing SurrealDB database");
         self.db
-            .query(
-                "REMOVE TABLE IF EXISTS flags;
-                 REMOVE TABLE IF EXISTS hidden_rows;
-                 REMOVE TABLE IF EXISTS hidden_columns;
-                 REMOVE TABLE IF EXISTS remarks;
-                 REMOVE TABLE IF EXISTS remark_targets;
-                 REMOVE TABLE IF EXISTS custom_columns;
-                 REMOVE TABLE IF EXISTS app_tables;
-                 REMOVE TABLE IF EXISTS table_rows;
-                 REMOVE TABLE IF EXISTS ops_log;",
-            )
+            .query(format!("REMOVE DATABASE IF EXISTS `{db_name}`"))
             .await
-            .context("NUKE__DB: SurrealDB REMOVE TABLE failed")?;
+            .context("NUKE__DB: SurrealDB REMOVE DATABASE failed")?;
+        self.db
+            .use_ns(ns_name)
+            .use_db(db_name)
+            .await
+            .context("NUKE__DB: SurrealDB use_ns/use_db failed after remove")?;
+        tracing::warn!(db_id = %self.db_id, "NUKE__DB: database removed, re-applying schema");
+        self.ensure_schema().await?;
         tracing::warn!(db_id = %self.db_id, "NUKE__DB: complete");
         Ok(())
     }
@@ -628,6 +629,7 @@ impl DataStore for SurrealStore {
                 total,
                 page: params.page,
                 per_page: params.per_page,
+                errors: vec![],
             });
         }
 
@@ -673,6 +675,7 @@ impl DataStore for SurrealStore {
             total,
             page: params.page,
             per_page: params.per_page,
+            errors: vec![],
         })
     }
 

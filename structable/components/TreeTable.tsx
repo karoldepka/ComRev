@@ -184,9 +184,10 @@ function applyColumnGroups(flatCols: Column[], groups: ColumnGroup[]): Column[] 
 }
 
 function errMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === 'string') return e;
-  return String(e);
+  const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : String(e);
+  // Tonic gRPC-web errors: 'status: Unknown, message: "js api error: TypeError: Failed to fetch"'
+  if (raw.includes('js api error') && raw.includes('Failed to fetch')) return 'Cannot reach server';
+  return raw;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -247,6 +248,19 @@ export default function TreeTable({ tableId }: Props) {
   useEffect(() => {
     if (!api) return;
     const sub = api.queueLength$.subscribe(setSyncPending);
+    return () => sub.unsubscribe();
+  }, [api]);
+
+  useEffect(() => {
+    if (!api) return;
+    const sub = api.events$.subscribe((ev) => {
+      if ('store_error' in ev) {
+        toast.error(`Store error (${ev.store_error.method}): ${ev.store_error.message}`, {
+          id: `store-error-${ev.store_error.method}`,
+          duration: 8000,
+        });
+      }
+    });
     return () => sub.unsubscribe();
   }, [api]);
 
@@ -406,6 +420,12 @@ export default function TreeTable({ tableId }: Props) {
         setRows(payload.data);
         setTotal(payload.total);
         if (!aborter.signal.aborted) { setLoading(false); setFetchError(null); }
+        if (payload.errors?.length) {
+          toast.error(
+            `Data discrepancy detected:\n${payload.errors.join('\n')}`,
+            { id: 'data-discrepancy', duration: 10000 },
+          );
+        }
         const first = payload.data[0];
         if (first) logger.debug({ stars_diff: first['stars_diff'], stars_diff_6h: (first['stars_diff'] as Record<string, unknown>)?.['6h'] }, 'first row stars_diff');
       })

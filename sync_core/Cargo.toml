@@ -7,11 +7,24 @@ description = "Offline-first sync layer — compiles to WASM for the browser"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Enables the gRPC server service (SyncServiceImpl, SyncBackend trait).
+# Do not enable when compiling to WASM.
+server = ["tonic/server", "tokio", "tokio-stream", "async-trait", "futures-core", "anyhow", "tracing"]
+
 [dependencies]
 # Proto + gRPC
 prost = "0.13"
 tonic = { version = "0.12", default-features = false, features = ["prost", "codegen"] }
 tonic-web-wasm-client = "0.6"
+
+# Server-only (enabled via the `server` feature)
+tokio        = { version = "1",   features = ["sync"],           optional = true }
+tokio-stream = { version = "0.1", features = ["sync"],           optional = true }
+async-trait  = { version = "0.1",                                optional = true }
+futures-core = { version = "0.3",                                optional = true }
+anyhow       = { version = "1",                                  optional = true }
+tracing      = { version = "0.1",                                optional = true }
 
 # WASM bindings
 wasm-bindgen          = "0.2"

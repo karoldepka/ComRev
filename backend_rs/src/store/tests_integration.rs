@@ -94,7 +94,7 @@ async fn make_store() -> Option<Arc<dyn DataStore>> {
         eprintln!("skip: no DB URLs configured (DB_URLS / DATABASE_URL)");
         return None;
     }
-    let url_refs: Vec<&str> = urls.iter().map(String::as_str).collect();
+    let url_refs: Vec<(&str, &str)> = urls.iter().map(|u| ("db", u.as_str())).collect();
     match open_all(&url_refs).await {
         Ok(s) => Some(s),
         Err(e) => {

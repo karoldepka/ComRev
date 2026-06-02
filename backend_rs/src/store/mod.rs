@@ -242,7 +242,10 @@ pub async fn open(db_id: &str, url: &str) -> Result<Arc<dyn DataStore>> {
 /// Construct a MultiStore from a list of `(db_id, url)` pairs. All stores have equal standing.
 /// Always returns a MultiStore (even for one entry) so ops log wrapping is guaranteed.
 /// Stores that fail to connect are logged and skipped; at least one must succeed.
-pub async fn open_all(entries: &[(&str, &str)]) -> Result<Arc<dyn DataStore>> {
+pub async fn open_all(
+    entries: &[(&str, &str)],
+    event_tx: Option<crate::sync_service::EventTx>,
+) -> Result<Arc<dyn DataStore>> {
     anyhow::ensure!(!entries.is_empty(), "DB_URLS must contain at least one URL");
     let mut stores = Vec::with_capacity(entries.len());
     for (db_id, url) in entries {
@@ -263,7 +266,7 @@ pub async fn open_all(entries: &[(&str, &str)]) -> Result<Arc<dyn DataStore>> {
         entries.len()
     );
     tracing::info!(connected = stores.len(), attempted = entries.len(), "store: open_all complete");
-    Ok(Arc::new(multi_db::MultiStore::new(stores)))
+    Ok(Arc::new(multi_db::MultiStore::new(stores, event_tx)))
 }
 
 #[cfg(test)]

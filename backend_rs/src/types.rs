@@ -2,12 +2,15 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone)]
 pub struct PagedResponse {
     pub data: Vec<JsonValue>,
     pub total: i64,
     pub page: u32,
     pub per_page: u32,
+    /// Non-empty when stores have conflicting data or a fan-out write partially failed.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub errors: Vec<String>,
 }
 
 /// Generic query parameters for listing rows of any table.

@@ -72,18 +72,25 @@ message DeleteCustomColOp    { string id = 1; }
 
 message ServerEvent {
   oneof payload {
-    OpAck          ack        = 1;
-    OpError        error      = 2;
-    FlagEvent      flag       = 10;
-    RemarkEvent    remark     = 11;
-    HiddenRowEvent hidden_row = 12;
-    HiddenColEvent hidden_col = 13;
-    CustomColEvent custom_col = 14;
+    OpAck            ack         = 1;
+    OpError          error       = 2;
+    FlagEvent        flag        = 10;
+    RemarkEvent      remark      = 11;
+    HiddenRowEvent   hidden_row  = 12;
+    HiddenColEvent   hidden_col  = 13;
+    CustomColEvent   custom_col  = 14;
+    StoreErrorEvent  store_error = 20;
   }
 }
 
 message OpAck   { string op_id = 1; bytes response = 2; }
 message OpError { string op_id = 1; string message  = 2; }
+
+// Sent when a background divergence check finds that stores disagree.
+message StoreErrorEvent {
+  string method  = 1; // read method that detected the divergence, e.g. "list_data_rows"
+  string message = 2;
+}
 
 enum EventKind { UPSERT = 0; DELETE = 1; }
 

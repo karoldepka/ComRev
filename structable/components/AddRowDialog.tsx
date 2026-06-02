@@ -14,12 +14,34 @@ type Props = {
   onClose: () => void;
 };
 
+function titleToId(t: string): string {
+  return t.trim().replace(/\s+/g, '_');
+}
+
 export default function AddRowDialog({ onConfirm, onClose }: Props) {
-  const [title, setTitle]     = useState('');
+  const [title, setTitle]         = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [customId, setCustomId] = useState('');
+  const [customId, setCustomId]   = useState('');
+  const [idEdited, setIdEdited]   = useState(false);
 
   const canSubmit = title.trim().length > 0;
+
+  const handleTitleChange = (v: string) => {
+    setTitle(v);
+    if (showAdvanced && !idEdited) setCustomId(titleToId(v));
+  };
+
+  const handleAdvancedToggle = () => {
+    setShowAdvanced((v) => {
+      if (!v && !idEdited) setCustomId(titleToId(title));
+      return !v;
+    });
+  };
+
+  const handleIdChange = (v: string) => {
+    setCustomId(v.replace(/\s/g, '_'));
+    setIdEdited(true);
+  };
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -50,7 +72,7 @@ export default function AddRowDialog({ onConfirm, onClose }: Props) {
           <input
             autoFocus
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => handleTitleChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
             placeholder="e.g. My project"
           />
@@ -59,7 +81,7 @@ export default function AddRowDialog({ onConfirm, onClose }: Props) {
         <button
           type="button"
           className="dialog-advanced-toggle"
-          onClick={() => setShowAdvanced((v) => !v)}
+          onClick={handleAdvancedToggle}
         >
           {showAdvanced ? '▾' : '▸'} Advanced
         </button>
@@ -72,7 +94,7 @@ export default function AddRowDialog({ onConfirm, onClose }: Props) {
             </span>
             <input
               value={customId}
-              onChange={(e) => setCustomId(e.target.value.replace(/\s/g, '-'))}
+              onChange={(e) => handleIdChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
               placeholder="auto-generated nanoid"
             />

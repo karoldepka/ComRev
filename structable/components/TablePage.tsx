@@ -36,7 +36,7 @@ export default function TablePage({ tableId }: Props) {
   }, []);
 
   const handleCreateTable = useCallback((payload: AddTablePayload) => {
-    const id = nanoid();
+    const id = payload.customId ?? nanoid();
     tableApiRef.current!.createTable({ id, title: payload.title, description: payload.description });
     setTables((prev) => [...prev, { id, title: payload.title, description: payload.description }]);
     setShowAddTable(false);

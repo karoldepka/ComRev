@@ -60,17 +60,17 @@ impl DataStore for PgStore {
   
     async fn nuke_db(&self) -> Result<()> {
         let db_id = &self.db_id;
-        tracing::warn!(db_id, "NUKE__DB: dropping all Postgres tables");
-        for table in &[
-            "remark_targets", "table_custom_columns", "table_rows",
-            "remarks", "custom_columns", "tables", "github_repos",
-            "cell_flags", "hidden_rows", "hidden_columns", "operations_log",
-        ] {
-            sqlx::query(&format!("DROP TABLE IF EXISTS \"{table}\" CASCADE"))
-                .execute(&self.pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("NUKE__DB({db_id}): failed to drop {table}: {e}"))?;
-        }
+        tracing::warn!(db_id, "NUKE__DB: dropping Postgres public schema");
+        sqlx::query("DROP SCHEMA public CASCADE")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("NUKE__DB({db_id}): DROP SCHEMA failed: {e}"))?;
+        sqlx::query("CREATE SCHEMA public")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("NUKE__DB({db_id}): CREATE SCHEMA failed: {e}"))?;
+        tracing::warn!(db_id, "NUKE__DB: schema dropped, re-applying");
+        self.ensure_schema().await?;
         tracing::warn!(db_id, "NUKE__DB: complete");
         Ok(())
     }
@@ -640,6 +640,7 @@ impl DataStore for PgStore {
                 total,
                 page: params.page,
                 per_page: params.per_page,
+                errors: vec![],
             });
         }
 
@@ -695,6 +696,7 @@ impl DataStore for PgStore {
                 total,
                 page: params.page,
                 per_page: params.per_page,
+                errors: vec![],
             });
         }
     }

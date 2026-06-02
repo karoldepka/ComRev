@@ -322,13 +322,9 @@ impl DataStore for MongoStore {
 
     async fn nuke_db(&self) -> Result<()> {
         tracing::warn!(db_id = %self.db_id, "NUKE__DB: dropping MongoDB database");
-        for coll in &[
-            "flags", "hidden_rows", "hidden_columns", "remarks", "remark_targets",
-            "custom_columns", "app_tables", "table_rows", "github_repos", "ops_log",
-        ] {
-            self.db.collection::<Document>(coll).drop().await
-                .with_context(|| format!("NUKE__DB: drop collection {coll}"))?;
-        }
+        self.db.drop().await.context("NUKE__DB: drop database")?;
+        tracing::warn!(db_id = %self.db_id, "NUKE__DB: database dropped, re-applying schema");
+        self.ensure_schema().await?;
         tracing::warn!(db_id = %self.db_id, "NUKE__DB: complete");
         Ok(())
     }
@@ -791,6 +787,7 @@ impl DataStore for MongoStore {
                 total,
                 page: params.page,
                 per_page: params.per_page,
+                errors: vec![],
             });
         }
 
@@ -816,6 +813,7 @@ impl DataStore for MongoStore {
             total,
             page: params.page,
             per_page: params.per_page,
+            errors: vec![],
         })
     }
 

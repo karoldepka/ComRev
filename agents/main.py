@@ -13,7 +13,7 @@ import os
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from copilotkit import CopilotKitSDK, LangGraphAGUIAgent
+from copilotkit import CopilotKitRemoteEndpoint, LangGraphAGUIAgent
 from copilotkit.integrations.fastapi import add_fastapi_endpoint
 
 load_dotenv()
@@ -24,7 +24,7 @@ from structable_agent.graph import graph  # noqa: E402
 app = FastAPI(title="Structable Agent Service")
 AGENT_NAME = "default"
 
-sdk = CopilotKitSDK(
+sdk = CopilotKitRemoteEndpoint(
     agents=[
         LangGraphAGUIAgent(
             name=AGENT_NAME,

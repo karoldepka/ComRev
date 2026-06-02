@@ -1,8 +1,15 @@
-// sync_core — offline-first sync layer compiled to WebAssembly.
+// sync_core — offline-first sync layer.
 //
-// Replaces the TypeScript TableApi class. Exposes SyncClient to JavaScript
-// via wasm-bindgen. All mutations are queued in IndexedDB before being sent
-// via gRPC-Web so they survive page reloads and network outages.
+// When compiled to WASM: exposes SyncClient to JavaScript via wasm-bindgen.
+// All mutations are queued in IndexedDB before being sent via gRPC-Web.
+//
+// When compiled with the `server` feature (non-WASM): also exposes the
+// gRPC server-side `service` module so `backend_rs` can instantiate the
+// SyncService without duplicating protocol logic.
+
+// ── Server-side service (non-WASM only) ──────────────────────────────────────
+#[cfg(feature = "server")]
+pub mod service;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -78,9 +85,10 @@ fn describe_op(kind: &str, data: &serde_json::Value) -> String {
             format!("Unhide column [{col}]")
         }
         "create_custom_col" => {
-            let label = s("label");
-            let name = s("name");
-            let display = if !label.is_empty() { &label } else { &name };
+            // "title" is the current field name; "name"/"label" are kept for
+            // backward-compat with ops saved before the proto rename.
+            let title = s("title");
+            let display = if !title.is_empty() { title } else { s("name") };
             if display.is_empty() {
                 "Create column".to_string()
             } else {
@@ -155,8 +163,10 @@ impl QueuedOp {
             })),
             "create_custom_col" => Some(OpPayload::CreateCustomCol(CreateCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
-                name: self.data["name"].as_str().unwrap_or("").to_string(),
-                label: self.data["label"].as_str().unwrap_or("").to_string(),
+                // "title" is current; fall back to "name" for ops saved before the rename.
+                title: self.data["title"].as_str()
+                    .or_else(|| self.data["name"].as_str())
+                    .unwrap_or("").to_string(),
                 expression: self.data["expression"].as_str().unwrap_or("").to_string(),
                 position_after: self.data["position_after"]
                     .as_str()
@@ -1021,8 +1031,7 @@ impl serde::Serialize for CustomCol {
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("CustomCol", 10)?;
         st.serialize_field("id", &self.id)?;
-        st.serialize_field("name", &self.name)?;
-        st.serialize_field("label", &self.label)?;
+        st.serialize_field("title", &self.title)?;
         st.serialize_field("expression", &self.expression)?;
         st.serialize_field("position_after", &self.position_after)?;
         st.serialize_field("description", &self.description)?;
@@ -1110,13 +1119,19 @@ impl serde::Serialize for ServerEvent {
                     &serde_json::json!({
                         "kind": v.kind,
                         "data": v.data.as_ref().map(|d| serde_json::json!({
-                            "id": d.id, "name": d.name, "label": d.label,
+                            "id": d.id, "title": d.title,
                             "expression": d.expression, "position_after": d.position_after,
                             "description": d.description, "read_only": d.read_only,
                             "readOnly": d.read_only, "types": d.types,
                             "is_frozen": d.is_frozen,
                         })),
                     }),
+                )?;
+            }
+            Some(server_event::Payload::StoreError(e)) => {
+                map.serialize_entry(
+                    "store_error",
+                    &serde_json::json!({ "method": e.method, "message": e.message }),
                 )?;
             }
             None => {
@@ -1142,5 +1157,134 @@ impl serde::Serialize for PagedRepos {
         st.serialize_field("page", &self.page)?;
         st.serialize_field("per_page", &self.per_page)?;
         st.end()
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+//
+// These test pure-Rust logic that does not require WASM or a live browser.
+// Run with: `cargo test -p sync_core --features server`
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proto::{client_op::Payload as OpPayload, *};
+
+    fn op(kind: &str, data: serde_json::Value) -> QueuedOp {
+        QueuedOp { op_id: "test-op-id".into(), seq: 1, retries: 0, kind: kind.into(), data, enqueued_at: 0 }
+    }
+
+    // ── describe_op ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn describe_upsert_flag_with_color() {
+        let d = describe_op("upsert_flag", &serde_json::json!({ "key": "header:name", "color": "red" }));
+        assert_eq!(d, "Set red flag [header:name]");
+    }
+
+    #[test]
+    fn describe_upsert_flag_no_color() {
+        let d = describe_op("upsert_flag", &serde_json::json!({ "key": "header:name", "color": "" }));
+        assert_eq!(d, "Set flag [header:name]");
+    }
+
+    #[test]
+    fn describe_delete_flag() {
+        let d = describe_op("delete_flag", &serde_json::json!({ "key": "header:name" }));
+        assert_eq!(d, "Remove flag [header:name]");
+    }
+
+    #[test]
+    fn describe_upsert_remark_truncates_body() {
+        let long_body = "x".repeat(50);
+        let d = describe_op("upsert_remark", &serde_json::json!({ "kind": "note", "body": long_body }));
+        assert!(d.contains('…'), "long body must be truncated with ellipsis");
+        assert!(d.starts_with("Save note: \""));
+    }
+
+    #[test]
+    fn describe_upsert_remark_short_body() {
+        let d = describe_op("upsert_remark", &serde_json::json!({ "kind": "comment", "body": "Hello" }));
+        assert_eq!(d, "Save comment: \"Hello\"");
+        assert!(!d.contains('…'));
+    }
+
+    #[test]
+    fn describe_unknown_kind_echoes_kind() {
+        let d = describe_op("some_future_op", &serde_json::json!({}));
+        assert_eq!(d, "some_future_op");
+    }
+
+    // ── QueuedOp::record_id ───────────────────────────────────────────────────
+
+    #[test]
+    fn record_id_uses_data_id_when_present() {
+        let q = op("upsert_flag", serde_json::json!({ "id": "explicit-id" }));
+        assert_eq!(q.record_id(), "explicit-id");
+    }
+
+    #[test]
+    fn record_id_falls_back_to_op_id_suffix_after_colon() {
+        let mut q = op("upsert_flag", serde_json::json!({}));
+        q.op_id = "upsert_flag:abc123".into();
+        assert_eq!(q.record_id(), "abc123");
+    }
+
+    #[test]
+    fn record_id_uses_full_op_id_when_no_colon() {
+        let mut q = op("upsert_flag", serde_json::json!({}));
+        q.op_id = "plainopid".into();
+        assert_eq!(q.record_id(), "plainopid");
+    }
+
+    // ── QueuedOp::into_client_op ──────────────────────────────────────────────
+
+    #[test]
+    fn into_client_op_upsert_flag() {
+        let q = op("upsert_flag", serde_json::json!({ "id": "f1", "key": "k", "color": "blue" }));
+        let cop = q.into_client_op().unwrap();
+        assert!(matches!(cop.payload, Some(OpPayload::UpsertFlag(_))));
+    }
+
+    #[test]
+    fn into_client_op_delete_flag() {
+        let q = op("delete_flag", serde_json::json!({ "key": "k" }));
+        let cop = q.into_client_op().unwrap();
+        assert!(matches!(cop.payload, Some(OpPayload::DeleteFlag(_))));
+    }
+
+    #[test]
+    fn into_client_op_upsert_remark() {
+        let q = op("upsert_remark", serde_json::json!({
+            "id": "r1", "body": "hello", "kind": "note", "targets": []
+        }));
+        let cop = q.into_client_op().unwrap();
+        assert!(matches!(cop.payload, Some(OpPayload::UpsertRemark(_))));
+    }
+
+    #[test]
+    fn into_client_op_create_custom_col() {
+        let q = op("create_custom_col", serde_json::json!({
+            "id": "c1", "title": "Stars", "expression": "",
+            "position_after": "", "description": "", "table_id": "gh_repos"
+        }));
+        let cop = q.into_client_op().unwrap();
+        assert!(matches!(cop.payload, Some(OpPayload::CreateCustomCol(_))));
+    }
+
+    #[test]
+    fn into_client_op_unknown_kind_returns_none() {
+        let q = op("future_op_not_yet_known", serde_json::json!({}));
+        assert!(q.into_client_op().is_none());
+    }
+
+    #[test]
+    fn into_client_op_preserves_op_id_and_seq() {
+        let mut q = op("delete_flag", serde_json::json!({ "key": "k" }));
+        q.op_id = "my-op-42".into();
+        q.seq = 99;
+        let cop = q.into_client_op().unwrap();
+        assert_eq!(cop.op_id, "my-op-42");
+        assert_eq!(cop.seq, 99);
     }
 }

@@ -24,6 +24,7 @@ nanoid        = "0.4"
 futures-core  = "0.3"
 futures       = "0.3"
 structable_logger = { path = "../structable_logger" }
+sync_core         = { path = "../sync_core", features = ["server"] }
 surrealdb = "3.1.2"
 mongodb    = "3"
 reqwest    = { version = "0.12", features = ["json"] }

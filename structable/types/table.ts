@@ -81,4 +81,6 @@ export type PagedResponse = {
   total: number;
   page: number;
   per_page: number;
+  /** Non-empty when stores have conflicting data or a fan-out write partially failed. */
+  errors?: string[];
 };

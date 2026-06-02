@@ -2,20 +2,24 @@
 ///
 /// **Writes** fan out to every store in parallel. The result from the first
 /// store that succeeds is returned; if all stores fail the last error propagates.
-/// Per-store failures are always logged.
+/// Per-store failures are always logged and pushed via `write_errors`.
 ///
 /// **Reads** fan out to every store in parallel, bounded by `FAN_READ_TIMEOUT_SECS`
-/// (env var, default 60 s). Results from all stores that respond within the timeout
-/// are merged: items deduplicated by their business key (first seen wins on conflict).
-/// Items present in some stores but absent in others are logged as divergences.
+/// (env var, default 60 s). The response is returned as soon as the FIRST store
+/// succeeds. Store failures are immediately broadcast as `StoreErrorEvent` over the
+/// gRPC Subscribe stream. Remaining stores are checked for divergence in a background
+/// task; any discrepancies are also broadcast as `StoreErrorEvent`.
 ///
 /// **Timing** Every per-store operation emits one INFO log line: result + elapsed ms.
-/// No extra lines — timing is the log message.
 use anyhow::Result;
 use async_trait::async_trait;
-use futures::future::join_all;
+use futures::{
+    future::{join_all, BoxFuture},
+    stream::FuturesUnordered,
+    StreamExt,
+};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -25,12 +29,13 @@ use crate::types::{PagedResponse, RowQuery};
 
 pub struct MultiStore {
     stores: Vec<Arc<dyn DataStore>>,
+    event_tx: Option<crate::sync_service::EventTx>,
 }
 
 impl MultiStore {
-    pub fn new(stores: Vec<Arc<dyn DataStore>>) -> Self {
+    pub fn new(stores: Vec<Arc<dyn DataStore>>, event_tx: Option<crate::sync_service::EventTx>) -> Self {
         assert!(!stores.is_empty(), "MultiStore requires at least one store");
-        Self { stores }
+        Self { stores, event_tx }
     }
 }
 
@@ -93,13 +98,25 @@ impl MergeKey for crate::table::Table {
 /// Return the first successful result; if all stores failed, return the last error.
 fn fan_write<T>(results: Vec<Result<T>>, method: &str) -> Result<T> {
     let mut last_err = anyhow::anyhow!("{method}: no stores configured");
+    let mut success: Option<T> = None;
+    let mut partial_errs: Vec<String> = Vec::new();
     for r in results {
         match r {
-            Ok(v) => return Ok(v),
-            Err(e) => last_err = e,
+            Ok(v) => { success = Some(v); }
+            Err(e) => {
+                partial_errs.push(format!("{method}: {e}"));
+                last_err = e;
+            }
         }
     }
-    Err(last_err)
+    if let Some(v) = success {
+        for msg in partial_errs {
+            crate::write_errors::push(msg);
+        }
+        Ok(v)
+    } else {
+        Err(last_err)
+    }
 }
 
 /// Fan a write to every store in parallel.
@@ -136,115 +153,6 @@ macro_rules! fan_out {
 
 // ── Read helpers ──────────────────────────────────────────────────────────────
 
-/// Merge `Vec<T>` results from all stores that responded within the timeout.
-/// Items are deduplicated by their `MergeKey`; first-seen wins on collision.
-/// Items absent from some (but not all) stores are logged as divergences.
-fn fan_merge_list<T: MergeKey>(results: Vec<Result<Vec<T>>>, method: &str) -> Result<Vec<T>> {
-    let mut order: Vec<String> = Vec::new();
-    let mut by_key: HashMap<String, T> = HashMap::new();
-    let mut store_keys: Vec<Option<HashSet<String>>> = Vec::new();
-    let mut any_success = false;
-
-    for result in results {
-        match result {
-            Err(_) => store_keys.push(None),
-            Ok(items) => {
-                any_success = true;
-                let mut keys = HashSet::new();
-                for item in items {
-                    let key = item.merge_key();
-                    keys.insert(key.clone());
-                    if !by_key.contains_key(&key) {
-                        order.push(key.clone());
-                        by_key.insert(key, item);
-                    }
-                }
-                store_keys.push(Some(keys));
-            }
-        }
-    }
-
-    if !any_success {
-        return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
-    }
-
-    for (store_idx, store_key_set) in store_keys.iter().enumerate() {
-        let Some(store_key_set) = store_key_set else {
-            continue;
-        };
-        for key in &order {
-            if !store_key_set.contains(key) {
-                tracing::error!(
-                    "DATA DIVERGENCE in {method}: key={key:?} missing from store[{store_idx}] — CHECK REPLICATION"
-                );
-            }
-        }
-    }
-
-    Ok(order
-        .into_iter()
-        .filter_map(|k| by_key.remove(&k))
-        .collect())
-}
-
-/// Merge `PagedResponse` results from all stores that responded within the timeout.
-/// Data items are deduplicated by "id" (first-seen wins). Pagination metadata comes from the first responding store.
-fn fan_merge_paged(results: Vec<Result<PagedResponse>>, method: &str) -> Result<PagedResponse> {
-    let mut order: Vec<String> = Vec::new();
-    let mut by_id: HashMap<String, serde_json::Value> = HashMap::new();
-    let mut first_meta: Option<(i64, u32, u32)> = None;
-    let mut store_ids: Vec<Option<HashSet<String>>> = Vec::new();
-    let mut any_success = false;
-
-    for result in results.into_iter() {
-        match result {
-            Err(_) => store_ids.push(None),
-            Ok(page) => {
-                any_success = true;
-                if first_meta.is_none() {
-                    first_meta = Some((page.total, page.page, page.per_page));
-                }
-                let mut ids = HashSet::new();
-                for item in page.data {
-                    let id = paged_item_id(&item);
-                    ids.insert(id.clone());
-                    if !by_id.contains_key(&id) {
-                        order.push(id.clone());
-                        by_id.insert(id, item);
-                    }
-                }
-                store_ids.push(Some(ids));
-            }
-        }
-    }
-
-    if !any_success {
-        return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
-    }
-
-    for (store_idx, store_id_set) in store_ids.iter().enumerate() {
-        let Some(store_id_set) = store_id_set else {
-            continue;
-        };
-        for id in &order {
-            if !store_id_set.contains(id) {
-                tracing::error!(
-                    "DATA DIVERGENCE in {method}: id={id:?} missing from store[{store_idx}] — CHECK REPLICATION"
-                );
-            }
-        }
-    }
-
-    let (total, page, per_page): (i64, u32, u32) = first_meta.unwrap_or((0, 1, 50));
-    let data: Vec<serde_json::Value> = order.into_iter().filter_map(|k| by_id.remove(&k)).collect();
-    let merged_total = total.max(data.len() as i64);
-    Ok(PagedResponse {
-        data,
-        total: merged_total,
-        page,
-        per_page,
-    })
-}
 
 fn paged_item_id(v: &serde_json::Value) -> String {
     v.get("id")
@@ -254,43 +162,176 @@ fn paged_item_id(v: &serde_json::Value) -> String {
         .unwrap_or_else(|| serde_json::to_string(v).unwrap_or_default())
 }
 
-/// Core read fan-out: wrap each store call with `$timeout_dur`, log result + timing
-/// on one INFO line, then merge with `$merge_fn`.
-macro_rules! fan_read_impl {
-    ($self:ident, $timeout_dur:expr, $merge_fn:ident, $method:ident ( $($arg:expr),* ) ) => {{
-        let timeout_dur = $timeout_dur;
-        let results = join_all(
-            $self.stores.iter().enumerate().map(|(store_idx, s)| {
-                let fut = s.$method($($arg),*);
-                async move {
-                    let t0 = Instant::now();
-                    let result = tokio::time::timeout(timeout_dur, fut).await
-                        .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out")));
-                    let ms = t0.elapsed().as_millis();
-                    match &result {
-                        Ok(_)  => tracing::info!("store[{store_idx}] {} read OK in {ms}ms",    stringify!($method)),
-                        Err(e) => tracing::warn!("store[{store_idx}] {} read FAILED in {ms}ms: {e}", stringify!($method)),
-                    }
-                    result
+// ── Read fan-out helpers ──────────────────────────────────────────────────────
+
+fn send_store_error(tx: &Option<crate::sync_service::EventTx>, method: &str, msg: &str) {
+    if let Some(tx) = tx {
+        let _ = tx.send(crate::sync_service::store_error_event(method, msg));
+    }
+}
+
+impl MultiStore {
+    /// Fan a list read: return on first-success, broadcast store errors immediately,
+    /// check divergence against remaining stores in a background task.
+    async fn fan_first_list<T>(
+        &self,
+        method: &'static str,
+        futs: Vec<(usize, BoxFuture<'static, Result<Vec<T>>>)>,
+    ) -> Result<Vec<T>>
+    where
+        T: MergeKey + Send + 'static,
+    {
+        let timeout = fan_read_timeout(None);
+        let mut unordered: FuturesUnordered<_> = futs
+            .into_iter()
+            .map(|(i, fut)| async move {
+                let t0 = Instant::now();
+                let result = tokio::time::timeout(timeout, fut)
+                    .await
+                    .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs())));
+                let ms = t0.elapsed().as_millis();
+                match &result {
+                    Ok(_) => tracing::info!("store[{i}] {method} read OK in {ms}ms"),
+                    Err(e) => tracing::warn!("store[{i}] {method} read FAILED in {ms}ms: {e}"),
                 }
+                (i, result)
             })
-        ).await;
-        $merge_fn(results, stringify!($method))
-    }};
-}
+            .collect();
 
-/// Fan a list read with the default timeout; merge Vec<T: MergeKey> from all stores.
-macro_rules! fan_list {
-    ($self:ident, $method:ident ( $($arg:expr),* ) ) => {
-        fan_read_impl!($self, fan_read_timeout(None), fan_merge_list, $method ( $($arg),* ))
-    };
-}
+        let mut first: Option<(usize, Vec<T>)> = None;
+        while let Some((i, result)) = unordered.next().await {
+            match result {
+                Ok(items) => {
+                    first = Some((i, items));
+                    break;
+                }
+                Err(e) => {
+                    let msg = format!("{method}: store[{i}] failed: {e}");
+                    send_store_error(&self.event_tx, method, &msg);
+                }
+            }
+        }
 
-/// Fan a paged read with a caller-supplied timeout override; merge PagedResponse from all stores.
-macro_rules! fan_paged {
-    ($self:ident, $timeout_override:expr, $method:ident ( $($arg:expr),* ) ) => {
-        fan_read_impl!($self, fan_read_timeout($timeout_override), fan_merge_paged, $method ( $($arg),* ))
-    };
+        let Some((first_idx, first_data)) = first else {
+            return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
+        };
+
+        if unordered.is_empty() {
+            return Ok(first_data);
+        }
+
+        let event_tx = self.event_tx.clone();
+        let first_keys: HashSet<String> = first_data.iter().map(MergeKey::merge_key).collect();
+        tokio::spawn(async move {
+            while let Some((i, result)) = unordered.next().await {
+                match result {
+                    Ok(items) => {
+                        let keys: HashSet<String> = items.iter().map(MergeKey::merge_key).collect();
+                        for key in &first_keys {
+                            if !keys.contains(key) {
+                                let msg = format!(
+                                    "DATA DIVERGENCE [{method}]: key={key:?} missing from store[{i}] (vs store[{first_idx}])"
+                                );
+                                tracing::error!("{msg}");
+                                send_store_error(&event_tx, method, &msg);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let msg = format!("{method}: store[{i}] background check failed: {e}");
+                        tracing::warn!("{msg}");
+                        send_store_error(&event_tx, method, &msg);
+                    }
+                }
+            }
+        });
+
+        Ok(first_data)
+    }
+
+    /// Fan a paged read: return on first-success, broadcast store errors immediately,
+    /// check divergence in a background task.
+    async fn fan_first_paged(
+        &self,
+        method: &'static str,
+        timeout: Duration,
+        futs: Vec<(usize, BoxFuture<'static, Result<PagedResponse>>)>,
+    ) -> Result<PagedResponse> {
+        let mut unordered: FuturesUnordered<_> = futs
+            .into_iter()
+            .map(|(i, fut)| async move {
+                let t0 = Instant::now();
+                let result = tokio::time::timeout(timeout, fut)
+                    .await
+                    .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs())));
+                let ms = t0.elapsed().as_millis();
+                match &result {
+                    Ok(_) => tracing::info!("store[{i}] {method} read OK in {ms}ms"),
+                    Err(e) => tracing::warn!("store[{i}] {method} read FAILED in {ms}ms: {e}"),
+                }
+                (i, result)
+            })
+            .collect();
+
+        let mut first: Option<(usize, PagedResponse)> = None;
+        while let Some((i, result)) = unordered.next().await {
+            match result {
+                Ok(page) => {
+                    first = Some((i, page));
+                    break;
+                }
+                Err(e) => {
+                    let msg = format!("{method}: store[{i}] failed: {e}");
+                    send_store_error(&self.event_tx, method, &msg);
+                }
+            }
+        }
+
+        let Some((first_idx, first_data)) = first else {
+            return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
+        };
+
+        if unordered.is_empty() {
+            return Ok(first_data);
+        }
+
+        let event_tx = self.event_tx.clone();
+        let first_total = first_data.total;
+        let first_ids: HashSet<String> = first_data.data.iter().map(paged_item_id).collect();
+        tokio::spawn(async move {
+            while let Some((i, result)) = unordered.next().await {
+                match result {
+                    Ok(page) => {
+                        if page.total != first_total {
+                            let msg = format!(
+                                "DATA DIVERGENCE [{method}]: store[{i}] total={} vs store[{first_idx}] total={first_total}",
+                                page.total
+                            );
+                            tracing::error!("{msg}");
+                            send_store_error(&event_tx, method, &msg);
+                        }
+                        let ids: HashSet<String> = page.data.iter().map(paged_item_id).collect();
+                        for id in &first_ids {
+                            if !ids.contains(id) {
+                                let msg = format!(
+                                    "DATA DIVERGENCE [{method}]: id={id:?} missing from store[{i}]"
+                                );
+                                tracing::error!("{msg}");
+                                send_store_error(&event_tx, method, &msg);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let msg = format!("{method}: store[{i}] background check failed: {e}");
+                        tracing::warn!("{msg}");
+                        send_store_error(&event_tx, method, &msg);
+                    }
+                }
+            }
+        });
+
+        Ok(first_data)
+    }
 }
 
 // ── MultiStore DataStore impl ─────────────────────────────────────────────────
@@ -341,7 +382,13 @@ impl DataStore for MultiStore {
     // ── Flags ──────────────────────────────────────────────────────────────────
 
     async fn list_flags(&self) -> Result<Vec<crate::flag::CellFlag>> {
-        fan_list!(self, list_flags())
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let fut: BoxFuture<'static, Result<Vec<crate::flag::CellFlag>>> =
+                Box::pin(async move { s.list_flags().await });
+            (i, fut)
+        }).collect();
+        self.fan_first_list("list_flags", futs).await
     }
     async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> Result<crate::flag::CellFlag> {
         fan_out!(
@@ -363,7 +410,13 @@ impl DataStore for MultiStore {
     // ── Remarks ────────────────────────────────────────────────────────────────
 
     async fn list_remarks(&self) -> Result<Vec<crate::remark::Remark>> {
-        fan_list!(self, list_remarks())
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let fut: BoxFuture<'static, Result<Vec<crate::remark::Remark>>> =
+                Box::pin(async move { s.list_remarks().await });
+            (i, fut)
+        }).collect();
+        self.fan_first_list("list_remarks", futs).await
     }
     async fn upsert_remark(
         &self,
@@ -397,7 +450,13 @@ impl DataStore for MultiStore {
     // ── Hidden rows ────────────────────────────────────────────────────────────
 
     async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>> {
-        fan_list!(self, list_hidden_rows())
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let fut: BoxFuture<'static, Result<Vec<crate::hidden_row::HiddenRow>>> =
+                Box::pin(async move { s.list_hidden_rows().await });
+            (i, fut)
+        }).collect();
+        self.fan_first_list("list_hidden_rows", futs).await
     }
     async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<crate::hidden_row::HiddenRow> {
         fan_out!(
@@ -419,7 +478,13 @@ impl DataStore for MultiStore {
     // ── Hidden columns ─────────────────────────────────────────────────────────
 
     async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> {
-        fan_list!(self, list_hidden_columns())
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let fut: BoxFuture<'static, Result<Vec<crate::hidden_column::HiddenColumn>>> =
+                Box::pin(async move { s.list_hidden_columns().await });
+            (i, fut)
+        }).collect();
+        self.fan_first_list("list_hidden_columns", futs).await
     }
     async fn add_hidden_column(
         &self,
@@ -448,7 +513,14 @@ impl DataStore for MultiStore {
         &self,
         table_id: &str,
     ) -> Result<Vec<crate::custom_column::CustomColumn>> {
-        fan_list!(self, list_custom_columns(table_id))
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let tid = table_id.to_string();
+            let fut: BoxFuture<'static, Result<Vec<crate::custom_column::CustomColumn>>> =
+                Box::pin(async move { s.list_custom_columns(&tid).await });
+            (i, fut)
+        }).collect();
+        self.fan_first_list("list_custom_columns", futs).await
     }
     async fn upsert_custom_column(
         &self,
@@ -494,7 +566,13 @@ impl DataStore for MultiStore {
     // ── Tables registry ────────────────────────────────────────────────────────
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
-        fan_list!(self, list_tables())
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let fut: BoxFuture<'static, Result<Vec<crate::table::Table>>> =
+                Box::pin(async move { s.list_tables().await });
+            (i, fut)
+        }).collect();
+        self.fan_first_list("list_tables", futs).await
     }
     async fn create_table(
         &self,
@@ -536,11 +614,14 @@ impl DataStore for MultiStore {
     // ── Rows ───────────────────────────────────────────────────────────────────
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
-        fan_paged!(
-            self,
-            params.read_timeout_secs,
-            list_data_rows(table_id, params)
-        )
+        let timeout = fan_read_timeout(params.read_timeout_secs);
+        let futs = self.stores.iter().enumerate().map(|(i, s)| {
+            let s = s.clone();
+            let tid = table_id.to_string();
+            let p = params.clone();
+            (i, Box::pin(async move { s.list_data_rows(&tid, &p).await }) as BoxFuture<'static, _>)
+        }).collect();
+        self.fan_first_paged("list_data_rows", timeout, futs).await
     }
     async fn create_row(
         &self,
@@ -877,8 +958,7 @@ mod tests {
             self.fail()?;
             Ok(crate::custom_column::CustomColumn {
                 id: id.into(),
-                name: "".into(),
-                label: None,
+                title: None,
                 description: None,
                 expression: None,
                 position_after: None,
@@ -956,6 +1036,7 @@ mod tests {
                 total: 0,
                 page: 1,
                 per_page: 50,
+                errors: vec![],
             })
         }
         async fn create_row(
@@ -1034,7 +1115,7 @@ mod tests {
     async fn writes_fan_out_to_all_stores() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         store
             .create_row("_tests_table", "row-001", Some("Hello"), None)
             .await
@@ -1048,7 +1129,7 @@ mod tests {
         let s0 = MockStore::new("store-0", false);
         let s1 = MockStore::new("store-1", false);
         let s2 = MockStore::new("store-2", false);
-        let store = MultiStore::new(vec![s0.clone(), s1.clone(), s2.clone()]);
+        let store = MultiStore::new(vec![s0.clone(), s1.clone(), s2.clone()], None);
         store
             .upsert_flag("f1", "header:name", "blue")
             .await
@@ -1062,7 +1143,7 @@ mod tests {
     async fn one_write_failure_does_not_propagate() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", true);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         store
             .upsert_flag("f1", "header:name", "blue")
             .await
@@ -1074,7 +1155,7 @@ mod tests {
     async fn all_write_failures_propagate() {
         let a = MockStore::new("store-a", true);
         let b = MockStore::new("store-b", true);
-        let store = MultiStore::new(vec![a.clone(), b.clone()]);
+        let store = MultiStore::new(vec![a.clone(), b.clone()], None);
         assert!(store
             .upsert_flag("f1", "header:name", "blue")
             .await
@@ -1085,7 +1166,7 @@ mod tests {
     async fn one_write_failure_succeeds_via_other_store() {
         let a = MockStore::new("store-a", true);
         let b = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![a.clone(), b.clone()]);
+        let store = MultiStore::new(vec![a.clone(), b.clone()], None);
         assert!(store.upsert_flag("f1", "header:name", "blue").await.is_ok());
     }
 
@@ -1095,62 +1176,47 @@ mod tests {
     async fn reads_query_all_stores_for_divergence_detection() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         store.list_flags().await.unwrap();
+        // FuturesUnordered polls all synchronous futures on the first .next() call,
+        // so both stores are called even before we return the first result.
+        tokio::task::yield_now().await; // let background divergence task run
         assert!(p.was_called("list_flags"), "store-a must be queried");
-        assert!(
-            s.was_called("list_flags"),
-            "store-b must be queried for divergence detection"
-        );
+        assert!(s.was_called("list_flags"), "store-b must be queried for divergence detection");
     }
 
     #[tokio::test]
-    async fn reads_merge_unique_items_from_all_stores() {
-        // store-a has flag A; store-b has flag B — merged result must contain both.
+    async fn reads_return_first_store_result() {
+        // First store (store-a) wins; store-b's diverging data is checked in background.
         let p = MockStore::with_flags("store-a", vec![flag("A")]);
         let s = MockStore::with_flags("store-b", vec![flag("B")]);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         let flags = store.list_flags().await.unwrap();
-        let keys: Vec<_> = flags.iter().map(|f| f.key.as_str()).collect();
-        assert!(
-            keys.contains(&"A"),
-            "flag A (from store-a) must be in merged result"
-        );
-        assert!(
-            keys.contains(&"B"),
-            "flag B (from store-b) must be in merged result"
-        );
+        assert_eq!(flags.len(), 1, "only first store's result is returned");
+        assert_eq!(flags[0].key, "A", "store-a (first) wins");
     }
 
     #[tokio::test]
-    async fn reads_first_seen_wins_on_key_collision() {
+    async fn reads_first_store_data_returned_on_key_collision() {
         let p = MockStore::with_flags(
             "store-a",
-            vec![crate::flag::CellFlag {
-                id: "p".into(),
-                key: "X".into(),
-                color: "color-a".into(),
-            }],
+            vec![crate::flag::CellFlag { id: "p".into(), key: "X".into(), color: "color-a".into() }],
         );
         let s = MockStore::with_flags(
             "store-b",
-            vec![crate::flag::CellFlag {
-                id: "s".into(),
-                key: "X".into(),
-                color: "color-b".into(),
-            }],
+            vec![crate::flag::CellFlag { id: "s".into(), key: "X".into(), color: "color-b".into() }],
         );
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         let flags = store.list_flags().await.unwrap();
-        assert_eq!(flags.len(), 1, "deduplicated: only one flag with key X");
-        assert_eq!(flags[0].color, "color-a", "first-seen wins on collision");
+        assert_eq!(flags.len(), 1);
+        assert_eq!(flags[0].color, "color-a", "first store (store-a) wins");
     }
 
     #[tokio::test]
     async fn read_falls_back_when_one_store_fails() {
         let p = MockStore::new("store-a", true);
         let s = MockStore::with_flags("store-b", vec![flag("A")]);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         let flags = store.list_flags().await.unwrap();
         assert!(
             !flags.is_empty(),
@@ -1163,7 +1229,7 @@ mod tests {
     async fn all_stores_failing_returns_error() {
         let p = MockStore::new("store-a", true);
         let s = MockStore::new("store-b", true);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         assert!(store.list_flags().await.is_err());
     }
 
@@ -1173,7 +1239,7 @@ mod tests {
     async fn patch_row_value_fans_out() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         store
             .patch_row_value(
                 "_tests_table",
@@ -1191,7 +1257,7 @@ mod tests {
     async fn upsert_github_repos_batch_fans_out() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         let repos = vec![
             serde_json::json!({ "github_id": 1, "name": "owner/repo-a" }),
             serde_json::json!({ "github_id": 2, "name": "owner/repo-b" }),
@@ -1213,7 +1279,7 @@ mod tests {
     async fn upsert_github_repos_batch_one_failure_is_best_effort() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", true);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         let result = store
             .upsert_github_repos_batch(&[serde_json::json!({ "github_id": 99 })])
             .await;
@@ -1227,7 +1293,7 @@ mod tests {
         let s0 = MockStore::new("store-0", false);
         let s1 = MockStore::new("store-1", false);
         let s2 = MockStore::new("store-2", false);
-        let store = MultiStore::new(vec![s0.clone(), s1.clone(), s2.clone()]);
+        let store = MultiStore::new(vec![s0.clone(), s1.clone(), s2.clone()], None);
         store
             .create_row("_test_", "row-ops", None, None)
             .await
@@ -1285,106 +1351,11 @@ mod tests {
     async fn ensure_schema_fans_out() {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![p.clone(), s.clone()]);
+        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         store.ensure_schema().await.unwrap();
         assert!(p.was_called("ensure_schema"));
         assert!(s.was_called("ensure_schema"));
     }
 
-    // ── fan_merge_list unit tests (no async needed) ───────────────────────────
 
-    #[test]
-    fn merge_list_combines_disjoint_sets() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> =
-            vec![Ok(vec![flag("A")]), Ok(vec![flag("B")])];
-        let merged = fan_merge_list(results, "test").unwrap();
-        let keys: Vec<_> = merged.iter().map(|f| f.key.as_str()).collect();
-        assert!(keys.contains(&"A"));
-        assert!(keys.contains(&"B"));
-    }
-
-    #[test]
-    fn merge_list_deduplicates_by_key() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> = vec![
-            Ok(vec![crate::flag::CellFlag {
-                id: "p".into(),
-                key: "X".into(),
-                color: "first".into(),
-            }]),
-            Ok(vec![crate::flag::CellFlag {
-                id: "s".into(),
-                key: "X".into(),
-                color: "second".into(),
-            }]),
-        ];
-        let merged = fan_merge_list(results, "test").unwrap();
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].color, "first", "first-seen wins on collision");
-    }
-
-    #[test]
-    fn merge_list_skips_failed_stores() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> =
-            vec![Err(anyhow::anyhow!("store 0 failed")), Ok(vec![flag("A")])];
-        let merged = fan_merge_list(results, "test").unwrap();
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].key, "A");
-    }
-
-    #[test]
-    fn merge_list_all_failed_returns_error() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> =
-            vec![Err(anyhow::anyhow!("fail")), Err(anyhow::anyhow!("fail"))];
-        assert!(fan_merge_list(results, "test").is_err());
-    }
-
-    // ── fan_merge_paged unit tests ────────────────────────────────────────────
-
-    fn paged(ids: &[&str]) -> PagedResponse {
-        let data = ids
-            .iter()
-            .map(|id| serde_json::json!({ "id": *id }))
-            .collect();
-        PagedResponse {
-            data,
-            total: ids.len() as i64,
-            page: 1,
-            per_page: 50,
-        }
-    }
-
-    #[test]
-    fn merge_paged_combines_disjoint_sets() {
-        let results = vec![Ok(paged(&["r1", "r2"])), Ok(paged(&["r3"]))];
-        let merged = fan_merge_paged(results, "test").unwrap();
-        assert_eq!(merged.data.len(), 3);
-    }
-
-    #[test]
-    fn merge_paged_deduplicates_by_id() {
-        let results = vec![Ok(paged(&["r1"])), Ok(paged(&["r1"]))];
-        let merged = fan_merge_paged(results, "test").unwrap();
-        assert_eq!(merged.data.len(), 1);
-    }
-
-    #[test]
-    fn merge_paged_uses_first_responding_metadata() {
-        let mut first = paged(&["r1"]);
-        first.total = 999;
-        first.page = 3;
-        first.per_page = 25;
-        let results = vec![Ok(first), Ok(paged(&["r2"]))];
-        let merged = fan_merge_paged(results, "test").unwrap();
-        // total = max(999, 2) = 999
-        assert_eq!(merged.total, 999);
-        assert_eq!(merged.page, 3);
-        assert_eq!(merged.per_page, 25);
-    }
-
-    #[test]
-    fn merge_paged_all_failed_returns_error() {
-        let results: Vec<Result<PagedResponse>> =
-            vec![Err(anyhow::anyhow!("fail")), Err(anyhow::anyhow!("fail"))];
-        assert!(fan_merge_paged(results, "test").is_err());
-    }
 }

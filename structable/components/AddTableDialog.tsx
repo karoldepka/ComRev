@@ -3,9 +3,13 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+const ALLOW_TABLE_NAME_UPPERCASE =
+  process.env.NEXT_PUBLIC_ALLOW_TABLE_NAME_UPPERCASE === 'true';
+
 export type AddTablePayload = {
   title: string;
   description: string | null;
+  customId: string | null;
 };
 
 type Props = {
@@ -14,14 +18,37 @@ type Props = {
 };
 
 export default function AddTableDialog({ onConfirm, onClose }: Props) {
-  const [title, setTitle]           = useState('');
+  const [title, setTitle]             = useState('');
   const [description, setDescription] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [customId, setCustomId]       = useState('');
 
-  const canSubmit = title.trim().length > 0;
+  const idPattern = ALLOW_TABLE_NAME_UPPERCASE ? /^[a-zA-Z0-9_-]+$/ : /^[a-z0-9_-]+$/;
+  const idClean   = ALLOW_TABLE_NAME_UPPERCASE ? /[^a-zA-Z0-9_-]/g  : /[^a-z0-9_-]/g;
+  const idHint    = ALLOW_TABLE_NAME_UPPERCASE
+    ? 'Only letters, numbers, _ and - allowed'
+    : 'Only lowercase letters, numbers, _ and - allowed';
+
+  const derivedId = title.trim()
+    .replace(/\s+/g, '_')
+    .replace(idClean, '')
+    .replace(ALLOW_TABLE_NAME_UPPERCASE ? /(?:)/ : /[A-Z]/g, c => c.toLowerCase());
+
+  const idError: string | null = (() => {
+    if (!showAdvanced || !customId.trim()) return null;
+    if (!idPattern.test(customId.trim())) return idHint;
+    return null;
+  })();
+
+  const canSubmit = title.trim().length > 0 && !idError;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onConfirm({ title: title.trim(), description: description.trim() || null });
+    onConfirm({
+      title: title.trim(),
+      description: description.trim() || null,
+      customId: customId.trim() || null,
+    });
   };
 
   useEffect(() => {
@@ -66,6 +93,30 @@ export default function AddTableDialog({ onConfirm, onClose }: Props) {
             rows={2}
           />
         </label>
+
+        <button
+          type="button"
+          className="dialog-advanced-toggle"
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? '▾' : '▸'} Advanced
+        </button>
+
+        {showAdvanced && (
+          <label className="dialog-field">
+            <span className="dialog-label">
+              Table ID
+              <span className="dialog-hint"> — default: {derivedId || 'auto-generated'}</span>
+            </span>
+            <input
+              value={customId}
+              onChange={(e) => setCustomId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+              onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
+              placeholder={derivedId || 'auto-generated nanoid'}
+            />
+            {idError && <span className="dialog-error">{idError}</span>}
+          </label>
+        )}
 
         <div className="dialog-actions">
           <button type="button" className="dialog-btn-secondary" onClick={onClose}>

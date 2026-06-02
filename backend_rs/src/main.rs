@@ -8,10 +8,16 @@ mod hidden_row;
 mod ops_log;
 mod remark;
 mod store;
+mod sync_backend_impl;
 mod sync_service;
 mod table;
 mod types;
+mod write_errors;
 
+use std::sync::{Arc, Mutex};
+
+use axum::middleware::Next;
+use axum::response::Response;
 use axum::routing::delete;
 use axum::{routing::get, Router};
 use data_row::AppState;
@@ -58,7 +64,8 @@ async fn main() -> anyhow::Result<()> {
         .collect();
     structable_logger::info("backend_rs", "starting backend_rs");
 
-    let data_store = store::open_all(&db_entries).await?;
+    let event_tx = sync_service::make_channel();
+    let data_store = store::open_all(&db_entries, Some(event_tx.clone())).await?;
     structable_logger::info("backend_rs", "data store connected");
     data_store.ensure_schema().await?;
     structable_logger::info("backend_rs", "schema ready");
@@ -67,8 +74,6 @@ async fn main() -> anyhow::Result<()> {
     // No reads are served until recovery completes.
     ops_log::recover_pending(&data_store).await;
     structable_logger::info("backend_rs", "crash recovery complete");
-
-    let event_tx = sync_service::make_channel();
 
     let state = AppState {
         store: data_store,
@@ -136,6 +141,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/NUKE__DB", delete(nuke_db))
         .with_state(state.clone())
+        .layer(axum::middleware::from_fn(write_error_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 
@@ -181,4 +187,17 @@ async fn nuke_db(
         Ok(_) => (axum::http::StatusCode::OK, "NUKE__DB complete".to_string()),
         Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("NUKE__DB failed: {e}")),
     }
+}
+
+async fn write_error_middleware(req: axum::extract::Request, next: Next) -> Response {
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut response = write_errors::ERRORS.scope(errors, next.run(req)).await;
+    let errs = write_errors::take();
+    if !errs.is_empty() {
+        let json = serde_json::to_string(&errs).unwrap_or_else(|_| "[]".to_string());
+        if let Ok(val) = json.parse::<axum::http::HeaderValue>() {
+            response.headers_mut().insert("x-store-errors", val);
+        }
+    }
+    response
 }
