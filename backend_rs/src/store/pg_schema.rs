@@ -148,11 +148,13 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       ) THEN
         ALTER TABLE custom_columns ADD COLUMN title TEXT;
       END IF;
-      UPDATE custom_columns SET title = COALESCE(title, label, name) WHERE title IS NULL;
+      -- Migrate data and drop old columns in one guarded block so the UPDATE never
+      -- references columns that were already dropped on a previous startup.
       IF EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'name'
       ) THEN
+        UPDATE custom_columns SET title = COALESCE(title, label, name) WHERE title IS NULL;
         ALTER TABLE custom_columns DROP COLUMN name;
       END IF;
       IF EXISTS (
