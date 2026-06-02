@@ -148,7 +148,7 @@ async fn upsert_github_columns(client: &reqwest::Client, backend_url: &str) -> R
 
     // stars_diff sub-columns (one per time window)
     for window in DIFF_WINDOWS {
-        let id = format!("stars_diff_{window}");
+        let id = format!("stars_diff__{window}");
         upsert_column(
             client, backend_url, TABLE_ID,
             &id, window, &["numeric"],

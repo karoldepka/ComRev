@@ -48,6 +48,23 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
     .collect()
 }
 
+/// Columns for the "tables" meta-table view.
+/// `title` and `description` are editable; all others are read-only.
+pub fn table_view_columns() -> Vec<CustomColumn> {
+    table_registry_columns()
+        .into_iter()
+        .map(|mut c| {
+            if c.id == "title" || c.id == "description" {
+                c.read_only = false;
+            }
+            if c.id == "id" {
+                c.is_frozen = true;
+            }
+            c
+        })
+        .collect()
+}
+
 pub mod mongo;
 pub mod pg;
 mod pg_schema;

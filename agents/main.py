@@ -22,11 +22,12 @@ load_dotenv()
 from structable_agent.graph import graph  # noqa: E402
 
 app = FastAPI(title="Structable Agent Service")
+AGENT_NAME = "default"
 
 sdk = CopilotKitSDK(
     agents=[
         LangGraphAGUIAgent(
-            name="structable_agent",
+            name=AGENT_NAME,
             description=(
                 "AI assistant for Structable — can query tables, columns, and row data "
                 "to help users explore and understand their information."
@@ -41,7 +42,7 @@ add_fastapi_endpoint(app, sdk, "/copilotkit")
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "agent": "structable_agent"}
+    return {"status": "ok", "agent": AGENT_NAME}
 
 
 if __name__ == "__main__":

@@ -48,14 +48,20 @@ export default function TablePage({ tableId }: Props) {
     setTables((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
   }, []);
 
+  const handleNukeDb = useCallback(async () => {
+    await tableApiRef.current!.nukeDb();
+    toast.success('Database nuked. Reload to start fresh.');
+  }, []);
+
   return (
     <>
       <TableToolbar
         tableId={tableId}
         tables={tables}
         onAddTable={() => setShowAddTable(true)}
-        onShowAllTables={() => toast.info('Table list coming soon')}
+        onShowAllTables={() => router.push('/')}
         onRenameTable={handleRenameTable}
+        onNukeDb={handleNukeDb}
       />
       {showAddTable && (
         <AddTableDialog

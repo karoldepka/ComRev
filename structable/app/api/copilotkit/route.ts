@@ -11,7 +11,7 @@ const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
   endpoint: "/api/copilotkit",
   runtime: new CopilotRuntime({
     agents: {
-      structable_agent: new LangGraphHttpAgent({ url: AGENTS_URL }),
+      default: new LangGraphHttpAgent({ url: AGENTS_URL }),
     },
   }),
 });

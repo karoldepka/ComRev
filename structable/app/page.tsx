@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation';
+import TablePage from '../components/TablePage';
 
 export default function Home() {
-  redirect(`/t/${process.env.NEXT_PUBLIC_TABLE_ID ?? '_default'}`);
+  return (
+    <main className="page-shell">
+      <TablePage tableId="tables" />
+    </main>
+  );
 }

@@ -726,6 +726,8 @@ th[draggable] {
 .table-dropdown button:hover,
 .table-dropdown-link:hover { background: #f1f5f9; }
 .table-dropdown .menu-active { font-weight: 600; color: #ea580c; }
+.table-dropdown .menu-danger { color: #dc2626; }
+.table-dropdown .menu-danger:hover { background: #fee2e2; color: #991b1b; }
 .table-dropdown-section-label {
   padding: 0.35rem 0.8rem 0.2rem;
   font-size: 0.72rem;

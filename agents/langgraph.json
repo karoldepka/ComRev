@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "structable_agent": "./structable_agent/graph.py:graph"
+    "default": "./structable_agent/graph.py:graph"
   },
   "env": ".env"
 }

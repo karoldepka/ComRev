@@ -260,7 +260,7 @@ impl DataStore for PgStore {
 
     async fn list_custom_columns(&self, table_id: &str) -> Result<Vec<CustomColumn>> {
         if table_id == "tables" {
-            return Ok(super::table_registry_columns());
+            return Ok(super::table_view_columns());
         }
 
         Ok(sqlx::query_as::<_, CustomColumn>(
@@ -537,6 +537,24 @@ impl DataStore for PgStore {
         col_id: &str,
         value: serde_json::Value,
     ) -> Result<()> {
+        // Tables are stored in the `tables` table, not in `table_rows`.
+        if table_id == "tables" {
+            let sql = match col_id {
+                "title" => "UPDATE tables SET title = $2::text,
+                              when_last_modified = NOW(), modify_count = modify_count + 1
+                            WHERE id = $1",
+                "description" => "UPDATE tables SET description = $2::text,
+                                    when_last_modified = NOW(), modify_count = modify_count + 1
+                                  WHERE id = $1",
+                _ => return Ok(()), // read-only columns silently ignored
+            };
+            sqlx::query(sql)
+                .bind(row_id)
+                .bind(value.as_str().unwrap_or(""))
+                .execute(&self.pool)
+                .await?;
+            return Ok(());
+        }
         sqlx::query(
             "INSERT INTO table_rows (id, table_id, custom_values)
              VALUES ($1, $2, jsonb_build_object($3::text, $4::jsonb))
