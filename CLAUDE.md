@@ -97,8 +97,12 @@ Each cell should have its own url ( .../table_id/#rowId--column_id )
 Later AI will edit table cells; so we need to facilitate this in the design.
 
 # DB Architecture - indexes
-* each user-visible table has a corresponding real physical SQL table ( / Mongo collection). This is to facilitate indexes. Each row has custom_vals JSONB field, which facilitates values in custom columns. Whenever a new custom column is added, an index on its field is added (field inside JSONB). Nested objects like stars_diff should get its own columns (and thus sort ascending+descending index) per sub-field, with id with double underscore e.g. stars_diff__7d.
-Columns (and thus indexes) should be added dynamically by the backend, upon encountering a new sub-field. While backend has the full user-defined schema in memory after launching. So upload_to_structable should not worry about creating columns.
+* each user-visible table has a corresponding real physical SQL table ( / Mongo collection). This is to facilitate indexes. Each row has custom_vals JSONB field, which facilitates values in custom columns. Whenever a new custom column is added, an index on its field is added (field inside JSONB). Nested objects like stars_diff should get its own columns (and thus sort ascending+descending index) per sub-field, with column id with double underscore e.g. stars_diff__7d.
+Columns (and thus indexes) should be added dynamically by the backend, upon encountering a new field or sub-field. While backend has the full user-defined schema in memory after launching, it can detect new fields / sub-fields and create column and index. So upload_to_structable should not worry about creating columns.
 
 # Operation-log operation's sequence number
 * keep in mind that this is local number, and not id. As we become more decentralized, it will become more important to keep this number local.
+
+# Testing
+make the big write an read tests work with our 2-postgres setup (supabase and neon).
+take the credentials from the toml with databases. Make sure tests get their own _test_ prefix and its own namespace/DB.
