@@ -32,15 +32,17 @@ Guidelines:
 
 
 def _build_llm() -> BaseChatModel:
-    ollama_model = os.getenv("OLLAMA_MODEL")
-    if ollama_model:
-        from langchain_ollama import ChatOllama
-        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        return ChatOllama(model=ollama_model, base_url=base_url, temperature=0)
+    # Default: Ollama (local, no API key). Set OLLAMA_MODEL=llama3.2 (or any pulled model).
+    # Fallback: Anthropic when ANTHROPIC_API_KEY is set and OLLAMA_MODEL is not.
+    ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
+    if os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OLLAMA_MODEL"):
+        from langchain_anthropic import ChatAnthropic
+        model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+        return ChatAnthropic(model=model, temperature=0, streaming=True)
 
-    from langchain_anthropic import ChatAnthropic
-    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-    return ChatAnthropic(model=model, temperature=0, streaming=True)
+    from langchain_ollama import ChatOllama
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    return ChatOllama(model=ollama_model, base_url=base_url, temperature=0)
 
 
 graph = create_react_agent(

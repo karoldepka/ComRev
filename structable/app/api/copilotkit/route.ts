@@ -1,28 +1,18 @@
 import {
   CopilotRuntime,
   copilotRuntimeNextJSAppRouterEndpoint,
-  langGraphPlatformEndpoint,
 } from "@copilotkit/runtime";
+import { LangGraphHttpAgent } from "@copilotkit/runtime/langgraph";
 
-// The LangGraph dev/serve server (default port 2024).
-// Override at deploy time via LANGGRAPH_URL env var.
-const LANGGRAPH_URL = process.env.LANGGRAPH_URL ?? "http://localhost:2024";
+// FastAPI agent service started by `uv run python main.py` (default port 8001).
+const AGENTS_URL = process.env.AGENTS_URL ?? "http://localhost:8001/copilotkit";
 
 const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
   endpoint: "/api/copilotkit",
   runtime: new CopilotRuntime({
-    remoteEndpoints: [
-      langGraphPlatformEndpoint({
-        deploymentUrl: LANGGRAPH_URL,
-        agents: [
-          {
-            name: "structable_agent",
-            description:
-              "AI assistant for Structable — can query tables, columns, and row data.",
-          },
-        ],
-      }),
-    ],
+    agents: {
+      structable_agent: new LangGraphHttpAgent({ url: AGENTS_URL }),
+    },
   }),
 });
 
