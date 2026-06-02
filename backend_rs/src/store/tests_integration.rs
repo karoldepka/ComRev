@@ -71,53 +71,54 @@ fn use_test_surreal_db() {
     }
 }
 
-/// Build a store from `databases.toml` credentials (falling back to env vars).
-/// Returns None if no URLs are configured, so callers can skip gracefully.
+/// Build (once) or retrieve the shared store.
+/// One pool is shared across all tests to stay within PgBouncer's session-mode limit.
 async fn make_store() -> Option<Arc<dyn DataStore>> {
-    // Tests don't call main(), so we install the rustls provider here.
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    static INIT: tokio::sync::OnceCell<Option<Arc<dyn DataStore>>> = tokio::sync::OnceCell::const_new();
 
-    use_test_surreal_db();
+    INIT.get_or_init(|| async {
+        // Tests don't call main(), so we install the rustls provider here.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        use_test_surreal_db();
 
-    // Prefer databases.toml (same file the server uses); fall back to env vars.
-    let entries: Vec<(String, String)> = match crate::db_config::load() {
-        Ok(Some(entries)) => entries,
-        Ok(None) => {
-            let urls = all_db_urls();
-            if urls.is_empty() {
-                eprintln!("skip: no DB URLs configured (databases.toml absent and no DB_URLS/DATABASE_URL)");
-                return None;
+        let entries: Vec<(String, String)> = match crate::db_config::load() {
+            Ok(Some(entries)) => entries,
+            Ok(None) => {
+                let urls = all_db_urls();
+                if urls.is_empty() {
+                    eprintln!("skip: no DB URLs configured (databases.toml absent and no DB_URLS/DATABASE_URL)");
+                    return None;
+                }
+                urls.into_iter().enumerate().map(|(i, u)| (format!("db_{i}"), u)).collect()
             }
-            urls.into_iter().enumerate().map(|(i, u)| (format!("db_{i}"), u)).collect()
-        }
-        Err(e) => {
-            eprintln!("db_config::load error: {e}");
+            Err(e) => { eprintln!("db_config::load error: {e}"); return None; }
+        };
+
+        if entries.is_empty() {
+            eprintln!("skip: databases.toml has no [[database]] entries");
             return None;
         }
-    };
 
-    if entries.is_empty() {
-        eprintln!("skip: databases.toml has no [[database]] entries");
-        return None;
-    }
-
-    let entry_refs: Vec<(&str, &str)> =
-        entries.iter().map(|(id, url)| (id.as_str(), url.as_str())).collect();
-    let store = match open_all(&entry_refs, None).await {
-        Ok(s) => s,
-        Err(e) => { eprintln!("Failed to open store: {e}"); return None; }
-    };
-    if let Err(e) = store.ensure_schema().await {
-        eprintln!("ensure_schema failed: {e}");
-        return None;
-    }
-    Some(store)
+        let entry_refs: Vec<(&str, &str)> =
+            entries.iter().map(|(id, url)| (id.as_str(), url.as_str())).collect();
+        let store = match open_all(&entry_refs, None).await {
+            Ok(s) => s,
+            Err(e) => { eprintln!("Failed to open store: {e}"); return None; }
+        };
+        if let Err(e) = store.ensure_schema().await {
+            eprintln!("ensure_schema failed: {e}");
+            return None;
+        }
+        Some(store)
+    }).await.clone()
 }
 
 // ── Postgres cleanup helpers (direct sqlx) ────────────────────────────────────
 
 async fn pg_cleanup(url: &str) {
-    let Ok(pool) = sqlx::PgPool::connect(url).await else { return };
+    let Ok(pool) = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(url).await else { return };
 
     // Drop per-user physical tables for test table IDs (named t__test_*).
     // LEFT() avoids LIKE underscore-wildcard escaping issues.

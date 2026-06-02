@@ -76,7 +76,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     r#"
     CREATE TABLE IF NOT EXISTS custom_columns (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
+      title TEXT,
       label TEXT,
       description TEXT,
       expression TEXT,
@@ -95,8 +95,10 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       modify_count INTEGER NOT NULL DEFAULT 0
     );
     "#,
+    "ALTER TABLE custom_columns DROP COLUMN IF EXISTS name;",
     r#"
     ALTER TABLE custom_columns
+      ADD COLUMN IF NOT EXISTS title TEXT,
       ADD COLUMN IF NOT EXISTS label TEXT,
       ADD COLUMN IF NOT EXISTS description TEXT,
       ADD COLUMN IF NOT EXISTS expression TEXT,
@@ -117,16 +119,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     r#"
     DO $$
     BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'created_at'
-      ) AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'custom_columns' AND column_name = 'when_created'
-      ) THEN
-        ALTER TABLE custom_columns RENAME COLUMN created_at TO when_created;
-      END IF;
-
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'custom_columns_types_check') THEN
         ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_types_check
           CHECK (types <@ ARRAY['text','integer','bigint','numeric','boolean','url','array','jsonb','timestamptz']::TEXT[] AND array_length(types, 1) > 0);

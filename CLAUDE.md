@@ -109,3 +109,6 @@ take the credentials from the toml with databases. Make sure tests get their own
 
 # WASM
 As much as possible code should be in sync_core wasm
+
+# Backward compatibility
+* for now, until further notice, don't worry about backward compatibility - keep the code clean and not polluted with backward compatibility edge cases. I will nuke the DB anyway and I'm the only user for now.
