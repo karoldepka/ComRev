@@ -43,8 +43,9 @@ export type HeaderMenuProps = BaseProps & {
   onHide:       (ids: string[]) => void;
   onAddColClick:(colId: string) => void;
   onToggleFrozen?: (colId: string, next: boolean) => void;
-  onDeleteCol:  (colId: string) => void;
-  onUngroup?:   (groupId: string) => void;
+  onDeleteCol:    (colId: string) => void;
+  onUngroup?:     (groupId: string) => void;
+  onProperties?:  (colId: string) => void;
 };
 
 export type CellMenuProps = BaseProps & {
@@ -114,7 +115,7 @@ export default function ContextMenu(props: ContextMenuProps) {
       sort, filters, filterDraft, setFilterDraft,
       draftText, setDraftText,
       onSetMode, onSort, onApplyFilter, onClearFilter,
-      onHide, onAddColClick, onToggleFrozen, onDeleteCol, onUngroup,
+      onHide, onAddColClick, onToggleFrozen, onDeleteCol, onUngroup, onProperties,
     } = props;
 
     const flagKey    = `header:${column.id}`;
@@ -228,6 +229,14 @@ export default function ContextMenu(props: ContextMenuProps) {
               onClick={(e) => { e.stopPropagation(); onUngroup(column.id); }}
             >
               Ungroup
+            </button>
+          )}
+          {onProperties && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onProperties(column.id); onClose(); }}
+            >
+              Column properties…
             </button>
           )}
           <button

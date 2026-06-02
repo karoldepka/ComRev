@@ -4,9 +4,9 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(serde::Serialize)]
 pub struct PagedResponse {
-    pub data:     Vec<JsonValue>,
-    pub total:    i64,
-    pub page:     u32,
+    pub data: Vec<JsonValue>,
+    pub total: i64,
+    pub page: u32,
     pub per_page: u32,
 }
 
@@ -22,10 +22,10 @@ pub struct PagedResponse {
 ///   `q=text`                — full-text search across indexed text columns
 #[derive(Debug, Default, Clone)]
 pub struct RowQuery {
-    pub sort:     Option<String>,
-    pub page:     u32,
+    pub sort: Option<String>,
+    pub page: u32,
     pub per_page: u32,
-    pub q:        Option<String>,
+    pub q: Option<String>,
 
     /// Numeric range filters built from `*_min` / `*_max` URL params.
     /// Each entry: (dot-path, min, max)
@@ -56,30 +56,52 @@ impl RowQuery {
     pub fn from_map(map: &HashMap<String, String>) -> Self {
         const KNOWN: &[&str] = &["sort", "page", "per_page", "q"];
 
-        let mut min_map:   HashMap<String, f64>            = HashMap::new();
-        let mut max_map:   HashMap<String, f64>            = HashMap::new();
-        let mut after_map: HashMap<String, DateTime<Utc>>  = HashMap::new();
-        let mut before_map:HashMap<String, DateTime<Utc>>  = HashMap::new();
-        let mut value_map: HashMap<String, Vec<String>>    = HashMap::new();
-        let mut like_map:  HashMap<String, Vec<String>>    = HashMap::new();
+        let mut min_map: HashMap<String, f64> = HashMap::new();
+        let mut max_map: HashMap<String, f64> = HashMap::new();
+        let mut after_map: HashMap<String, DateTime<Utc>> = HashMap::new();
+        let mut before_map: HashMap<String, DateTime<Utc>> = HashMap::new();
+        let mut value_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut like_map: HashMap<String, Vec<String>> = HashMap::new();
 
         for (key, val) in map {
-            if KNOWN.contains(&key.as_str()) { continue; }
+            if KNOWN.contains(&key.as_str()) {
+                continue;
+            }
 
             if let Some(path) = key.strip_suffix("_min") {
-                if let Ok(n) = val.parse::<f64>() { min_map.insert(path.to_owned(), n); }
+                if let Ok(n) = val.parse::<f64>() {
+                    min_map.insert(path.to_owned(), n);
+                }
             } else if let Some(path) = key.strip_suffix("_max") {
-                if let Ok(n) = val.parse::<f64>() { max_map.insert(path.to_owned(), n); }
+                if let Ok(n) = val.parse::<f64>() {
+                    max_map.insert(path.to_owned(), n);
+                }
             } else if let Some(path) = key.strip_suffix("_after") {
-                if let Ok(dt) = val.parse::<DateTime<Utc>>() { after_map.insert(path.to_owned(), dt); }
+                if let Ok(dt) = val.parse::<DateTime<Utc>>() {
+                    after_map.insert(path.to_owned(), dt);
+                }
             } else if let Some(path) = key.strip_suffix("_before") {
-                if let Ok(dt) = val.parse::<DateTime<Utc>>() { before_map.insert(path.to_owned(), dt); }
+                if let Ok(dt) = val.parse::<DateTime<Utc>>() {
+                    before_map.insert(path.to_owned(), dt);
+                }
             } else if let Some(path) = key.strip_suffix("_like") {
-                let patterns: Vec<String> = val.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect();
-                if !patterns.is_empty() { like_map.insert(path.to_owned(), patterns); }
+                let patterns: Vec<String> = val
+                    .split(',')
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if !patterns.is_empty() {
+                    like_map.insert(path.to_owned(), patterns);
+                }
             } else {
-                let vals: Vec<String> = val.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect();
-                if !vals.is_empty() { value_map.insert(key.to_owned(), vals); }
+                let vals: Vec<String> = val
+                    .split(',')
+                    .map(|s| s.trim().to_owned())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if !vals.is_empty() {
+                    value_map.insert(key.to_owned(), vals);
+                }
             }
         }
 
@@ -87,29 +109,50 @@ impl RowQuery {
             keys: &mut HashSet<String>,
             a: &HashMap<String, V>,
             b: &HashMap<String, V>,
-        ) { a.keys().chain(b.keys()).for_each(|k| { keys.insert(k.clone()); }); }
+        ) {
+            a.keys().chain(b.keys()).for_each(|k| {
+                keys.insert(k.clone());
+            });
+        }
 
         let mut range_keys: HashSet<String> = HashSet::new();
         merge_pair(&mut range_keys, &min_map, &max_map);
-        let range_filters = range_keys.into_iter()
-            .map(|p| (p.clone(), min_map.get(&p).copied(), max_map.get(&p).copied()))
+        let range_filters = range_keys
+            .into_iter()
+            .map(|p| {
+                (
+                    p.clone(),
+                    min_map.get(&p).copied(),
+                    max_map.get(&p).copied(),
+                )
+            })
             .collect();
 
         let mut date_keys: HashSet<String> = HashSet::new();
         merge_pair(&mut date_keys, &after_map, &before_map);
-        let date_filters = date_keys.into_iter()
-            .map(|p| (p.clone(), after_map.get(&p).copied(), before_map.get(&p).copied()))
+        let date_filters = date_keys
+            .into_iter()
+            .map(|p| {
+                (
+                    p.clone(),
+                    after_map.get(&p).copied(),
+                    before_map.get(&p).copied(),
+                )
+            })
             .collect();
 
         RowQuery {
-            sort:     map.get("sort").cloned(),
-            page:     map.get("page").and_then(|v| v.parse().ok()).unwrap_or(1),
-            per_page: map.get("per_page").and_then(|v| v.parse().ok()).unwrap_or(50),
-            q:        map.get("q").cloned(),
+            sort: map.get("sort").cloned(),
+            page: map.get("page").and_then(|v| v.parse().ok()).unwrap_or(1),
+            per_page: map
+                .get("per_page")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50),
+            q: map.get("q").cloned(),
             range_filters,
             date_filters,
             value_filters: value_map.into_iter().collect(),
-            like_filters:  like_map.into_iter().collect(),
+            like_filters: like_map.into_iter().collect(),
             read_timeout_secs: map.get("read_timeout_secs").and_then(|v| v.parse().ok()),
         }
     }

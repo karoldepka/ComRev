@@ -48,8 +48,7 @@ export type ApiTable = {
 
 export type ApiCustomColumn = {
   id: string;
-  name: string;
-  label: string | null;
+  title: string | null;
   description: string | null;
   expression: string | null;
   position_after: string | null;

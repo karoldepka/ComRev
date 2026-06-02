@@ -1,6 +1,6 @@
 mod custom_column;
-mod db_config;
 mod data_row;
+mod db_config;
 mod error;
 mod flag;
 mod hidden_column;
@@ -29,11 +29,11 @@ async fn main() -> anyhow::Result<()> {
 
     structable_logger::init("backend_rs=debug,tower_http=info");
 
-    // Resolve DB URLs: databases.toml > DB_URLS > DATABASE_URL (+ SURREAL_URL fallback).
-    let db_urls_owned: Vec<String> = match db_config::load()? {
-        Some(urls) => {
+    // Resolve DB (id, url) pairs: databases.toml > DB_URLS > DATABASE_URL (+ SURREAL_URL fallback).
+    let db_entries_owned: Vec<(String, String)> = match db_config::load()? {
+        Some(entries) => {
             structable_logger::info("backend_rs", "loaded DB config from databases.toml");
-            urls
+            entries
         }
         None => {
             let raw = std::env::var("DB_URLS").unwrap_or_else(|_| {
@@ -44,13 +44,21 @@ async fn main() -> anyhow::Result<()> {
                     None => primary,
                 }
             });
-            raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .enumerate()
+                .map(|(i, url)| (format!("db_{i}"), url.to_owned()))
+                .collect()
         }
     };
-    let db_urls: Vec<&str> = db_urls_owned.iter().map(String::as_str).collect();
+    let db_entries: Vec<(&str, &str)> = db_entries_owned
+        .iter()
+        .map(|(id, url)| (id.as_str(), url.as_str()))
+        .collect();
     structable_logger::info("backend_rs", "starting backend_rs");
 
-    let data_store = store::open_all(&db_urls).await?;
+    let data_store = store::open_all(&db_entries).await?;
     structable_logger::info("backend_rs", "data store connected");
     data_store.ensure_schema().await?;
     structable_logger::info("backend_rs", "schema ready");
@@ -74,10 +82,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/data-rows", get(data_row::list_data_rows))
         // Compatibility route for older frontend builds.
         .route("/repos", get(data_row::list_data_rows))
-        .route("/tables/:table_id/data-rows", get(data_row::list_data_rows_for_table))
-        .route("/tables/:table_id/rows", axum::routing::post(data_row::create_row))
-        .route("/tables/:table_id/rows/batch-upsert", axum::routing::post(data_row::batch_upsert_rows))
-        .route("/github-repos/upsert-batch", axum::routing::post(data_row::upsert_github_repos_batch))
+        .route(
+            "/tables/:table_id/data-rows",
+            get(data_row::list_data_rows_for_table),
+        )
+        .route(
+            "/tables/:table_id/rows",
+            axum::routing::post(data_row::create_row),
+        )
+        .route(
+            "/tables/:table_id/rows/batch-upsert",
+            axum::routing::post(data_row::batch_upsert_rows),
+        )
+        .route(
+            "/github-repos/upsert-batch",
+            axum::routing::post(data_row::upsert_github_repos_batch),
+        )
         .route(
             "/tables/:table_id/rows/:row_id/values",
             axum::routing::patch(data_row::patch_cell_value),
@@ -114,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
             "/tables/:id",
             axum::routing::patch(table::patch).delete(table::delete),
         )
+        .route("/NUKE__DB", delete(nuke_db))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
@@ -150,4 +171,14 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({ "status": "ok" }))
+}
+
+async fn nuke_db(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> (axum::http::StatusCode, String) {
+    tracing::warn!("NUKE__DB requested via HTTP");
+    match state.store.nuke_db().await {
+        Ok(_) => (axum::http::StatusCode::OK, "NUKE__DB complete".to_string()),
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("NUKE__DB failed: {e}")),
+    }
 }

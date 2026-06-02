@@ -197,6 +197,23 @@ export class TableApi {
     );
   }
 
+  async setColumnSourcePath(tableId: string, columnId: string, sourcePath: string[] | null): Promise<ApiCustomColumn> {
+    return this.patch<ApiCustomColumn>(
+      `/tables/${encodeURIComponent(tableId)}/custom-columns/${encodeURIComponent(columnId)}`,
+      { source_path: sourcePath ?? [] },
+    );
+  }
+
+  async nukeDb(): Promise<void> {
+    const url = `${this.base}/NUKE__DB`;
+    const res = await fetch(url, { method: 'DELETE' });
+    if (!res.ok) {
+      let text = '';
+      try { text = await res.text(); } catch { /* no body */ }
+      throw new Error(`NUKE__DB failed — HTTP ${res.status}${text ? `: ${text}` : ''}`);
+    }
+  }
+
   async fetchRemarks(): Promise<ApiRemark[]> {
     return this.get<ApiRemark[]>('/remarks');
   }

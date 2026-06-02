@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::db_err, data_row::AppState};
+use crate::{data_row::AppState, error::db_err};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

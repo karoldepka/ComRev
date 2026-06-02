@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use serde_json::Value;
 use crate::store::{DataStore, PendingOp};
+use serde_json::Value;
+use std::sync::Arc;
 
 /// Insert a pending ops log entry (applied_at = NULL). Idempotent: ON CONFLICT DO NOTHING.
 pub async fn begin(pool: &sqlx::PgPool, id: &str, op: &str, payload: Value, tx_id: Option<&str>) {
@@ -30,7 +30,12 @@ pub async fn pending(pool: &sqlx::PgPool) -> anyhow::Result<Vec<PendingOp>> {
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, op, payload, tx_id)| PendingOp { id, op, payload, tx_id })
+        .map(|(id, op, payload, tx_id)| PendingOp {
+            id,
+            op,
+            payload,
+            tx_id,
+        })
         .collect())
 }
 
@@ -67,118 +72,154 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
 
     match op.op.as_str() {
         "flag.upsert" => {
-            store.upsert_flag(
-                str(p, "id")?, str(p, "key")?, str(p, "color")?,
-            ).await?;
+            store
+                .upsert_flag(str(p, "id")?, str(p, "key")?, str(p, "color")?)
+                .await?;
         }
         "flag.delete" => {
             store.delete_flag(str(p, "key")?).await?;
         }
         "remark.upsert" => {
             let targets: Vec<crate::remark::RemarkTarget> = p["targets"]
-                .as_array().unwrap_or(&vec![])
+                .as_array()
+                .unwrap_or(&vec![])
                 .iter()
                 .filter_map(|t| {
                     Some(crate::remark::RemarkTarget {
-                        row_id:    t["row_id"].as_str()?.to_owned(),
+                        row_id: t["row_id"].as_str()?.to_owned(),
                         column_id: t["column_id"].as_str()?.to_owned(),
                     })
                 })
                 .collect();
-            let resolved_at = p["resolved_at"].as_str()
+            let resolved_at = p["resolved_at"]
+                .as_str()
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
-            store.upsert_remark(
-                str(p, "id")?,
-                str_or(p, "body", ""),
-                str_or(p, "kind", "note"),
-                p["is_private"].as_bool().unwrap_or(false),
-                resolved_at,
-                &targets,
-            ).await?;
+            store
+                .upsert_remark(
+                    str(p, "id")?,
+                    str_or(p, "body", ""),
+                    str_or(p, "kind", "note"),
+                    p["is_private"].as_bool().unwrap_or(false),
+                    resolved_at,
+                    &targets,
+                )
+                .await?;
         }
         "remark.delete" => {
             store.delete_remark(str(p, "id")?).await?;
         }
         "hidden_row.add" => {
-            store.add_hidden_row(str(p, "id")?, str(p, "row_id")?).await?;
+            store
+                .add_hidden_row(str(p, "id")?, str(p, "row_id")?)
+                .await?;
         }
         "hidden_row.remove" => {
             store.remove_hidden_row(str(p, "row_id")?).await?;
         }
         "hidden_column.add" => {
-            store.add_hidden_column(str(p, "id")?, str(p, "column_id")?).await?;
+            store
+                .add_hidden_column(str(p, "id")?, str(p, "column_id")?)
+                .await?;
         }
         "hidden_column.remove" => {
             store.remove_hidden_column(str(p, "column_id")?).await?;
         }
         "custom_column.upsert" => {
             let to_str_vec = |v: &serde_json::Value| -> Option<Vec<String>> {
-                v.as_array().map(|arr| arr.iter().filter_map(|s| s.as_str().map(str::to_owned)).collect())
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(str::to_owned))
+                        .collect()
+                })
             };
-            store.upsert_custom_column(
-                str(p, "table_id")?, str(p, "id")?,
-                &crate::custom_column::CustomColumnInput {
-                    name:          str(p, "name")?.to_owned(),
-                    label:         p["label"].as_str().map(str::to_owned),
-                    description:   p["description"].as_str().map(str::to_owned),
-                    expression:    p["expression"].as_str().map(str::to_owned),
-                    position_after: p["position_after"].as_str().map(str::to_owned),
-                    is_group:      p["is_group"].as_bool().unwrap_or(false),
-                    parent_ids:    to_str_vec(&p["parent_ids"]).unwrap_or_default(),
-                    source_path:   to_str_vec(&p["source_path"]),
-                    types:         to_str_vec(&p["types"]),
-                    data_types:    to_str_vec(&p["data_types"]),
-                },
-            ).await?;
+            store
+                .upsert_custom_column(
+                    str(p, "table_id")?,
+                    str(p, "id")?,
+                    &crate::custom_column::CustomColumnInput {
+                        title: p["title"].as_str().map(str::to_owned),
+                        description: p["description"].as_str().map(str::to_owned),
+                        expression: p["expression"].as_str().map(str::to_owned),
+                        position_after: p["position_after"].as_str().map(str::to_owned),
+                        read_only: p["read_only"].as_bool().unwrap_or(false),
+                        is_group: p["is_group"].as_bool().unwrap_or(false),
+                        parent_ids: to_str_vec(&p["parent_ids"]).unwrap_or_default(),
+                        source_path: to_str_vec(&p["source_path"]),
+                        types: to_str_vec(&p["types"]),
+                        data_types: to_str_vec(&p["data_types"]),
+                    },
+                )
+                .await?;
         }
         "custom_column.delete" => {
             store.delete_custom_column(str(p, "id")?).await?;
         }
         "custom_column.freeze" => {
-            store.set_table_column_frozen(
-                str(p, "table_id")?, str(p, "column_id")?,
-                p["is_frozen"].as_bool().unwrap_or(false),
-            ).await?;
+            store
+                .set_table_column_frozen(
+                    str(p, "table_id")?,
+                    str(p, "column_id")?,
+                    p["is_frozen"].as_bool().unwrap_or(false),
+                )
+                .await?;
         }
         "table.create" => {
-            store.create_table(
-                str(p, "id")?, str(p, "title")?,
-                p["description"].as_str(), p["who_created"].as_str(),
-            ).await?;
+            store
+                .create_table(
+                    str(p, "id")?,
+                    str(p, "title")?,
+                    p["description"].as_str(),
+                    p["who_created"].as_str(),
+                )
+                .await?;
         }
         "table.patch" => {
-            store.patch_table(
-                str(p, "id")?,
-                p["title"].as_str(),
-                p["description"].as_str(),
-                p["who_last_modified"].as_str(),
-            ).await?;
+            store
+                .patch_table(
+                    str(p, "id")?,
+                    p["title"].as_str(),
+                    p["description"].as_str(),
+                    p["who_last_modified"].as_str(),
+                )
+                .await?;
         }
         "table.delete" => {
             store.delete_table(str(p, "id")?).await?;
         }
         "row.create" => {
-            store.create_row(
-                str(p, "table_id")?, str(p, "row_id")?,
-                p["title"].as_str(), p["who_created"].as_str(),
-            ).await?;
+            store
+                .create_row(
+                    str(p, "table_id")?,
+                    str(p, "row_id")?,
+                    p["title"].as_str(),
+                    p["who_created"].as_str(),
+                )
+                .await?;
         }
         "row.patch" => {
-            store.patch_row_value(
-                str(p, "table_id")?, str(p, "row_id")?, str(p, "col_id")?,
-                p["value"].clone(),
-            ).await?;
+            store
+                .patch_row_value(
+                    str(p, "table_id")?,
+                    str(p, "row_id")?,
+                    str(p, "col_id")?,
+                    p["value"].clone(),
+                )
+                .await?;
         }
         "github_repos.batch_upsert" => {
-            let repos = p["repos"].as_array()
-                .ok_or_else(|| anyhow::anyhow!("github_repos.batch_upsert payload missing 'repos'"))?
+            let repos = p["repos"]
+                .as_array()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("github_repos.batch_upsert payload missing 'repos'")
+                })?
                 .clone();
             store.upsert_github_repos_batch(&repos).await?;
         }
         "rows.batch_upsert" => {
             let table_id = str(p, "table_id")?;
-            let rows = p["rows"].as_array()
+            let rows = p["rows"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("rows.batch_upsert payload missing 'rows'"))?
                 .clone();
             store.upsert_rows_batch(table_id, &rows).await?;
@@ -194,7 +235,9 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
 }
 
 fn str<'a>(p: &'a Value, key: &str) -> anyhow::Result<&'a str> {
-    p[key].as_str().ok_or_else(|| anyhow::anyhow!("missing field '{key}' in op payload"))
+    p[key]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("missing field '{key}' in op payload"))
 }
 
 fn str_or<'a>(p: &'a Value, key: &str, default: &'a str) -> &'a str {

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ApiTable } from '../types/table';
+import NukeDbDialog from './NukeDbDialog';
 
 type Props = {
   tableId?: string;
@@ -13,6 +14,7 @@ type Props = {
   onAddColumn?: () => void;
   onShowAllTables?: () => void;
   onRenameTable?: (id: string, title: string) => void;
+  onNukeDb?: () => Promise<void>;
 };
 
 const TABLE_IMPLS = [
@@ -21,7 +23,7 @@ const TABLE_IMPLS = [
 ];
 
 export default function TableToolbar({
-  tableId, title, tables = [], onAddTable, onAddColumn, onShowAllTables, onRenameTable,
+  tableId, title, tables = [], onAddTable, onAddColumn, onShowAllTables, onRenameTable, onNukeDb,
 }: Props) {
   const path = usePathname();
   const current = tableId ? tables.find((t) => t.id === tableId) : undefined;
@@ -30,6 +32,7 @@ export default function TableToolbar({
   const hasTableActions = !!(onAddTable || onAddColumn || onShowAllTables || tables.length > 0);
 
   const [menuOpen, setMenuOpen]     = useState(false);
+  const [nukeOpen, setNukeOpen]     = useState(false);
   const [editing, setEditing]       = useState(false);
   const [titleDraft, setTitleDraft] = useState(displayTitle);
 
@@ -67,6 +70,7 @@ export default function TableToolbar({
   };
 
   return (
+    <>
     <div className="table-toolbar">
       <button
         ref={btnRef}
@@ -124,6 +128,18 @@ export default function TableToolbar({
                   </button>
                 </>
               )}
+              {onNukeDb && (
+                <>
+                  <div className="menu-divider" />
+                  <button
+                    type="button"
+                    className="menu-danger"
+                    onClick={() => { setMenuOpen(false); setNukeOpen(true); }}
+                  >
+                    NUKE__DB
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -155,5 +171,12 @@ export default function TableToolbar({
         </span>
       )}
     </div>
+    {nukeOpen && onNukeDb && (
+      <NukeDbDialog
+        onConfirm={() => { setNukeOpen(false); onNukeDb(); }}
+        onCancel={() => setNukeOpen(false)}
+      />
+    )}
+  </>
   );
 }

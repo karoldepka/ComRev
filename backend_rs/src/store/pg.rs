@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use sqlx::{PgPool, Postgres, QueryBuilder, Row, postgres::PgPoolOptions};
+use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, QueryBuilder, Row};
 
 use super::DataStore;
 use crate::{
@@ -17,26 +17,61 @@ use crate::{
 
 pub struct PgStore {
     pub(super) pool: PgPool,
+    db_id: String,
 }
 
 impl PgStore {
-    pub async fn connect(url: &str) -> Result<Self> {
+    pub async fn connect(db_id: &str, url: &str) -> Result<Self> {
+        let short = url.split('@').last().unwrap_or(url);
+        let max_conn = std::env::var("PG_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(10);
+        let acquire_secs = std::env::var("PG_ACQUIRE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(5);
         let pool = PgPoolOptions::new()
-            .max_connections(10)
-            .acquire_timeout(Duration::from_secs(5))
+            .max_connections(max_conn)
+            .acquire_timeout(Duration::from_secs(acquire_secs))
             .connect(url)
-            .await?;
-        Ok(Self { pool })
+            .await
+            .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
+        tracing::info!(db_id, url = short, max_conn, acquire_timeout_secs = acquire_secs, "PgStore: connected");
+        Ok(Self { pool, db_id: db_id.to_string() })
     }
 }
 
 #[async_trait]
 impl DataStore for PgStore {
     async fn ensure_schema(&self) -> Result<()> {
-        for sql in super::pg_schema::POSTGRES_SCHEMA {
-            sqlx::query(sql).execute(&self.pool).await?;
+        let stmts = super::pg_schema::POSTGRES_SCHEMA;
+        let db_id = &self.db_id;
+        tracing::info!(db_id, statement_count = stmts.len(), "PgStore: applying schema");
+        for (i, sql) in stmts.iter().enumerate() {
+            sqlx::query(sql)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema statement {i} failed: {e}"))?;
         }
-        super::pg_schema::seed_builtin_columns(&self.pool).await?;
+        tracing::info!(db_id, "PgStore: schema ready");
+        Ok(())
+    }
+  
+    async fn nuke_db(&self) -> Result<()> {
+        let db_id = &self.db_id;
+        tracing::warn!(db_id, "NUKE__DB: dropping all Postgres tables");
+        for table in &[
+            "remark_targets", "table_custom_columns", "table_rows",
+            "remarks", "custom_columns", "tables", "github_repos",
+            "cell_flags", "hidden_rows", "hidden_columns", "operations_log",
+        ] {
+            sqlx::query(&format!("DROP TABLE IF EXISTS \"{table}\" CASCADE"))
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("NUKE__DB({db_id}): failed to drop {table}: {e}"))?;
+        }
+        tracing::warn!(db_id, "NUKE__DB: complete");
         Ok(())
     }
 
@@ -229,7 +264,7 @@ impl DataStore for PgStore {
         }
 
         Ok(sqlx::query_as::<_, CustomColumn>(
-            "SELECT c.id::text, c.name, c.label, c.description, c.expression,
+            "SELECT c.id::text, c.title, c.description, c.expression,
                COALESCE(tcc.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -257,16 +292,17 @@ impl DataStore for PgStore {
         let col = sqlx::query_as::<_, CustomColumn>(
             "WITH upsert_col AS (
                INSERT INTO custom_columns
-                 (id, name, label, description, expression, position_after,
+                 (id, title, description, expression, position_after,
                   read_only, is_frozen, is_group, parent_ids, source_path, types, data_types)
-               VALUES ($1, $2, $3, $4, $5, $6, false, false, $8, $9, $10, $11, $12)
+               VALUES ($1, $2, $3, $4, $5, $12, false, $7, $8, $9, $10, $11)
                ON CONFLICT (id) DO UPDATE
-                 SET name = EXCLUDED.name, label = EXCLUDED.label,
+                 SET title = EXCLUDED.title,
                      description = EXCLUDED.description,
                      expression = EXCLUDED.expression,
+                     read_only = EXCLUDED.read_only,
                      is_group = EXCLUDED.is_group,
                      parent_ids = EXCLUDED.parent_ids,
-                     source_path = EXCLUDED.source_path,
+                     source_path = COALESCE(EXCLUDED.source_path, custom_columns.source_path),
                      types = EXCLUDED.types,
                      data_types = EXCLUDED.data_types,
                      when_last_modified = NOW(),
@@ -275,14 +311,14 @@ impl DataStore for PgStore {
              ),
              attach AS (
                INSERT INTO table_custom_columns (table_id, column_id, position_after)
-               VALUES ($7, $1, $6)
+               VALUES ($6, $1, $5)
                ON CONFLICT (table_id, column_id) DO UPDATE
                  SET position_after = EXCLUDED.position_after,
                      when_last_modified = NOW(),
                      modify_count = table_custom_columns.modify_count + 1
                RETURNING *
              )
-             SELECT c.id::text, c.name, c.label, c.description, c.expression,
+             SELECT c.id::text, c.title, c.description, c.expression,
                COALESCE(a.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -293,8 +329,7 @@ impl DataStore for PgStore {
              JOIN attach a ON a.column_id = c.id",
         )
         .bind(id)
-        .bind(&input.name)
-        .bind(input.label.as_deref())
+        .bind(input.title.as_deref())
         .bind(input.description.as_deref())
         .bind(input.expression.as_deref())
         .bind(input.position_after.as_deref())
@@ -304,6 +339,7 @@ impl DataStore for PgStore {
         .bind(&input.source_path)
         .bind(&types)
         .bind(&data_types)
+        .bind(input.read_only)
         .fetch_one(&self.pool)
         .await?;
 
@@ -379,7 +415,7 @@ impl DataStore for PgStore {
                WHERE table_id = $1 AND column_id = $2
                RETURNING *
              )
-             SELECT c.id::text, c.name, c.label, c.description, c.expression,
+             SELECT c.id::text, c.title, c.description, c.expression,
                COALESCE(u.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -392,6 +428,28 @@ impl DataStore for PgStore {
         .bind(table_id)
         .bind(column_id)
         .bind(is_frozen)
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    async fn set_column_source_path(
+        &self,
+        column_id: &str,
+        path: Option<&[String]>,
+    ) -> Result<CustomColumn> {
+        Ok(sqlx::query_as::<_, CustomColumn>(
+            "UPDATE custom_columns SET source_path = $2, when_last_modified = NOW(),
+               modify_count = modify_count + 1
+             WHERE id = $1
+             RETURNING id::text, title, description, expression, position_after,
+               read_only, types, source_path,
+               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types,
+               COALESCE(is_group, false) AS is_group,
+               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
+               COALESCE(is_frozen, false) AS is_frozen",
+        )
+        .bind(column_id)
+        .bind(path.map(|p| p.to_vec()))
         .fetch_one(&self.pool)
         .await?)
     }
@@ -571,7 +629,7 @@ impl DataStore for PgStore {
             // Generic table_rows query: full sort + hidden-row filtering.
             let col_types: std::collections::HashMap<String, Vec<String>> =
                 sqlx::query_as::<_, (String, Vec<String>)>(
-                    "SELECT c.name, c.types
+                    "SELECT c.id, c.types
                      FROM custom_columns c
                      JOIN table_custom_columns tcc ON tcc.column_id = c.id
                      WHERE tcc.table_id = $1",
@@ -678,7 +736,9 @@ impl DataStore for PgStore {
                INSERT INTO table_rows (id, table_id, custom_values, when_created, when_last_modified)
                SELECT row_id, $2, custom_values, NOW(), NOW() FROM rows
                ON CONFLICT (id) DO UPDATE SET
-                 custom_values      = EXCLUDED.custom_values,
+                 -- Merge: existing keys not in the upload are preserved (user-added columns survive).
+                 -- Incoming keys win, so GitHub data is always refreshed.
+                 custom_values      = table_rows.custom_values || EXCLUDED.custom_values,
                  when_last_modified = NOW(),
                  modify_count       = table_rows.modify_count + 1
                RETURNING 1
@@ -815,16 +875,6 @@ fn build_index_expr(id: &str, input: &crate::custom_column::CustomColumnInput) -
     } else {
         format!("custom_values->>'{}'", id.replace('\'', "''"))
     }
-}
-
-/// Filters for a query that starts with no WHERE clause (emits WHERE id NOT IN hidden_rows first).
-fn push_filters<'q>(
-    qb: &mut QueryBuilder<'q, Postgres>,
-    p: &'q RowQuery,
-    col_types: &std::collections::HashMap<String, Vec<String>>,
-) {
-    qb.push(" WHERE id NOT IN (SELECT row_id FROM hidden_rows)");
-    push_filter_conditions(qb, p, col_types);
 }
 
 /// Additional AND-conditions for `table_rows` (WHERE table_id=? AND hidden_rows already applied).
@@ -1015,7 +1065,7 @@ mod tests {
     #[test]
     fn index_expr_defaults_to_stable_column_id() {
         let input = crate::custom_column::CustomColumnInput {
-            name: "User-facing title".into(),
+            title: Some("User-facing title".into()),
             ..Default::default()
         };
         assert_eq!(
@@ -1027,7 +1077,7 @@ mod tests {
     #[test]
     fn index_expr_uses_source_path_when_present() {
         let input = crate::custom_column::CustomColumnInput {
-            name: "Stars diff 24h".into(),
+            title: Some("Stars diff 24h".into()),
             source_path: Some(vec!["stars_diff".into(), "24h".into()]),
             ..Default::default()
         };

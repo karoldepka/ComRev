@@ -42,7 +42,11 @@ const DEFAULT_FAN_READ_TIMEOUT_SECS: u64 = 60;
 /// Priority: per-request override → `FAN_READ_TIMEOUT_SECS` env var → 60 s default.
 fn fan_read_timeout(override_secs: Option<u64>) -> Duration {
     let secs = override_secs
-        .or_else(|| std::env::var("FAN_READ_TIMEOUT_SECS").ok().and_then(|s| s.parse::<u64>().ok()))
+        .or_else(|| {
+            std::env::var("FAN_READ_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+        })
         .unwrap_or(DEFAULT_FAN_READ_TIMEOUT_SECS);
     Duration::from_secs(secs)
 }
@@ -53,12 +57,36 @@ trait MergeKey {
     fn merge_key(&self) -> String;
 }
 
-impl MergeKey for crate::flag::CellFlag             { fn merge_key(&self) -> String { self.key.clone() } }
-impl MergeKey for crate::remark::Remark              { fn merge_key(&self) -> String { self.id.clone() } }
-impl MergeKey for crate::hidden_row::HiddenRow       { fn merge_key(&self) -> String { self.row_id.clone() } }
-impl MergeKey for crate::hidden_column::HiddenColumn { fn merge_key(&self) -> String { self.column_id.clone() } }
-impl MergeKey for crate::custom_column::CustomColumn { fn merge_key(&self) -> String { self.id.clone() } }
-impl MergeKey for crate::table::Table                { fn merge_key(&self) -> String { self.id.clone() } }
+impl MergeKey for crate::flag::CellFlag {
+    fn merge_key(&self) -> String {
+        self.key.clone()
+    }
+}
+impl MergeKey for crate::remark::Remark {
+    fn merge_key(&self) -> String {
+        self.id.clone()
+    }
+}
+impl MergeKey for crate::hidden_row::HiddenRow {
+    fn merge_key(&self) -> String {
+        self.row_id.clone()
+    }
+}
+impl MergeKey for crate::hidden_column::HiddenColumn {
+    fn merge_key(&self) -> String {
+        self.column_id.clone()
+    }
+}
+impl MergeKey for crate::custom_column::CustomColumn {
+    fn merge_key(&self) -> String {
+        self.id.clone()
+    }
+}
+impl MergeKey for crate::table::Table {
+    fn merge_key(&self) -> String {
+        self.id.clone()
+    }
+}
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
@@ -141,7 +169,9 @@ fn fan_merge_list<T: MergeKey>(results: Vec<Result<Vec<T>>>, method: &str) -> Re
     }
 
     for (store_idx, store_key_set) in store_keys.iter().enumerate() {
-        let Some(store_key_set) = store_key_set else { continue };
+        let Some(store_key_set) = store_key_set else {
+            continue;
+        };
         for key in &order {
             if !store_key_set.contains(key) {
                 tracing::error!(
@@ -151,7 +181,10 @@ fn fan_merge_list<T: MergeKey>(results: Vec<Result<Vec<T>>>, method: &str) -> Re
         }
     }
 
-    Ok(order.into_iter().filter_map(|k| by_key.remove(&k)).collect())
+    Ok(order
+        .into_iter()
+        .filter_map(|k| by_key.remove(&k))
+        .collect())
 }
 
 /// Merge `PagedResponse` results from all stores that responded within the timeout.
@@ -190,7 +223,9 @@ fn fan_merge_paged(results: Vec<Result<PagedResponse>>, method: &str) -> Result<
     }
 
     for (store_idx, store_id_set) in store_ids.iter().enumerate() {
-        let Some(store_id_set) = store_id_set else { continue };
+        let Some(store_id_set) = store_id_set else {
+            continue;
+        };
         for id in &order {
             if !store_id_set.contains(id) {
                 tracing::error!(
@@ -203,11 +238,18 @@ fn fan_merge_paged(results: Vec<Result<PagedResponse>>, method: &str) -> Result<
     let (total, page, per_page): (i64, u32, u32) = first_meta.unwrap_or((0, 1, 50));
     let data: Vec<serde_json::Value> = order.into_iter().filter_map(|k| by_id.remove(&k)).collect();
     let merged_total = total.max(data.len() as i64);
-    Ok(PagedResponse { data, total: merged_total, page, per_page })
+    Ok(PagedResponse {
+        data,
+        total: merged_total,
+        page,
+        per_page,
+    })
 }
 
 fn paged_item_id(v: &serde_json::Value) -> String {
-    v.get("id").and_then(|id| id.as_str()).map(str::to_owned)
+    v.get("id")
+        .and_then(|id| id.as_str())
+        .map(str::to_owned)
         .or_else(|| v.get("key").and_then(|k| k.as_str()).map(str::to_owned))
         .unwrap_or_else(|| serde_json::to_string(v).unwrap_or_default())
 }
@@ -261,12 +303,39 @@ impl DataStore for MultiStore {
             let result = s.ensure_schema().await;
             let ms = t0.elapsed().as_millis();
             match &result {
-                Ok(_)  => tracing::info!("store[{i}] ensure_schema OK in {ms}ms"),
+                Ok(_) => tracing::info!("store[{i}] ensure_schema OK in {ms}ms"),
                 Err(e) => tracing::warn!("store[{i}] ensure_schema FAILED in {ms}ms: {e}"),
             }
             result
-        })).await;
+        }))
+        .await;
         fan_write(results, "ensure_schema")
+    }
+
+    async fn set_column_source_path(
+        &self,
+        column_id: &str,
+        path: Option<&[String]>,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        let path_owned: Option<Vec<String>> = path.map(|p| p.to_vec());
+        fan_out!(
+            self,
+            "custom_column.set_source_path",
+            serde_json::json!({"column_id": column_id, "source_path": path_owned}),
+            set_column_source_path(column_id, path)
+        )
+    }
+
+    async fn nuke_db(&self) -> Result<()> {
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
+            let result = s.nuke_db().await;
+            if let Err(ref e) = result {
+                tracing::warn!("store[{i}] nuke_db FAILED: {e}");
+            }
+            result
+        }))
+        .await;
+        fan_write(results, "nuke_db")
     }
 
     // ── Flags ──────────────────────────────────────────────────────────────────
@@ -275,10 +344,20 @@ impl DataStore for MultiStore {
         fan_list!(self, list_flags())
     }
     async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> Result<crate::flag::CellFlag> {
-        fan_out!(self, "flag.upsert", serde_json::json!({"id": id, "key": key, "color": color}), upsert_flag(id, key, color))
+        fan_out!(
+            self,
+            "flag.upsert",
+            serde_json::json!({"id": id, "key": key, "color": color}),
+            upsert_flag(id, key, color)
+        )
     }
     async fn delete_flag(&self, key: &str) -> Result<()> {
-        fan_out!(self, "flag.delete", serde_json::json!({"key": key}), delete_flag(key))
+        fan_out!(
+            self,
+            "flag.delete",
+            serde_json::json!({"key": key}),
+            delete_flag(key)
+        )
     }
 
     // ── Remarks ────────────────────────────────────────────────────────────────
@@ -295,14 +374,24 @@ impl DataStore for MultiStore {
         resolved_at: Option<chrono::DateTime<chrono::Utc>>,
         targets: &[crate::remark::RemarkTarget],
     ) -> Result<crate::remark::Remark> {
-        fan_out!(self, "remark.upsert", serde_json::json!({
-            "id": id, "body": body, "kind": kind, "is_private": is_private,
-            "resolved_at": resolved_at.map(|dt| dt.to_rfc3339()),
-            "targets": targets.iter().map(|t| serde_json::json!({"row_id": t.row_id, "column_id": t.column_id})).collect::<Vec<_>>(),
-        }), upsert_remark(id, body, kind, is_private, resolved_at, targets))
+        fan_out!(
+            self,
+            "remark.upsert",
+            serde_json::json!({
+                "id": id, "body": body, "kind": kind, "is_private": is_private,
+                "resolved_at": resolved_at.map(|dt| dt.to_rfc3339()),
+                "targets": targets.iter().map(|t| serde_json::json!({"row_id": t.row_id, "column_id": t.column_id})).collect::<Vec<_>>(),
+            }),
+            upsert_remark(id, body, kind, is_private, resolved_at, targets)
+        )
     }
     async fn delete_remark(&self, id: &str) -> Result<()> {
-        fan_out!(self, "remark.delete", serde_json::json!({"id": id}), delete_remark(id))
+        fan_out!(
+            self,
+            "remark.delete",
+            serde_json::json!({"id": id}),
+            delete_remark(id)
+        )
     }
 
     // ── Hidden rows ────────────────────────────────────────────────────────────
@@ -311,10 +400,20 @@ impl DataStore for MultiStore {
         fan_list!(self, list_hidden_rows())
     }
     async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<crate::hidden_row::HiddenRow> {
-        fan_out!(self, "hidden_row.add", serde_json::json!({"id": id, "row_id": row_id}), add_hidden_row(id, row_id))
+        fan_out!(
+            self,
+            "hidden_row.add",
+            serde_json::json!({"id": id, "row_id": row_id}),
+            add_hidden_row(id, row_id)
+        )
     }
     async fn remove_hidden_row(&self, row_id: &str) -> Result<()> {
-        fan_out!(self, "hidden_row.remove", serde_json::json!({"row_id": row_id}), remove_hidden_row(row_id))
+        fan_out!(
+            self,
+            "hidden_row.remove",
+            serde_json::json!({"row_id": row_id}),
+            remove_hidden_row(row_id)
+        )
     }
 
     // ── Hidden columns ─────────────────────────────────────────────────────────
@@ -322,16 +421,33 @@ impl DataStore for MultiStore {
     async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> {
         fan_list!(self, list_hidden_columns())
     }
-    async fn add_hidden_column(&self, id: &str, column_id: &str) -> Result<crate::hidden_column::HiddenColumn> {
-        fan_out!(self, "hidden_column.add", serde_json::json!({"id": id, "column_id": column_id}), add_hidden_column(id, column_id))
+    async fn add_hidden_column(
+        &self,
+        id: &str,
+        column_id: &str,
+    ) -> Result<crate::hidden_column::HiddenColumn> {
+        fan_out!(
+            self,
+            "hidden_column.add",
+            serde_json::json!({"id": id, "column_id": column_id}),
+            add_hidden_column(id, column_id)
+        )
     }
     async fn remove_hidden_column(&self, column_id: &str) -> Result<()> {
-        fan_out!(self, "hidden_column.remove", serde_json::json!({"column_id": column_id}), remove_hidden_column(column_id))
+        fan_out!(
+            self,
+            "hidden_column.remove",
+            serde_json::json!({"column_id": column_id}),
+            remove_hidden_column(column_id)
+        )
     }
 
     // ── Custom columns ─────────────────────────────────────────────────────────
 
-    async fn list_custom_columns(&self, table_id: &str) -> Result<Vec<crate::custom_column::CustomColumn>> {
+    async fn list_custom_columns(
+        &self,
+        table_id: &str,
+    ) -> Result<Vec<crate::custom_column::CustomColumn>> {
         fan_list!(self, list_custom_columns(table_id))
     }
     async fn upsert_custom_column(
@@ -340,19 +456,39 @@ impl DataStore for MultiStore {
         id: &str,
         input: &crate::custom_column::CustomColumnInput,
     ) -> Result<crate::custom_column::CustomColumn> {
-        fan_out!(self, "custom_column.upsert", serde_json::json!({
-            "id": id, "table_id": table_id, "name": input.name,
-            "label": input.label, "description": input.description,
-            "expression": input.expression, "position_after": input.position_after,
-            "is_group": input.is_group, "parent_ids": input.parent_ids,
-            "source_path": input.source_path, "types": input.types, "data_types": input.data_types,
-        }), upsert_custom_column(table_id, id, input))
+        fan_out!(
+            self,
+            "custom_column.upsert",
+            serde_json::json!({
+                "id": id, "table_id": table_id, "title": input.title,
+                "description": input.description,
+                "expression": input.expression, "position_after": input.position_after,
+                "is_group": input.is_group, "parent_ids": input.parent_ids,
+                "source_path": input.source_path, "types": input.types, "data_types": input.data_types,
+            }),
+            upsert_custom_column(table_id, id, input)
+        )
     }
     async fn delete_custom_column(&self, id: &str) -> Result<()> {
-        fan_out!(self, "custom_column.delete", serde_json::json!({"id": id}), delete_custom_column(id))
+        fan_out!(
+            self,
+            "custom_column.delete",
+            serde_json::json!({"id": id}),
+            delete_custom_column(id)
+        )
     }
-    async fn set_table_column_frozen(&self, table_id: &str, column_id: &str, is_frozen: bool) -> Result<crate::custom_column::CustomColumn> {
-        fan_out!(self, "custom_column.freeze", serde_json::json!({"table_id": table_id, "column_id": column_id, "is_frozen": is_frozen}), set_table_column_frozen(table_id, column_id, is_frozen))
+    async fn set_table_column_frozen(
+        &self,
+        table_id: &str,
+        column_id: &str,
+        is_frozen: bool,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        fan_out!(
+            self,
+            "custom_column.freeze",
+            serde_json::json!({"table_id": table_id, "column_id": column_id, "is_frozen": is_frozen}),
+            set_table_column_frozen(table_id, column_id, is_frozen)
+        )
     }
 
     // ── Tables registry ────────────────────────────────────────────────────────
@@ -360,65 +496,135 @@ impl DataStore for MultiStore {
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
         fan_list!(self, list_tables())
     }
-    async fn create_table(&self, id: &str, title: &str, description: Option<&str>, who_created: Option<&str>) -> Result<crate::table::Table> {
-        fan_out!(self, "table.create", serde_json::json!({"id": id, "title": title, "description": description, "who_created": who_created}), create_table(id, title, description, who_created))
+    async fn create_table(
+        &self,
+        id: &str,
+        title: &str,
+        description: Option<&str>,
+        who_created: Option<&str>,
+    ) -> Result<crate::table::Table> {
+        fan_out!(
+            self,
+            "table.create",
+            serde_json::json!({"id": id, "title": title, "description": description, "who_created": who_created}),
+            create_table(id, title, description, who_created)
+        )
     }
-    async fn patch_table(&self, id: &str, title: Option<&str>, description: Option<&str>, who_last_modified: Option<&str>) -> Result<crate::table::Table> {
-        fan_out!(self, "table.patch", serde_json::json!({"id": id, "title": title, "description": description, "who_last_modified": who_last_modified}), patch_table(id, title, description, who_last_modified))
+    async fn patch_table(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+        who_last_modified: Option<&str>,
+    ) -> Result<crate::table::Table> {
+        fan_out!(
+            self,
+            "table.patch",
+            serde_json::json!({"id": id, "title": title, "description": description, "who_last_modified": who_last_modified}),
+            patch_table(id, title, description, who_last_modified)
+        )
     }
     async fn delete_table(&self, id: &str) -> Result<()> {
-        fan_out!(self, "table.delete", serde_json::json!({"id": id}), delete_table(id))
+        fan_out!(
+            self,
+            "table.delete",
+            serde_json::json!({"id": id}),
+            delete_table(id)
+        )
     }
 
     // ── Rows ───────────────────────────────────────────────────────────────────
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
-        fan_paged!(self, params.read_timeout_secs, list_data_rows(table_id, params))
+        fan_paged!(
+            self,
+            params.read_timeout_secs,
+            list_data_rows(table_id, params)
+        )
     }
-    async fn create_row(&self, table_id: &str, row_id: &str, title: Option<&str>, who_created: Option<&str>) -> Result<crate::data_row::TableRow> {
-        fan_out!(self, "row.create", serde_json::json!({"table_id": table_id, "row_id": row_id, "title": title, "who_created": who_created}), create_row(table_id, row_id, title, who_created))
+    async fn create_row(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        title: Option<&str>,
+        who_created: Option<&str>,
+    ) -> Result<crate::data_row::TableRow> {
+        fan_out!(
+            self,
+            "row.create",
+            serde_json::json!({"table_id": table_id, "row_id": row_id, "title": title, "who_created": who_created}),
+            create_row(table_id, row_id, title, who_created)
+        )
     }
-    async fn patch_row_value(&self, table_id: &str, row_id: &str, col_id: &str, value: serde_json::Value) -> Result<()> {
+    async fn patch_row_value(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        col_id: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
         let op_id = nanoid::nanoid!();
         let payload = serde_json::json!({"table_id": table_id, "row_id": row_id, "col_id": col_id, "value": value});
-        let results = join_all(
-            self.stores.iter().enumerate().map(|(i, s)| {
-                let op_id = op_id.clone();
-                let payload = payload.clone();
-                let value = value.clone();
-                async move {
-                    let t0 = Instant::now();
-                    s.begin_ops_log(&op_id, "row.patch", payload, None).await;
-                    let result = s.patch_row_value(table_id, row_id, col_id, value).await;
-                    let ms = t0.elapsed().as_millis();
-                    match &result {
-                        Ok(_) => {
-                            tracing::info!("store[{i}] patch_row_value write OK in {ms}ms");
-                            s.mark_op_applied(&op_id).await;
-                        }
-                        Err(e) => tracing::warn!("store[{i}] patch_row_value write FAILED in {ms}ms: {e}"),
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| {
+            let op_id = op_id.clone();
+            let payload = payload.clone();
+            let value = value.clone();
+            async move {
+                let t0 = Instant::now();
+                s.begin_ops_log(&op_id, "row.patch", payload, None).await;
+                let result = s.patch_row_value(table_id, row_id, col_id, value).await;
+                let ms = t0.elapsed().as_millis();
+                match &result {
+                    Ok(_) => {
+                        tracing::info!("store[{i}] patch_row_value write OK in {ms}ms");
+                        s.mark_op_applied(&op_id).await;
                     }
-                    result
+                    Err(e) => {
+                        tracing::warn!("store[{i}] patch_row_value write FAILED in {ms}ms: {e}")
+                    }
                 }
-            })
-        ).await;
+                result
+            }
+        }))
+        .await;
         fan_write(results, "patch_row_value")
     }
 
     // ── GitHub repos batch ─────────────────────────────────────────────────────
 
     async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-        fan_out!(self, "github_repos.batch_upsert", serde_json::json!({"repos": repos}), upsert_github_repos_batch(repos))
+        fan_out!(
+            self,
+            "github_repos.batch_upsert",
+            serde_json::json!({"repos": repos}),
+            upsert_github_repos_batch(repos)
+        )
     }
 
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
-        fan_out!(self, "rows.batch_upsert", serde_json::json!({"table_id": table_id, "rows": rows}), upsert_rows_batch(table_id, rows))
+        fan_out!(
+            self,
+            "rows.batch_upsert",
+            serde_json::json!({"table_id": table_id, "rows": rows}),
+            upsert_rows_batch(table_id, rows)
+        )
     }
 
     // ── Ops log ────────────────────────────────────────────────────────────────
 
-    async fn begin_ops_log(&self, id: &str, op: &str, payload: serde_json::Value, tx_id: Option<&str>) {
-        join_all(self.stores.iter().map(|s| s.begin_ops_log(id, op, payload.clone(), tx_id))).await;
+    async fn begin_ops_log(
+        &self,
+        id: &str,
+        op: &str,
+        payload: serde_json::Value,
+        tx_id: Option<&str>,
+    ) {
+        join_all(
+            self.stores
+                .iter()
+                .map(|s| s.begin_ops_log(id, op, payload.clone(), tx_id)),
+        )
+        .await;
     }
 
     async fn mark_op_applied(&self, id: &str) {
@@ -430,10 +636,17 @@ impl DataStore for MultiStore {
     async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> {
         let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
             match s.pending_ops().await {
-                Ok(ops) => { tracing::info!("store[{i}] has {} pending op(s)", ops.len()); Some(ops) }
-                Err(e)  => { tracing::warn!("store[{i}] pending_ops failed: {e}"); None }
+                Ok(ops) => {
+                    tracing::info!("store[{i}] has {} pending op(s)", ops.len());
+                    Some(ops)
+                }
+                Err(e) => {
+                    tracing::warn!("store[{i}] pending_ops failed: {e}");
+                    None
+                }
             }
-        })).await;
+        }))
+        .await;
 
         // Use the result from the store that has the most pending ops (least applied = most conservative).
         let most_pending = results
@@ -466,112 +679,353 @@ mod tests {
 
     impl MockStore {
         fn new(name: &'static str, fail_all: bool) -> Arc<Self> {
-            Arc::new(Self { name, calls: Arc::new(Mutex::new(vec![])), fail_all, flags: vec![] })
+            Arc::new(Self {
+                name,
+                calls: Arc::new(Mutex::new(vec![])),
+                fail_all,
+                flags: vec![],
+            })
         }
         fn with_flags(name: &'static str, flags: Vec<crate::flag::CellFlag>) -> Arc<Self> {
-            Arc::new(Self { name, calls: Arc::new(Mutex::new(vec![])), fail_all: false, flags })
+            Arc::new(Self {
+                name,
+                calls: Arc::new(Mutex::new(vec![])),
+                fail_all: false,
+                flags,
+            })
         }
         fn record(&self, m: &str) {
-            self.calls.lock().unwrap().push(format!("{}:{}", self.name, m));
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("{}:{}", self.name, m));
         }
         fn was_called(&self, m: &str) -> bool {
             self.calls.lock().unwrap().iter().any(|c| c.contains(m))
         }
         fn fail(&self) -> Result<()> {
-            if self.fail_all { anyhow::bail!("mock failure") } else { Ok(()) }
+            if self.fail_all {
+                anyhow::bail!("mock failure")
+            } else {
+                Ok(())
+            }
         }
     }
 
     #[async_trait]
     impl DataStore for MockStore {
-        async fn ensure_schema(&self) -> Result<()> { self.record("ensure_schema"); self.fail() }
+        async fn ensure_schema(&self) -> Result<()> {
+            self.record("ensure_schema");
+            self.fail()
+        }
+
+        async fn nuke_db(&self) -> Result<()> {
+            self.record("nuke_db");
+            self.fail()
+        }
+
+        async fn set_column_source_path(
+            &self,
+            _column_id: &str,
+            _path: Option<&[String]>,
+        ) -> Result<crate::custom_column::CustomColumn> {
+            self.record("set_column_source_path");
+            self.fail()?;
+            unreachable!()
+        }
 
         async fn list_flags(&self) -> Result<Vec<crate::flag::CellFlag>> {
             self.record("list_flags");
             self.fail()?;
             Ok(self.flags.clone())
         }
-        async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> Result<crate::flag::CellFlag> {
+        async fn upsert_flag(
+            &self,
+            id: &str,
+            key: &str,
+            color: &str,
+        ) -> Result<crate::flag::CellFlag> {
             self.record("upsert_flag");
             self.fail()?;
-            Ok(crate::flag::CellFlag { id: id.into(), key: key.into(), color: color.into() })
+            Ok(crate::flag::CellFlag {
+                id: id.into(),
+                key: key.into(),
+                color: color.into(),
+            })
         }
-        async fn delete_flag(&self, _key: &str) -> Result<()> { self.record("delete_flag"); self.fail() }
-
-        async fn list_remarks(&self) -> Result<Vec<crate::remark::Remark>> { self.record("list_remarks"); self.fail()?; Ok(vec![]) }
-        async fn upsert_remark(&self, id: &str, body: &str, kind: &str, is_private: bool, resolved_at: Option<chrono::DateTime<chrono::Utc>>, targets: &[crate::remark::RemarkTarget]) -> Result<crate::remark::Remark> {
-            self.record("upsert_remark"); self.fail()?;
-            Ok(crate::remark::Remark { id: id.into(), body: body.into(), kind: kind.into(), is_private, resolved_at, targets: targets.to_vec() })
-        }
-        async fn delete_remark(&self, _id: &str) -> Result<()> { self.record("delete_remark"); self.fail() }
-
-        async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>> { self.record("list_hidden_rows"); self.fail()?; Ok(vec![]) }
-        async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<crate::hidden_row::HiddenRow> {
-            self.record("add_hidden_row"); self.fail()?;
-            Ok(crate::hidden_row::HiddenRow { id: id.into(), row_id: row_id.into() })
-        }
-        async fn remove_hidden_row(&self, _row_id: &str) -> Result<()> { self.record("remove_hidden_row"); self.fail() }
-
-        async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> { self.record("list_hidden_columns"); self.fail()?; Ok(vec![]) }
-        async fn add_hidden_column(&self, id: &str, column_id: &str) -> Result<crate::hidden_column::HiddenColumn> {
-            self.record("add_hidden_column"); self.fail()?;
-            Ok(crate::hidden_column::HiddenColumn { id: id.into(), column_id: column_id.into() })
-        }
-        async fn remove_hidden_column(&self, _column_id: &str) -> Result<()> { self.record("remove_hidden_column"); self.fail() }
-
-        async fn list_custom_columns(&self, _table_id: &str) -> Result<Vec<crate::custom_column::CustomColumn>> { self.record("list_custom_columns"); self.fail()?; Ok(vec![]) }
-        async fn upsert_custom_column(&self, _table_id: &str, id: &str, input: &crate::custom_column::CustomColumnInput) -> Result<crate::custom_column::CustomColumn> {
-            self.record("upsert_custom_column"); self.fail()?;
-            Ok(crate::custom_column::CustomColumn { id: id.into(), name: input.name.clone(), label: input.label.clone(), description: input.description.clone(), expression: input.expression.clone(), position_after: input.position_after.clone(), read_only: false, types: input.effective_types(), source_path: input.source_path.clone(), data_types: input.effective_data_types(), is_group: input.is_group, parent_ids: input.parent_ids.clone(), is_frozen: false })
-        }
-        async fn delete_custom_column(&self, _id: &str) -> Result<()> { self.record("delete_custom_column"); self.fail() }
-        async fn set_table_column_frozen(&self, _table_id: &str, id: &str, is_frozen: bool) -> Result<crate::custom_column::CustomColumn> {
-            self.record("set_table_column_frozen"); self.fail()?;
-            Ok(crate::custom_column::CustomColumn { id: id.into(), name: "".into(), label: None, description: None, expression: None, position_after: None, read_only: false, types: vec![], source_path: None, data_types: vec![], is_group: false, parent_ids: vec![], is_frozen })
+        async fn delete_flag(&self, _key: &str) -> Result<()> {
+            self.record("delete_flag");
+            self.fail()
         }
 
-        async fn list_tables(&self) -> Result<Vec<crate::table::Table>> { self.record("list_tables"); self.fail()?; Ok(vec![]) }
-        async fn create_table(&self, id: &str, title: &str, description: Option<&str>, who_created: Option<&str>) -> Result<crate::table::Table> {
-            self.record("create_table"); self.fail()?;
+        async fn list_remarks(&self) -> Result<Vec<crate::remark::Remark>> {
+            self.record("list_remarks");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn upsert_remark(
+            &self,
+            id: &str,
+            body: &str,
+            kind: &str,
+            is_private: bool,
+            resolved_at: Option<chrono::DateTime<chrono::Utc>>,
+            targets: &[crate::remark::RemarkTarget],
+        ) -> Result<crate::remark::Remark> {
+            self.record("upsert_remark");
+            self.fail()?;
+            Ok(crate::remark::Remark {
+                id: id.into(),
+                body: body.into(),
+                kind: kind.into(),
+                is_private,
+                resolved_at,
+                targets: targets.to_vec(),
+            })
+        }
+        async fn delete_remark(&self, _id: &str) -> Result<()> {
+            self.record("delete_remark");
+            self.fail()
+        }
+
+        async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>> {
+            self.record("list_hidden_rows");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn add_hidden_row(
+            &self,
+            id: &str,
+            row_id: &str,
+        ) -> Result<crate::hidden_row::HiddenRow> {
+            self.record("add_hidden_row");
+            self.fail()?;
+            Ok(crate::hidden_row::HiddenRow {
+                id: id.into(),
+                row_id: row_id.into(),
+            })
+        }
+        async fn remove_hidden_row(&self, _row_id: &str) -> Result<()> {
+            self.record("remove_hidden_row");
+            self.fail()
+        }
+
+        async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> {
+            self.record("list_hidden_columns");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn add_hidden_column(
+            &self,
+            id: &str,
+            column_id: &str,
+        ) -> Result<crate::hidden_column::HiddenColumn> {
+            self.record("add_hidden_column");
+            self.fail()?;
+            Ok(crate::hidden_column::HiddenColumn {
+                id: id.into(),
+                column_id: column_id.into(),
+            })
+        }
+        async fn remove_hidden_column(&self, _column_id: &str) -> Result<()> {
+            self.record("remove_hidden_column");
+            self.fail()
+        }
+
+        async fn list_custom_columns(
+            &self,
+            _table_id: &str,
+        ) -> Result<Vec<crate::custom_column::CustomColumn>> {
+            self.record("list_custom_columns");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn upsert_custom_column(
+            &self,
+            _table_id: &str,
+            id: &str,
+            input: &crate::custom_column::CustomColumnInput,
+        ) -> Result<crate::custom_column::CustomColumn> {
+            self.record("upsert_custom_column");
+            self.fail()?;
+            Ok(crate::custom_column::CustomColumn {
+                id: id.into(),
+                title: input.title.clone(),
+                description: input.description.clone(),
+                expression: input.expression.clone(),
+                position_after: input.position_after.clone(),
+                read_only: false,
+                types: input.effective_types(),
+                source_path: input.source_path.clone(),
+                data_types: input.effective_data_types(),
+                is_group: input.is_group,
+                parent_ids: input.parent_ids.clone(),
+                is_frozen: false,
+            })
+        }
+        async fn delete_custom_column(&self, _id: &str) -> Result<()> {
+            self.record("delete_custom_column");
+            self.fail()
+        }
+        async fn set_table_column_frozen(
+            &self,
+            _table_id: &str,
+            id: &str,
+            is_frozen: bool,
+        ) -> Result<crate::custom_column::CustomColumn> {
+            self.record("set_table_column_frozen");
+            self.fail()?;
+            Ok(crate::custom_column::CustomColumn {
+                id: id.into(),
+                name: "".into(),
+                label: None,
+                description: None,
+                expression: None,
+                position_after: None,
+                read_only: false,
+                types: vec![],
+                source_path: None,
+                data_types: vec![],
+                is_group: false,
+                parent_ids: vec![],
+                is_frozen,
+            })
+        }
+
+        async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
+            self.record("list_tables");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn create_table(
+            &self,
+            id: &str,
+            title: &str,
+            description: Option<&str>,
+            who_created: Option<&str>,
+        ) -> Result<crate::table::Table> {
+            self.record("create_table");
+            self.fail()?;
             let now = chrono::Utc::now();
-            Ok(crate::table::Table { id: id.into(), title: title.into(), description: description.map(Into::into), who_created: who_created.map(Into::into), when_created: now, who_last_modified: None, when_last_modified: now, modify_count: 0 })
+            Ok(crate::table::Table {
+                id: id.into(),
+                title: title.into(),
+                description: description.map(Into::into),
+                who_created: who_created.map(Into::into),
+                when_created: now,
+                who_last_modified: None,
+                when_last_modified: now,
+                modify_count: 0,
+            })
         }
-        async fn patch_table(&self, id: &str, title: Option<&str>, description: Option<&str>, who_last_modified: Option<&str>) -> Result<crate::table::Table> {
-            self.record("patch_table"); self.fail()?;
+        async fn patch_table(
+            &self,
+            id: &str,
+            title: Option<&str>,
+            description: Option<&str>,
+            who_last_modified: Option<&str>,
+        ) -> Result<crate::table::Table> {
+            self.record("patch_table");
+            self.fail()?;
             let now = chrono::Utc::now();
-            Ok(crate::table::Table { id: id.into(), title: title.unwrap_or("").into(), description: description.map(Into::into), who_created: None, when_created: now, who_last_modified: who_last_modified.map(Into::into), when_last_modified: now, modify_count: 1 })
+            Ok(crate::table::Table {
+                id: id.into(),
+                title: title.unwrap_or("").into(),
+                description: description.map(Into::into),
+                who_created: None,
+                when_created: now,
+                who_last_modified: who_last_modified.map(Into::into),
+                when_last_modified: now,
+                modify_count: 1,
+            })
         }
-        async fn delete_table(&self, _id: &str) -> Result<()> { self.record("delete_table"); self.fail() }
+        async fn delete_table(&self, _id: &str) -> Result<()> {
+            self.record("delete_table");
+            self.fail()
+        }
 
-        async fn list_data_rows(&self, _table_id: &str, _params: &RowQuery) -> Result<PagedResponse> {
-            self.record("list_data_rows"); self.fail()?;
-            Ok(PagedResponse { data: vec![], total: 0, page: 1, per_page: 50 })
+        async fn list_data_rows(
+            &self,
+            _table_id: &str,
+            _params: &RowQuery,
+        ) -> Result<PagedResponse> {
+            self.record("list_data_rows");
+            self.fail()?;
+            Ok(PagedResponse {
+                data: vec![],
+                total: 0,
+                page: 1,
+                per_page: 50,
+            })
         }
-        async fn create_row(&self, table_id: &str, row_id: &str, _title: Option<&str>, _who_created: Option<&str>) -> Result<crate::data_row::TableRow> {
-            self.record("create_row"); self.fail()?;
+        async fn create_row(
+            &self,
+            table_id: &str,
+            row_id: &str,
+            _title: Option<&str>,
+            _who_created: Option<&str>,
+        ) -> Result<crate::data_row::TableRow> {
+            self.record("create_row");
+            self.fail()?;
             let now = chrono::Utc::now();
-            Ok(crate::data_row::TableRow { id: row_id.into(), table_id: table_id.into(), who_created: None, when_created: now, who_last_modified: None, when_last_modified: now, custom_values: serde_json::json!({}), modify_count: 0 })
+            Ok(crate::data_row::TableRow {
+                id: row_id.into(),
+                table_id: table_id.into(),
+                who_created: None,
+                when_created: now,
+                who_last_modified: None,
+                when_last_modified: now,
+                custom_values: serde_json::json!({}),
+                modify_count: 0,
+            })
         }
-        async fn patch_row_value(&self, _table_id: &str, _row_id: &str, _col_id: &str, _value: serde_json::Value) -> Result<()> {
-            self.record("patch_row_value"); self.fail()
+        async fn patch_row_value(
+            &self,
+            _table_id: &str,
+            _row_id: &str,
+            _col_id: &str,
+            _value: serde_json::Value,
+        ) -> Result<()> {
+            self.record("patch_row_value");
+            self.fail()
         }
         async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-            self.record("upsert_github_repos_batch"); self.fail()?; Ok(repos.len())
+            self.record("upsert_github_repos_batch");
+            self.fail()?;
+            Ok(repos.len())
         }
-        async fn upsert_rows_batch(&self, _table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
-            self.record("upsert_rows_batch"); self.fail()?; Ok(rows.len())
+        async fn upsert_rows_batch(
+            &self,
+            _table_id: &str,
+            rows: &[serde_json::Value],
+        ) -> Result<usize> {
+            self.record("upsert_rows_batch");
+            self.fail()?;
+            Ok(rows.len())
         }
-        async fn begin_ops_log(&self, _id: &str, _op: &str, _payload: serde_json::Value, _tx_id: Option<&str>) {
+        async fn begin_ops_log(
+            &self,
+            _id: &str,
+            _op: &str,
+            _payload: serde_json::Value,
+            _tx_id: Option<&str>,
+        ) {
             self.record("begin_ops_log");
         }
         async fn mark_op_applied(&self, _id: &str) {
             self.record("mark_op_applied");
         }
-        async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> { Ok(vec![]) }
+        async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> {
+            Ok(vec![])
+        }
     }
 
     fn flag(key: &str) -> crate::flag::CellFlag {
-        crate::flag::CellFlag { id: key.into(), key: key.into(), color: "blue".into() }
+        crate::flag::CellFlag {
+            id: key.into(),
+            key: key.into(),
+            color: "blue".into(),
+        }
     }
 
     // ── Write fan-out ─────────────────────────────────────────────────────────
@@ -581,7 +1035,10 @@ mod tests {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
-        store.create_row("_tests_table", "row-001", Some("Hello"), None).await.unwrap();
+        store
+            .create_row("_tests_table", "row-001", Some("Hello"), None)
+            .await
+            .unwrap();
         assert!(p.was_called("create_row"), "store-a must receive the write");
         assert!(s.was_called("create_row"), "store-b must receive the write");
     }
@@ -592,7 +1049,10 @@ mod tests {
         let s1 = MockStore::new("store-1", false);
         let s2 = MockStore::new("store-2", false);
         let store = MultiStore::new(vec![s0.clone(), s1.clone(), s2.clone()]);
-        store.upsert_flag("f1", "header:name", "blue").await.unwrap();
+        store
+            .upsert_flag("f1", "header:name", "blue")
+            .await
+            .unwrap();
         assert!(s0.was_called("upsert_flag"));
         assert!(s1.was_called("upsert_flag"));
         assert!(s2.was_called("upsert_flag"));
@@ -603,7 +1063,10 @@ mod tests {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", true);
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
-        store.upsert_flag("f1", "header:name", "blue").await.unwrap();
+        store
+            .upsert_flag("f1", "header:name", "blue")
+            .await
+            .unwrap();
         assert!(p.was_called("upsert_flag"));
     }
 
@@ -612,7 +1075,10 @@ mod tests {
         let a = MockStore::new("store-a", true);
         let b = MockStore::new("store-b", true);
         let store = MultiStore::new(vec![a.clone(), b.clone()]);
-        assert!(store.upsert_flag("f1", "header:name", "blue").await.is_err());
+        assert!(store
+            .upsert_flag("f1", "header:name", "blue")
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -632,7 +1098,10 @@ mod tests {
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
         store.list_flags().await.unwrap();
         assert!(p.was_called("list_flags"), "store-a must be queried");
-        assert!(s.was_called("list_flags"), "store-b must be queried for divergence detection");
+        assert!(
+            s.was_called("list_flags"),
+            "store-b must be queried for divergence detection"
+        );
     }
 
     #[tokio::test]
@@ -643,14 +1112,34 @@ mod tests {
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
         let flags = store.list_flags().await.unwrap();
         let keys: Vec<_> = flags.iter().map(|f| f.key.as_str()).collect();
-        assert!(keys.contains(&"A"), "flag A (from store-a) must be in merged result");
-        assert!(keys.contains(&"B"), "flag B (from store-b) must be in merged result");
+        assert!(
+            keys.contains(&"A"),
+            "flag A (from store-a) must be in merged result"
+        );
+        assert!(
+            keys.contains(&"B"),
+            "flag B (from store-b) must be in merged result"
+        );
     }
 
     #[tokio::test]
     async fn reads_first_seen_wins_on_key_collision() {
-        let p = MockStore::with_flags("store-a", vec![crate::flag::CellFlag { id: "p".into(), key: "X".into(), color: "color-a".into() }]);
-        let s = MockStore::with_flags("store-b", vec![crate::flag::CellFlag { id: "s".into(), key: "X".into(), color: "color-b".into() }]);
+        let p = MockStore::with_flags(
+            "store-a",
+            vec![crate::flag::CellFlag {
+                id: "p".into(),
+                key: "X".into(),
+                color: "color-a".into(),
+            }],
+        );
+        let s = MockStore::with_flags(
+            "store-b",
+            vec![crate::flag::CellFlag {
+                id: "s".into(),
+                key: "X".into(),
+                color: "color-b".into(),
+            }],
+        );
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
         let flags = store.list_flags().await.unwrap();
         assert_eq!(flags.len(), 1, "deduplicated: only one flag with key X");
@@ -663,7 +1152,10 @@ mod tests {
         let s = MockStore::with_flags("store-b", vec![flag("A")]);
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
         let flags = store.list_flags().await.unwrap();
-        assert!(!flags.is_empty(), "store-b result returned when store-a fails");
+        assert!(
+            !flags.is_empty(),
+            "store-b result returned when store-a fails"
+        );
         assert!(s.was_called("list_flags"));
     }
 
@@ -682,7 +1174,15 @@ mod tests {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", false);
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
-        store.patch_row_value("_tests_table", "row-001", "status", serde_json::json!("active")).await.unwrap();
+        store
+            .patch_row_value(
+                "_tests_table",
+                "row-001",
+                "status",
+                serde_json::json!("active"),
+            )
+            .await
+            .unwrap();
         assert!(p.was_called("patch_row_value"));
         assert!(s.was_called("patch_row_value"));
     }
@@ -714,7 +1214,9 @@ mod tests {
         let p = MockStore::new("store-a", false);
         let s = MockStore::new("store-b", true);
         let store = MultiStore::new(vec![p.clone(), s.clone()]);
-        let result = store.upsert_github_repos_batch(&[serde_json::json!({ "github_id": 99 })]).await;
+        let result = store
+            .upsert_github_repos_batch(&[serde_json::json!({ "github_id": 99 })])
+            .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1);
     }
@@ -726,13 +1228,34 @@ mod tests {
         let s1 = MockStore::new("store-1", false);
         let s2 = MockStore::new("store-2", false);
         let store = MultiStore::new(vec![s0.clone(), s1.clone(), s2.clone()]);
-        store.create_row("_test_", "row-ops", None, None).await.unwrap();
-        assert!(s0.was_called("begin_ops_log"),  "store-0 must receive begin_ops_log");
-        assert!(s1.was_called("begin_ops_log"),  "store-1 must receive begin_ops_log");
-        assert!(s2.was_called("begin_ops_log"),  "store-2 must receive begin_ops_log");
-        assert!(s0.was_called("mark_op_applied"), "store-0 must receive mark_op_applied");
-        assert!(s1.was_called("mark_op_applied"), "store-1 must receive mark_op_applied");
-        assert!(s2.was_called("mark_op_applied"), "store-2 must receive mark_op_applied");
+        store
+            .create_row("_test_", "row-ops", None, None)
+            .await
+            .unwrap();
+        assert!(
+            s0.was_called("begin_ops_log"),
+            "store-0 must receive begin_ops_log"
+        );
+        assert!(
+            s1.was_called("begin_ops_log"),
+            "store-1 must receive begin_ops_log"
+        );
+        assert!(
+            s2.was_called("begin_ops_log"),
+            "store-2 must receive begin_ops_log"
+        );
+        assert!(
+            s0.was_called("mark_op_applied"),
+            "store-0 must receive mark_op_applied"
+        );
+        assert!(
+            s1.was_called("mark_op_applied"),
+            "store-1 must receive mark_op_applied"
+        );
+        assert!(
+            s2.was_called("mark_op_applied"),
+            "store-2 must receive mark_op_applied"
+        );
     }
 
     #[tokio::test]
@@ -740,10 +1263,22 @@ mod tests {
         let s0 = MockStore::new("store-a", true); // fails
         let s1 = MockStore::new("store-b", false);
         let store = MultiStore::new(vec![s0.clone(), s1.clone()]);
-        store.create_row("_test_", "row-fail", None, None).await.ok();
-        assert!(s0.was_called("begin_ops_log"),   "begin must be called even for failing store");
-        assert!(!s0.was_called("mark_op_applied"), "mark must NOT be called when write fails");
-        assert!(s1.was_called("mark_op_applied"),  "mark must be called for succeeding store");
+        store
+            .create_row("_test_", "row-fail", None, None)
+            .await
+            .ok();
+        assert!(
+            s0.was_called("begin_ops_log"),
+            "begin must be called even for failing store"
+        );
+        assert!(
+            !s0.was_called("mark_op_applied"),
+            "mark must NOT be called when write fails"
+        );
+        assert!(
+            s1.was_called("mark_op_applied"),
+            "mark must be called for succeeding store"
+        );
     }
 
     #[tokio::test]
@@ -760,10 +1295,8 @@ mod tests {
 
     #[test]
     fn merge_list_combines_disjoint_sets() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> = vec![
-            Ok(vec![flag("A")]),
-            Ok(vec![flag("B")]),
-        ];
+        let results: Vec<Result<Vec<crate::flag::CellFlag>>> =
+            vec![Ok(vec![flag("A")]), Ok(vec![flag("B")])];
         let merged = fan_merge_list(results, "test").unwrap();
         let keys: Vec<_> = merged.iter().map(|f| f.key.as_str()).collect();
         assert!(keys.contains(&"A"));
@@ -773,8 +1306,16 @@ mod tests {
     #[test]
     fn merge_list_deduplicates_by_key() {
         let results: Vec<Result<Vec<crate::flag::CellFlag>>> = vec![
-            Ok(vec![crate::flag::CellFlag { id: "p".into(), key: "X".into(), color: "first".into() }]),
-            Ok(vec![crate::flag::CellFlag { id: "s".into(), key: "X".into(), color: "second".into() }]),
+            Ok(vec![crate::flag::CellFlag {
+                id: "p".into(),
+                key: "X".into(),
+                color: "first".into(),
+            }]),
+            Ok(vec![crate::flag::CellFlag {
+                id: "s".into(),
+                key: "X".into(),
+                color: "second".into(),
+            }]),
         ];
         let merged = fan_merge_list(results, "test").unwrap();
         assert_eq!(merged.len(), 1);
@@ -783,10 +1324,8 @@ mod tests {
 
     #[test]
     fn merge_list_skips_failed_stores() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> = vec![
-            Err(anyhow::anyhow!("store 0 failed")),
-            Ok(vec![flag("A")]),
-        ];
+        let results: Vec<Result<Vec<crate::flag::CellFlag>>> =
+            vec![Err(anyhow::anyhow!("store 0 failed")), Ok(vec![flag("A")])];
         let merged = fan_merge_list(results, "test").unwrap();
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].key, "A");
@@ -794,18 +1333,24 @@ mod tests {
 
     #[test]
     fn merge_list_all_failed_returns_error() {
-        let results: Vec<Result<Vec<crate::flag::CellFlag>>> = vec![
-            Err(anyhow::anyhow!("fail")),
-            Err(anyhow::anyhow!("fail")),
-        ];
+        let results: Vec<Result<Vec<crate::flag::CellFlag>>> =
+            vec![Err(anyhow::anyhow!("fail")), Err(anyhow::anyhow!("fail"))];
         assert!(fan_merge_list(results, "test").is_err());
     }
 
     // ── fan_merge_paged unit tests ────────────────────────────────────────────
 
     fn paged(ids: &[&str]) -> PagedResponse {
-        let data = ids.iter().map(|id| serde_json::json!({ "id": *id })).collect();
-        PagedResponse { data, total: ids.len() as i64, page: 1, per_page: 50 }
+        let data = ids
+            .iter()
+            .map(|id| serde_json::json!({ "id": *id }))
+            .collect();
+        PagedResponse {
+            data,
+            total: ids.len() as i64,
+            page: 1,
+            per_page: 50,
+        }
     }
 
     #[test]
@@ -838,10 +1383,8 @@ mod tests {
 
     #[test]
     fn merge_paged_all_failed_returns_error() {
-        let results: Vec<Result<PagedResponse>> = vec![
-            Err(anyhow::anyhow!("fail")),
-            Err(anyhow::anyhow!("fail")),
-        ];
+        let results: Vec<Result<PagedResponse>> =
+            vec![Err(anyhow::anyhow!("fail")), Err(anyhow::anyhow!("fail"))];
         assert!(fan_merge_paged(results, "test").is_err());
     }
 }

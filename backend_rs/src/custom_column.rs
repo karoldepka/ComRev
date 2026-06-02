@@ -5,13 +5,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{error::db_err, data_row::AppState};
+use crate::{data_row::AppState, error::db_err};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CustomColumn {
     pub id: String,
-    pub name: String,
-    pub label: Option<String>,
+    pub title: Option<String>,
     pub description: Option<String>,
     pub expression: Option<String>,
     pub position_after: Option<String>,
@@ -27,11 +26,13 @@ pub struct CustomColumn {
 /// Full mutable spec for a custom column. Used both in the store trait and as the HTTP wire type.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CustomColumnInput {
-    pub name: String,
-    pub label: Option<String>,
+    pub title: Option<String>,
     pub description: Option<String>,
     pub expression: Option<String>,
     pub position_after: Option<String>,
+    /// Prevents the column from being edited by users. Builtin columns set this to true.
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default)]
     pub is_group: bool,
     #[serde(default)]
@@ -47,11 +48,11 @@ pub struct CustomColumnInput {
 impl Default for CustomColumnInput {
     fn default() -> Self {
         Self {
-            name: String::new(),
-            label: None,
+            title: None,
             description: None,
             expression: None,
             position_after: None,
+            read_only: false,
             is_group: false,
             parent_ids: vec![],
             source_path: None,
@@ -63,10 +64,14 @@ impl Default for CustomColumnInput {
 
 impl CustomColumnInput {
     pub fn effective_types(&self) -> Vec<String> {
-        self.types.clone().unwrap_or_else(|| vec!["text".to_string()])
+        self.types
+            .clone()
+            .unwrap_or_else(|| vec!["text".to_string()])
     }
     pub fn effective_data_types(&self) -> Vec<String> {
-        self.data_types.clone().unwrap_or_else(|| self.effective_types())
+        self.data_types
+            .clone()
+            .unwrap_or_else(|| self.effective_types())
     }
 }
 
@@ -80,13 +85,16 @@ pub struct CreateCustomColumn {
 #[derive(Debug, Deserialize)]
 pub struct PatchTableColumn {
     pub is_frozen: Option<bool>,
+    /// `None` = no change; `Some([])` = clear; `Some([a, b])` = set nested path.
+    pub source_path: Option<Vec<String>>,
 }
 
-pub async fn list(
-    _state: axum::extract::State<AppState>,
-) -> (StatusCode, String) {
+pub async fn list(_state: axum::extract::State<AppState>) -> (StatusCode, String) {
     // Legacy route — callers must migrate to /tables/:table_id/custom-columns.
-    (StatusCode::BAD_REQUEST, "Use /tables/:table_id/custom-columns — table_id is required".to_string())
+    (
+        StatusCode::BAD_REQUEST,
+        "Use /tables/:table_id/custom-columns — table_id is required".to_string(),
+    )
 }
 
 pub async fn list_for_table(
@@ -106,7 +114,10 @@ pub async fn create(
     _body: Json<CreateCustomColumn>,
 ) -> (StatusCode, String) {
     // Legacy route — callers must migrate to /tables/:table_id/custom-columns.
-    (StatusCode::BAD_REQUEST, "Use /tables/:table_id/custom-columns — table_id is required".to_string())
+    (
+        StatusCode::BAD_REQUEST,
+        "Use /tables/:table_id/custom-columns — table_id is required".to_string(),
+    )
 }
 
 pub async fn create_for_table(
@@ -114,14 +125,13 @@ pub async fn create_for_table(
     Path(table_id): Path<String>,
     Json(body): Json<CreateCustomColumn>,
 ) -> Result<(StatusCode, Json<CustomColumn>), (StatusCode, String)> {
-    let id = body.input.name.clone(); // fallback: use name as id if not provided
     let id = body
         .id
         .filter(|s| !s.is_empty())
-        .unwrap_or(id)
-        .replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_");
+        .map(|s| s.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_"))
+        .unwrap_or_default();
     if id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "missing column id or name".to_string()));
+        return Err((StatusCode::BAD_REQUEST, "missing column id".to_string()));
     }
 
     let col = state
@@ -162,7 +172,10 @@ mod tests {
 
     #[test]
     fn effective_types_uses_provided_value() {
-        let input = CustomColumnInput { types: Some(vec!["numeric".into()]), ..input_defaults() };
+        let input = CustomColumnInput {
+            types: Some(vec!["numeric".into()]),
+            ..input_defaults()
+        };
         assert_eq!(input.effective_types(), vec!["numeric"]);
     }
 
@@ -179,7 +192,10 @@ mod tests {
 
     #[test]
     fn effective_data_types_falls_back_to_types() {
-        let input = CustomColumnInput { types: Some(vec!["numeric".into()]), ..input_defaults() };
+        let input = CustomColumnInput {
+            types: Some(vec!["numeric".into()]),
+            ..input_defaults()
+        };
         assert_eq!(input.effective_data_types(), vec!["numeric"]);
     }
 
@@ -207,7 +223,7 @@ mod tests {
         assert!(!d.is_group);
         assert!(d.parent_ids.is_empty());
         assert!(d.source_path.is_none());
-        assert!(d.types.is_none());      // None → "text" via effective_types()
+        assert!(d.types.is_none()); // None → "text" via effective_types()
         assert!(d.data_types.is_none());
     }
 }
@@ -217,13 +233,22 @@ pub async fn patch_for_table(
     Path((table_id, column_id)): Path<(String, String)>,
     Json(body): Json<PatchTableColumn>,
 ) -> Result<Json<CustomColumn>, (StatusCode, String)> {
-    let is_frozen = body
-        .is_frozen
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing is_frozen".to_string()))?;
-    state
-        .store
-        .set_table_column_frozen(&table_id, &column_id, is_frozen)
-        .await
-        .map(Json)
-        .map_err(|e| db_err("custom_column.patch_for_table", e))
+    if body.is_frozen.is_none() && body.source_path.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "nothing to patch".to_string()));
+    }
+    let mut col = None;
+    if let Some(is_frozen) = body.is_frozen {
+        col = Some(
+            state.store.set_table_column_frozen(&table_id, &column_id, is_frozen)
+                .await.map_err(|e| db_err("custom_column.patch_for_table", e))?,
+        );
+    }
+    if let Some(path) = body.source_path {
+        let effective = if path.is_empty() { None } else { Some(path.as_slice()) };
+        col = Some(
+            state.store.set_column_source_path(&column_id, effective)
+                .await.map_err(|e| db_err("custom_column.patch_for_table", e))?,
+        );
+    }
+    Ok(Json(col.unwrap()))
 }
