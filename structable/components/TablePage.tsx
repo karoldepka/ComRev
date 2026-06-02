@@ -69,7 +69,10 @@ export default function TablePage({ tableId }: Props) {
           onClose={() => setShowAddTable(false)}
         />
       )}
-      <TreeTable tableId={tableId} />
+      <TreeTable
+        tableId={tableId}
+        onRowClick={tableId === 'tables' ? (id) => router.push(`/t/${id}`) : undefined}
+      />
     </>
   );
 }

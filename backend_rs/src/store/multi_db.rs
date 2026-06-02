@@ -1271,7 +1271,7 @@ mod tests {
     #[tokio::test]
     async fn upsert_github_repos_batch_empty_slice() {
         let p = MockStore::new("store-a", false);
-        let store = MultiStore::new(vec![p.clone()]);
+        let store = MultiStore::new(vec![p.clone()], None);
         assert_eq!(store.upsert_github_repos_batch(&[]).await.unwrap(), 0);
     }
 
@@ -1328,7 +1328,7 @@ mod tests {
     async fn ops_log_mark_not_called_when_write_fails() {
         let s0 = MockStore::new("store-a", true); // fails
         let s1 = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![s0.clone(), s1.clone()]);
+        let store = MultiStore::new(vec![s0.clone(), s1.clone()], None);
         store
             .create_row("_test_", "row-fail", None, None)
             .await

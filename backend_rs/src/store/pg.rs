@@ -48,13 +48,20 @@ impl DataStore for PgStore {
         let stmts = super::pg_schema::POSTGRES_SCHEMA;
         let db_id = &self.db_id;
         tracing::info!(db_id, statement_count = stmts.len(), "PgStore: applying schema");
+        let total_t0 = std::time::Instant::now();
         for (i, sql) in stmts.iter().enumerate() {
+            let t0 = std::time::Instant::now();
             sqlx::query(sql)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema statement {i} failed: {e}"))?;
+            let ms = t0.elapsed().as_millis();
+            if ms > 0 {
+                tracing::debug!(db_id, i, ms, "PgStore: schema statement applied");
+            }
         }
-        tracing::info!(db_id, "PgStore: schema ready");
+        let total_ms = total_t0.elapsed().as_millis();
+        tracing::info!(db_id, total_ms, "PgStore: schema ready");
         Ok(())
     }
   

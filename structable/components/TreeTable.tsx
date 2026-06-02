@@ -194,9 +194,10 @@ function errMsg(e: unknown): string {
 
 type Props = {
   tableId: string;
+  onRowClick?: (rowId: string) => void;
 };
 
-export default function TreeTable({ tableId }: Props) {
+export default function TreeTable({ tableId, onRowClick }: Props) {
   const [api, setApi] = useState<SyncClient | null>(null);
   const [syncPending, setSyncPending] = useState(0);
   const [cellPending, setCellPending] = useState(0);
@@ -1216,7 +1217,10 @@ export default function TreeTable({ tableId }: Props) {
                 const rowId = String(row['id'] ?? '');
                 if (hiddenRowIds.has(rowId)) return null;
                 return (
-                  <tr key={rowIndex}>
+                  <tr
+                    key={rowIndex}
+                    style={onRowClick ? { cursor: 'pointer' } : undefined}
+                  >
                     {visibleLeafColumns.map((col: Column) => {
                       const bodyKey = `cell:${rowIndex}:${col.id}`;
                       const noteKey = `${rowId}:${col.id}`;
@@ -1235,7 +1239,7 @@ export default function TreeTable({ tableId }: Props) {
                             cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
                           ].filter(Boolean).join(' ') || undefined}
                           style={col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined}
-                          onClick={(e) => selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey)}
+                          onClick={(e) => { selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey); onRowClick?.(rowId); }}
                           onDoubleClick={(e) => {
                             if (!isCellEditable(col.id)) return;
                             e.stopPropagation();

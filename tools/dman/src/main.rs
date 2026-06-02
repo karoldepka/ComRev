@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
+use ignore::WalkBuilder;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde_json::Value;
 use shlex::Shlex;
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     env, fs as stdfs,
+    io::Read,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -112,6 +114,19 @@ struct CommandSpec {
     command: String,
     args: Vec<String>,
     from_docs: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatLinesEntryMode {
+    DirsOnly,
+    IncludeFiles,
+}
+
+#[derive(Debug, Clone)]
+struct StatLinesOptions {
+    roots: Vec<PathBuf>,
+    entry_mode: StatLinesEntryMode,
+    respect_gitignore: bool,
 }
 
 const PLATFORM_DEFINITIONS: &[PlatformDefinition] = &[
@@ -250,6 +265,8 @@ fn print_usage() {
     println!("  test    Clone repositories and install dependencies");
     println!("  print   Print project metadata files recursively (breadth-first)");
     println!("  open    Clone repositories and open project roots in VS Code");
+    println!("  stat-lines");
+    println!("          Count code lines recursively, sorted ascending");
     println!("  run     Clone repositories and install dependencies");
     println!("  start   Alias for run");
     println!("  dev     Clone repositories and install dependencies");
@@ -266,10 +283,26 @@ fn print_usage() {
     println!("  -f, --file <path>   Read repo list from a file (one repo per line)");
     println!("  --depth <N>         Pass --depth <N> to git clone (shallow clone)");
     println!();
+    println!("Run `dman stat-lines --help` for line-count options.");
+    println!();
     println!("Environment variables:");
     println!("  GIT_ARGS            Extra arguments appended to every git clone call");
     println!("                      (e.g. GIT_ARGS=\"--depth 1\" dman clone owner/repo)");
     println!("\nIf no repositories are specified, the current directory is scanned recursively.");
+}
+
+fn print_stat_lines_usage() {
+    println!("Usage: dman stat-lines [OPTIONS] [DIR...]");
+    println!();
+    println!("Recursively count lines in code files. Directories are shown by default.");
+    println!();
+    println!("Options:");
+    println!("  -h, --help          Show this help message");
+    println!("  --files             Include code files as rows, alongside directories");
+    println!("  --dirs-only         Show only directory rows (default)");
+    println!("  --no-gitignore      Include paths ignored by .gitignore/.ignore");
+    println!();
+    println!("If no directories are specified, the current directory is scanned.");
 }
 
 fn parse_repo_spec(spec: &str) -> Option<String> {
@@ -422,6 +455,51 @@ async fn parse_args(args: &[String]) -> Result<(Mode, Vec<RepoJob>, Vec<String>)
     Ok((mode, repos, cli_git_args))
 }
 
+fn parse_stat_lines_args(args: &[String]) -> Result<StatLinesOptions> {
+    let mut roots = Vec::new();
+    let mut entry_mode = StatLinesEntryMode::DirsOnly;
+    let mut respect_gitignore = true;
+
+    for arg in args {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print_stat_lines_usage();
+                std::process::exit(0);
+            }
+
+            "--files" | "--include-files" => {
+                entry_mode = StatLinesEntryMode::IncludeFiles;
+            }
+
+            "--dirs-only" => {
+                entry_mode = StatLinesEntryMode::DirsOnly;
+            }
+
+            "--no-gitignore" => {
+                respect_gitignore = false;
+            }
+
+            arg if arg.starts_with('-') => {
+                anyhow::bail!("Unknown stat-lines option: {}", arg);
+            }
+
+            path => {
+                roots.push(PathBuf::from(path));
+            }
+        }
+    }
+
+    if roots.is_empty() {
+        roots.push(PathBuf::from("."));
+    }
+
+    Ok(StatLinesOptions {
+        roots,
+        entry_mode,
+        respect_gitignore,
+    })
+}
+
 async fn scan_local_workspace(
     root: &Path,
     tx: Option<mpsc::Sender<OperationTask>>,
@@ -478,6 +556,13 @@ async fn main() -> Result<()> {
     //
 
     let args: Vec<String> = env::args().skip(1).collect();
+
+    if args.first().is_some_and(|arg| arg == "stat-lines") {
+        let options = parse_stat_lines_args(&args[1..])?;
+        print_stat_lines(options)?;
+
+        return Ok(());
+    }
 
     let (mode, repos, cli_git_args) = if args.is_empty() {
         print_usage();
@@ -1445,6 +1530,342 @@ fn print_metadata_recursively(root: &Path) -> Result<(usize, usize)> {
     );
 
     Ok((metadata_count, node_modules_count))
+}
+
+fn print_stat_lines(options: StatLinesOptions) -> Result<()> {
+    let stats = stat_lines(&options)?;
+    let mut entries = stats.entries;
+
+    entries.sort_by(|a, b| {
+        a.lines
+            .cmp(&b.lines)
+            .then_with(|| a.path.to_lowercase().cmp(&b.path.to_lowercase()))
+    });
+
+    let width = entries
+        .iter()
+        .map(|entry| format_lines(entry.lines).len())
+        .chain(std::iter::once(format_lines(stats.total).len()))
+        .max()
+        .unwrap_or(1);
+
+    for entry in entries {
+        let lines = format_lines(entry.lines);
+        println!("{lines:>width$} {}", entry.path);
+    }
+
+    let total = format_lines(stats.total);
+    println!("{total:>width$} .");
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct LineStatEntry {
+    path: String,
+    lines: u64,
+}
+
+#[derive(Debug, Clone)]
+struct LineStats {
+    entries: Vec<LineStatEntry>,
+    total: u64,
+}
+
+fn stat_lines(options: &StatLinesOptions) -> Result<LineStats> {
+    let roots = normalize_stat_roots(&options.roots)?;
+    let cwd = env::current_dir().context("failed to resolve current directory")?;
+    let mut directories: BTreeMap<String, u64> = BTreeMap::new();
+    let mut files = Vec::new();
+    let mut total = 0;
+
+    for root in roots {
+        if root.is_file() {
+            if is_code_file(&root) {
+                let lines = count_file_lines(&root)
+                    .with_context(|| format!("failed to count lines in {}", root.display()))?;
+                total += lines;
+
+                add_parent_directory_counts(&mut directories, &root, &root, &cwd, lines);
+
+                if options.entry_mode == StatLinesEntryMode::IncludeFiles {
+                    files.push(LineStatEntry {
+                        path: display_stat_path(&root, &cwd),
+                        lines,
+                    });
+                }
+            }
+
+            continue;
+        }
+
+        if !root.is_dir() {
+            anyhow::bail!(
+                "stat-lines path is not a directory or file: {}",
+                root.display()
+            );
+        }
+
+        let mut builder = WalkBuilder::new(&root);
+        builder
+            .hidden(false)
+            .ignore(options.respect_gitignore)
+            .git_ignore(options.respect_gitignore)
+            .git_exclude(options.respect_gitignore)
+            .git_global(options.respect_gitignore)
+            .parents(options.respect_gitignore)
+            .require_git(false)
+            .filter_entry(|entry| should_scan_stat_entry(entry.path()));
+
+        for entry in builder.build() {
+            let entry =
+                entry.with_context(|| format!("failed to scan directory {}", root.display()))?;
+
+            if !entry
+                .file_type()
+                .is_some_and(|file_type| file_type.is_file())
+            {
+                continue;
+            }
+
+            let path = entry.path();
+
+            if !is_code_file(path) {
+                continue;
+            }
+
+            let lines = count_file_lines(path)
+                .with_context(|| format!("failed to count lines in {}", path.display()))?;
+            total += lines;
+
+            add_parent_directory_counts(&mut directories, path, &root, &cwd, lines);
+
+            if options.entry_mode == StatLinesEntryMode::IncludeFiles {
+                files.push(LineStatEntry {
+                    path: display_stat_path(path, &cwd),
+                    lines,
+                });
+            }
+        }
+    }
+
+    let mut entries: Vec<LineStatEntry> = directories
+        .into_iter()
+        .filter(|(path, _)| path != ".")
+        .map(|(path, lines)| LineStatEntry { path, lines })
+        .collect();
+
+    if options.entry_mode == StatLinesEntryMode::IncludeFiles {
+        entries.extend(files);
+    }
+
+    Ok(LineStats { entries, total })
+}
+
+fn normalize_stat_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut normalized = Vec::new();
+
+    for root in roots {
+        let resolved = dunce::canonicalize(root)
+            .with_context(|| format!("failed to resolve stat-lines path {}", root.display()))?;
+
+        normalized.push(resolved);
+    }
+
+    normalized.sort();
+    normalized.dedup();
+
+    let mut shallowest: Vec<PathBuf> = Vec::new();
+
+    'roots: for root in normalized {
+        for existing in &shallowest {
+            if root.starts_with(existing) {
+                continue 'roots;
+            }
+        }
+
+        shallowest.push(root);
+    }
+
+    Ok(shallowest)
+}
+
+fn should_scan_stat_entry(path: &Path) -> bool {
+    !path.components().any(|component| {
+        matches!(
+            component.as_os_str().to_string_lossy().as_ref(),
+            ".git" | ".hg" | ".svn"
+        )
+    })
+}
+
+fn add_parent_directory_counts(
+    directories: &mut BTreeMap<String, u64>,
+    file: &Path,
+    root: &Path,
+    cwd: &Path,
+    lines: u64,
+) {
+    let stop_at = if root.is_dir() {
+        root
+    } else {
+        root.parent().unwrap_or(root)
+    };
+
+    let mut current = file.parent();
+
+    while let Some(dir) = current {
+        let path = display_stat_path(dir, cwd);
+
+        *directories.entry(path).or_insert(0) += lines;
+
+        if dir == stop_at {
+            break;
+        }
+
+        current = dir.parent();
+    }
+}
+
+fn display_stat_path(path: &Path, cwd: &Path) -> String {
+    let display_path = path.strip_prefix(cwd).unwrap_or(path);
+
+    if display_path.as_os_str().is_empty() {
+        ".".to_string()
+    } else {
+        display_path.display().to_string()
+    }
+}
+
+fn is_code_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+
+    if is_generated_or_lock_file(name) {
+        return false;
+    }
+
+    if CODE_FILENAMES
+        .iter()
+        .any(|code_name| name.eq_ignore_ascii_case(code_name))
+    {
+        return true;
+    }
+
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+
+    let extension = extension.to_ascii_lowercase();
+
+    CODE_EXTENSIONS.contains(&extension.as_str())
+}
+
+fn is_generated_or_lock_file(name: &str) -> bool {
+    if name.ends_with(".min.js") || name.ends_with(".min.css") || name.ends_with(".lock") {
+        return true;
+    }
+
+    LOCK_FILENAMES
+        .iter()
+        .any(|lock_name| name.eq_ignore_ascii_case(lock_name))
+}
+
+fn count_file_lines(path: &Path) -> Result<u64> {
+    let mut file = stdfs::File::open(path)?;
+    let mut buffer = [0; 64 * 1024];
+    let mut lines = 0;
+    let mut last_byte = None;
+
+    loop {
+        let read = file.read(&mut buffer)?;
+
+        if read == 0 {
+            break;
+        }
+
+        lines += buffer[..read].iter().filter(|byte| **byte == b'\n').count() as u64;
+        last_byte = Some(buffer[read - 1]);
+    }
+
+    if last_byte.is_some_and(|byte| byte != b'\n') {
+        lines += 1;
+    }
+
+    Ok(lines)
+}
+
+fn format_lines(lines: u64) -> String {
+    let raw = lines.to_string();
+    let mut formatted = String::with_capacity(raw.len() + raw.len() / 3);
+
+    for (index, char) in raw.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            formatted.push(' ');
+        }
+
+        formatted.push(char);
+    }
+
+    formatted.chars().rev().collect()
+}
+
+const CODE_FILENAMES: &[&str] = &[
+    "Dockerfile",
+    "Justfile",
+    "Makefile",
+    "Rakefile",
+    "Gemfile",
+    "Brewfile",
+    "Procfile",
+    "CMakeLists.txt",
+];
+
+const LOCK_FILENAMES: &[&str] = &[
+    "Cargo.lock",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+    "poetry.lock",
+    "uv.lock",
+    "Pipfile.lock",
+    "composer.lock",
+    "go.sum",
+];
+
+const CODE_EXTENSIONS: &[&str] = &[
+    "astro", "bash", "bat", "c", "cc", "cfg", "clj", "cljs", "cmake", "cpp", "cs", "css", "cu",
+    "cuh", "dart", "elm", "erl", "ex", "exs", "fish", "fs", "fsx", "go", "graphql", "gql",
+    "groovy", "h", "hpp", "hrl", "hs", "html", "java", "jl", "js", "json", "jsx", "kt", "kts",
+    "less", "lua", "m", "make", "ml", "mli", "mm", "nim", "php", "pl", "pm", "proto", "ps1", "py",
+    "r", "rb", "rs", "sass", "scala", "scss", "sh", "sol", "sql", "svelte", "swift", "tf",
+    "tfvars", "toml", "ts", "tsx", "v", "vue", "xml", "yaml", "yml", "zig", "zsh",
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_line_counts_with_space_groups() {
+        assert_eq!(format_lines(0), "0");
+        assert_eq!(format_lines(999), "999");
+        assert_eq!(format_lines(9_999), "9 999");
+        assert_eq!(format_lines(1_234_567), "1 234 567");
+    }
+
+    #[test]
+    fn recognizes_code_files_without_lockfiles() {
+        assert!(is_code_file(Path::new("src/main.rs")));
+        assert!(is_code_file(Path::new("Dockerfile")));
+        assert!(is_code_file(Path::new("tsconfig.json")));
+        assert!(!is_code_file(Path::new("Cargo.lock")));
+        assert!(!is_code_file(Path::new("dist/app.min.js")));
+        assert!(!is_code_file(Path::new("README.md")));
+    }
 }
 
 async fn check_required_tools() {
