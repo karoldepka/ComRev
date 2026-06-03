@@ -882,7 +882,7 @@ async fn integration_list_data_rows_sorts_nested_numeric_path_numerically() {
             &RowQuery {
                 page: 1,
                 per_page: 50,
-                sort: Some("metrics.views:desc".to_string()),
+                sort: Some("metrics__views:desc".to_string()),
                 ..Default::default()
             },
         )
@@ -913,8 +913,8 @@ async fn integration_batch_upsert_repairs_stale_nested_source_path() {
         .unwrap();
     sqlx::query(
         "INSERT INTO custom_columns (id, title, types, data_types, is_group, parent_ids, source_path)
-         VALUES ('metrics__views', 'views', ARRAY['numeric'], ARRAY['numeric'], false, ARRAY['metrics'], NULL)
-         ON CONFLICT (id) DO UPDATE SET source_path = NULL",
+         VALUES ('metrics__views', 'views', ARRAY['numeric'], ARRAY['numeric'], false, ARRAY[]::TEXT[], NULL)
+         ON CONFLICT (id) DO UPDATE SET parent_ids = ARRAY[]::TEXT[], source_path = NULL",
     )
     .execute(&pool)
     .await
@@ -947,6 +947,11 @@ async fn integration_batch_upsert_repairs_stale_nested_source_path() {
         Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
         "stale nested column should be returned with a data path"
     );
+    assert_eq!(
+        col.parent_ids,
+        vec!["metrics"],
+        "stale nested column should be repaired in storage with its parent"
+    );
 
     let persisted: Option<Vec<String>> =
         sqlx::query_scalar("SELECT source_path FROM custom_columns WHERE id = 'metrics__views'")
@@ -957,6 +962,56 @@ async fn integration_batch_upsert_repairs_stale_nested_source_path() {
         persisted.as_deref(),
         Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
         "stale nested source_path should be repaired in storage"
+    );
+    let persisted_parent_ids: Vec<String> =
+        sqlx::query_scalar("SELECT parent_ids FROM custom_columns WHERE id = 'metrics__views'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        persisted_parent_ids,
+        vec!["metrics"],
+        "stale nested parent_ids should be repaired in storage"
+    );
+}
+
+#[tokio::test]
+async fn integration_list_custom_columns_repairs_nested_metadata_from_existing_rows() {
+    let store = setup!();
+    let table_id = "nested_cols_list_repair";
+    let pool = store.direct_pool().await.expect("direct pool");
+
+    store
+        .upsert_rows_batch(
+            table_id,
+            &[serde_json::json!({
+                "id": "row1",
+                "metrics": { "views": 100 }
+            })],
+        )
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "UPDATE custom_columns
+         SET parent_ids = ARRAY[]::TEXT[], source_path = NULL
+         WHERE id = 'metrics__views'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let cols = store.list_custom_columns(table_id).await.unwrap();
+    let col = cols.iter().find(|c| c.id == "metrics__views").unwrap();
+    assert_eq!(
+        col.parent_ids,
+        vec!["metrics"],
+        "list_custom_columns should repair parent_ids from existing row data"
+    );
+    assert_eq!(
+        col.source_path.as_deref(),
+        Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
+        "list_custom_columns should repair source_path from existing row data"
     );
 }
 
@@ -1598,4 +1653,3 @@ async fn live_db_per_request_timeout_override() {
         .unwrap();
     assert!(page.total >= 1);
 }
-

@@ -115,3 +115,6 @@ As much as possible code should be in sync_core wasm
 
 # Naming
 Don't do weird shortcuts names like `futs` or `tname` - instead call it `futures` and `table_name`, to avoid spellchecker error, and to aim readability.
+
+# Id-s
+* id-s should not contain special characters, except _ or __. Double underscore is for parent_column__sub_column

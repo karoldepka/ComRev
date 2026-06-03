@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom';
 import type { ApiCustomColumn } from '../types/table';
 
 export type ColumnPropertiesPayload = {
-  source_path: string[] | null;  // null = clear, array = set
+  source_path: string[] | null;
+  title?: string | null;
 };
 
 type Props = {
@@ -25,6 +26,7 @@ function stringToPath(s: string): string[] | null {
 }
 
 export default function ColumnPropertiesDialog({ column, onSave, onClose }: Props) {
+  const [titleStr, setTitleStr] = useState(() => column.title ?? '');
   const [pathStr, setPathStr] = useState(() => pathToString(column.source_path));
 
   useEffect(() => {
@@ -36,12 +38,15 @@ export default function ColumnPropertiesDialog({ column, onSave, onClose }: Prop
   if (typeof document === 'undefined') return null;
 
   const handleSave = () => {
-    onSave(column.id, { source_path: stringToPath(pathStr) });
+    onSave(column.id, {
+      source_path: stringToPath(pathStr),
+      title: titleStr !== (column.title ?? '') ? titleStr : undefined,
+    });
     onClose();
   };
 
   const currentPath = pathToString(column.source_path);
-  const isDirty = pathStr !== currentPath;
+  const isDirty = titleStr !== (column.title ?? '') || pathStr !== currentPath;
 
   return createPortal(
     <div className="dialog-backdrop" onMouseDown={onClose}>
@@ -65,16 +70,26 @@ export default function ColumnPropertiesDialog({ column, onSave, onClose }: Prop
         </label>
 
         <label className="dialog-field">
+          <span className="dialog-label">Title</span>
+          <input
+            autoFocus
+            value={titleStr}
+            onChange={(e) => setTitleStr(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && isDirty) handleSave(); }}
+            placeholder="Column display name"
+          />
+        </label>
+
+        <label className="dialog-field">
           <span className="dialog-label">
             Data path
             <span className="dialog-hint"> — dot-separated JSON path in row data, e.g. <code>stars_diff.6h</code></span>
           </span>
           <input
-            autoFocus
             value={pathStr}
             onChange={(e) => setPathStr(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && isDirty) handleSave(); }}
-            placeholder="e.g. stars_diff.6h  (leave blank to use column id)"
+            placeholder="e.g. stars_diff.6h"
           />
         </label>
 

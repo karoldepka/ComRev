@@ -34,6 +34,7 @@ type Column = {
   isFrozen?: boolean;
   types?: string[];
   filterType?: ColType | null;
+  sourcePath?: string[] | null;
   subColumns?: Column[];
 };
 
@@ -42,16 +43,31 @@ type HeaderCell = { column: Column; colSpan: number; rowSpan: number; depth: num
 // ── Utility functions ──────────────────────────────────────────────────────────
 
 function labelFor(key: string): string {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  if (key === 'stars_diff') return 'Stars diff';
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Resolve a possibly dot-notated column id against a row object. */
-export function rowVal(row: DataRow, id: string): unknown {
-  const dot = id.indexOf('.');
-  if (dot === -1) return row[id];
-  const parent = row[id.slice(0, dot)];
-  if (parent === null || typeof parent !== 'object' || Array.isArray(parent)) return undefined;
-  return (parent as Record<string, unknown>)[id.slice(dot + 1)];
+function columnLabel(cc: ApiCustomColumn): string {
+  const title = cc.title?.trim();
+  return title && title.length > 0 ? title : labelFor(cc.id);
+}
+
+function readPath(row: DataRow, path: string[]): unknown {
+  let value: unknown = row;
+  for (const part of path) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value;
+}
+
+/** Resolve a column id/source path against a row object. */
+export function rowVal(row: DataRow, id: string, sourcePath?: string[] | null): unknown {
+  if (sourcePath?.length) return readPath(row, sourcePath);
+  if (Object.prototype.hasOwnProperty.call(row, id)) return row[id];
+  return undefined;
 }
 
 function deriveColumns(row: DataRow): Column[] {
@@ -66,10 +82,11 @@ function deriveColumns(row: DataRow): Column[] {
         width: 80,
         minWidth: 40,
         subColumns: Object.keys(val as Record<string, unknown>).map((sub) => ({
-          id: `${key}.${sub}`,
+          id: `${key}__${sub}`,
           label: sub,
           width: 70,
           minWidth: 40,
+          sourcePath: [key, sub],
         })),
       };
     }
@@ -100,42 +117,57 @@ function insertPositioned(
   list.splice(beforeIdx >= 0 ? beforeIdx : list.length, 0, col);
 }
 
-/** Resolve the row-data key for a column.
- *  1. source_path from backend (authoritative)
- *  2. Stable column id for user-created values. `name` is user-facing/renameable. */
-function resolveColumnId(cc: ApiCustomColumn): string {
-  if ((cc.source_path?.length ?? 0) > 1) return cc.source_path!.join('.');
-  if (cc.source_path?.[0]) return cc.source_path[0];
-  return cc.id;
-}
-
 function columnsFromMetadata(customColumns: ApiCustomColumn[], _rowSample?: DataRow): Column[] {
   const colMap = new Map<string, Column>();
+  const syntheticRootIds = new Set<string>();
   for (const cc of customColumns) {
+    if (!cc.id) {
+      logger.error({ column: cc }, 'custom column metadata missing id');
+      continue;
+    }
     colMap.set(cc.id, {
-      id: resolveColumnId(cc),
+      id: cc.id,
       customColumnId: cc.id,
-      label: cc.title ?? labelFor(cc.id),
+      label: columnLabel(cc),
       width: 150,
       minWidth: 60,
       readOnly: isColumnReadOnly(cc),
       isFrozen: cc.is_frozen ?? false,
       types: cc.types ?? ['text'],
       filterType: (cc.data_types?.[0] as ColType | undefined) ?? null,
+      sourcePath: cc.source_path ?? null,
     });
   }
 
   const root: Column[] = [];
   for (const cc of customColumns) {
-    const col = colMap.get(cc.id)!;
+    const col = colMap.get(cc.id);
+    if (!col) continue;
     const parentId = cc.parent_ids?.length ? cc.parent_ids[cc.parent_ids.length - 1] : null;
-    const parentCol = parentId ? colMap.get(parentId) : null;
+    let parentCol = parentId ? colMap.get(parentId) : null;
+    if (parentId && !parentCol) {
+      parentCol = {
+        id: parentId,
+        customColumnId: parentId,
+        label: labelFor(parentId),
+        width: 150,
+        minWidth: 60,
+        readOnly: true,
+        subColumns: [],
+      };
+      colMap.set(parentId, parentCol);
+      syntheticRootIds.add(parentId);
+    }
     if (parentCol) {
       if (!parentCol.subColumns) parentCol.subColumns = [];
       insertPositioned(parentCol.subColumns, col, cc.position_before, cc.position_after);
     } else {
       insertPositioned(root, col, cc.position_before, cc.position_after);
     }
+  }
+  for (const id of syntheticRootIds) {
+    const col = colMap.get(id);
+    if (col) insertPositioned(root, col, null, null);
   }
   return root;
 }
@@ -333,7 +365,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const [propertiesCol, setPropertiesCol] = useState<ApiCustomColumn | null>(null);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
-  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff.14d', dir: 'desc' });
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff__14d', dir: 'desc' });
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
 
@@ -405,7 +437,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
 
     setLoading(true);
     setFetchError(null);
-    const sortColumn = customColumns.find((cc) => resolveColumnId(cc) === sort.col || cc.id === sort.col);
+    const sortColumn = customColumns.find((cc) => cc.id === sort.col);
     const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
     const params = new URLSearchParams({
       page: String(page),
@@ -452,7 +484,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     api.fetchCustomColumns(tableId)
       .then((cols) => {
         if (!active) return;
-        logger.debug({ count: cols.length, stars_diff: cols.filter((c) => c.id.startsWith('gh_stars_diff')) }, 'custom columns loaded');
+        logger.debug({ count: cols.length, stars_diff: cols.filter((c) => c.id.startsWith('stars_diff')) }, 'custom columns loaded');
         logger.debug(cols.reduce<Record<string, unknown>>((acc, c) => { acc[c.id] = { title: c.title, source_path: c.source_path, parent_ids: c.parent_ids, types: c.types }; return acc; }, {}), 'column metadata');
         setCustomColumns(cols);
       })
@@ -578,7 +610,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       if (cc.expression?.trim()) {
         try {
           // eslint-disable-next-line no-new-func
-          map.set(resolveColumnId(cc), new Function('row', `"use strict"; return (${cc.expression})`) as (row: DataRow) => unknown);
+          map.set(cc.id, new Function('row', `"use strict"; return (${cc.expression})`) as (row: DataRow) => unknown);
         } catch { /* invalid expression */ }
       }
     }
@@ -586,7 +618,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   }, [customColumns]);
 
   // Lookup maps for column metadata
-  const customColByColumnId = useMemo(() => new Map(customColumns.map((cc) => [resolveColumnId(cc), cc])), [customColumns]);
+  const customColByColumnId = useMemo(() => new Map(customColumns.map((cc) => [cc.id, cc])), [customColumns]);
 
   const isCellEditable = useCallback((colId: string): boolean => {
     if (compiledExprs.has(colId)) return false; // computed — not user-editable
@@ -622,7 +654,8 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
         if (col && row && isCellEditable(col.id)) {
           e.preventDefault();
           const rowId = String(row['id'] ?? '');
-          const strVal = row[col.id] == null ? '' : String(row[col.id]);
+          const rawVal = rowVal(row, col.id, col.sourcePath);
+          const strVal = rawVal == null ? '' : String(rawVal);
           setEditingCell({ rowIndex: cursorPos.row, rowId, colId: col.id, value: strVal });
         }
       }
@@ -851,7 +884,11 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
 
   const saveColumnProperties = useCallback((columnId: string, payload: ColumnPropertiesPayload) => {
     if (!api) return;
-    api.setColumnSourcePath(tableId, columnId, payload.source_path)
+    const patch: { source_path?: string[] | null; title?: string | null } = {
+      source_path: payload.source_path,
+    };
+    if (payload.title !== undefined) patch.title = payload.title;
+    api.patchColumn(tableId, columnId, patch)
       .then((saved) => setCustomColumns((prev) => prev.map((cc) => cc.id === saved.id ? saved : cc)))
       .catch((err: unknown) => toast.error(`Failed to update column: ${errMsg(err)}`));
   }, [api, tableId]);
@@ -1248,7 +1285,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                           onDoubleClick={(e) => {
                             if (!isCellEditable(col.id)) return;
                             e.stopPropagation();
-                            const rawVal = row[col.id];
+                            const rawVal = rowVal(row, col.id, col.sourcePath);
                             const strVal = rawVal == null ? '' : String(rawVal);
                             setEditingCell({ rowIndex, rowId, colId: col.id, value: strVal });
                           }}
@@ -1288,6 +1325,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                             <CellContent
                               row={row}
                               colId={col.id}
+                              sourcePath={col.sourcePath}
                               compiledExpr={compiledExprs.get(col.id)}
                               hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
                               hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}

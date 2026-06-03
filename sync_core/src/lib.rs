@@ -1224,7 +1224,7 @@ impl serde::Serialize for HiddenCol {
 impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("CustomCol", 11)?;
+        let mut st = s.serialize_struct("CustomCol", 14)?;
         st.serialize_field("id", &self.id)?;
         st.serialize_field("title", &self.title)?;
         st.serialize_field("expression", &self.expression)?;
@@ -1235,6 +1235,15 @@ impl serde::Serialize for CustomCol {
         st.serialize_field("readOnly", &self.read_only)?;
         st.serialize_field("types", &self.types)?;
         st.serialize_field("is_frozen", &self.is_frozen)?;
+        let source_path = if self.source_path.is_empty() {
+            None
+        } else {
+            Some(self.source_path.clone())
+        };
+        st.serialize_field("source_path", &source_path)?;
+        st.serialize_field("data_types", &self.data_types)?;
+        st.serialize_field("parent_ids", &self.parent_ids)?;
+        st.serialize_field("is_group", &self.is_group)?;
         st.end()
     }
 }
@@ -1321,6 +1330,10 @@ impl serde::Serialize for ServerEvent {
                             "description": d.description, "read_only": d.read_only,
                             "readOnly": d.read_only, "types": d.types,
                             "is_frozen": d.is_frozen,
+                            "source_path": if d.source_path.is_empty() { serde_json::Value::Null } else { serde_json::json!(d.source_path) },
+                            "data_types": d.data_types,
+                            "parent_ids": d.parent_ids,
+                            "is_group": d.is_group,
                         })),
                     }),
                 )?;
@@ -1511,5 +1524,27 @@ mod tests {
         let cop = q.into_client_op().unwrap();
         assert_eq!(cop.op_id, "my-op-42");
         assert_eq!(cop.seq, 99);
+    }
+
+    #[test]
+    fn custom_col_missing_title_serializes_as_null() {
+        let col = CustomCol {
+            id: "stars_diff".into(),
+            title: None,
+            expression: String::new(),
+            position_after: String::new(),
+            description: String::new(),
+            read_only: false,
+            types: vec!["text".into()],
+            is_frozen: false,
+            position_before: String::new(),
+            source_path: vec![],
+            data_types: vec!["text".into()],
+            parent_ids: vec![],
+            is_group: true,
+        };
+        let json = serde_json::to_value(&col).unwrap();
+        assert_eq!(json["title"], serde_json::Value::Null);
+        assert_ne!(json["title"], serde_json::Value::String(String::new()));
     }
 }

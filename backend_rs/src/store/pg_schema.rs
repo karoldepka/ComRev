@@ -322,5 +322,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "#,
     "ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
     "ALTER TABLE table_custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
+    "UPDATE custom_columns SET title = NULL WHERE BTRIM(title) = '';",
 ];
 // Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore trait.

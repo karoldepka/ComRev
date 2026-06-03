@@ -375,6 +375,20 @@ impl DataStore for MultiStore {
         )
     }
 
+    async fn set_column_title(
+        &self,
+        column_id: &str,
+        title: Option<&str>,
+    ) -> Result<crate::custom_column::CustomColumn> {
+        let title_owned: Option<String> = title.map(|t| t.to_string());
+        fan_out!(
+            self,
+            "custom_column.set_title",
+            serde_json::json!({"column_id": column_id, "title": title_owned}),
+            set_column_title(column_id, title)
+        )
+    }
+
     async fn nuke_user_data(&self) -> Result<()> {
         let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
             let result = s.nuke_user_data().await;
@@ -869,6 +883,33 @@ mod tests {
             unreachable!()
         }
 
+        async fn set_column_title(
+            &self,
+            id: &str,
+            title: Option<&str>,
+        ) -> Result<crate::custom_column::CustomColumn> {
+            self.record("set_column_title");
+            self.fail()?;
+            Ok(crate::custom_column::CustomColumn {
+                id: id.into(),
+                title: title.and_then(|value| {
+                    let trimmed = value.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                }),
+                description: None,
+                expression: None,
+                position_before: None,
+                position_after: None,
+                read_only: false,
+                types: vec![],
+                source_path: None,
+                data_types: vec![],
+                is_group: false,
+                parent_ids: vec![],
+                is_frozen: false,
+            })
+        }
+
         async fn list_flags(&self) -> Result<Vec<crate::flag::CellFlag>> {
             self.record("list_flags");
             self.fail()?;
@@ -985,7 +1026,10 @@ mod tests {
             self.fail()?;
             Ok(crate::custom_column::CustomColumn {
                 id: id.into(),
-                title: input.title.clone(),
+                title: input.title.as_deref().and_then(|value| {
+                    let trimmed = value.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                }),
                 description: input.description.clone(),
                 expression: input.expression.clone(),
                 position_before: input.position_before.clone(),

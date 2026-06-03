@@ -90,6 +90,7 @@ pub struct PatchTableColumn {
     pub is_frozen: Option<bool>,
     /// `None` = no change; `Some([])` = clear; `Some([a, b])` = set nested path.
     pub source_path: Option<Vec<String>>,
+    pub title: Option<String>,
 }
 
 pub async fn list(_state: axum::extract::State<AppState>) -> (StatusCode, String) {
@@ -236,7 +237,7 @@ pub async fn patch_for_table(
     Path((table_id, column_id)): Path<(String, String)>,
     Json(body): Json<PatchTableColumn>,
 ) -> Result<Json<CustomColumn>, (StatusCode, String)> {
-    if body.is_frozen.is_none() && body.source_path.is_none() {
+    if body.is_frozen.is_none() && body.source_path.is_none() && body.title.is_none() {
         return Err((StatusCode::BAD_REQUEST, "nothing to patch".to_string()));
     }
     let mut col = None;
@@ -261,6 +262,16 @@ pub async fn patch_for_table(
                 .set_column_source_path(&column_id, effective)
                 .await
                 .map_err(|e| db_err("custom_column.patch_for_table", e))?,
+        );
+    }
+    if let Some(ref t) = body.title {
+        let t_opt = if t.is_empty() { None } else { Some(t.as_str()) };
+        col = Some(
+            state
+                .store
+                .set_column_title(&column_id, t_opt)
+                .await
+                .map_err(|e| db_err("custom_column.patch_title", e))?,
         );
     }
     Ok(Json(col.unwrap()))

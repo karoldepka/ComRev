@@ -204,7 +204,7 @@ fn remark_to_proto(r: &crate::remark::Remark) -> Remark {
 fn custom_col_to_proto(c: &crate::custom_column::CustomColumn) -> CustomCol {
     CustomCol {
         id: c.id.clone(),
-        title: c.title.clone().unwrap_or_default(),
+        title: c.title.clone(),
         description: c.description.clone().unwrap_or_default(),
         expression: c.expression.clone().unwrap_or_default(),
         position_before: c.position_before.clone().unwrap_or_default(),
@@ -212,5 +212,9 @@ fn custom_col_to_proto(c: &crate::custom_column::CustomColumn) -> CustomCol {
         read_only: c.read_only,
         types: c.types.clone(),
         is_frozen: c.is_frozen,
+        source_path: c.source_path.clone().unwrap_or_default(),
+        data_types: c.data_types.clone(),
+        parent_ids: c.parent_ids.clone(),
+        is_group: c.is_group,
     }
 }

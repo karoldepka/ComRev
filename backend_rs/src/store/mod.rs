@@ -151,6 +151,13 @@ pub trait DataStore: Send + Sync {
         path: Option<&[String]>,
     ) -> Result<crate::custom_column::CustomColumn>;
 
+    /// Set (or clear) the title for a column. None = clear (set to NULL).
+    async fn set_column_title(
+        &self,
+        column_id: &str,
+        title: Option<&str>,
+    ) -> Result<crate::custom_column::CustomColumn>;
+
     // ── Tables registry ───────────────────────────────────────────────────────
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>>;
@@ -231,6 +238,7 @@ pub mod multi_db;
 /// connection. Intended for integration tests: each test generates a unique
 /// schema name, enabling parallel runs without data interference.
 /// Call `DROP SCHEMA … CASCADE` to clean up after the test.
+#[cfg(test)]
 pub async fn open_pg_isolated(db_id: &str, url: &str, schema: &str) -> Result<Arc<dyn DataStore>> {
     let pg = Arc::new(pg::PgStore::connect_with_schema(db_id, url, schema, 1).await?);
     Ok(Arc::new(multi_db::MultiStore::new(vec![pg], None)))

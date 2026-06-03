@@ -123,7 +123,7 @@ message HiddenRow { string id = 1; int64  repo_id   = 2; }
 message HiddenCol { string id = 1; string column_id = 2; }
 message CustomCol {
   string id             = 1;
-  string title          = 2;
+  optional string title = 2;
   reserved 3;
   string expression     = 4;
   string position_after = 5;
@@ -132,6 +132,11 @@ message CustomCol {
   repeated string types = 8;
   bool   is_frozen      = 9;
   string position_before = 10;
+  repeated string source_path = 11;
+  repeated string data_types  = 12;
+  repeated string parent_ids  = 13;
+  bool   is_group       = 14;
+  reserved 15;
 }
 
 // ── Read responses ─────────────────────────────────────────────────────────────

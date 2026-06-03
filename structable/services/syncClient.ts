@@ -21,7 +21,7 @@ export type HiddenRowData = { id: string; row_id: string };
 export type HiddenColData = { id: string; column_id: string };
 export type CustomColData = {
   id: string;
-  title: string;
+  title: string | null;
   expression: string;
   position_before: string;
   position_after: string;
@@ -98,6 +98,7 @@ interface WasmModule {
 // ── Singleton plumbing ─────────────────────────────────────────────────────────
 
 const GRPC_BASE = process.env.NEXT_PUBLIC_GRPC_URL ?? 'http://localhost:3002';
+const WASM_ASSET_VERSION = String(Date.now());
 
 let _wasm: WasmModule | null = null;
 let _initPromise: Promise<SyncClient> | null = null;
@@ -108,10 +109,9 @@ async function loadWasm(): Promise<WasmModule> {
   // wasm-pack --target web outputs sync_core.js + sync_core_bg.wasm into public/wasm/
   // Next.js serves public/ as static assets.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mod = await import(/* webpackIgnore: true */ '/wasm/sync_core.js' as any);
+  const mod = await import(/* webpackIgnore: true */ `/wasm/sync_core.js?v=${WASM_ASSET_VERSION}` as any);
   // --target web requires calling the default init() to fetch + instantiate the .wasm binary.
-  // Without args it resolves sync_core_bg.wasm relative to the JS file URL.
-  await mod.default();
+  await mod.default(`/wasm/sync_core_bg.wasm?v=${WASM_ASSET_VERSION}`);
   _wasm = mod as WasmModule;
   logger.info('sync_core wasm loaded');
   return _wasm;
@@ -272,6 +272,17 @@ export class SyncClient {
   }
   async setColumnSourcePath(tableId: string, columnId: string, sourcePath: string[] | null): Promise<import('../types/table').ApiCustomColumn> {
     return JSON.parse(await this.inner.set_column_source_path(tableId, columnId, JSON.stringify(sourcePath)));
+  }
+
+  async patchColumn(tableId: string, columnId: string, patch: { title?: string | null; source_path?: string[] | null }): Promise<import('../types/table').ApiCustomColumn> {
+    const REST_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+    const res = await fetch(`${REST_BASE}/tables/${tableId}/custom-columns/${columnId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`patchColumn: HTTP ${res.status}`);
+    return res.json();
   }
 }
 

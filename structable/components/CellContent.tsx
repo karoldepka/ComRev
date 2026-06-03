@@ -19,22 +19,23 @@ export function formatCell(value: unknown): string {
 type Props = {
   row: DataRow;
   colId: string;
+  sourcePath?: string[] | null;
   compiledExpr?: (row: DataRow) => unknown;
   hasNote?: boolean;
   hasComment?: boolean;
 };
 
-export default function CellContent({ row, colId, compiledExpr, hasNote, hasComment }: Props) {
+export default function CellContent({ row, colId, sourcePath, compiledExpr, hasNote, hasComment }: Props) {
   let content: React.ReactNode;
 
   if (colId === PINNED_COL) {
     content = (
       <a
-        href={`https://github.com/${String(rowVal(row, colId))}`}
+        href={`https://github.com/${String(rowVal(row, colId, sourcePath))}`}
         target="_blank"
         rel="noopener noreferrer"
       >
-        {String(rowVal(row, colId) ?? '-')}
+        {String(rowVal(row, colId, sourcePath) ?? '-')}
       </a>
     );
   } else if (compiledExpr) {
@@ -45,7 +46,7 @@ export default function CellContent({ row, colId, compiledExpr, hasNote, hasComm
       content = '#ERR';
     }
   } else {
-    content = formatCell(rowVal(row, colId));
+    content = formatCell(rowVal(row, colId, sourcePath));
   }
 
   return (

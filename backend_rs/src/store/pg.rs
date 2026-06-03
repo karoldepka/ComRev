@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -22,6 +25,13 @@ pub struct PgStore {
     /// when auto-detected columns were already created in a previous upload.
     known_cols:
         std::sync::RwLock<std::collections::HashMap<String, std::collections::HashSet<String>>>,
+    /// Nested column IDs whose source_path/parent metadata was written from
+    /// observed row data in this process.
+    known_nested_defs:
+        std::sync::RwLock<std::collections::HashMap<String, std::collections::HashSet<String>>>,
+    /// Tables whose existing row JSON has already been scanned for missing
+    /// nested column definitions in this process.
+    nested_row_repairs: std::sync::RwLock<HashSet<String>>,
 }
 
 /// Infer display type from a JSON value.
@@ -34,13 +44,13 @@ fn infer_col_types(v: &serde_json::Value) -> Vec<String> {
     }
 }
 
-fn inferred_nested_source_path(id: &str, parent_ids: &[String]) -> Option<Vec<String>> {
-    let parent = parent_ids.last()?;
-    let child = id.strip_prefix(&format!("{parent}__"))?;
-    if child.is_empty() {
-        return None;
+fn non_blank_text(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
     }
-    Some(vec![parent.clone(), child.to_string()])
 }
 
 /// Returns the double-quoted PG identifier for a user table, e.g. `"t_gh_repos"`.
@@ -48,6 +58,31 @@ fn inferred_nested_source_path(id: &str, parent_ids: &[String]) -> Option<Vec<St
 /// but we strip any double-quotes defensively.
 fn user_table_ident(table_id: &str) -> String {
     format!("\"t_{}\"", table_id.replace('"', ""))
+}
+
+#[derive(Default)]
+struct AutoCreateColumnsStats {
+    rows_scanned: usize,
+    specs_found: usize,
+    missing_columns: usize,
+    created_columns: usize,
+    discovery_ms: u128,
+    cache_filter_ms: u128,
+    upsert_ms: u128,
+    total_ms: u128,
+}
+
+impl AutoCreateColumnsStats {
+    fn add(&mut self, other: AutoCreateColumnsStats) {
+        self.rows_scanned += other.rows_scanned;
+        self.specs_found += other.specs_found;
+        self.missing_columns += other.missing_columns;
+        self.created_columns += other.created_columns;
+        self.discovery_ms += other.discovery_ms;
+        self.cache_filter_ms += other.cache_filter_ms;
+        self.upsert_ms += other.upsert_ms;
+        self.total_ms += other.total_ms;
+    }
 }
 
 fn schema_statement_hash(stmt: &str) -> String {
@@ -101,7 +136,13 @@ impl PgStore {
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
         tracing::info!(db_id, url = short, max_conn, acquire_timeout_secs = acquire_secs, "PgStore: connected");
-        Ok(Self { pool, db_id: db_id.to_string(), known_cols: Default::default() })
+        Ok(Self {
+            pool,
+            db_id: db_id.to_string(),
+            known_cols: Default::default(),
+            known_nested_defs: Default::default(),
+            nested_row_repairs: Default::default(),
+        })
     }
 
     /// Connect with a dedicated PostgreSQL schema.
@@ -110,6 +151,7 @@ impl PgStore {
     /// `SET search_path` on first use, so all DDL and DML goes to `schema`
     /// instead of `public`. Useful for test isolation: each test gets its own
     /// schema and can run in parallel without touching shared tables.
+    #[cfg(test)]
     pub async fn connect_with_schema(
         db_id: &str,
         url: &str,
@@ -135,7 +177,13 @@ impl PgStore {
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}, schema={schema}): failed to connect to {short}: {e}"))?;
         tracing::info!(db_id, url = short, schema, "PgStore: connected with schema");
-        Ok(Self { pool, db_id: db_id.to_string(), known_cols: Default::default() })
+        Ok(Self {
+            pool,
+            db_id: db_id.to_string(),
+            known_cols: Default::default(),
+            known_nested_defs: Default::default(),
+            nested_row_repairs: Default::default(),
+        })
     }
 
     /// Create a physical PG table for a user table if it doesn't yet exist.
@@ -168,40 +216,78 @@ impl PgStore {
         Ok(())
     }
 
-    /// Add a btree index for a specific custom column on a user table.
-    /// `types` is the column's declared type list (e.g. `["numeric"]`); used to
-    /// cast the indexed expression so the index is usable by numeric sort queries.
-    pub async fn ensure_column_index(
-        &self,
-        table_id: &str,
-        col_id: &str,
-        types: &[String],
-    ) -> Result<()> {
-        let tname = user_table_ident(table_id);
-        let col_safe = col_id.replace('"', "");
-        let idx = format!("idx_{table_id}_{col_safe}");
-        let cast = if types
-            .iter()
-            .any(|t| matches!(t.as_str(), "integer" | "bigint" | "numeric"))
+    async fn repair_nested_columns_from_existing_rows(&self, table_id: &str) -> Result<()> {
         {
-            "::numeric"
-        } else if types.iter().any(|t| t == "timestamptz") {
-            "::timestamptz"
-        } else {
-            ""
-        };
-        let expr = format!("custom_vals->>{col_safe:?}");
-        let indexed = if cast.is_empty() {
-            format!("({expr})")
-        } else {
-            format!("(({expr}){cast})")
-        };
-        sqlx::query(&format!(
-            "CREATE INDEX IF NOT EXISTS \"{idx}\" ON {tname} USING btree ({indexed})"
+            let checked = self.nested_row_repairs.read().unwrap();
+            if checked.contains(table_id) {
+                return Ok(());
+            }
+        }
+
+        self.ensure_user_table(table_id).await?;
+        let table_name = user_table_ident(table_id);
+        let nested_fields: Vec<(String, String, String)> = sqlx::query_as(&format!(
+            r#"
+            SELECT DISTINCT parent.key, child.key, jsonb_typeof(child.value)
+            FROM {table_name}
+            CROSS JOIN LATERAL jsonb_each(custom_vals) AS parent(key, value)
+            CROSS JOIN LATERAL jsonb_each(parent.value) AS child(key, value)
+            WHERE jsonb_typeof(parent.value) = 'object'
+              AND child.value <> 'null'::jsonb
+            ORDER BY parent.key, child.key
+            "#
         ))
-        .execute(&self.pool)
+        .fetch_all(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("ensure_column_index({table_id}.{col_id}): {e}"))?;
+        .map_err(|e| anyhow::anyhow!("repair_nested_columns_from_existing_rows({table_id}): {e}"))?;
+
+        let mut repaired = 0usize;
+        let base = crate::custom_column::CustomColumnInput::default();
+        for (parent, child, value_type) in nested_fields {
+            let parent_input = crate::custom_column::CustomColumnInput {
+                is_group: true,
+                data_types: Some(vec!["text".into()]),
+                ..base.clone()
+            };
+            self.upsert_custom_column(table_id, &parent, &parent_input)
+                .await?;
+
+            let types = match value_type.as_str() {
+                "number" => vec!["numeric".into()],
+                "boolean" => vec!["boolean".into()],
+                "array" => vec!["array".into()],
+                _ => vec!["text".into()],
+            };
+            let data_types = if types.iter().any(|t| t == "numeric") {
+                vec!["numeric".into()]
+            } else if types.iter().any(|t| t == "boolean") {
+                vec!["boolean".into()]
+            } else {
+                vec!["text".into()]
+            };
+            let child_id = format!("{parent}__{child}");
+            let child_input = crate::custom_column::CustomColumnInput {
+                title: Some(child.clone()),
+                parent_ids: vec![parent.clone()],
+                source_path: Some(vec![parent.clone(), child]),
+                types: Some(types),
+                data_types: Some(data_types),
+                ..base.clone()
+            };
+            self.upsert_custom_column(table_id, &child_id, &child_input)
+                .await?;
+            repaired += 1;
+        }
+
+        self.nested_row_repairs
+            .write()
+            .unwrap()
+            .insert(table_id.to_string());
+        tracing::info!(
+            table_id,
+            repaired,
+            "repaired nested column definitions from existing rows"
+        );
         Ok(())
     }
 
@@ -217,7 +303,10 @@ impl PgStore {
         &self,
         table_id: &str,
         sample: &serde_json::Value,
-    ) -> Result<()> {
+    ) -> Result<AutoCreateColumnsStats> {
+        let total_started = std::time::Instant::now();
+        let discovery_started = std::time::Instant::now();
+        let mut stats = AutoCreateColumnsStats::default();
         const SKIP: &[&str] = &[
             "id",
             "github_id",
@@ -229,8 +318,10 @@ impl PgStore {
         ];
 
         let Some(obj) = sample.as_object() else {
-            return Ok(());
+            stats.total_ms = total_started.elapsed().as_millis();
+            return Ok(stats);
         };
+        stats.rows_scanned = 1;
 
         struct ColSpec {
             id: String,
@@ -300,27 +391,43 @@ impl PgStore {
                 root_indices.push(specs.len() - 1);
             }
         }
+        stats.specs_found = specs.len();
+        stats.discovery_ms = discovery_started.elapsed().as_millis();
+
         for pair in root_indices.windows(2) {
             let next_id = specs[pair[1]].id.clone();
             specs[pair[0]].position_before = Some(next_id);
         }
 
         // Only create columns not already in the per-process cache.
+        let cache_filter_started = std::time::Instant::now();
         let missing_ids: Vec<usize> = {
             let cache = self.known_cols.read().unwrap();
             let known = cache.get(table_id);
+            let nested_cache = self.known_nested_defs.read().unwrap();
+            let nested_known = nested_cache.get(table_id);
             specs
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| known.map_or(true, |k| !k.contains(&s.id)))
+                .filter(|(_, s)| {
+                    let exists = known.map_or(false, |k| k.contains(&s.id));
+                    let nested_def_verified =
+                        nested_known.map_or(false, |k| k.contains(&s.id));
+                    !exists || (s.source_path.is_some() && !nested_def_verified)
+                })
                 .map(|(i, _)| i)
                 .collect()
         };
+        stats.missing_columns = missing_ids.len();
+        stats.cache_filter_ms = cache_filter_started.elapsed().as_millis();
         if missing_ids.is_empty() {
-            return Ok(());
+            stats.total_ms = total_started.elapsed().as_millis();
+            return Ok(stats);
         }
 
         let base = crate::custom_column::CustomColumnInput::default();
+        let mut succeeded_ids: Vec<String> = Vec::new();
+        let upsert_started = std::time::Instant::now();
         for &i in &missing_ids {
             let spec = &specs[i];
             let data_types = if spec.types.iter().any(|t| t == "numeric") {
@@ -345,17 +452,31 @@ impl PgStore {
                 source_path: spec.source_path.clone(),
                 ..base.clone()
             };
-            if let Err(e) = self.upsert_custom_column(table_id, &spec.id, &inp).await {
-                tracing::warn!(table_id, col_id = %spec.id, "auto-create column failed: {e}");
+            match self.upsert_custom_column(table_id, &spec.id, &inp).await {
+                Ok(_) => succeeded_ids.push(spec.id.clone()),
+                Err(e) => tracing::warn!(table_id, col_id = %spec.id, "auto-create column failed: {e}"),
             }
         }
+        stats.upsert_ms = upsert_started.elapsed().as_millis();
+        stats.created_columns = succeeded_ids.len();
 
-        let mut cache = self.known_cols.write().unwrap();
-        let entry = cache.entry(table_id.to_string()).or_default();
-        for spec in &specs {
-            entry.insert(spec.id.clone());
+        if !succeeded_ids.is_empty() {
+            let mut cache = self.known_cols.write().unwrap();
+            let entry = cache.entry(table_id.to_string()).or_default();
+            let mut nested_cache = self.known_nested_defs.write().unwrap();
+            let nested_entry = nested_cache.entry(table_id.to_string()).or_default();
+            for id in succeeded_ids {
+                entry.insert(id.clone());
+                if specs
+                    .iter()
+                    .any(|spec| spec.id == id && spec.source_path.is_some())
+                {
+                    nested_entry.insert(id);
+                }
+            }
         }
-        Ok(())
+        stats.total_ms = total_started.elapsed().as_millis();
+        Ok(stats)
     }
 }
 
@@ -493,6 +614,8 @@ impl DataStore for PgStore {
         // Clear the in-memory column cache so auto_create_columns_from_row
         // recreates all columns (including group columns) on the next upload.
         self.known_cols.write().unwrap().clear();
+        self.known_nested_defs.write().unwrap().clear();
+        self.nested_row_repairs.write().unwrap().clear();
 
         tracing::warn!(db_id, user_tables = user_tables.len(), "NUKE__DATA: complete");
         Ok(())
@@ -511,6 +634,9 @@ impl DataStore for PgStore {
             .map_err(|e| anyhow::anyhow!("NUKE__DB({db_id}): CREATE SCHEMA failed: {e}"))?;
         tracing::warn!(db_id, "NUKE__DB: schema dropped, re-applying");
         self.ensure_schema().await?;
+        self.known_cols.write().unwrap().clear();
+        self.known_nested_defs.write().unwrap().clear();
+        self.nested_row_repairs.write().unwrap().clear();
         tracing::warn!(db_id, "NUKE__DB: complete");
         Ok(())
     }
@@ -702,9 +828,10 @@ impl DataStore for PgStore {
         if table_id == "tables" {
             return Ok(super::table_view_columns());
         }
+        self.repair_nested_columns_from_existing_rows(table_id).await?;
 
         Ok(sqlx::query_as::<_, CustomColumn>(
-            "SELECT c.id::text, c.title, c.description, c.expression,
+            "SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
                COALESCE(tcc.position_before, c.position_before) AS position_before,
                COALESCE(tcc.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
@@ -745,8 +872,8 @@ impl DataStore for PgStore {
         let effective_source_path = input
             .source_path
             .clone()
-            .filter(|path| !path.is_empty())
-            .or_else(|| inferred_nested_source_path(id, &input.parent_ids));
+            .filter(|path| !path.is_empty());
+        let title = input.title.as_deref().and_then(non_blank_text);
         let types = input.effective_types();
         let data_types = input.effective_data_types();
         let col = sqlx::query_as::<_, CustomColumn>(
@@ -756,7 +883,7 @@ impl DataStore for PgStore {
                   read_only, is_frozen, is_group, parent_ids, source_path, types, data_types)
                VALUES ($1, $2, $3, $4, $5, $6, $13, false, $8, $9, $10, $11, $12)
                ON CONFLICT (id) DO UPDATE
-                 SET title = EXCLUDED.title,
+                 SET title = COALESCE(EXCLUDED.title, NULLIF(BTRIM(custom_columns.title), '')),
                      description = EXCLUDED.description,
                      expression = EXCLUDED.expression,
                      position_before = COALESCE(EXCLUDED.position_before, custom_columns.position_before),
@@ -781,7 +908,7 @@ impl DataStore for PgStore {
                      modify_count = table_custom_columns.modify_count + 1
                RETURNING *
              )
-             SELECT c.id::text, c.title, c.description, c.expression,
+             SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
                COALESCE(a.position_before, c.position_before) AS position_before,
                COALESCE(a.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
@@ -793,7 +920,7 @@ impl DataStore for PgStore {
              JOIN attach a ON a.column_id = c.id",
         )
         .bind(id)
-        .bind(input.title.as_deref())
+        .bind(title)
         .bind(input.description.as_deref())
         .bind(input.expression.as_deref())
         .bind(input.position_before.as_deref())
@@ -880,7 +1007,7 @@ impl DataStore for PgStore {
                WHERE table_id = $1 AND column_id = $2
                RETURNING *
              )
-             SELECT c.id::text, c.title, c.description, c.expression,
+             SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
                COALESCE(u.position_before, c.position_before) AS position_before,
                COALESCE(u.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
@@ -907,7 +1034,7 @@ impl DataStore for PgStore {
             "UPDATE custom_columns SET source_path = $2, when_last_modified = NOW(),
                modify_count = modify_count + 1
              WHERE id = $1
-             RETURNING id::text, title, description, expression, position_before,
+             RETURNING id::text, NULLIF(BTRIM(title), '') AS title, description, expression, position_before,
                position_after,
                read_only, types, source_path,
                COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -917,6 +1044,29 @@ impl DataStore for PgStore {
         )
         .bind(column_id)
         .bind(path.map(|p| p.to_vec()))
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    async fn set_column_title(
+        &self,
+        column_id: &str,
+        title: Option<&str>,
+    ) -> Result<CustomColumn> {
+        let title = title.and_then(non_blank_text);
+        Ok(sqlx::query_as::<_, CustomColumn>(
+            "UPDATE custom_columns
+             SET title = $2, when_last_modified = NOW(), modify_count = modify_count + 1
+             WHERE id = $1
+             RETURNING id::text, NULLIF(BTRIM(title), '') AS title, description, expression,
+               position_before, position_after, read_only, types, source_path,
+               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types,
+               COALESCE(is_group, false) AS is_group,
+               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
+               COALESCE(is_frozen, false) AS is_frozen",
+        )
+        .bind(column_id)
+        .bind(title)
         .fetch_one(&self.pool)
         .await?)
     }
@@ -1148,12 +1298,14 @@ impl DataStore for PgStore {
             .await?;
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
+            let mut col_paths: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
             for (id, types, source_path) in col_type_rows {
-                col_types.insert(id, types.clone());
-                if let Some(path) = source_path {
-                    if !path.is_empty() {
-                        col_types.insert(path.join("."), types);
-                    }
+                col_types.insert(id.clone(), types.clone());
+                if let Some(path) = source_path.filter(|path| !path.is_empty()) {
+                    let path = path.join(".");
+                    col_paths.insert(id, path.clone());
+                    col_types.insert(path, types);
                 }
             }
 
@@ -1164,7 +1316,7 @@ impl DataStore for PgStore {
                 qb.build_query_scalar().fetch_one(&self.pool).await?
             };
 
-            let order = validated_sort_with_types(params.sort.as_deref(), &col_types);
+            let order = validated_sort_with_paths(params.sort.as_deref(), &col_types, &col_paths);
             let data: Vec<serde_json::Value> = {
                 let mut qb = QueryBuilder::new(format!(
                     "SELECT (jsonb_build_object(\
@@ -1203,6 +1355,40 @@ impl DataStore for PgStore {
         }
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
+
+        // Auto-create custom columns before inserting the batch. The first batch
+        // for a table may create many per-column indexes; doing that while the
+        // physical table is still empty avoids building indexes over the just-
+        // inserted rows.
+        let column_create_started = std::time::Instant::now();
+        let mut column_create_stats = AutoCreateColumnsStats::default();
+        let mut column_create_errors = 0usize;
+        for sample in rows {
+            match self.auto_create_columns_from_row(table_id, sample).await {
+                Ok(stats) => column_create_stats.add(stats),
+                Err(e) => {
+                    column_create_errors += 1;
+                    tracing::warn!(table_id, "auto_create_columns_from_row failed: {e}");
+                }
+            }
+        }
+        tracing::info!(
+            table_id,
+            row_count = rows.len(),
+            rows_scanned = column_create_stats.rows_scanned,
+            specs_found = column_create_stats.specs_found,
+            missing_columns = column_create_stats.missing_columns,
+            created_columns = column_create_stats.created_columns,
+            errors = column_create_errors,
+            discovery_ms = column_create_stats.discovery_ms,
+            cache_filter_ms = column_create_stats.cache_filter_ms,
+            upsert_ms = column_create_stats.upsert_ms,
+            row_scan_total_ms = column_create_stats.total_ms,
+            wall_ms = column_create_started.elapsed().as_millis(),
+            "auto-create columns from rows measured"
+        );
+
+        let row_upsert_started = std::time::Instant::now();
         let json_array = serde_json::Value::Array(rows.to_vec());
         let count: i64 = sqlx::query_scalar(&format!(
             "WITH incoming AS (
@@ -1226,17 +1412,13 @@ impl DataStore for PgStore {
         .bind(json_array)
         .fetch_one(&self.pool)
         .await?;
-
-        // Auto-create custom columns for fields found anywhere in the batch.
-        // The first row may have an empty nested object while later rows carry
-        // concrete sub-fields, so sampling only one row loses data paths.
-        for sample in rows {
-            self.auto_create_columns_from_row(table_id, sample)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!(table_id, "auto_create_columns_from_row failed: {e}");
-                });
-        }
+        tracing::info!(
+            table_id,
+            row_count = rows.len(),
+            upserted = count,
+            wall_ms = row_upsert_started.elapsed().as_millis(),
+            "upsert rows batch measured"
+        );
 
         Ok(count as usize)
     }
@@ -1445,6 +1627,7 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
     })
 }
 
+#[cfg(test)]
 pub(super) fn validated_sort(sort: Option<&str>) -> String {
     validated_sort_with_types(sort, &std::collections::HashMap::new())
 }
@@ -1452,6 +1635,14 @@ pub(super) fn validated_sort(sort: Option<&str>) -> String {
 pub(super) fn validated_sort_with_types(
     sort: Option<&str>,
     col_types: &std::collections::HashMap<String, Vec<String>>,
+) -> String {
+    validated_sort_with_paths(sort, col_types, &std::collections::HashMap::new())
+}
+
+pub(super) fn validated_sort_with_paths(
+    sort: Option<&str>,
+    col_types: &std::collections::HashMap<String, Vec<String>>,
+    col_paths: &std::collections::HashMap<String, String>,
 ) -> String {
     // Sort param format: "col:dir[:type]" where type is a custom_columns.types element.
     // Multiple sorts are comma-separated.
@@ -1466,12 +1657,14 @@ pub(super) fn validated_sort_with_types(
             let mut it = s.splitn(3, ':');
             let col = it.next()?;
             let dir = it.next().unwrap_or("desc");
+            let expr_col = col_paths.get(col).map(String::as_str).unwrap_or(col);
             let col_type = it.next().or_else(|| {
                 col_types
                     .get(col)
+                    .or_else(|| col_types.get(expr_col))
                     .and_then(|types| types.first().map(String::as_str))
             });
-            let expr = col_to_sort_expr(col, col_type)?;
+            let expr = col_to_sort_expr(expr_col, col_type)?;
             let dir_sql = if dir.eq_ignore_ascii_case("asc") {
                 "ASC"
             } else {
@@ -1695,6 +1888,18 @@ mod tests {
         col_types.insert("metrics.views".to_string(), vec!["numeric".to_string()]);
         assert_eq!(
             validated_sort_with_types(Some("metrics.views:desc"), &col_types),
+            "(custom_vals->'metrics'->>'views')::numeric DESC NULLS LAST"
+        );
+    }
+
+    #[test]
+    fn sort_uses_source_path_for_stable_nested_column_id() {
+        let mut col_types = std::collections::HashMap::new();
+        col_types.insert("metrics__views".to_string(), vec!["numeric".to_string()]);
+        let mut col_paths = std::collections::HashMap::new();
+        col_paths.insert("metrics__views".to_string(), "metrics.views".to_string());
+        assert_eq!(
+            validated_sort_with_paths(Some("metrics__views:desc"), &col_types, &col_paths),
             "(custom_vals->'metrics'->>'views')::numeric DESC NULLS LAST"
         );
     }
