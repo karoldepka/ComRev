@@ -18,6 +18,10 @@ impl DataStore for SqliteStore {
         not_impl!()
     }
 
+    async fn nuke_user_data(&self) -> Result<()> {
+        not_impl!()
+    }
+
     async fn nuke_db(&self) -> Result<()> {
         not_impl!()
     }

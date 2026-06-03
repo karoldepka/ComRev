@@ -83,8 +83,13 @@ pub use pg::PgStore;
 pub trait DataStore: Send + Sync {
     async fn ensure_schema(&self) -> Result<()>;
 
-    /// Drop every table / collection owned by this application. IRREVERSIBLE.
-    /// Named conspicuously to prevent accidental calls.
+    /// Delete all user data while keeping the schema (tables, indexes, triggers
+    /// remain intact).  Much faster than `nuke_db` and the schema does not need
+    /// to be re-applied afterwards.  IRREVERSIBLE.
+    async fn nuke_user_data(&self) -> Result<()>;
+
+    /// Drop every table / collection and recreate the schema from scratch.
+    /// Use `nuke_user_data` instead when you only need to clear rows.  IRREVERSIBLE.
     async fn nuke_db(&self) -> Result<()>;
 
     // ── Flags ─────────────────────────────────────────────────────────────────
@@ -228,6 +233,17 @@ pub mod multi_db;
 
 /// Construct the appropriate store from a DB URL.
 /// Dispatch order: sqlite → surreal/wss/ws → mongodb → postgres.
+/// Open a Postgres store scoped to an isolated schema.
+///
+/// Creates the schema if it doesn't exist and pins the search_path on every
+/// connection. Intended for integration tests: each test generates a unique
+/// schema name, enabling parallel runs without data interference.
+/// Call `DROP SCHEMA … CASCADE` to clean up after the test.
+pub async fn open_pg_isolated(db_id: &str, url: &str, schema: &str) -> Result<Arc<dyn DataStore>> {
+    let pg = Arc::new(pg::PgStore::connect_with_schema(db_id, url, schema, 1).await?);
+    Ok(Arc::new(multi_db::MultiStore::new(vec![pg], None)))
+}
+
 pub async fn open(db_id: &str, url: &str) -> Result<Arc<dyn DataStore>> {
     let short = url.split('@').last().unwrap_or(url);
     tracing::debug!(db_id, url = short, "store: opening connection");

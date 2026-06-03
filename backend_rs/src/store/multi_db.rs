@@ -367,6 +367,18 @@ impl DataStore for MultiStore {
         )
     }
 
+    async fn nuke_user_data(&self) -> Result<()> {
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
+            let result = s.nuke_user_data().await;
+            if let Err(ref e) = result {
+                tracing::warn!("store[{i}] nuke_user_data FAILED: {e}");
+            }
+            result
+        }))
+        .await;
+        fan_write(results, "nuke_user_data")
+    }
+
     async fn nuke_db(&self) -> Result<()> {
         let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
             let result = s.nuke_db().await;
@@ -797,6 +809,11 @@ mod tests {
     impl DataStore for MockStore {
         async fn ensure_schema(&self) -> Result<()> {
             self.record("ensure_schema");
+            self.fail()
+        }
+
+        async fn nuke_user_data(&self) -> Result<()> {
+            self.record("nuke_user_data");
             self.fail()
         }
 

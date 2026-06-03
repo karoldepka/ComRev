@@ -27,6 +27,7 @@ fn user_table_ident(table_id: &str) -> String {
     format!("\"t_{}\"", table_id.replace('"', ""))
 }
 
+
 impl PgStore {
     pub async fn connect(db_id: &str, url: &str) -> Result<Self> {
         let short = url.split('@').last().unwrap_or(url);
@@ -45,6 +46,40 @@ impl PgStore {
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
         tracing::info!(db_id, url = short, max_conn, acquire_timeout_secs = acquire_secs, "PgStore: connected");
+        Ok(Self { pool, db_id: db_id.to_string() })
+    }
+
+    /// Connect with a dedicated PostgreSQL schema.
+    ///
+    /// Every connection in the pool runs `CREATE SCHEMA IF NOT EXISTS` and
+    /// `SET search_path` on first use, so all DDL and DML goes to `schema`
+    /// instead of `public`. Useful for test isolation: each test gets its own
+    /// schema and can run in parallel without touching shared tables.
+    pub async fn connect_with_schema(
+        db_id: &str,
+        url: &str,
+        schema: &str,
+        max_connections: u32,
+    ) -> Result<Self> {
+        let short = url.split('@').last().unwrap_or(url);
+        let schema_owned = schema.to_string();
+        let pool = PgPoolOptions::new()
+            .max_connections(max_connections)
+            .acquire_timeout(Duration::from_secs(30))
+            .after_connect(move |conn, _meta| {
+                let s = schema_owned.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{s}\""))
+                        .execute(&mut *conn).await?;
+                    sqlx::query(&format!("SET search_path TO \"{s}\""))
+                        .execute(&mut *conn).await?;
+                    Ok(())
+                })
+            })
+            .connect(url)
+            .await
+            .map_err(|e| anyhow::anyhow!("PgStore({db_id}, schema={schema}): failed to connect to {short}: {e}"))?;
+        tracing::info!(db_id, url = short, schema, "PgStore: connected with schema");
         Ok(Self { pool, db_id: db_id.to_string() })
     }
 
@@ -100,24 +135,91 @@ impl DataStore for PgStore {
     async fn ensure_schema(&self) -> Result<()> {
         let stmts = super::pg_schema::POSTGRES_SCHEMA;
         let db_id = &self.db_id;
-        tracing::info!(db_id, statement_count = stmts.len(), "PgStore: applying schema");
-        let total_t0 = std::time::Instant::now();
-        for (i, sql) in stmts.iter().enumerate() {
-            let t0 = std::time::Instant::now();
-            sqlx::query(sql)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema statement {i} failed: {e}"))?;
-            let ms = t0.elapsed().as_millis();
-            if ms > 0 {
-                tracing::debug!(db_id, i, ms, "PgStore: schema statement applied");
-            }
+        let latest = stmts.len() as i32 - 1;
+
+        // Bootstrap the version table with a single idempotent query.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                id         INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                version    INTEGER NOT NULL DEFAULT -1,
+                applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema_version bootstrap failed: {e}"))?;
+
+        // Read the highest statement index already applied (-1 if none).
+        let current: i32 = sqlx::query_scalar(
+            "SELECT COALESCE((SELECT version FROM schema_version WHERE id = 1), -1)",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        if current >= latest {
+            tracing::debug!(db_id, version = current, "PgStore: schema is current, skipping DDL");
+            return Ok(());
         }
-        let total_ms = total_t0.elapsed().as_millis();
-        tracing::info!(db_id, total_ms, "PgStore: schema ready");
+
+        // Apply only the new statements (those after `current`).
+        // All DDL is sent as a single multi-statement string so PostgreSQL
+        // executes everything in one network round-trip instead of one per
+        // statement (86 RTTs → 1 RTT).
+        let first_new = (current + 1) as usize;
+        tracing::info!(db_id, from = current, to = latest, new = latest - current, "PgStore: applying schema");
+        let t0 = std::time::Instant::now();
+
+        let new_stmts = stmts[first_new..].join(";\n");
+        let batch = format!(
+            "BEGIN;\n\
+             {new_stmts};\n\
+             INSERT INTO schema_version (version) VALUES ({latest}) \
+               ON CONFLICT (id) DO UPDATE SET version = {latest}, applied_at = NOW();\n\
+             COMMIT;"
+        );
+        sqlx::query(&batch)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema batch failed: {e}"))?;
+
+        tracing::info!(db_id, version = latest, ms = t0.elapsed().as_millis(), "PgStore: schema applied");
         Ok(())
     }
   
+    async fn nuke_user_data(&self) -> Result<()> {
+        let db_id = &self.db_id;
+        tracing::warn!(db_id, "NUKE__DATA: truncating all user data (schema preserved)");
+
+        // Truncate all known application tables in one shot.
+        // CASCADE handles FK-ordered dependencies automatically.
+        sqlx::query(
+            "TRUNCATE TABLE remarks, remark_targets, custom_columns, cell_flags,
+                          hidden_rows, hidden_columns, operations_log, tables,
+                          github_repos, table_custom_columns CASCADE",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): TRUNCATE failed: {e}"))?;
+
+        // Truncate user-created physical row tables (named t_<table_id>).
+        let user_tables: Vec<String> = sqlx::query_scalar(
+            "SELECT tablename FROM pg_tables \
+             WHERE schemaname = 'public' AND LEFT(tablename, 2) = 't_'",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+        for tbl in &user_tables {
+            let safe = tbl.replace('"', "");
+            sqlx::query(&format!("TRUNCATE TABLE \"{safe}\" CASCADE"))
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): TRUNCATE {safe} failed: {e}"))?;
+        }
+        tracing::warn!(db_id, user_tables = user_tables.len(), "NUKE__DATA: complete");
+        Ok(())
+    }
+
     async fn nuke_db(&self) -> Result<()> {
         let db_id = &self.db_id;
         tracing::warn!(db_id, "NUKE__DB: dropping Postgres public schema");

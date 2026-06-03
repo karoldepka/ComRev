@@ -62,6 +62,36 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .map(|(id, url)| (id.as_str(), url.as_str()))
         .collect();
+    // ── One-shot commands ─────────────────────────────────────────────────────
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.iter().any(|a| a == "--NUKE-USER-DATA") {
+        eprintln!("⚠  NUKE-USER-DATA: deleting all user data (schema preserved)…");
+        let data_store = store::open_all(&db_entries, None).await?;
+        match data_store.nuke_user_data().await {
+            Ok(_) => { eprintln!("✓  NUKE-USER-DATA complete."); std::process::exit(0); }
+            Err(e) => { eprintln!("✗  NUKE-USER-DATA failed: {e}"); std::process::exit(1); }
+        }
+    }
+
+    if args.iter().any(|a| a == "--NUKE__ALL_DB") {
+        eprintln!("⚠  NUKE__ALL_DB requested — dropping and recreating schema…");
+        let data_store = store::open_all(&db_entries, None).await?;
+        match data_store.nuke_db().await {
+            Ok(_) => { eprintln!("✓  NUKE__ALL_DB complete (schema re-applied)."); std::process::exit(0); }
+            Err(e) => { eprintln!("✗  NUKE__ALL_DB failed: {e}"); std::process::exit(1); }
+        }
+    }
+
+    if args.iter().any(|a| a == "--ensure-schema") {
+        eprintln!("Applying schema…");
+        let data_store = store::open_all(&db_entries, None).await?;
+        match data_store.ensure_schema().await {
+            Ok(_) => { eprintln!("✓  Schema ready."); std::process::exit(0); }
+            Err(e) => { eprintln!("✗  ensure-schema failed: {e}"); std::process::exit(1); }
+        }
+    }
+
     structable_logger::info("backend_rs", "starting backend_rs");
 
     let event_tx = sync_service::make_channel();
@@ -139,7 +169,8 @@ async fn main() -> anyhow::Result<()> {
             "/tables/:id",
             axum::routing::patch(table::patch).delete(table::delete),
         )
-        .route("/NUKE__DB", delete(nuke_db))
+        .route("/NUKE__USER_DATA", delete(nuke_user_data_handler))
+        .route("/NUKE__DB",   delete(nuke_db))
         .with_state(state.clone())
         .layer(axum::middleware::from_fn(write_error_middleware))
         .layer(TraceLayer::new_for_http())
@@ -177,6 +208,16 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({ "status": "ok" }))
+}
+
+async fn nuke_user_data_handler(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> (axum::http::StatusCode, String) {
+    tracing::warn!("NUKE__DATA requested via HTTP");
+    match state.store.nuke_user_data().await {
+        Ok(_) => (axum::http::StatusCode::OK, "NUKE__DATA complete".to_string()),
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("NUKE__DATA failed: {e}")),
+    }
 }
 
 async fn nuke_db(

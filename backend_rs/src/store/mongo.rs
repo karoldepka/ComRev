@@ -298,6 +298,24 @@ impl DataStore for MongoStore {
         Ok(doc_to_custom_column(&doc))
     }
 
+    async fn nuke_user_data(&self) -> Result<()> {
+        tracing::warn!(db_id = %self.db_id, "NUKE__DATA: dropping all MongoDB collections (recreated empty)");
+        for coll in ["flags","remarks","remark_targets","hidden_rows","hidden_columns",
+                     "custom_columns","tables","github_repos","operations_log","table_custom_columns"] {
+            self.db.collection::<mongodb::bson::Document>(coll).drop().await
+                .with_context(|| format!("NUKE__DATA: drop collection {coll}"))?;
+        }
+        // Drop user row collections (named t_<table_id>).
+        let names = self.db.list_collection_names().await
+            .context("NUKE__DATA: list collections")?;
+        for name in names.iter().filter(|n| n.starts_with("t_")) {
+            self.db.collection::<mongodb::bson::Document>(name).drop().await
+                .with_context(|| format!("NUKE__DATA: drop collection {name}"))?;
+        }
+        tracing::warn!(db_id = %self.db_id, "NUKE__DATA: complete");
+        Ok(())
+    }
+
     async fn nuke_db(&self) -> Result<()> {
         tracing::warn!(db_id = %self.db_id, "NUKE__DB: dropping MongoDB database");
         self.db.drop().await.context("NUKE__DB: drop database")?;

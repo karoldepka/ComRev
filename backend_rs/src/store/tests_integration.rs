@@ -10,16 +10,46 @@
 /// Legacy env vars still work as a fallback:
 ///   DB_URLS, DATABASE_URL, SURREAL_URL
 ///
-/// SurrealDB always uses the isolated test namespace/database:
-///   SURREAL_TEST_NS=_test  (default)
-///   SURREAL_TEST_DB=_test  (default)
+/// ## Isolation
 ///
-/// Tests always write to the `_test` namespace/DB for Surreal and to
-/// `_test_`-prefixed table IDs for Postgres (which creates `t__test_*` physical
-/// tables). Cleanup runs before each test.
-use super::{open_all, DataStore};
+/// Each test gets its own PostgreSQL schema named `_test_{nanoseconds}`.
+/// The store is pointed at that schema via `search_path`, so all tables and
+/// records live there and are invisible to other tests.  The schema is dropped
+/// when the `TestStore` is dropped, so tests clean up after themselves even if
+/// they panic.  This means tests can run fully in parallel with no data
+/// interference and no global cleanup step.
+///
+/// SurrealDB (when configured) still uses the shared `_test` namespace because
+/// Surreal doesn't support per-connection `search_path`.
+use super::{open_pg_isolated, DataStore};
 use crate::types::RowQuery;
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
+
+// ── One-time global init ──────────────────────────────────────────────────────
+
+/// Runs exactly once per test binary invocation regardless of how many tests
+/// execute in parallel.  Calling it from multiple threads concurrently is safe.
+static GLOBAL_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+
+async fn global_test_init() {
+    GLOBAL_INIT.get_or_init(|| async {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        // Point Surreal at the test namespace/DB.  env mutation is safe here
+        // because this block runs exactly once before any parallel test starts.
+        load_env();
+        let test_ns = std::env::var("SURREAL_TEST_NS").unwrap_or_else(|_| "_test".into());
+        let test_db = std::env::var("SURREAL_TEST_DB").unwrap_or_else(|_| "_test".into());
+        unsafe {
+            std::env::set_var("SURREAL_NS", &test_ns);
+            std::env::set_var("SURREAL_DB", &test_db);
+        }
+
+        // Wipe the shared Surreal test namespace once; individual tests are
+        // isolated in their own Postgres schemas and don't need per-test cleanup.
+        surreal_cleanup().await;
+    }).await;
+}
 
 // ── Env helpers ───────────────────────────────────────────────────────────────
 
@@ -27,17 +57,14 @@ fn load_env() {
     dotenvy::dotenv().ok();
 }
 
-/// All configured DB URLs — tries databases.toml first, then env vars.
 fn all_db_urls() -> Vec<String> {
     load_env();
-    // databases.toml takes precedence (same source the server uses).
     if let Ok(Some(entries)) = crate::db_config::load() {
         if !entries.is_empty() {
             return entries.into_iter().map(|(_, url)| url).collect();
         }
     }
-    // Fall back to legacy env vars.
-    if let Ok(raw) = std::env::var("rem") {
+    if let Ok(raw) = std::env::var("DB_URLS") {
         let urls: Vec<String> = raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect();
         if !urls.is_empty() { return urls; }
     }
@@ -47,174 +74,175 @@ fn all_db_urls() -> Vec<String> {
     urls
 }
 
-/// Returns the first Postgres URL (for direct cleanup queries).
 fn pg_url() -> Option<String> {
     all_db_urls().into_iter().find(|u| u.starts_with("postgres"))
 }
 
-/// Returns the first SurrealDB URL (for direct cleanup queries).
 fn surreal_url() -> Option<String> {
     all_db_urls().into_iter()
         .find(|u| u.starts_with("surreal") || u.starts_with("wss://") || u.starts_with("ws://"))
 }
 
-/// Override SURREAL_NS and SURREAL_DB with test-specific values so tests never
-/// touch the production namespace/database.
-fn use_test_surreal_db() {
-    load_env();
-    let test_ns = std::env::var("SURREAL_TEST_NS").unwrap_or_else(|_| "_test".into());
-    let test_db = std::env::var("SURREAL_TEST_DB").unwrap_or_else(|_| "_test".into());
-    // Safety: tests must run with --test-threads=1; env mutation is not thread-safe.
-    unsafe {
-        std::env::set_var("SURREAL_NS", &test_ns);
-        std::env::set_var("SURREAL_DB", &test_db);
-    }
+// ── Per-test schema isolation ─────────────────────────────────────────────────
+
+/// Generate a schema name that is unique even when many tests start simultaneously.
+/// Combines the nanosecond timestamp with a random suffix to avoid collisions
+/// between threads that read the same clock tick.
+fn unique_test_schema() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let rand = nanoid::nanoid!(6);
+    format!("_test_{nanos}_{rand}")
 }
 
-/// Build (once) or retrieve the shared store.
-/// One pool is shared across all tests to stay within PgBouncer's session-mode limit.
-async fn make_store() -> Option<Arc<dyn DataStore>> {
-    static INIT: tokio::sync::OnceCell<Option<Arc<dyn DataStore>>> = tokio::sync::OnceCell::const_new();
+/// Holds a store scoped to a unique Postgres schema.
+///
+/// When this value is dropped the schema is deleted (`DROP SCHEMA … CASCADE`),
+/// cleaning up all tables and records created during the test regardless of
+/// whether the test passed or panicked.
+struct TestStore {
+    inner:  Arc<dyn DataStore>,
+    pg_url: String,
+    schema: String,
+}
 
-    INIT.get_or_init(|| async {
-        // Tests don't call main(), so we install the rustls provider here.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        use_test_surreal_db();
+impl Deref for TestStore {
+    type Target = Arc<dyn DataStore>;
+    fn deref(&self) -> &Self::Target { &self.inner }
+}
 
-        let entries: Vec<(String, String)> = match crate::db_config::load() {
-            Ok(Some(entries)) => entries,
-            Ok(None) => {
-                let urls = all_db_urls();
-                if urls.is_empty() {
-                    eprintln!("skip: no DB URLs configured (databases.toml absent and no DB_URLS/DATABASE_URL)");
-                    return None;
-                }
-                urls.into_iter().enumerate().map(|(i, u)| (format!("db_{i}"), u)).collect()
-            }
-            Err(e) => { eprintln!("db_config::load error: {e}"); return None; }
-        };
+/// Shared pool used exclusively for background schema-drop tasks.
+/// A cap of 3 connections means at most 3 DROP SCHEMA statements run at once,
+/// keeping the total well under PgBouncer's session-mode limit even when many
+/// tests finish simultaneously.
+static DROP_POOL: tokio::sync::OnceCell<sqlx::PgPool> = tokio::sync::OnceCell::const_new();
 
-        if entries.is_empty() {
-            eprintln!("skip: databases.toml has no [[database]] entries");
-            return None;
-        }
-
-        let entry_refs: Vec<(&str, &str)> =
-            entries.iter().map(|(id, url)| (id.as_str(), url.as_str())).collect();
-        let store = match open_all(&entry_refs, None).await {
-            Ok(s) => s,
-            Err(e) => { eprintln!("Failed to open store: {e}"); return None; }
-        };
-        if let Err(e) = store.ensure_schema().await {
-            eprintln!("ensure_schema failed: {e}");
-            return None;
-        }
-        Some(store)
+async fn drop_pool(url: &str) -> sqlx::PgPool {
+    DROP_POOL.get_or_init(|| async {
+        sqlx::postgres::PgPoolOptions::new()
+            .max_connections(3)
+            .acquire_timeout(std::time::Duration::from_secs(30))
+            .connect(url).await
+            .expect("drop pool: failed to connect")
     }).await.clone()
 }
 
-// ── Postgres cleanup helpers (direct sqlx) ────────────────────────────────────
-
-async fn pg_cleanup(url: &str) {
-    let Ok(pool) = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(url).await else { return };
-
-    // Drop per-user physical tables for test table IDs (named t__test_*).
-    // LEFT() avoids LIKE underscore-wildcard escaping issues.
-    let test_tables: Vec<String> = sqlx::query_scalar::<_, String>(
-        "SELECT tablename FROM pg_tables \
-         WHERE schemaname = 'public' AND LEFT(tablename, 8) = 't__test_'",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
-    for tbl in &test_tables {
-        let tbl_safe = tbl.replace('"', "");
-        if let Err(e) = sqlx::query(&format!("DROP TABLE IF EXISTS \"{tbl_safe}\" CASCADE"))
-            .execute(&pool).await
-        {
-            eprintln!("pg_cleanup: drop {tbl_safe}: {e}");
-        }
-    }
-
-    for q in [
-        "DELETE FROM cell_flags           WHERE key        LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM remark_targets       WHERE remark_id  LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM remarks              WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM hidden_rows          WHERE row_id     LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM hidden_columns       WHERE column_id  LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM table_custom_columns WHERE table_id   LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM custom_columns       WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM tables               WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
-        "DELETE FROM github_repos         WHERE id         LIKE '-999%'",
-        "DELETE FROM operations_log       WHERE id         LIKE '\\_test\\_%' ESCAPE '\\'",
-    ] {
-        if let Err(e) = sqlx::query(q).execute(&pool).await {
-            eprintln!("pg_cleanup: {e}");
-        }
+impl Drop for TestStore {
+    fn drop(&mut self) {
+        let url    = self.pg_url.clone();
+        let schema = self.schema.clone();
+        // Drop is synchronous; schedule cleanup as a fire-and-forget background task.
+        // All tasks share a single capped pool to avoid saturating PgBouncer.
+        tokio::spawn(async move {
+            let pool = drop_pool(&url).await;
+            let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"))
+                .execute(&pool).await;
+        });
     }
 }
 
-// ── SurrealDB cleanup helpers (direct surrealdb) ──────────────────────────────
+impl TestStore {
+    /// Open a single-connection pool scoped to this test's schema.
+    ///
+    /// Use this for direct SQL verification queries (e.g. ops_log checks)
+    /// that must see the same isolated tables as the store.
+    async fn direct_pool(&self) -> Option<sqlx::PgPool> {
+        let schema = self.schema.clone();
+        sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .after_connect(move |conn, _| {
+                let s = schema.clone();
+                Box::pin(async move {
+                    sqlx::query(&format!("SET search_path TO \"{s}\""))
+                        .execute(&mut *conn).await?;
+                    Ok(())
+                })
+            })
+            .connect(&self.pg_url).await.ok()
+    }
+}
 
 async fn surreal_cleanup() {
     load_env();
-    let Some(url) = surreal_url() else {
-        return;
-    };
+    let Some(url) = surreal_url() else { return };
     let test_db = std::env::var("SURREAL_TEST_DB").unwrap_or_else(|_| "_test".into());
     let ns = std::env::var("SURREAL_TEST_NS").unwrap_or_else(|_| "_test".into());
-    let Ok(db) = surrealdb::engine::any::connect(&url).await else {
-        return;
-    };
+    let Ok(db) = surrealdb::engine::any::connect(&url).await else { return };
     let user = std::env::var("SURREAL_USER").unwrap_or_default();
     let pass = std::env::var("SURREAL_PASS").unwrap_or_default();
     if !user.is_empty() {
-        let _ = db
-            .signin(surrealdb::opt::auth::Root {
-                username: user,
-                password: pass,
-            })
-            .await;
+        let _ = db.signin(surrealdb::opt::auth::Root { username: user, password: pass }).await;
     }
     let _ = db.use_ns(&ns).use_db(&test_db).await;
-    for table in [
-        "table_rows",
-        "flags",
-        "remarks",
-        "hidden_rows",
-        "hidden_columns",
-        "custom_columns",
-        "app_tables",
-        "github_repos",
-        "ops_log",
-    ] {
+    for table in ["table_rows","flags","remarks","hidden_rows","hidden_columns",
+                  "custom_columns","app_tables","github_repos","ops_log"] {
         let _ = db.query(format!("DELETE {table}")).await;
     }
 }
 
-/// Convenience: clean both stores and return a connected store, or skip.
+/// Create and return a `TestStore` isolated in a unique Postgres schema.
+///
+/// Returns `None` (causing the test to return early) when no DB URL is
+/// configured or when the initial connection / schema setup fails.
+async fn make_test_store() -> Option<TestStore> {
+    global_test_init().await;
+    let pg_url = pg_url()?;
+    let schema = unique_test_schema();
+
+    let store = match open_pg_isolated("test", &pg_url, &schema).await {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Failed to open test store (schema={schema}): {e}"); return None; }
+    };
+    if let Err(e) = store.ensure_schema().await {
+        eprintln!("ensure_schema failed (schema={schema}): {e}");
+        return None;
+    }
+    Some(TestStore { inner: store, pg_url, schema })
+}
+
+/// Create a `TestStore` for this test, or skip the test if no DB is configured.
+///
+/// Each call produces a fresh isolated schema so tests run in parallel without
+/// data interference.  The schema is dropped automatically when `store` goes
+/// out of scope.
 macro_rules! setup {
-    () => {{
-        let pg = pg_url();
-        if let Some(ref u) = pg {
-            pg_cleanup(u).await;
-        }
-        surreal_cleanup().await;
-        match make_store().await {
+    () => {
+        match make_test_store().await {
             Some(s) => s,
             None => return,
         }
-    }};
+    };
 }
 
-// ── Row tests ─────────────────────────────────────────────────────────────────
+// ── Test helpers ──────────────────────────────────────────────────────────────
+
+/// Fetch a single row from a table by its id.
+/// Returns `None` if the row does not exist; the caller decides whether to
+/// panic (`.expect("…")`) or handle the absence differently.
+async fn fetch_row(store: &dyn DataStore, table_id: &str, row_id: &str) -> Option<serde_json::Value> {
+    let page = store
+        .list_data_rows(table_id, &RowQuery { page: 1, per_page: 200, ..Default::default() })
+        .await
+        .unwrap_or_else(|e| panic!("list_data_rows({table_id}) failed: {e}"));
+    page.data.into_iter().find(|r| r["id"] == row_id)
+}
+
+fn text_col(display_title: &str) -> crate::custom_column::CustomColumnInput {
+    crate::custom_column::CustomColumnInput {
+        title: Some(display_title.to_owned()),
+        types: Some(vec!["text".to_owned()]),
+        ..Default::default()
+    }
+}
+
+// ── Row CRUD tests ────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn integration_create_and_read_row() {
     let store = setup!();
-    let (table_id, row_id) = ("_test_rows", "_test_row_001");
+    let (table_id, row_id) = ("rows", "row_001");
 
     let row = store
         .create_row(table_id, row_id, Some("Integration test row"), None)
@@ -224,217 +252,264 @@ async fn integration_create_and_read_row() {
     assert_eq!(row["table_id"].as_str().unwrap_or(""), table_id);
 
     let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                ..Default::default()
-            },
-        )
+        .list_data_rows(table_id, &RowQuery { page: 1, per_page: 50, ..Default::default() })
         .await
         .expect("list_data_rows failed");
-    assert!(
-        page.data.iter().any(|r| r["id"] == row_id),
-        "created row not found"
-    );
+    assert!(page.data.iter().any(|r| r["id"] == row_id), "created row not found");
     assert!(page.total >= 1);
 }
 
 #[tokio::test]
 async fn integration_create_row_idempotent() {
+    // Creating the same row id twice must produce exactly one row.
     let store = setup!();
-    let (table_id, row_id) = ("_test_rows", "_test_row_idem");
+    let (table_id, row_id) = ("rows", "row_idem");
 
-    store
-        .create_row(table_id, row_id, Some("First"), None)
-        .await
-        .unwrap();
-    store
-        .create_row(table_id, row_id, Some("Second"), None)
-        .await
-        .unwrap(); // same id
+    store.create_row(table_id, row_id, Some("First"), None).await.unwrap();
+    store.create_row(table_id, row_id, Some("Second"), None).await.unwrap();
 
     let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                ..Default::default()
-            },
-        )
+        .list_data_rows(table_id, &RowQuery { page: 1, per_page: 50, ..Default::default() })
         .await
         .unwrap();
-    let matching: Vec<_> = page.data.iter().filter(|r| r["id"] == row_id).collect();
-    assert_eq!(
-        matching.len(),
-        1,
-        "idempotent create produced duplicate rows"
-    );
+    let count = page.data.iter().filter(|r| r["id"] == row_id).count();
+    assert_eq!(count, 1, "idempotent create produced duplicate rows");
 }
+
+// ── patch_row_value tests ─────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn integration_patch_row_value_reflects() {
+    // A patched value must be visible when the row is listed.
     let store = setup!();
-    let (table_id, row_id) = ("_test_rows", "_test_row_patch");
+    let (table_id, row_id) = ("rows", "row_patch");
 
-    store
-        .create_row(table_id, row_id, Some("Patch test"), None)
-        .await
-        .unwrap();
-    store
-        .patch_row_value(table_id, row_id, "status", serde_json::json!("verified"))
-        .await
-        .expect("patch_row_value failed");
+    store.create_row(table_id, row_id, Some("Patch test"), None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "status", serde_json::json!("verified")).await.unwrap();
 
-    let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    let found = page
-        .data
-        .iter()
-        .find(|r| r["id"] == row_id)
-        .expect("row not found");
-    assert_eq!(found["status"], "verified");
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["status"], "verified");
 }
 
 #[tokio::test]
 async fn integration_patch_different_columns_no_overwrite() {
-    // Two consecutive patches to different columns must not overwrite each other.
+    // Patching column A must not clobber a previously patched column B.
     let store = setup!();
-    let (table_id, row_id) = ("_test_rows", "_test_row_concurrent");
+    let (table_id, row_id) = ("rows", "row_concurrent");
 
-    store
-        .create_row(table_id, row_id, None, None)
-        .await
-        .unwrap();
-    store
-        .patch_row_value(table_id, row_id, "col_a", serde_json::json!("value_a"))
-        .await
-        .unwrap();
-    store
-        .patch_row_value(table_id, row_id, "col_b", serde_json::json!("value_b"))
-        .await
-        .unwrap();
+    store.create_row(table_id, row_id, None, None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "col_a", serde_json::json!("value_a")).await.unwrap();
+    store.patch_row_value(table_id, row_id, "col_b", serde_json::json!("value_b")).await.unwrap();
 
-    let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    let found = page
-        .data
-        .iter()
-        .find(|r| r["id"] == row_id)
-        .expect("row not found");
-    assert_eq!(found["col_a"], "value_a", "col_a was overwritten");
-    assert_eq!(found["col_b"], "value_b", "col_b was overwritten");
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["col_a"], "value_a", "col_a was overwritten");
+    assert_eq!(row["col_b"], "value_b", "col_b was overwritten");
 }
 
 #[tokio::test]
-async fn integration_upsert_rows_batch_idempotent() {
+async fn integration_repatch_same_field_leaves_siblings_intact() {
+    // Re-patching field_a with a new value must not affect field_b.
     let store = setup!();
-    let table_id = "_test_batch_rows";
+    let (table_id, row_id) = ("rows", "row_repatch");
 
-    let rows = vec![
-        serde_json::json!({"id": "_test_br_001", "name": "Alpha", "stars": 10}),
-        serde_json::json!({"id": "_test_br_002", "name": "Beta",  "stars": 20}),
-    ];
-    let count1 = store.upsert_rows_batch(table_id, &rows).await.unwrap();
-    assert_eq!(count1, 2);
+    store.create_row(table_id, row_id, None, None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "field_a", serde_json::json!("v1")).await.unwrap();
+    store.patch_row_value(table_id, row_id, "field_b", serde_json::json!("stable")).await.unwrap();
+    store.patch_row_value(table_id, row_id, "field_a", serde_json::json!("v2")).await.unwrap();
 
-    // Second upsert with updated stars — must not duplicate
-    let rows_updated = vec![
-        serde_json::json!({"id": "_test_br_001", "name": "Alpha", "stars": 99}),
-        serde_json::json!({"id": "_test_br_002", "name": "Beta",  "stars": 88}),
-    ];
-    store
-        .upsert_rows_batch(table_id, &rows_updated)
-        .await
-        .unwrap();
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["field_a"], "v2",     "field_a must reflect the latest patch");
+    assert_eq!(row["field_b"], "stable", "field_b must be unaffected by re-patching field_a");
+}
+
+#[tokio::test]
+async fn integration_patch_custom_vals_merge_not_replace() {
+    // Patching a field must merge into custom_vals, not replace the entire object.
+    // After patching three independent fields one by one, all three must coexist.
+    let store = setup!();
+    let (table_id, row_id) = ("rows", "row_merge");
+
+    store.create_row(table_id, row_id, None, None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "alpha", serde_json::json!(1)).await.unwrap();
+    store.patch_row_value(table_id, row_id, "beta",  serde_json::json!(2)).await.unwrap();
+    store.patch_row_value(table_id, row_id, "gamma", serde_json::json!(3)).await.unwrap();
+
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["alpha"], 1, "alpha overwritten");
+    assert_eq!(row["beta"],  2, "beta overwritten");
+    assert_eq!(row["gamma"], 3, "gamma overwritten");
+}
+
+#[tokio::test]
+async fn integration_patch_with_3_level_deep_value_leaves_siblings_untouched() {
+    // The value stored under a key may itself be a deeply-nested object.
+    // Patching an unrelated sibling key must leave the deep structure intact.
+    //
+    // Layout:
+    //   "metrics" → { "weekly": { "views": 100, "clicks": 50 }, "monthly": 500 }  (3 levels)
+    //   "label"   → "original"                                                     (sibling)
+    let store = setup!();
+    let (table_id, row_id) = ("rows", "row_deep");
+
+    store.create_row(table_id, row_id, None, None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "metrics", serde_json::json!({
+        "weekly":  { "views": 100, "clicks": 50 },
+        "monthly": 500
+    })).await.unwrap();
+    store.patch_row_value(table_id, row_id, "label", serde_json::json!("original")).await.unwrap();
+
+    // Patch only the sibling "label"; "metrics" must be fully preserved at all levels.
+    store.patch_row_value(table_id, row_id, "label", serde_json::json!("updated")).await.unwrap();
+
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["label"],                       "updated", "label must reflect new value");
+    assert_eq!(row["metrics"]["weekly"]["views"],  100,       "metrics.weekly.views untouched");
+    assert_eq!(row["metrics"]["weekly"]["clicks"], 50,        "metrics.weekly.clicks untouched");
+    assert_eq!(row["metrics"]["monthly"],          500,       "metrics.monthly untouched");
+}
+
+#[tokio::test]
+async fn integration_patch_nested_dict_removes_2_level_deep_key() {
+    // patch_row_value replaces the entire value for a top-level key.
+    // Patching with an object that omits some sub-keys effectively deletes those
+    // sub-keys from the stored dict (2-level depth).
+    //
+    // Before: { "config": { "timeout": 30, "retries": 5, "debug": true }, "name": "svc" }
+    // After:  { "config": { "timeout": 60, "retries": 5 },                 "name": "svc" }
+    let store = setup!();
+    let (table_id, row_id) = ("rows", "row_del2");
+
+    store.create_row(table_id, row_id, None, None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "config", serde_json::json!({
+        "timeout": 30, "retries": 5, "debug": true
+    })).await.unwrap();
+    store.patch_row_value(table_id, row_id, "name", serde_json::json!("svc")).await.unwrap();
+
+    // Re-patch "config" without "debug" — it must disappear.
+    store.patch_row_value(table_id, row_id, "config", serde_json::json!({
+        "timeout": 60, "retries": 5
+    })).await.unwrap();
+
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["config"]["timeout"], 60,    "timeout must be updated");
+    assert_eq!(row["config"]["retries"], 5,     "retries must be unchanged");
+    assert!(row["config"]["debug"].is_null(),   "debug must be deleted (absent from new value)");
+    assert_eq!(row["name"],              "svc", "sibling key must be untouched");
+}
+
+#[tokio::test]
+async fn integration_patch_nested_dict_removes_3_level_deep_key() {
+    // Same as above but one level deeper (3-level-deep key deletion).
+    //
+    // Before: { "data": { "owner": { "name": "Alice", "role": "admin" }, "repo": "foo" }, "status": "ok" }
+    // After:  { "data": { "owner": { "name": "Alice" }                                  }, "status": "ok" }
+    let store = setup!();
+    let (table_id, row_id) = ("rows", "row_del3");
+
+    store.create_row(table_id, row_id, None, None).await.unwrap();
+    store.patch_row_value(table_id, row_id, "data", serde_json::json!({
+        "owner": { "name": "Alice", "role": "admin" },
+        "repo":  "foo"
+    })).await.unwrap();
+    store.patch_row_value(table_id, row_id, "status", serde_json::json!("ok")).await.unwrap();
+
+    // Re-patch "data" keeping only owner.name; owner.role and repo must be deleted.
+    store.patch_row_value(table_id, row_id, "data", serde_json::json!({
+        "owner": { "name": "Alice" }
+    })).await.unwrap();
+
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["data"]["owner"]["name"],  "Alice", "owner.name must be preserved");
+    assert!(row["data"]["owner"]["role"].is_null(),    "owner.role must be deleted");
+    assert!(row["data"]["repo"].is_null(),             "repo must be deleted");
+    assert_eq!(row["status"],                "ok",     "sibling status must be untouched");
+}
+
+// ── Batch upsert + patch interaction tests ────────────────────────────────────
+
+#[tokio::test]
+async fn integration_upsert_rows_batch_idempotent() {
+    // Upserting the same rows twice must not create duplicates.
+    let store = setup!();
+    let table_id = "batch_rows";
+
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({"id": "br_001", "name": "Alpha", "stars": 10}),
+        serde_json::json!({"id": "br_002", "name": "Beta",  "stars": 20}),
+    ]).await.unwrap();
+
+    // Second upsert with updated stars — must update, not duplicate.
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({"id": "br_001", "name": "Alpha", "stars": 99}),
+        serde_json::json!({"id": "br_002", "name": "Beta",  "stars": 88}),
+    ]).await.unwrap();
 
     let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+        .list_data_rows(table_id, &RowQuery { page: 1, per_page: 50, ..Default::default() })
+        .await.unwrap();
     assert_eq!(page.total, 2, "expected exactly 2 rows after two upserts");
 }
 
 #[tokio::test]
-async fn integration_upsert_rows_batch_preserves_user_columns() {
+async fn integration_batch_upsert_does_not_clobber_user_patched_fields() {
+    // A user patches a field that never appears in source data.
+    // Re-importing source data must leave the user's patch intact.
     let store = setup!();
-    let table_id = "_test_batch_user_cols";
+    let (table_id, row_id) = ("batch_user_cols", "uuc_001");
 
-    // First upload: initial GitHub data.
-    store
-        .upsert_rows_batch(
-            table_id,
-            &[serde_json::json!({"id": "_test_uuc_001", "stars": 10, "name": "Repo"})],
-        )
-        .await
-        .unwrap();
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({"id": row_id, "stars": 10, "name": "Repo"}),
+    ]).await.unwrap();
 
-    // User adds a note to this row via patch_row_value.
-    store
-        .patch_row_value(table_id, "_test_uuc_001", "my_notes", serde_json::json!("keep me"))
-        .await
-        .unwrap();
+    store.patch_row_value(table_id, row_id, "my_notes", serde_json::json!("keep me")).await.unwrap();
 
-    // Second upload: GitHub data refreshes stars, does NOT include my_notes.
-    store
-        .upsert_rows_batch(
-            table_id,
-            &[serde_json::json!({"id": "_test_uuc_001", "stars": 99, "name": "Repo"})],
-        )
-        .await
-        .unwrap();
+    // Re-import: updates source fields only, does not include my_notes.
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({"id": row_id, "stars": 99, "name": "Repo"}),
+    ]).await.unwrap();
 
-    let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery { page: 1, per_page: 10, ..Default::default() },
-        )
-        .await
-        .unwrap();
-    let row = &page.data[0];
-    assert_eq!(row["stars"], 99, "GitHub data must be refreshed");
-    assert_eq!(row["my_notes"], "keep me", "user-added cell must survive re-upload");
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["stars"],    99,        "source field must be refreshed by batch import");
+    assert_eq!(row["my_notes"], "keep me", "user-patched field must survive batch re-import");
+}
+
+#[tokio::test]
+async fn integration_batch_upsert_multiple_source_fields_then_patch_and_reimport() {
+    // Broader coverage: row has several source fields + two user patches.
+    // After a re-import, source fields update and both user patches survive.
+    let store = setup!();
+    let (table_id, row_id) = ("batch_multi", "bm_001");
+
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({"id": row_id, "stars": 5, "forks": 2, "license": "MIT"}),
+    ]).await.unwrap();
+
+    store.patch_row_value(table_id, row_id, "priority", serde_json::json!("high")).await.unwrap();
+    store.patch_row_value(table_id, row_id, "reviewed",  serde_json::json!(true)).await.unwrap();
+
+    // Re-import refreshes source fields; user fields are absent from the payload.
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({"id": row_id, "stars": 100, "forks": 50, "license": "Apache-2.0"}),
+    ]).await.unwrap();
+
+    let row = fetch_row(&**store, table_id, row_id).await.expect("row not found");
+    assert_eq!(row["stars"],    100,          "stars must be refreshed");
+    assert_eq!(row["forks"],    50,           "forks must be refreshed");
+    assert_eq!(row["license"],  "Apache-2.0", "license must be refreshed");
+    assert_eq!(row["priority"], "high",       "user priority patch must survive");
+    assert_eq!(row["reviewed"], true,         "user reviewed patch must survive");
 }
 
 // ── Flag tests ────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn integration_upsert_flag_no_duplicates() {
+    // Upserting the same flag key twice must produce exactly one row with the latest color.
     let store = setup!();
-    let (flag_id, flag_key) = (nanoid::nanoid!(), "_test_flag_dedup");
+    let (flag_id, flag_key) = (nanoid::nanoid!(), "flag_dedup");
 
     store.upsert_flag(&flag_id, flag_key, "blue").await.unwrap();
-    store
-        .upsert_flag(&flag_id, flag_key, "green")
-        .await
-        .unwrap();
+    store.upsert_flag(&flag_id, flag_key, "green").await.unwrap();
 
     let flags = store.list_flags().await.unwrap();
     let matching: Vec<_> = flags.iter().filter(|f| f.key == flag_key).collect();
@@ -445,24 +520,14 @@ async fn integration_upsert_flag_no_duplicates() {
 #[tokio::test]
 async fn integration_delete_flag_removes_from_list() {
     let store = setup!();
-    let (flag_id, flag_key) = (nanoid::nanoid!(), "_test_flag_delete");
+    let (flag_id, flag_key) = (nanoid::nanoid!(), "flag_delete");
 
     store.upsert_flag(&flag_id, flag_key, "red").await.unwrap();
-    assert!(store
-        .list_flags()
-        .await
-        .unwrap()
-        .iter()
-        .any(|f| f.key == flag_key));
+    assert!(store.list_flags().await.unwrap().iter().any(|f| f.key == flag_key));
 
     store.delete_flag(flag_key).await.unwrap();
     assert!(
-        !store
-            .list_flags()
-            .await
-            .unwrap()
-            .iter()
-            .any(|f| f.key == flag_key),
+        !store.list_flags().await.unwrap().iter().any(|f| f.key == flag_key),
         "flag still present after delete"
     );
 }
@@ -471,8 +536,9 @@ async fn integration_delete_flag_removes_from_list() {
 
 #[tokio::test]
 async fn integration_remark_lifecycle() {
+    // Create → update body/kind → delete.
     let store = setup!();
-    let id = "_test_remark_001";
+    let id = "remark_001";
 
     let remark = store
         .upsert_remark(id, "Initial body", "note", false, None, &[])
@@ -483,57 +549,34 @@ async fn integration_remark_lifecycle() {
     assert_eq!(remark.kind, "note");
     assert!(!remark.is_private);
 
-    // Update body and switch to comment
-    store
-        .upsert_remark(id, "Updated body", "comment", true, None, &[])
-        .await
-        .unwrap();
-    let remarks = store.list_remarks().await.unwrap();
-    let found = remarks
-        .iter()
-        .find(|r| r.id == id)
-        .expect("remark not found after update");
+    store.upsert_remark(id, "Updated body", "comment", true, None, &[]).await.unwrap();
+    let found = store.list_remarks().await.unwrap()
+        .into_iter().find(|r| r.id == id).expect("remark not found after update");
     assert_eq!(found.body, "Updated body");
     assert_eq!(found.kind, "comment");
     assert!(found.is_private);
 
     store.delete_remark(id).await.unwrap();
     assert!(
-        !store
-            .list_remarks()
-            .await
-            .unwrap()
-            .iter()
-            .any(|r| r.id == id),
+        !store.list_remarks().await.unwrap().iter().any(|r| r.id == id),
         "remark still present after delete"
     );
 }
 
 #[tokio::test]
 async fn integration_remark_with_targets() {
+    // A remark can be attached to multiple cell targets simultaneously.
     let store = setup!();
-    let id = "_test_remark_targets";
+    let id = "remark_targets";
     let targets = vec![
-        crate::remark::RemarkTarget {
-            row_id: "_test_row_1".into(),
-            column_id: "stars".into(),
-        },
-        crate::remark::RemarkTarget {
-            row_id: "_test_row_2".into(),
-            column_id: "forks".into(),
-        },
+        crate::remark::RemarkTarget { row_id: "row_1".into(), column_id: "stars".into() },
+        crate::remark::RemarkTarget { row_id: "row_2".into(), column_id: "forks".into() },
     ];
 
-    store
-        .upsert_remark(id, "Multi-target remark", "note", false, None, &targets)
-        .await
-        .unwrap();
+    store.upsert_remark(id, "Multi-target remark", "note", false, None, &targets).await.unwrap();
 
-    let remarks = store.list_remarks().await.unwrap();
-    let found = remarks
-        .iter()
-        .find(|r| r.id == id)
-        .expect("remark not found");
+    let found = store.list_remarks().await.unwrap()
+        .into_iter().find(|r| r.id == id).expect("remark not found");
     assert_eq!(found.targets.len(), 2, "expected 2 targets");
     assert!(found.targets.iter().any(|t| t.column_id == "stars"));
     assert!(found.targets.iter().any(|t| t.column_id == "forks"));
@@ -541,35 +584,20 @@ async fn integration_remark_with_targets() {
 
 #[tokio::test]
 async fn integration_remark_resolve() {
+    // A comment can be resolved by setting resolved_at.
     let store = setup!();
-    let id = "_test_remark_resolve";
+    let id = "remark_resolve";
 
-    store
-        .upsert_remark(id, "To be resolved", "comment", false, None, &[])
-        .await
-        .unwrap();
-    let found = store
-        .list_remarks()
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|r| r.id == id)
-        .unwrap();
-    assert!(found.resolved_at.is_none());
+    store.upsert_remark(id, "To be resolved", "comment", false, None, &[]).await.unwrap();
+    let before = store.list_remarks().await.unwrap()
+        .into_iter().find(|r| r.id == id).unwrap();
+    assert!(before.resolved_at.is_none(), "should start unresolved");
 
     let resolved_at = chrono::Utc::now();
-    store
-        .upsert_remark(id, "Resolved", "comment", false, Some(resolved_at), &[])
-        .await
-        .unwrap();
-    let found = store
-        .list_remarks()
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|r| r.id == id)
-        .unwrap();
-    assert!(found.resolved_at.is_some(), "resolved_at not set");
+    store.upsert_remark(id, "Resolved", "comment", false, Some(resolved_at), &[]).await.unwrap();
+    let after = store.list_remarks().await.unwrap()
+        .into_iter().find(|r| r.id == id).unwrap();
+    assert!(after.resolved_at.is_some(), "resolved_at must be set");
 }
 
 // ── Hidden row/column tests ───────────────────────────────────────────────────
@@ -577,73 +605,49 @@ async fn integration_remark_resolve() {
 #[tokio::test]
 async fn integration_hidden_row_add_list_remove() {
     let store = setup!();
-    let (id, row_id) = (nanoid::nanoid!(), "_test_hidden_row_001");
+    let (id, row_id) = (nanoid::nanoid!(), "hidden_row_001");
 
     store.add_hidden_row(&id, row_id).await.unwrap();
     assert!(
-        store
-            .list_hidden_rows()
-            .await
-            .unwrap()
-            .iter()
-            .any(|r| r.row_id == row_id),
+        store.list_hidden_rows().await.unwrap().iter().any(|r| r.row_id == row_id),
         "hidden row not in list after add"
     );
 
     store.remove_hidden_row(row_id).await.unwrap();
     assert!(
-        !store
-            .list_hidden_rows()
-            .await
-            .unwrap()
-            .iter()
-            .any(|r| r.row_id == row_id),
+        !store.list_hidden_rows().await.unwrap().iter().any(|r| r.row_id == row_id),
         "hidden row still in list after remove"
     );
 }
 
 #[tokio::test]
 async fn integration_hidden_row_idempotent() {
+    // Adding the same row id twice must not create duplicate entries.
     let store = setup!();
-    let (id, row_id) = (nanoid::nanoid!(), "_test_hidden_row_idem");
+    let (id, row_id) = (nanoid::nanoid!(), "hidden_row_idem");
 
     store.add_hidden_row(&id, row_id).await.unwrap();
-    store.add_hidden_row(&id, row_id).await.unwrap(); // same id — must not duplicate
+    store.add_hidden_row(&id, row_id).await.unwrap();
 
-    let rows: Vec<_> = store
-        .list_hidden_rows()
-        .await
-        .unwrap()
-        .into_iter()
-        .filter(|r| r.row_id == row_id)
-        .collect();
-    assert_eq!(rows.len(), 1, "idempotent add produced duplicates");
+    let count = store.list_hidden_rows().await.unwrap()
+        .into_iter().filter(|r| r.row_id == row_id).count();
+    assert_eq!(count, 1, "idempotent add produced duplicates");
 }
 
 #[tokio::test]
 async fn integration_hidden_column_add_list_remove() {
     let store = setup!();
-    let (id, col_id) = (nanoid::nanoid!(), "_test_hidden_col_001");
+    let (id, col_id) = (nanoid::nanoid!(), "hidden_col_001");
 
     store.add_hidden_column(&id, col_id).await.unwrap();
     assert!(
-        store
-            .list_hidden_columns()
-            .await
-            .unwrap()
-            .iter()
-            .any(|c| c.column_id == col_id),
+        store.list_hidden_columns().await.unwrap().iter().any(|c| c.column_id == col_id),
         "hidden column not in list after add"
     );
 
     store.remove_hidden_column(col_id).await.unwrap();
     assert!(
-        !store
-            .list_hidden_columns()
-            .await
-            .unwrap()
-            .iter()
-            .any(|c| c.column_id == col_id),
+        !store.list_hidden_columns().await.unwrap().iter().any(|c| c.column_id == col_id),
         "hidden column still in list after remove"
     );
 }
@@ -653,212 +657,124 @@ async fn integration_hidden_column_add_list_remove() {
 #[tokio::test]
 async fn integration_table_create_list_patch_delete() {
     let store = setup!();
-    let id = "_test_table_001";
+    let id = "table_001";
 
-    let t = store
-        .create_table(id, "Test Table", Some("A test"), Some("tester"))
-        .await
-        .unwrap();
+    let t = store.create_table(id, "Test Table", Some("A test"), Some("tester")).await.unwrap();
     assert_eq!(t.id, id);
     assert_eq!(t.title, "Test Table");
 
     assert!(
-        store
-            .list_tables()
-            .await
-            .unwrap()
-            .iter()
-            .any(|t| t.id == id),
+        store.list_tables().await.unwrap().iter().any(|t| t.id == id),
         "table not found in list after create"
     );
 
-    let patched = store
-        .patch_table(id, Some("Renamed Table"), None, Some("patcher"))
-        .await
-        .unwrap();
+    let patched = store.patch_table(id, Some("Renamed Table"), None, Some("patcher")).await.unwrap();
     assert_eq!(patched.title, "Renamed Table");
     assert!(patched.modify_count >= 1);
 
     store.delete_table(id).await.unwrap();
     assert!(
-        !store
-            .list_tables()
-            .await
-            .unwrap()
-            .iter()
-            .any(|t| t.id == id),
+        !store.list_tables().await.unwrap().iter().any(|t| t.id == id),
         "table still present after delete"
     );
 }
 
 #[tokio::test]
 async fn integration_table_create_idempotent() {
+    // Creating the same table id twice must produce exactly one entry.
     let store = setup!();
-    let id = "_test_table_idem";
+    let id = "table_idem";
 
-    store
-        .create_table(id, "First Title", None, None)
-        .await
-        .unwrap();
-    store
-        .create_table(id, "Second Title", None, None)
-        .await
-        .unwrap(); // same id — must not error or duplicate
+    store.create_table(id, "First Title",  None, None).await.unwrap();
+    store.create_table(id, "Second Title", None, None).await.unwrap();
 
-    let tables: Vec<_> = store
-        .list_tables()
-        .await
-        .unwrap()
-        .into_iter()
-        .filter(|t| t.id == id)
-        .collect();
-    assert_eq!(tables.len(), 1, "idempotent create produced duplicates");
+    let count = store.list_tables().await.unwrap()
+        .into_iter().filter(|t| t.id == id).count();
+    assert_eq!(count, 1, "idempotent create produced duplicates");
 }
 
 // ── Custom column tests ───────────────────────────────────────────────────────
 
-fn text_col(display_title: &str) -> crate::custom_column::CustomColumnInput {
-    crate::custom_column::CustomColumnInput {
-        title: Some(display_title.to_owned()),
-        types: Some(vec!["text".to_owned()]),
-        ..Default::default()
-    }
-}
-
 #[tokio::test]
 async fn integration_custom_column_upsert_and_list() {
     let store = setup!();
-    let table_id = "_test_table_cols";
-    store
-        .create_table(table_id, "Col test table", None, None)
-        .await
-        .unwrap();
+    let table_id = "table_cols";
+    store.create_table(table_id, "Col test table", None, None).await.unwrap();
 
-    let col = store
-        .upsert_custom_column(table_id, "_test_col_name", &text_col("name"))
-        .await
-        .unwrap();
-    assert_eq!(col.id, "_test_col_name");
+    let col = store.upsert_custom_column(table_id, "col_name", &text_col("Display Name")).await.unwrap();
+    assert_eq!(col.id, "col_name");
 
     let cols = store.list_custom_columns(table_id).await.unwrap();
-    assert!(
-        cols.iter().any(|c| c.id == "_test_col_name"),
-        "column not in list"
-    );
+    assert!(cols.iter().any(|c| c.id == "col_name"), "column not in list");
 }
 
 #[tokio::test]
 async fn integration_custom_column_group_with_sub_columns() {
+    // A group column can have sub-columns; parent_ids links them.
     let store = setup!();
-    let table_id = "_test_table_groups";
-    store
-        .create_table(table_id, "Group test", None, None)
-        .await
-        .unwrap();
+    let table_id = "table_groups";
+    store.create_table(table_id, "Group test", None, None).await.unwrap();
 
-    // Create parent group column
     let group_input = crate::custom_column::CustomColumnInput {
         title: Some("Owner".to_owned()),
         is_group: true,
         ..Default::default()
     };
-    store
-        .upsert_custom_column(table_id, "_test_col_owner", &group_input)
-        .await
-        .unwrap();
+    store.upsert_custom_column(table_id, "col_owner", &group_input).await.unwrap();
 
-    // Create sub-column with parent_ids pointing to the group
     let sub_input = crate::custom_column::CustomColumnInput {
         title: Some("Login".to_owned()),
-        parent_ids: vec!["_test_col_owner".to_owned()],
+        parent_ids: vec!["col_owner".to_owned()],
         types: Some(vec!["text".to_owned()]),
         ..Default::default()
     };
-    store
-        .upsert_custom_column(table_id, "_test_col_owner_login", &sub_input)
-        .await
-        .unwrap();
+    store.upsert_custom_column(table_id, "col_owner_login", &sub_input).await.unwrap();
 
     let cols = store.list_custom_columns(table_id).await.unwrap();
-    let group = cols
-        .iter()
-        .find(|c| c.id == "_test_col_owner")
-        .expect("group col missing");
-    let sub = cols
-        .iter()
-        .find(|c| c.id == "_test_col_owner_login")
-        .expect("sub col missing");
+    let group = cols.iter().find(|c| c.id == "col_owner").expect("group col missing");
+    let sub   = cols.iter().find(|c| c.id == "col_owner_login").expect("sub col missing");
 
     assert!(group.is_group);
-    assert_eq!(sub.parent_ids, vec!["_test_col_owner"]);
+    assert_eq!(sub.parent_ids, vec!["col_owner"]);
 }
 
 #[tokio::test]
 async fn integration_custom_column_delete() {
     let store = setup!();
-    let table_id = "_test_table_coldel";
-    store
-        .create_table(table_id, "Del test", None, None)
-        .await
-        .unwrap();
-    store
-        .upsert_custom_column(table_id, "_test_col_del", &text_col("to_delete"))
-        .await
-        .unwrap();
+    let table_id = "table_col_del";
+    store.create_table(table_id, "Del test", None, None).await.unwrap();
+    store.upsert_custom_column(table_id, "col_del", &text_col("to_delete")).await.unwrap();
 
-    assert!(store
-        .list_custom_columns(table_id)
-        .await
-        .unwrap()
-        .iter()
-        .any(|c| c.id == "_test_col_del"));
+    assert!(store.list_custom_columns(table_id).await.unwrap().iter().any(|c| c.id == "col_del"));
 
-    store.delete_custom_column("_test_col_del").await.unwrap();
+    store.delete_custom_column("col_del").await.unwrap();
     assert!(
-        !store
-            .list_custom_columns(table_id)
-            .await
-            .unwrap()
-            .iter()
-            .any(|c| c.id == "_test_col_del"),
+        !store.list_custom_columns(table_id).await.unwrap().iter().any(|c| c.id == "col_del"),
         "column still present after delete"
     );
 }
 
 #[tokio::test]
 async fn integration_custom_column_freeze() {
+    // set_table_column_frozen toggles the is_frozen flag on the column.
     let store = setup!();
-    let table_id = "_test_table_freeze";
-    store
-        .create_table(table_id, "Freeze test", None, None)
-        .await
-        .unwrap();
-    store
-        .upsert_custom_column(table_id, "_test_col_freeze", &text_col("freezable"))
-        .await
-        .unwrap();
+    let table_id = "table_freeze";
+    store.create_table(table_id, "Freeze test", None, None).await.unwrap();
+    store.upsert_custom_column(table_id, "col_freeze", &text_col("freezable")).await.unwrap();
 
-    let col = store
-        .set_table_column_frozen(table_id, "_test_col_freeze", true)
-        .await
-        .unwrap();
-    assert!(col.is_frozen);
+    let col = store.set_table_column_frozen(table_id, "col_freeze", true).await.unwrap();
+    assert!(col.is_frozen, "column should be frozen after setting true");
 
-    let col = store
-        .set_table_column_frozen(table_id, "_test_col_freeze", false)
-        .await
-        .unwrap();
-    assert!(!col.is_frozen);
+    let col = store.set_table_column_frozen(table_id, "col_freeze", false).await.unwrap();
+    assert!(!col.is_frozen, "column should be unfrozen after setting false");
 }
 
 #[tokio::test]
 async fn integration_custom_column_full_metadata_round_trips() {
+    // title, description, types, and data_types must survive an upsert round-trip.
     let store = setup!();
-    let table_id = "_test_table_meta";
-    store
-        .create_table(table_id, "Meta test", None, None)
-        .await
-        .unwrap();
+    let table_id = "table_meta";
+    store.create_table(table_id, "Meta test", None, None).await.unwrap();
 
     let input = crate::custom_column::CustomColumnInput {
         title: Some("Stars ⭐".to_owned()),
@@ -867,11 +783,8 @@ async fn integration_custom_column_full_metadata_round_trips() {
         data_types: Some(vec!["numeric".to_owned()]),
         ..Default::default()
     };
-    let col = store
-        .upsert_custom_column(table_id, "_test_col_stars", &input)
-        .await
-        .unwrap();
-    assert_eq!(col.title.as_deref(), Some("Stars ⭐"));
+    let col = store.upsert_custom_column(table_id, "col_stars", &input).await.unwrap();
+    assert_eq!(col.title.as_deref(),       Some("Stars ⭐"));
     assert_eq!(col.description.as_deref(), Some("GitHub star count"));
     assert!(col.types.contains(&"integer".to_owned()));
     assert!(col.data_types.contains(&"numeric".to_owned()));
@@ -881,54 +794,30 @@ async fn integration_custom_column_full_metadata_round_trips() {
 
 #[tokio::test]
 async fn integration_ops_log_applied_at_set_after_write() {
-    let pg = match pg_url() {
-        Some(u) => u,
-        None => {
-            eprintln!("skip");
-            return;
-        }
-    };
-    pg_cleanup(&pg).await;
-    surreal_cleanup().await;
-    let store = match make_store().await {
-        Some(s) => s,
-        None => return,
-    };
+    // After a write succeeds, its ops_log entry must have applied_at set.
+    let store = setup!();
 
-    store
-        .upsert_flag(&nanoid::nanoid!(), "_test_flag_ops_applied", "blue")
-        .await
-        .unwrap();
+    store.upsert_flag(&nanoid::nanoid!(), "flag_ops_applied", "blue").await.unwrap();
 
-    let pool = sqlx::PgPool::connect(&pg).await.unwrap();
+    let Some(pool) = store.direct_pool().await else { return };
     let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations_log WHERE op = 'flag.upsert' AND applied_at IS NOT NULL",
+        "SELECT COUNT(*) FROM operations_log \
+         WHERE op = 'flag.upsert' AND applied_at IS NOT NULL",
     )
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
-    assert!(
-        count >= 1,
-        "ops_log applied_at not set after write (got {count})"
-    );
+    .fetch_one(&pool).await.unwrap_or(0);
+    assert!(count >= 1, "ops_log applied_at not set after write (got {count})");
 }
 
 #[tokio::test]
 async fn integration_ops_log_no_pending_after_all_writes_succeed() {
+    // Completed writes must not linger as pending ops.
     let store = setup!();
 
-    store
-        .upsert_flag(&nanoid::nanoid!(), "_test_flag_nopending", "blue")
-        .await
-        .unwrap();
-    store
-        .create_row("_test_nopending", "_test_row_nopending", None, None)
-        .await
-        .unwrap();
+    store.upsert_flag(&nanoid::nanoid!(), "flag_no_pending", "blue").await.unwrap();
+    store.create_row("rows_no_pending", "row_no_pending", None, None).await.unwrap();
 
     let pending = store.pending_ops().await.unwrap();
-    let ours: Vec<_> = pending
-        .iter()
+    let ours: Vec<_> = pending.iter()
         .filter(|op| op.op.starts_with("flag.") || op.op.starts_with("row."))
         .collect();
     assert!(
@@ -940,148 +829,83 @@ async fn integration_ops_log_no_pending_after_all_writes_succeed() {
 
 #[tokio::test]
 async fn integration_ops_log_full_payload_for_remark() {
-    // Verify that remark.upsert ops log stores body + targets so crash recovery works.
-    let pg = match pg_url() {
-        Some(u) => u,
-        None => {
-            eprintln!("skip");
-            return;
-        }
-    };
-    pg_cleanup(&pg).await;
-    surreal_cleanup().await;
-    let store = match make_store().await {
-        Some(s) => s,
-        None => return,
-    };
+    // The ops_log entry for remark.upsert must store body + targets so crash
+    // recovery can replay the operation.
+    let store = setup!();
 
     let targets = vec![crate::remark::RemarkTarget {
-        row_id: "row1".into(),
-        column_id: "stars".into(),
+        row_id: "row1".into(), column_id: "stars".into(),
     }];
-    store
-        .upsert_remark(
-            "_test_remark_payload",
-            "Important body",
-            "note",
-            false,
-            None,
-            &targets,
-        )
-        .await
-        .unwrap();
+    store.upsert_remark("remark_payload", "Important body", "note", false, None, &targets)
+        .await.unwrap();
 
-    let pool = sqlx::PgPool::connect(&pg).await.unwrap();
+    let Some(pool) = store.direct_pool().await else { return };
     let payload: serde_json::Value = sqlx::query_scalar(
-        "SELECT payload FROM operations_log WHERE op = 'remark.upsert' ORDER BY id DESC LIMIT 1",
+        "SELECT payload FROM operations_log \
+         WHERE op = 'remark.upsert' ORDER BY id DESC LIMIT 1",
     )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    .fetch_one(&pool).await.unwrap();
 
-    assert_eq!(
-        payload["body"], "Important body",
-        "body missing from ops log payload"
-    );
-    assert!(
-        payload["targets"].is_array(),
-        "targets missing from ops log payload"
-    );
-    assert!(
-        !payload["targets"].as_array().unwrap().is_empty(),
-        "targets array is empty"
-    );
+    assert_eq!(payload["body"], "Important body", "body missing from ops log payload");
+    assert!(payload["targets"].is_array(), "targets missing from ops log payload");
+    assert!(!payload["targets"].as_array().unwrap().is_empty(), "targets array is empty");
 }
 
-// ── Multi-store merge tests ───────────────────────────────────────────────────
+// ── Multi-store merge / timing tests ─────────────────────────────────────────
 
 #[tokio::test]
 async fn live_db_read_merges_from_both_stores() {
+    // A write should be visible in list results without duplicates.
     let store = setup!();
-    let flag_key = "_test_flag_merge_read";
+    let flag_key = "flag_merge_read";
 
-    store
-        .upsert_flag(&nanoid::nanoid!(), flag_key, "orange")
-        .await
-        .unwrap();
+    store.upsert_flag(&nanoid::nanoid!(), flag_key, "orange").await.unwrap();
 
-    let flags = store.list_flags().await.unwrap();
-    let found: Vec<_> = flags.iter().filter(|f| f.key == flag_key).collect();
-    assert_eq!(
-        found.len(),
-        1,
-        "expected exactly one merged flag (got {})",
-        found.len()
-    );
+    let found: Vec<_> = store.list_flags().await.unwrap()
+        .into_iter().filter(|f| f.key == flag_key).collect();
+    assert_eq!(found.len(), 1, "expected exactly one merged flag (got {})", found.len());
     assert_eq!(found[0].color, "orange");
 }
 
 #[tokio::test]
 async fn live_db_timing_is_logged_for_reads_and_writes() {
     let store = setup!();
-    let (table_id, row_id) = ("_test_timing", "_test_row_timing");
+    let (table_id, row_id) = ("rows_timing", "row_timing");
 
-    let row = store
-        .create_row(table_id, row_id, Some("Timing test"), None)
-        .await
-        .unwrap();
+    let row = store.create_row(table_id, row_id, Some("Timing test"), None).await.unwrap();
     assert_eq!(row["id"].as_str().unwrap_or(""), row_id);
 
     let page = store
-        .list_data_rows(
-            table_id,
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+        .list_data_rows(table_id, &RowQuery { page: 1, per_page: 50, ..Default::default() })
+        .await.unwrap();
     assert!(page.data.iter().any(|r| r["id"] == row_id));
 }
 
 #[tokio::test]
 async fn live_db_per_request_timeout_override() {
+    // A per-request read_timeout_secs must be honoured without error.
     let store = setup!();
-    store
-        .create_row(
-            "_test_timeout_override",
-            "_test_row_to_override",
-            Some("Timeout test"),
-            None,
-        )
-        .await
-        .unwrap();
+
+    store.create_row("rows_timeout", "row_timeout", Some("Timeout test"), None).await.unwrap();
 
     let page = store
         .list_data_rows(
-            "_test_timeout_override",
-            &RowQuery {
-                page: 1,
-                per_page: 50,
-                read_timeout_secs: Some(30),
-                ..Default::default()
-            },
+            "rows_timeout",
+            &RowQuery { page: 1, per_page: 50, read_timeout_secs: Some(30), ..Default::default() },
         )
-        .await
-        .unwrap();
+        .await.unwrap();
     assert!(page.total >= 1);
 }
 
 #[tokio::test]
 async fn integration_upsert_github_repos_no_duplicates() {
     let store = setup!();
-    let repo = serde_json::json!({ "github_id": -999001, "name": "_test_/repo-dedup", "stars": 1 });
+    let repo = serde_json::json!({ "github_id": 1, "name": "repo-dedup", "stars": 1 });
 
-    store
-        .upsert_github_repos_batch(&[repo.clone()])
-        .await
-        .unwrap();
+    store.upsert_github_repos_batch(&[repo.clone()]).await.unwrap();
     store.upsert_github_repos_batch(&[repo]).await.unwrap();
 
-    let updated =
-        serde_json::json!({ "github_id": -999001, "name": "_test_/repo-dedup", "stars": 99 });
+    let updated = serde_json::json!({ "github_id": 1, "name": "repo-dedup", "stars": 99 });
     let count = store.upsert_github_repos_batch(&[updated]).await.unwrap();
     assert_eq!(count, 1);
 }

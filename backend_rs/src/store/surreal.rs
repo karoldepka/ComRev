@@ -232,6 +232,17 @@ impl DataStore for SurrealStore {
         Ok(row_to_custom_column(&v))
     }
 
+    async fn nuke_user_data(&self) -> Result<()> {
+        tracing::warn!(db_id = %self.db_id, "NUKE__DATA: deleting all SurrealDB records (schema preserved)");
+        for table in ["table_rows","flags","remarks","remark_targets","hidden_rows",
+                      "hidden_columns","custom_columns","app_tables","github_repos","ops_log"] {
+            self.db.query(format!("DELETE {table}")).await
+                .with_context(|| format!("NUKE__DATA: DELETE {table} failed"))?;
+        }
+        tracing::warn!(db_id = %self.db_id, "NUKE__DATA: complete");
+        Ok(())
+    }
+
     async fn nuke_db(&self) -> Result<()> {
         let db_name = &self.surreal_db;
         let ns_name = &self.surreal_ns;
