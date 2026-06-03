@@ -260,6 +260,33 @@ async fn integration_create_and_read_row() {
 }
 
 #[tokio::test]
+async fn integration_list_empty_dynamic_table_materializes_relation() {
+    let store = setup!();
+    let table_id = "9PUohQTPxgrtrpVp9Qcrn";
+
+    let page = store
+        .list_data_rows(table_id, &RowQuery { page: 1, per_page: 50, ..Default::default() })
+        .await
+        .expect("list_data_rows should materialize missing user table");
+
+    assert_eq!(page.total, 0);
+    assert!(page.data.is_empty());
+
+    let pool = store.direct_pool().await.expect("direct pool");
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = current_schema() AND table_name = $1
+         )",
+    )
+    .bind(format!("t_{table_id}"))
+    .fetch_one(&pool)
+    .await
+    .expect("relation existence query");
+    assert!(exists, "missing dynamic table relation should have been created");
+}
+
+#[tokio::test]
 async fn integration_create_row_idempotent() {
     // Creating the same row id twice must produce exactly one row.
     let store = setup!();
@@ -498,6 +525,112 @@ async fn integration_batch_upsert_multiple_source_fields_then_patch_and_reimport
     assert_eq!(row["license"],  "Apache-2.0", "license must be refreshed");
     assert_eq!(row["priority"], "high",       "user priority patch must survive");
     assert_eq!(row["reviewed"], true,         "user reviewed patch must survive");
+}
+
+#[tokio::test]
+async fn integration_batch_upsert_auto_creates_columns_for_nested_fields() {
+    // When a row contains a nested object field (e.g. "metrics": {"views": 100}),
+    // upsert_rows_batch must auto-create:
+    //   - a group column "metrics"
+    //   - a child column "metrics__views" with source_path ["metrics", "views"]
+    // and a flat numeric field "score" must become a plain numeric column.
+    let store = setup!();
+    let table_id = "auto_cols";
+
+    store.upsert_rows_batch(table_id, &[serde_json::json!({
+        "id":      "row1",
+        "score":   42,
+        "metrics": { "views": 100, "clicks": 5 }
+    })]).await.unwrap();
+
+    let cols = store.list_custom_columns(table_id).await.unwrap();
+    let col_ids: Vec<&str> = cols.iter().map(|c| c.id.as_str()).collect();
+
+    assert!(col_ids.contains(&"score"),          "flat field must become a column");
+    assert!(col_ids.contains(&"metrics"),        "nested field must become a group column");
+    assert!(col_ids.contains(&"metrics__views"), "nested sub-key must become a child column");
+    assert!(col_ids.contains(&"metrics__clicks"),"nested sub-key must become a child column");
+
+    let group = cols.iter().find(|c| c.id == "metrics").unwrap();
+    assert!(group.is_group, "parent column must be marked as a group");
+
+    let child = cols.iter().find(|c| c.id == "metrics__views").unwrap();
+    assert_eq!(child.parent_ids, vec!["metrics"], "child must reference parent");
+    assert_eq!(
+        child.source_path.as_deref(),
+        Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
+        "child must have source_path pointing into the nested JSONB"
+    );
+    assert!(child.types.iter().any(|t| t == "numeric"), "numeric value must infer numeric type");
+}
+
+#[tokio::test]
+async fn integration_batch_upsert_discovers_nested_fields_after_empty_first_row() {
+    let store = setup!();
+    let table_id = "auto_cols_late_nested";
+
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({ "id": "row1", "metrics": {} }),
+        serde_json::json!({ "id": "row2", "metrics": { "views": 100 } }),
+    ]).await.unwrap();
+
+    let cols = store.list_custom_columns(table_id).await.unwrap();
+    let child = cols.iter().find(|c| c.id == "metrics__views").unwrap();
+    assert_eq!(
+        child.source_path.as_deref(),
+        Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
+        "nested column should be discovered even when the first row has an empty object"
+    );
+}
+
+#[tokio::test]
+async fn integration_list_custom_columns_repairs_stale_nested_source_path() {
+    let store = setup!();
+    let table_id = "nested_cols_repair";
+    let pool = store.direct_pool().await.expect("direct pool");
+
+    sqlx::query("INSERT INTO tables (id, title) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING")
+        .bind(table_id)
+        .bind("Nested columns repair")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO custom_columns (id, title, types, data_types, is_group, parent_ids, source_path)
+         VALUES ('metrics__views', 'views', ARRAY['numeric'], ARRAY['numeric'], false, ARRAY['metrics'], NULL)
+         ON CONFLICT (id) DO UPDATE SET source_path = NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO table_custom_columns (table_id, column_id)
+         VALUES ($1, 'metrics__views')
+         ON CONFLICT (table_id, column_id) DO NOTHING",
+    )
+    .bind(table_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let cols = store.list_custom_columns(table_id).await.unwrap();
+    let col = cols.iter().find(|c| c.id == "metrics__views").unwrap();
+    assert_eq!(
+        col.source_path.as_deref(),
+        Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
+        "stale nested column should be returned with a data path"
+    );
+
+    let persisted: Option<Vec<String>> =
+        sqlx::query_scalar("SELECT source_path FROM custom_columns WHERE id = 'metrics__views'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        persisted.as_deref(),
+        Some(["metrics".to_owned(), "views".to_owned()].as_slice()),
+        "stale nested source_path should be repaired in storage"
+    );
 }
 
 // ── Flag tests ────────────────────────────────────────────────────────────────

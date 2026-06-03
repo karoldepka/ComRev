@@ -3,14 +3,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-const REQUIRED = 'NUKE__ALL_DB';
-
 type Props = {
+  confirmationPhrase: string;
+  title: string;
+  description: React.ReactNode;
+  buttonLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 };
 
-export default function NukeDbDialog({ onConfirm, onCancel }: Props) {
+export default function NukeDbDialog({
+  confirmationPhrase,
+  title,
+  description,
+  buttonLabel = 'NUKE',
+  onConfirm,
+  onCancel,
+}: Props) {
   const [typed, setTyped] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -32,18 +41,15 @@ export default function NukeDbDialog({ onConfirm, onCancel }: Props) {
         className="dialog"
         role="alertdialog"
         aria-modal="true"
-        aria-label="Nuke database"
+        aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="dialog-title" style={{ color: 'var(--danger, #dc2626)' }}>
-          Nuke entire database?
+          {title}
         </h2>
+        <div className="dialog-body">{description}</div>
         <p className="dialog-body">
-          This will permanently delete <strong>all tables, columns, rows, remarks, flags</strong>,
-          and every other record across <strong>all configured databases</strong>. There is no undo.
-        </p>
-        <p className="dialog-body">
-          Type <strong>{REQUIRED}</strong> to confirm:
+          Type <strong>{confirmationPhrase}</strong> to confirm:
         </p>
         <input
           ref={inputRef}
@@ -57,7 +63,7 @@ export default function NukeDbDialog({ onConfirm, onCancel }: Props) {
           onContextMenu={(e) => e.preventDefault()}
           autoComplete="off"
           spellCheck={false}
-          placeholder={REQUIRED}
+          placeholder={confirmationPhrase}
         />
         <div className="dialog-actions">
           <button type="button" className="dialog-btn-secondary" onClick={onCancel}>
@@ -66,10 +72,10 @@ export default function NukeDbDialog({ onConfirm, onCancel }: Props) {
           <button
             type="button"
             className="dialog-btn-danger"
-            disabled={typed !== REQUIRED}
+            disabled={typed !== confirmationPhrase}
             onClick={onConfirm}
           >
-            NUKE
+            {buttonLabel}
           </button>
         </div>
       </div>

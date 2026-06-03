@@ -14,6 +14,7 @@ type Props = {
   onAddColumn?: () => void;
   onShowAllTables?: () => void;
   onRenameTable?: (id: string, title: string) => void;
+  onNukeUserData?: () => Promise<void>;
   onNukeDb?: () => Promise<void>;
 };
 
@@ -23,7 +24,8 @@ const TABLE_IMPLS = [
 ];
 
 export default function TableToolbar({
-  tableId, title, tables = [], onAddTable, onAddColumn, onShowAllTables, onRenameTable, onNukeDb,
+  tableId, title, tables = [], onAddTable, onAddColumn, onShowAllTables, onRenameTable,
+  onNukeUserData, onNukeDb,
 }: Props) {
   const path = usePathname();
   const current = tableId ? tables.find((t) => t.id === tableId) : undefined;
@@ -31,8 +33,9 @@ export default function TableToolbar({
   const canRename = !!tableId && !!onRenameTable;
   const hasTableActions = !!(onAddTable || onAddColumn || onShowAllTables || tables.length > 0);
 
-  const [menuOpen, setMenuOpen]     = useState(false);
-  const [nukeOpen, setNukeOpen]     = useState(false);
+  const [menuOpen, setMenuOpen]         = useState(false);
+  const [nukeUserDataOpen, setNukeUserDataOpen] = useState(false);
+  const [nukeOpen, setNukeOpen]         = useState(false);
   const [editing, setEditing]       = useState(false);
   const [titleDraft, setTitleDraft] = useState(displayTitle);
 
@@ -128,6 +131,18 @@ export default function TableToolbar({
                   </button>
                 </>
               )}
+              {onNukeUserData && (
+                <>
+                  <div className="menu-divider" />
+                  <button
+                    type="button"
+                    className="menu-danger"
+                    onClick={() => { setMenuOpen(false); setNukeUserDataOpen(true); }}
+                  >
+                    NUKE__USER_DATA
+                  </button>
+                </>
+              )}
               {onNukeDb && (
                 <>
                   <div className="menu-divider" />
@@ -171,8 +186,32 @@ export default function TableToolbar({
         </span>
       )}
     </div>
+    {nukeUserDataOpen && onNukeUserData && (
+      <NukeDbDialog
+        confirmationPhrase="NUKE__USER_DATA"
+        title="Delete all user data?"
+        description={
+          <p>
+            This will permanently delete <strong>all rows, remarks, flags, hidden rows/columns,
+            and custom column values</strong> across all configured databases.
+            The schema (tables and column definitions) will be preserved. There is no undo.
+          </p>
+        }
+        buttonLabel="NUKE USER DATA"
+        onConfirm={() => { setNukeUserDataOpen(false); onNukeUserData(); }}
+        onCancel={() => setNukeUserDataOpen(false)}
+      />
+    )}
     {nukeOpen && onNukeDb && (
       <NukeDbDialog
+        confirmationPhrase="NUKE__ALL_DB"
+        title="Nuke entire database?"
+        description={
+          <p>
+            This will permanently delete <strong>all tables, columns, rows, remarks, flags</strong>,
+            and every other record across <strong>all configured databases</strong>. There is no undo.
+          </p>
+        }
         onConfirm={() => { setNukeOpen(false); onNukeDb(); }}
         onCancel={() => setNukeOpen(false)}
       />

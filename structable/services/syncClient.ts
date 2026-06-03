@@ -252,6 +252,11 @@ export class SyncClient {
   async nukeDb(): Promise<void> {
     await this.inner.nuke_db();
   }
+  async nukeUserData(): Promise<void> {
+    const REST_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+    const res = await fetch(`${REST_BASE}/NUKE__USER_DATA`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`NUKE__USER_DATA: HTTP ${res.status}`);
+  }
 
   // ── Row / cell operations ─────────────────────────────────────────────────────
 

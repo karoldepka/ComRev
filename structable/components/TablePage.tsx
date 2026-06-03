@@ -41,6 +41,12 @@ export default function TablePage({ tableId }: Props) {
     setTables((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
   }, []);
 
+  const handleNukeUserData = useCallback(async () => {
+    const client = await getSyncClient();
+    await client.nukeUserData();
+    toast.success('User data deleted. Reload to see an empty table.');
+  }, []);
+
   const handleNukeDb = useCallback(async () => {
     const client = await getSyncClient();
     await client.nukeDb();
@@ -55,6 +61,7 @@ export default function TablePage({ tableId }: Props) {
         onAddTable={() => setShowAddTable(true)}
         onShowAllTables={() => router.push('/')}
         onRenameTable={handleRenameTable}
+        onNukeUserData={handleNukeUserData}
         onNukeDb={handleNukeDb}
       />
       {showAddTable && (

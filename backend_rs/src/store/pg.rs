@@ -18,6 +18,29 @@ use crate::{
 pub struct PgStore {
     pub(super) pool: PgPool,
     db_id: String,
+    /// Column IDs known to exist per table. Avoids hitting the DB on every batch
+    /// when auto-detected columns were already created in a previous upload.
+    known_cols:
+        std::sync::RwLock<std::collections::HashMap<String, std::collections::HashSet<String>>>,
+}
+
+/// Infer display type from a JSON value.
+fn infer_col_types(v: &serde_json::Value) -> Vec<String> {
+    match v {
+        serde_json::Value::Number(_) => vec!["numeric".into()],
+        serde_json::Value::Bool(_) => vec!["boolean".into()],
+        serde_json::Value::Array(_) => vec!["array".into()],
+        _ => vec!["text".into()],
+    }
+}
+
+fn inferred_nested_source_path(id: &str, parent_ids: &[String]) -> Option<Vec<String>> {
+    let parent = parent_ids.last()?;
+    let child = id.strip_prefix(&format!("{parent}__"))?;
+    if child.is_empty() {
+        return None;
+    }
+    Some(vec![parent.clone(), child.to_string()])
 }
 
 /// Returns the double-quoted PG identifier for a user table, e.g. `"t_gh_repos"`.
@@ -26,7 +49,6 @@ pub struct PgStore {
 fn user_table_ident(table_id: &str) -> String {
     format!("\"t_{}\"", table_id.replace('"', ""))
 }
-
 
 impl PgStore {
     pub async fn connect(db_id: &str, url: &str) -> Result<Self> {
@@ -46,7 +68,7 @@ impl PgStore {
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
         tracing::info!(db_id, url = short, max_conn, acquire_timeout_secs = acquire_secs, "PgStore: connected");
-        Ok(Self { pool, db_id: db_id.to_string() })
+        Ok(Self { pool, db_id: db_id.to_string(), known_cols: Default::default() })
     }
 
     /// Connect with a dedicated PostgreSQL schema.
@@ -80,7 +102,7 @@ impl PgStore {
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}, schema={schema}): failed to connect to {short}: {e}"))?;
         tracing::info!(db_id, url = short, schema, "PgStore: connected with schema");
-        Ok(Self { pool, db_id: db_id.to_string() })
+        Ok(Self { pool, db_id: db_id.to_string(), known_cols: Default::default() })
     }
 
     /// Create a physical PG table for a user table if it doesn't yet exist.
@@ -128,6 +150,135 @@ impl PgStore {
         .map_err(|e| anyhow::anyhow!("ensure_column_index({table_id}.{col_id}): {e}"))?;
         Ok(())
     }
+
+    /// Detect fields in a sample row and create missing custom columns for this table.
+    ///
+    /// Plain scalar fields become leaf columns. Fields whose value is a JSON object
+    /// become a group column with one child column per sub-key; each child gets a
+    /// `source_path` so the frontend navigates correctly into the nested JSONB
+    /// (e.g. `stars_diff.7d`).
+    ///
+    /// An in-memory cache avoids redundant DB calls across batches in the same process.
+    async fn auto_create_columns_from_row(
+        &self,
+        table_id: &str,
+        sample: &serde_json::Value,
+    ) -> Result<()> {
+        const SKIP: &[&str] = &[
+            "id",
+            "github_id",
+            "table_id",
+            "who_created",
+            "when_created",
+            "when_last_modified",
+            "modify_count",
+        ];
+
+        let Some(obj) = sample.as_object() else {
+            return Ok(());
+        };
+
+        struct ColSpec {
+            id: String,
+            title: Option<String>,
+            types: Vec<String>,
+            is_group: bool,
+            parent_ids: Vec<String>,
+            source_path: Option<Vec<String>>,
+        }
+        let mut specs: Vec<ColSpec> = Vec::new();
+
+        for (field, value) in obj {
+            if SKIP.contains(&field.as_str()) || value.is_null() {
+                continue;
+            }
+            if let Some(sub_obj) = value.as_object() {
+                if sub_obj.is_empty() {
+                    continue;
+                }
+                specs.push(ColSpec {
+                    id: field.clone(),
+                    title: None,
+                    types: vec![],
+                    is_group: true,
+                    parent_ids: vec![],
+                    source_path: None,
+                });
+                for (sub_key, sub_val) in sub_obj {
+                    if sub_val.is_null() {
+                        continue;
+                    }
+                    specs.push(ColSpec {
+                        id: format!("{field}__{sub_key}"),
+                        title: Some(sub_key.clone()),
+                        types: infer_col_types(sub_val),
+                        is_group: false,
+                        parent_ids: vec![field.clone()],
+                        source_path: Some(vec![field.clone(), sub_key.clone()]),
+                    });
+                }
+            } else {
+                specs.push(ColSpec {
+                    id: field.clone(),
+                    title: None,
+                    types: infer_col_types(value),
+                    is_group: false,
+                    parent_ids: vec![],
+                    source_path: None,
+                });
+            }
+        }
+
+        // Only create columns not already in the per-process cache.
+        let missing_ids: Vec<usize> = {
+            let cache = self.known_cols.read().unwrap();
+            let known = cache.get(table_id);
+            specs
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| known.map_or(true, |k| !k.contains(&s.id)))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        if missing_ids.is_empty() {
+            return Ok(());
+        }
+
+        let base = crate::custom_column::CustomColumnInput::default();
+        for &i in &missing_ids {
+            let spec = &specs[i];
+            let data_types = if spec.types.iter().any(|t| t == "numeric") {
+                vec!["numeric".into()]
+            } else if spec.types.iter().any(|t| t == "boolean") {
+                vec!["boolean".into()]
+            } else {
+                vec!["text".into()]
+            };
+            let inp = crate::custom_column::CustomColumnInput {
+                title: spec.title.clone(),
+                types: if spec.types.is_empty() {
+                    None
+                } else {
+                    Some(spec.types.clone())
+                },
+                data_types: Some(data_types),
+                is_group: spec.is_group,
+                parent_ids: spec.parent_ids.clone(),
+                source_path: spec.source_path.clone(),
+                ..base.clone()
+            };
+            if let Err(e) = self.upsert_custom_column(table_id, &spec.id, &inp).await {
+                tracing::warn!(table_id, col_id = %spec.id, "auto-create column failed: {e}");
+            }
+        }
+
+        let mut cache = self.known_cols.write().unwrap();
+        let entry = cache.entry(table_id.to_string()).or_default();
+        for spec in &specs {
+            entry.insert(spec.id.clone());
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -157,35 +308,55 @@ impl DataStore for PgStore {
         .await?;
 
         if current >= latest {
-            tracing::debug!(db_id, version = current, "PgStore: schema is current, skipping DDL");
+            tracing::debug!(
+                db_id,
+                version = current,
+                "PgStore: schema is current, skipping DDL"
+            );
             return Ok(());
         }
 
         // Apply only the new statements (those after `current`).
-        // All DDL is sent as a single multi-statement string so PostgreSQL
-        // executes everything in one network round-trip instead of one per
-        // statement (86 RTTs → 1 RTT).
+        // Keep the schema update atomic, but execute each top-level statement
+        // separately because prepared PostgreSQL statements cannot contain
+        // multiple commands on some Supabase/pooler connections.
         let first_new = (current + 1) as usize;
-        tracing::info!(db_id, from = current, to = latest, new = latest - current, "PgStore: applying schema");
+        tracing::info!(
+            db_id,
+            from = current,
+            to = latest,
+            new = latest - current,
+            "PgStore: applying schema"
+        );
         let t0 = std::time::Instant::now();
 
-        let new_stmts = stmts[first_new..].join(";\n");
-        let batch = format!(
-            "BEGIN;\n\
-             {new_stmts};\n\
-             INSERT INTO schema_version (version) VALUES ({latest}) \
-               ON CONFLICT (id) DO UPDATE SET version = {latest}, applied_at = NOW();\n\
-             COMMIT;"
-        );
-        sqlx::query(&batch)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema batch failed: {e}"))?;
+        let mut tx = self.pool.begin().await?;
+        for (idx, stmt) in stmts.iter().enumerate().skip(first_new) {
+            sqlx::query(stmt).execute(&mut *tx).await.map_err(|e| {
+                anyhow::anyhow!("PgStore({db_id}): schema statement {idx} failed: {e}")
+            })?;
+        }
+        sqlx::query(
+            "INSERT INTO schema_version (version) VALUES ($1)
+             ON CONFLICT (id) DO UPDATE SET version = $1, applied_at = NOW()",
+        )
+        .bind(latest)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema_version update failed: {e}"))?;
+        tx.commit().await.map_err(|e| {
+            anyhow::anyhow!("PgStore({db_id}): schema transaction commit failed: {e}")
+        })?;
 
-        tracing::info!(db_id, version = latest, ms = t0.elapsed().as_millis(), "PgStore: schema applied");
+        tracing::info!(
+            db_id,
+            version = latest,
+            ms = t0.elapsed().as_millis(),
+            "PgStore: schema applied"
+        );
         Ok(())
     }
-  
+
     async fn nuke_user_data(&self) -> Result<()> {
         let db_id = &self.db_id;
         tracing::warn!(db_id, "NUKE__DATA: truncating all user data (schema preserved)");
@@ -425,7 +596,7 @@ impl DataStore for PgStore {
             return Ok(super::table_view_columns());
         }
 
-        Ok(sqlx::query_as::<_, CustomColumn>(
+        let mut cols = sqlx::query_as::<_, CustomColumn>(
             "SELECT c.id::text, c.title, c.description, c.expression,
                COALESCE(tcc.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
@@ -440,7 +611,30 @@ impl DataStore for PgStore {
         )
         .bind(table_id)
         .fetch_all(&self.pool)
-        .await?)
+        .await?;
+
+        for col in &mut cols {
+            let missing_path = col.source_path.as_ref().map_or(true, Vec::is_empty);
+            if missing_path {
+                if let Some(path) = inferred_nested_source_path(&col.id, &col.parent_ids) {
+                    col.source_path = Some(path.clone());
+                    sqlx::query(
+                        "UPDATE custom_columns
+                         SET source_path = $2, when_last_modified = NOW(),
+                             modify_count = modify_count + 1
+                         WHERE id = $1
+                           AND (source_path IS NULL OR cardinality(source_path) = 0)",
+                    )
+                    .bind(&col.id)
+                    .bind(&path)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("list_custom_columns: repair source_path {}: {e}", col.id))?;
+                }
+            }
+        }
+
+        Ok(cols)
     }
 
     async fn upsert_custom_column(
@@ -449,6 +643,25 @@ impl DataStore for PgStore {
         id: &str,
         input: &crate::custom_column::CustomColumnInput,
     ) -> Result<CustomColumn> {
+        if table_id != "tables" {
+            self.ensure_user_table(table_id).await?;
+            sqlx::query(
+                "INSERT INTO tables (id, title)
+                 VALUES ($1, $2)
+                 ON CONFLICT (id) DO NOTHING",
+            )
+            .bind(table_id)
+            .bind(table_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("upsert_custom_column: ensure table {table_id}: {e}"))?;
+        }
+
+        let effective_source_path = input
+            .source_path
+            .clone()
+            .filter(|path| !path.is_empty())
+            .or_else(|| inferred_nested_source_path(id, &input.parent_ids));
         let types = input.effective_types();
         let data_types = input.effective_data_types();
         let col = sqlx::query_as::<_, CustomColumn>(
@@ -498,7 +711,7 @@ impl DataStore for PgStore {
         .bind(table_id)
         .bind(input.is_group)
         .bind(&input.parent_ids)
-        .bind(&input.source_path)
+        .bind(&effective_source_path)
         .bind(&types)
         .bind(&data_types)
         .bind(input.read_only)
@@ -507,8 +720,10 @@ impl DataStore for PgStore {
 
         // Per-column index on the physical user table.
         // Uses source_path when available (nested/read-only data), otherwise the stable column id.
-        let jsonb_expr = build_index_expr(id, input);
-        let types = input.effective_types();
+        let mut index_input = input.clone();
+        index_input.source_path = effective_source_path;
+        let jsonb_expr = build_index_expr(id, &index_input);
+        let types = index_input.effective_types();
         let (cast, direction) = if types
             .iter()
             .any(|t| matches!(t.as_str(), "integer" | "bigint" | "numeric"))
@@ -814,6 +1029,10 @@ impl DataStore for PgStore {
         }
 
         {
+            // Reads may be the first operation a secondary store sees for a table
+            // during multi-store background checks. Empty tables should read as
+            // empty, not fail because their physical relation is not materialized.
+            self.ensure_user_table(table_id).await?;
             let tname = user_table_ident(table_id);
             let col_types: std::collections::HashMap<String, Vec<String>> =
                 sqlx::query_as::<_, (String, Vec<String>)>(
@@ -934,6 +1153,18 @@ impl DataStore for PgStore {
         .bind(json_array)
         .fetch_one(&self.pool)
         .await?;
+
+        // Auto-create custom columns for fields found anywhere in the batch.
+        // The first row may have an empty nested object while later rows carry
+        // concrete sub-fields, so sampling only one row loses data paths.
+        for sample in rows {
+            self.auto_create_columns_from_row(table_id, sample)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(table_id, "auto_create_columns_from_row failed: {e}");
+                });
+        }
+
         Ok(count as usize)
     }
 
