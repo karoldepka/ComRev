@@ -80,7 +80,12 @@ impl SurrealStore {
             .await
             .context("SurrealDB: use_ns/use_db failed")?;
 
-        let store = SurrealStore { db, db_id: db_id.to_string(), surreal_ns: namespace, surreal_db: database };
+        let store = SurrealStore {
+            db,
+            db_id: db_id.to_string(),
+            surreal_ns: namespace,
+            surreal_db: database,
+        };
         store.ensure_schema().await?;
         Ok(store)
     }
@@ -224,7 +229,8 @@ impl DataStore for SurrealStore {
     ) -> Result<crate::custom_column::CustomColumn> {
         let path_val = serde_json::to_value(path).unwrap_or(serde_json::Value::Null);
         let content = serde_json::json!({ "source_path": path_val });
-        let rec: Option<serde_json::Value> = self.db
+        let rec: Option<serde_json::Value> = self
+            .db
             .update(("custom_columns", column_id))
             .merge(content)
             .await?;
@@ -234,9 +240,21 @@ impl DataStore for SurrealStore {
 
     async fn nuke_user_data(&self) -> Result<()> {
         tracing::warn!(db_id = %self.db_id, "NUKE__DATA: deleting all SurrealDB records (schema preserved)");
-        for table in ["table_rows","flags","remarks","remark_targets","hidden_rows",
-                      "hidden_columns","custom_columns","app_tables","github_repos","ops_log"] {
-            self.db.query(format!("DELETE {table}")).await
+        for table in [
+            "table_rows",
+            "flags",
+            "remarks",
+            "remark_targets",
+            "hidden_rows",
+            "hidden_columns",
+            "custom_columns",
+            "app_tables",
+            "github_repos",
+            "ops_log",
+        ] {
+            self.db
+                .query(format!("DELETE {table}"))
+                .await
                 .with_context(|| format!("NUKE__DATA: DELETE {table} failed"))?;
         }
         tracing::warn!(db_id = %self.db_id, "NUKE__DATA: complete");
@@ -438,6 +456,7 @@ impl DataStore for SurrealStore {
             "title": input.title,
             "description": input.description,
             "expression": input.expression,
+            "position_before": input.position_before,
             "position_after": input.position_after,
             "read_only": input.read_only,
             "types": input.effective_types(),
@@ -873,6 +892,7 @@ fn row_to_custom_column(v: &serde_json::Value) -> crate::custom_column::CustomCo
         title: opt_str_field(v, "title"),
         description: opt_str_field(v, "description"),
         expression: opt_str_field(v, "expression"),
+        position_before: opt_str_field(v, "position_before"),
         position_after: opt_str_field(v, "position_after"),
         read_only: bool_field(v, "read_only"),
         types: str_vec_field(v, "types"),
@@ -896,7 +916,6 @@ fn row_to_table(v: &serde_json::Value) -> crate::table::Table {
         modify_count: i32_field(v, "modify_count"),
     }
 }
-
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

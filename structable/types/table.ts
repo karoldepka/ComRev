@@ -51,6 +51,7 @@ export type ApiCustomColumn = {
   title: string | null;
   description: string | null;
   expression: string | null;
+  position_before: string | null;
   position_after: string | null;
   read_only?: boolean;
   readOnly?: boolean;

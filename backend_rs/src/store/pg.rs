@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -48,6 +48,39 @@ fn inferred_nested_source_path(id: &str, parent_ids: &[String]) -> Option<Vec<St
 /// but we strip any double-quotes defensively.
 fn user_table_ident(table_id: &str) -> String {
     format!("\"t_{}\"", table_id.replace('"', ""))
+}
+
+fn schema_statement_hash(stmt: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in stmt.replace("\r\n", "\n").trim().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn schema_statement_id(stmt: &str) -> String {
+    let mut id = String::new();
+    let mut last_was_separator = false;
+
+    for ch in stmt.trim().chars().flat_map(|ch| ch.to_lowercase()) {
+        let is_word = ch.is_ascii_alphanumeric();
+        if is_word {
+            id.push(ch);
+            last_was_separator = false;
+        } else if !last_was_separator && !id.is_empty() {
+            id.push('_');
+            last_was_separator = true;
+        }
+        if id.len() >= 160 {
+            break;
+        }
+    }
+
+    while id.ends_with('_') {
+        id.pop();
+    }
+    id
 }
 
 impl PgStore {
@@ -181,6 +214,7 @@ impl PgStore {
         struct ColSpec {
             id: String,
             title: Option<String>,
+            position_before: Option<String>,
             position_after: Option<String>,
             types: Vec<String>,
             is_group: bool,
@@ -188,7 +222,7 @@ impl PgStore {
             source_path: Option<Vec<String>>,
         }
         let mut specs: Vec<ColSpec> = Vec::new();
-        let mut previous_root_id: Option<String> = None;
+        let mut root_indices: Vec<usize> = Vec::new();
 
         for (field, value) in obj {
             if SKIP.contains(&field.as_str()) || value.is_null() {
@@ -201,13 +235,15 @@ impl PgStore {
                 specs.push(ColSpec {
                     id: field.clone(),
                     title: None,
-                    position_after: previous_root_id.clone(),
+                    position_before: None,
+                    position_after: root_indices.last().map(|idx| specs[*idx].id.clone()),
                     types: vec![],
                     is_group: true,
                     parent_ids: vec![],
                     source_path: None,
                 });
-                let mut previous_child_id: Option<String> = None;
+                root_indices.push(specs.len() - 1);
+                let mut child_indices: Vec<usize> = Vec::new();
                 for (sub_key, sub_val) in sub_obj {
                     if sub_val.is_null() {
                         continue;
@@ -216,27 +252,36 @@ impl PgStore {
                     specs.push(ColSpec {
                         id: id.clone(),
                         title: Some(sub_key.clone()),
-                        position_after: previous_child_id.clone(),
+                        position_before: None,
+                        position_after: child_indices.last().map(|idx| specs[*idx].id.clone()),
                         types: infer_col_types(sub_val),
                         is_group: false,
                         parent_ids: vec![field.clone()],
                         source_path: Some(vec![field.clone(), sub_key.clone()]),
                     });
-                    previous_child_id = Some(id);
+                    child_indices.push(specs.len() - 1);
                 }
-                previous_root_id = Some(field.clone());
+                for pair in child_indices.windows(2) {
+                    let next_id = specs[pair[1]].id.clone();
+                    specs[pair[0]].position_before = Some(next_id);
+                }
             } else {
                 specs.push(ColSpec {
                     id: field.clone(),
                     title: None,
-                    position_after: previous_root_id.clone(),
+                    position_before: None,
+                    position_after: root_indices.last().map(|idx| specs[*idx].id.clone()),
                     types: infer_col_types(value),
                     is_group: false,
                     parent_ids: vec![],
                     source_path: None,
                 });
-                previous_root_id = Some(field.clone());
+                root_indices.push(specs.len() - 1);
             }
+        }
+        for pair in root_indices.windows(2) {
+            let next_id = specs[pair[1]].id.clone();
+            specs[pair[0]].position_before = Some(next_id);
         }
 
         // Only create columns not already in the per-process cache.
@@ -266,6 +311,7 @@ impl PgStore {
             };
             let inp = crate::custom_column::CustomColumnInput {
                 title: spec.title.clone(),
+                position_before: spec.position_before.clone(),
                 position_after: spec.position_after.clone(),
                 types: if spec.types.is_empty() {
                     None
@@ -297,71 +343,94 @@ impl DataStore for PgStore {
     async fn ensure_schema(&self) -> Result<()> {
         let stmts = super::pg_schema::POSTGRES_SCHEMA;
         let db_id = &self.db_id;
-        let latest = stmts.len() as i32 - 1;
 
-        // Bootstrap the version table with a single idempotent query.
         sqlx::query(
-            "CREATE TABLE IF NOT EXISTS schema_version (
-                id         INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-                version    INTEGER NOT NULL DEFAULT -1,
-                applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                id              TEXT PRIMARY KEY,
+                schema_hash     TEXT NOT NULL,
+                statement_index INTEGER NOT NULL,
+                statement_sql   TEXT NOT NULL,
+                applied_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema_version bootstrap failed: {e}"))?;
+        .map_err(|e| {
+            anyhow::anyhow!("PgStore({db_id}): schema_migrations bootstrap failed: {e}")
+        })?;
 
-        // Read the highest statement index already applied (-1 if none).
-        let current: i32 = sqlx::query_scalar(
-            "SELECT COALESCE((SELECT version FROM schema_version WHERE id = 1), -1)",
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let applied_rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT id, schema_hash FROM schema_migrations")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("PgStore({db_id}): schema_migrations read failed: {e}")
+                })?;
+        let applied: HashMap<String, String> = applied_rows.into_iter().collect();
 
-        if current >= latest {
+        let pending: Vec<(usize, &str, String, String)> = stmts
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, stmt)| {
+                let id = schema_statement_id(stmt);
+                let hash = schema_statement_hash(stmt);
+                if applied.get(&id) == Some(&hash) {
+                    None
+                } else {
+                    Some((idx, *stmt, id, hash))
+                }
+            })
+            .collect();
+
+        if pending.is_empty() {
             tracing::debug!(
                 db_id,
-                version = current,
+                applied = applied.len(),
                 "PgStore: schema is current, skipping DDL"
             );
             return Ok(());
         }
 
-        // Apply only the new statements (those after `current`).
-        // Keep the schema update atomic, but execute each top-level statement
-        // separately because prepared PostgreSQL statements cannot contain
-        // multiple commands on some Supabase/pooler connections.
-        let first_new = (current + 1) as usize;
         tracing::info!(
             db_id,
-            from = current,
-            to = latest,
-            new = latest - current,
-            "PgStore: applying schema"
+            total = stmts.len(),
+            pending = pending.len(),
+            "PgStore: applying schema migrations"
         );
         let t0 = std::time::Instant::now();
 
         let mut tx = self.pool.begin().await?;
-        for (idx, stmt) in stmts.iter().enumerate().skip(first_new) {
+        for (idx, stmt, id, hash) in pending {
             sqlx::query(stmt).execute(&mut *tx).await.map_err(|e| {
-                anyhow::anyhow!("PgStore({db_id}): schema statement {idx} failed: {e}")
+                anyhow::anyhow!(
+                    "PgStore({db_id}): schema migration {id} (statement {idx}) failed: {e}"
+                )
+            })?;
+            sqlx::query(
+                "INSERT INTO schema_migrations (id, schema_hash, statement_index, statement_sql)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (id) DO UPDATE
+                 SET schema_hash = EXCLUDED.schema_hash,
+                     statement_index = EXCLUDED.statement_index,
+                     statement_sql = EXCLUDED.statement_sql,
+                     applied_at = NOW()",
+            )
+            .bind(&id)
+            .bind(&hash)
+            .bind(idx as i32)
+            .bind(stmt)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("PgStore({db_id}): schema migration {id} record failed: {e}")
             })?;
         }
-        sqlx::query(
-            "INSERT INTO schema_version (version) VALUES ($1)
-             ON CONFLICT (id) DO UPDATE SET version = $1, applied_at = NOW()",
-        )
-        .bind(latest)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| anyhow::anyhow!("PgStore({db_id}): schema_version update failed: {e}"))?;
         tx.commit().await.map_err(|e| {
             anyhow::anyhow!("PgStore({db_id}): schema transaction commit failed: {e}")
         })?;
 
         tracing::info!(
             db_id,
-            version = latest,
             ms = t0.elapsed().as_millis(),
             "PgStore: schema applied"
         );
@@ -609,6 +678,7 @@ impl DataStore for PgStore {
 
         Ok(sqlx::query_as::<_, CustomColumn>(
             "SELECT c.id::text, c.title, c.description, c.expression,
+               COALESCE(tcc.position_before, c.position_before) AS position_before,
                COALESCE(tcc.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -655,13 +725,15 @@ impl DataStore for PgStore {
         let col = sqlx::query_as::<_, CustomColumn>(
             "WITH upsert_col AS (
                INSERT INTO custom_columns
-                 (id, title, description, expression, position_after,
+                 (id, title, description, expression, position_before, position_after,
                   read_only, is_frozen, is_group, parent_ids, source_path, types, data_types)
-               VALUES ($1, $2, $3, $4, $5, $12, false, $7, $8, $9, $10, $11)
+               VALUES ($1, $2, $3, $4, $5, $6, $13, false, $8, $9, $10, $11, $12)
                ON CONFLICT (id) DO UPDATE
                  SET title = EXCLUDED.title,
                      description = EXCLUDED.description,
                      expression = EXCLUDED.expression,
+                     position_before = COALESCE(EXCLUDED.position_before, custom_columns.position_before),
+                     position_after  = COALESCE(EXCLUDED.position_after,  custom_columns.position_after),
                      read_only = EXCLUDED.read_only,
                      is_group = EXCLUDED.is_group,
                      parent_ids = EXCLUDED.parent_ids,
@@ -673,15 +745,17 @@ impl DataStore for PgStore {
                RETURNING *
              ),
              attach AS (
-               INSERT INTO table_custom_columns (table_id, column_id, position_after)
-               VALUES ($6, $1, $5)
+               INSERT INTO table_custom_columns (table_id, column_id, position_before, position_after)
+               VALUES ($7, $1, $5, $6)
                ON CONFLICT (table_id, column_id) DO UPDATE
-                 SET position_after = EXCLUDED.position_after,
+                 SET position_before = COALESCE(EXCLUDED.position_before, table_custom_columns.position_before),
+                     position_after  = COALESCE(EXCLUDED.position_after,  table_custom_columns.position_after),
                      when_last_modified = NOW(),
                      modify_count = table_custom_columns.modify_count + 1
                RETURNING *
              )
              SELECT c.id::text, c.title, c.description, c.expression,
+               COALESCE(a.position_before, c.position_before) AS position_before,
                COALESCE(a.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -695,6 +769,7 @@ impl DataStore for PgStore {
         .bind(input.title.as_deref())
         .bind(input.description.as_deref())
         .bind(input.expression.as_deref())
+        .bind(input.position_before.as_deref())
         .bind(input.position_after.as_deref())
         .bind(table_id)
         .bind(input.is_group)
@@ -733,8 +808,13 @@ impl DataStore for PgStore {
                 break;
             }
             let idx = format!("idx_cv_{}_{id}{suffix}", table_id.replace('-', "_"));
-            let dir = if suffix.is_empty() { direction } else { " ASC NULLS LAST" };
-            let sql = format!(r#"CREATE INDEX IF NOT EXISTS "{idx}" ON {tname} (({cast_expr}){dir})"#);
+            let dir = if suffix.is_empty() {
+                direction
+            } else {
+                " ASC NULLS LAST"
+            };
+            let sql =
+                format!(r#"CREATE INDEX IF NOT EXISTS "{idx}" ON {tname} (({cast_expr}){dir})"#);
             if let Err(e) = sqlx::query(&sql).execute(&self.pool).await {
                 tracing::warn!("could not create index \"{idx}\": {e}");
             }
@@ -774,6 +854,7 @@ impl DataStore for PgStore {
                RETURNING *
              )
              SELECT c.id::text, c.title, c.description, c.expression,
+               COALESCE(u.position_before, c.position_before) AS position_before,
                COALESCE(u.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
                COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
@@ -799,7 +880,8 @@ impl DataStore for PgStore {
             "UPDATE custom_columns SET source_path = $2, when_last_modified = NOW(),
                modify_count = modify_count + 1
              WHERE id = $1
-             RETURNING id::text, title, description, expression, position_after,
+             RETURNING id::text, title, description, expression, position_before,
+               position_after,
                read_only, types, source_path,
                COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types,
                COALESCE(is_group, false) AS is_group,
@@ -904,12 +986,16 @@ impl DataStore for PgStore {
         // The `tables` registry table is patched directly.
         if table_id == "tables" {
             let sql = match col_id {
-                "title" => "UPDATE tables SET title = $2::text,
+                "title" => {
+                    "UPDATE tables SET title = $2::text,
                               when_last_modified = NOW(), modify_count = modify_count + 1
-                            WHERE id = $1",
-                "description" => "UPDATE tables SET description = $2::text,
+                            WHERE id = $1"
+                }
+                "description" => {
+                    "UPDATE tables SET description = $2::text,
                                     when_last_modified = NOW(), modify_count = modify_count + 1
-                                  WHERE id = $1",
+                                  WHERE id = $1"
+                }
                 _ => return Ok(()),
             };
             sqlx::query(sql)
@@ -970,12 +1056,14 @@ impl DataStore for PgStore {
         .await?;
         let row = match inserted {
             Some(v) => v,
-            None => sqlx::query_scalar(&format!(
-                "SELECT ({row_json_expr}) FROM {tname} WHERE id = $1"
-            ))
-            .bind(row_id)
-            .fetch_one(&self.pool)
-            .await?,
+            None => {
+                sqlx::query_scalar(&format!(
+                    "SELECT ({row_json_expr}) FROM {tname} WHERE id = $1"
+                ))
+                .bind(row_id)
+                .fetch_one(&self.pool)
+                .await?
+            }
         };
         Ok(row)
     }
@@ -1023,14 +1111,14 @@ impl DataStore for PgStore {
             self.ensure_user_table(table_id).await?;
             let tname = user_table_ident(table_id);
             let col_type_rows = sqlx::query_as::<_, (String, Vec<String>, Option<Vec<String>>)>(
-                    "SELECT c.id, c.types, c.source_path
+                "SELECT c.id, c.types, c.source_path
                      FROM custom_columns c
                      JOIN table_custom_columns tcc ON tcc.column_id = c.id
                      WHERE tcc.table_id = $1",
-                )
-                .bind(table_id)
-                .fetch_all(&self.pool)
-                .await?;
+            )
+            .bind(table_id)
+            .fetch_all(&self.pool)
+            .await?;
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
             for (id, types, source_path) in col_type_rows {
@@ -1388,9 +1476,11 @@ pub(super) fn validated_sort_with_types(
             let mut it = s.splitn(3, ':');
             let col = it.next()?;
             let dir = it.next().unwrap_or("desc");
-            let col_type = it
-                .next()
-                .or_else(|| col_types.get(col).and_then(|types| types.first().map(String::as_str)));
+            let col_type = it.next().or_else(|| {
+                col_types
+                    .get(col)
+                    .and_then(|types| types.first().map(String::as_str))
+            });
             let expr = col_to_sort_expr(col, col_type)?;
             let dir_sql = if dir.eq_ignore_ascii_case("asc") {
                 "ASC"
@@ -1413,6 +1503,24 @@ pub(super) fn validated_sort_with_types(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── schema migrations ────────────────────────────────────────────────────
+
+    #[test]
+    fn schema_statement_id_is_human_readable_sql_name() {
+        assert_eq!(
+            schema_statement_id("CREATE TABLE IF NOT EXISTS custom_columns (id TEXT PRIMARY KEY);"),
+            "create_table_if_not_exists_custom_columns_id_text_primary_key"
+        );
+    }
+
+    #[test]
+    fn schema_statement_hash_is_stable_across_line_endings() {
+        assert_eq!(
+            schema_statement_hash("ALTER TABLE custom_columns\r\nADD COLUMN title TEXT;"),
+            schema_statement_hash("ALTER TABLE custom_columns\nADD COLUMN title TEXT;")
+        );
+    }
 
     // ── validated_path_parts ──────────────────────────────────────────────────
 

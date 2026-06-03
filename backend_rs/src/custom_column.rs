@@ -13,6 +13,7 @@ pub struct CustomColumn {
     pub title: Option<String>,
     pub description: Option<String>,
     pub expression: Option<String>,
+    pub position_before: Option<String>,
     pub position_after: Option<String>,
     pub read_only: bool,
     pub types: Vec<String>,
@@ -29,6 +30,7 @@ pub struct CustomColumnInput {
     pub title: Option<String>,
     pub description: Option<String>,
     pub expression: Option<String>,
+    pub position_before: Option<String>,
     pub position_after: Option<String>,
     /// Prevents the column from being edited by users. Builtin columns set this to true.
     #[serde(default)]
@@ -51,6 +53,7 @@ impl Default for CustomColumnInput {
             title: None,
             description: None,
             expression: None,
+            position_before: None,
             position_after: None,
             read_only: false,
             is_group: false,
@@ -239,15 +242,25 @@ pub async fn patch_for_table(
     let mut col = None;
     if let Some(is_frozen) = body.is_frozen {
         col = Some(
-            state.store.set_table_column_frozen(&table_id, &column_id, is_frozen)
-                .await.map_err(|e| db_err("custom_column.patch_for_table", e))?,
+            state
+                .store
+                .set_table_column_frozen(&table_id, &column_id, is_frozen)
+                .await
+                .map_err(|e| db_err("custom_column.patch_for_table", e))?,
         );
     }
     if let Some(path) = body.source_path {
-        let effective = if path.is_empty() { None } else { Some(path.as_slice()) };
+        let effective = if path.is_empty() {
+            None
+        } else {
+            Some(path.as_slice())
+        };
         col = Some(
-            state.store.set_column_source_path(&column_id, effective)
-                .await.map_err(|e| db_err("custom_column.patch_for_table", e))?,
+            state
+                .store
+                .set_column_source_path(&column_id, effective)
+                .await
+                .map_err(|e| db_err("custom_column.patch_for_table", e))?,
         );
     }
     Ok(Json(col.unwrap()))

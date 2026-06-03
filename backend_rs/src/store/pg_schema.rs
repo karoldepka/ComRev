@@ -80,6 +80,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       label TEXT,
       description TEXT,
       expression TEXT,
+      position_before TEXT,
       position_after TEXT,
       read_only BOOLEAN NOT NULL DEFAULT false,
       is_frozen BOOLEAN NOT NULL DEFAULT false,
@@ -102,6 +103,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       ADD COLUMN IF NOT EXISTS label TEXT,
       ADD COLUMN IF NOT EXISTS description TEXT,
       ADD COLUMN IF NOT EXISTS expression TEXT,
+      ADD COLUMN IF NOT EXISTS position_before TEXT,
       ADD COLUMN IF NOT EXISTS position_after TEXT,
       ADD COLUMN IF NOT EXISTS read_only BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS is_frozen BOOLEAN NOT NULL DEFAULT false,
@@ -241,6 +243,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     CREATE TABLE IF NOT EXISTS table_custom_columns (
       table_id TEXT NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
       column_id TEXT NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
+      position_before TEXT,
       position_after TEXT,
       is_frozen BOOLEAN NOT NULL DEFAULT false,
       who_created TEXT,
@@ -251,7 +254,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       PRIMARY KEY (table_id, column_id)
     );
     "#,
-    "ALTER TABLE table_custom_columns ADD COLUMN IF NOT EXISTS position_after TEXT, ADD COLUMN IF NOT EXISTS is_frozen BOOLEAN NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE table_custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT, ADD COLUMN IF NOT EXISTS position_after TEXT, ADD COLUMN IF NOT EXISTS is_frozen BOOLEAN NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;",
     "DROP TRIGGER IF EXISTS trg_table_custom_columns_when_last_modified ON table_custom_columns;",
     "CREATE TRIGGER trg_table_custom_columns_when_last_modified BEFORE UPDATE ON table_custom_columns FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     "CREATE INDEX IF NOT EXISTS idx_table_custom_columns_column_id ON table_custom_columns (column_id);",
@@ -367,7 +370,8 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       END LOOP;
     END $$;
     "#,
+    "ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
+    "ALTER TABLE table_custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
 ];
 // Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore
 // trait and therefore works on all backends (Postgres, Mongo, Surreal, CouchDB, SQLite).
-

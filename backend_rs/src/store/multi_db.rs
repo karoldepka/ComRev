@@ -33,7 +33,10 @@ pub struct MultiStore {
 }
 
 impl MultiStore {
-    pub fn new(stores: Vec<Arc<dyn DataStore>>, event_tx: Option<crate::sync_service::EventTx>) -> Self {
+    pub fn new(
+        stores: Vec<Arc<dyn DataStore>>,
+        event_tx: Option<crate::sync_service::EventTx>,
+    ) -> Self {
         assert!(!stores.is_empty(), "MultiStore requires at least one store");
         Self { stores, event_tx }
     }
@@ -102,7 +105,9 @@ fn fan_write<T>(results: Vec<Result<T>>, method: &str) -> Result<T> {
     let mut partial_errs: Vec<String> = Vec::new();
     for r in results {
         match r {
-            Ok(v) => { success = Some(v); }
+            Ok(v) => {
+                success = Some(v);
+            }
             Err(e) => {
                 partial_errs.push(format!("{method}: {e}"));
                 last_err = e;
@@ -153,7 +158,6 @@ macro_rules! fan_out {
 
 // ── Read helpers ──────────────────────────────────────────────────────────────
 
-
 fn paged_item_id(v: &serde_json::Value) -> String {
     v.get("id")
         .and_then(|id| id.as_str())
@@ -188,7 +192,9 @@ impl MultiStore {
                 let t0 = Instant::now();
                 let result = tokio::time::timeout(timeout, fut)
                     .await
-                    .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs())));
+                    .unwrap_or_else(|_| {
+                        Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs()))
+                    });
                 let ms = t0.elapsed().as_millis();
                 match &result {
                     Ok(_) => tracing::info!("store[{i}] {method} read OK in {ms}ms"),
@@ -263,7 +269,9 @@ impl MultiStore {
                 let t0 = Instant::now();
                 let result = tokio::time::timeout(timeout, fut)
                     .await
-                    .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs())));
+                    .unwrap_or_else(|_| {
+                        Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs()))
+                    });
                 let ms = t0.elapsed().as_millis();
                 match &result {
                     Ok(_) => tracing::info!("store[{i}] {method} read OK in {ms}ms"),
@@ -394,12 +402,17 @@ impl DataStore for MultiStore {
     // ── Flags ──────────────────────────────────────────────────────────────────
 
     async fn list_flags(&self) -> Result<Vec<crate::flag::CellFlag>> {
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let fut: BoxFuture<'static, Result<Vec<crate::flag::CellFlag>>> =
-                Box::pin(async move { s.list_flags().await });
-            (i, fut)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::flag::CellFlag>>> =
+                    Box::pin(async move { s.list_flags().await });
+                (i, fut)
+            })
+            .collect();
         self.fan_first_list("list_flags", futs).await
     }
     async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> Result<crate::flag::CellFlag> {
@@ -422,12 +435,17 @@ impl DataStore for MultiStore {
     // ── Remarks ────────────────────────────────────────────────────────────────
 
     async fn list_remarks(&self) -> Result<Vec<crate::remark::Remark>> {
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let fut: BoxFuture<'static, Result<Vec<crate::remark::Remark>>> =
-                Box::pin(async move { s.list_remarks().await });
-            (i, fut)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::remark::Remark>>> =
+                    Box::pin(async move { s.list_remarks().await });
+                (i, fut)
+            })
+            .collect();
         self.fan_first_list("list_remarks", futs).await
     }
     async fn upsert_remark(
@@ -462,12 +480,17 @@ impl DataStore for MultiStore {
     // ── Hidden rows ────────────────────────────────────────────────────────────
 
     async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>> {
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let fut: BoxFuture<'static, Result<Vec<crate::hidden_row::HiddenRow>>> =
-                Box::pin(async move { s.list_hidden_rows().await });
-            (i, fut)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::hidden_row::HiddenRow>>> =
+                    Box::pin(async move { s.list_hidden_rows().await });
+                (i, fut)
+            })
+            .collect();
         self.fan_first_list("list_hidden_rows", futs).await
     }
     async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<crate::hidden_row::HiddenRow> {
@@ -490,12 +513,17 @@ impl DataStore for MultiStore {
     // ── Hidden columns ─────────────────────────────────────────────────────────
 
     async fn list_hidden_columns(&self) -> Result<Vec<crate::hidden_column::HiddenColumn>> {
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let fut: BoxFuture<'static, Result<Vec<crate::hidden_column::HiddenColumn>>> =
-                Box::pin(async move { s.list_hidden_columns().await });
-            (i, fut)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::hidden_column::HiddenColumn>>> =
+                    Box::pin(async move { s.list_hidden_columns().await });
+                (i, fut)
+            })
+            .collect();
         self.fan_first_list("list_hidden_columns", futs).await
     }
     async fn add_hidden_column(
@@ -525,13 +553,18 @@ impl DataStore for MultiStore {
         &self,
         table_id: &str,
     ) -> Result<Vec<crate::custom_column::CustomColumn>> {
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let tid = table_id.to_string();
-            let fut: BoxFuture<'static, Result<Vec<crate::custom_column::CustomColumn>>> =
-                Box::pin(async move { s.list_custom_columns(&tid).await });
-            (i, fut)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let tid = table_id.to_string();
+                let fut: BoxFuture<'static, Result<Vec<crate::custom_column::CustomColumn>>> =
+                    Box::pin(async move { s.list_custom_columns(&tid).await });
+                (i, fut)
+            })
+            .collect();
         self.fan_first_list("list_custom_columns", futs).await
     }
     async fn upsert_custom_column(
@@ -546,7 +579,8 @@ impl DataStore for MultiStore {
             serde_json::json!({
                 "id": id, "table_id": table_id, "title": input.title,
                 "description": input.description,
-                "expression": input.expression, "position_after": input.position_after,
+                "expression": input.expression,
+                "position_before": input.position_before, "position_after": input.position_after,
                 "is_group": input.is_group, "parent_ids": input.parent_ids,
                 "source_path": input.source_path, "types": input.types, "data_types": input.data_types,
             }),
@@ -578,12 +612,17 @@ impl DataStore for MultiStore {
     // ── Tables registry ────────────────────────────────────────────────────────
 
     async fn list_tables(&self) -> Result<Vec<crate::table::Table>> {
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let fut: BoxFuture<'static, Result<Vec<crate::table::Table>>> =
-                Box::pin(async move { s.list_tables().await });
-            (i, fut)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::table::Table>>> =
+                    Box::pin(async move { s.list_tables().await });
+                (i, fut)
+            })
+            .collect();
         self.fan_first_list("list_tables", futs).await
     }
     async fn create_table(
@@ -627,12 +666,21 @@ impl DataStore for MultiStore {
 
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
         let timeout = fan_read_timeout(params.read_timeout_secs);
-        let futs = self.stores.iter().enumerate().map(|(i, s)| {
-            let s = s.clone();
-            let tid = table_id.to_string();
-            let p = params.clone();
-            (i, Box::pin(async move { s.list_data_rows(&tid, &p).await }) as BoxFuture<'static, _>)
-        }).collect();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let tid = table_id.to_string();
+                let p = params.clone();
+                (
+                    i,
+                    Box::pin(async move { s.list_data_rows(&tid, &p).await })
+                        as BoxFuture<'static, _>,
+                )
+            })
+            .collect();
         self.fan_first_paged("list_data_rows", timeout, futs).await
     }
     async fn create_row(
@@ -951,6 +999,7 @@ mod tests {
                 title: input.title.clone(),
                 description: input.description.clone(),
                 expression: input.expression.clone(),
+                position_before: input.position_before.clone(),
                 position_after: input.position_after.clone(),
                 read_only: false,
                 types: input.effective_types(),
@@ -978,6 +1027,7 @@ mod tests {
                 title: None,
                 description: None,
                 expression: None,
+                position_before: None,
                 position_after: None,
                 read_only: false,
                 types: vec![],
@@ -1195,7 +1245,10 @@ mod tests {
         // so both stores are called even before we return the first result.
         tokio::task::yield_now().await; // let background divergence task run
         assert!(p.was_called("list_flags"), "store-a must be queried");
-        assert!(s.was_called("list_flags"), "store-b must be queried for divergence detection");
+        assert!(
+            s.was_called("list_flags"),
+            "store-b must be queried for divergence detection"
+        );
     }
 
     #[tokio::test]
@@ -1213,11 +1266,19 @@ mod tests {
     async fn reads_first_store_data_returned_on_key_collision() {
         let p = MockStore::with_flags(
             "store-a",
-            vec![crate::flag::CellFlag { id: "p".into(), key: "X".into(), color: "color-a".into() }],
+            vec![crate::flag::CellFlag {
+                id: "p".into(),
+                key: "X".into(),
+                color: "color-a".into(),
+            }],
         );
         let s = MockStore::with_flags(
             "store-b",
-            vec![crate::flag::CellFlag { id: "s".into(), key: "X".into(), color: "color-b".into() }],
+            vec![crate::flag::CellFlag {
+                id: "s".into(),
+                key: "X".into(),
+                color: "color-b".into(),
+            }],
         );
         let store = MultiStore::new(vec![p.clone(), s.clone()], None);
         let flags = store.list_flags().await.unwrap();
@@ -1369,6 +1430,4 @@ mod tests {
         assert!(p.was_called("ensure_schema"));
         assert!(s.was_called("ensure_schema"));
     }
-
-
 }

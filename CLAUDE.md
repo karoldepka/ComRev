@@ -112,3 +112,6 @@ As much as possible code should be in sync_core wasm
 
 # Backward compatibility
 * for now, until further notice, don't worry about backward compatibility - keep the code clean and not polluted with backward compatibility edge cases. I will nuke the DB anyway and I'm the only user for now.
+
+# Naming
+Don't do weird shortcuts names like `futs` - instead call it `futures`, to avoid spellchecker error, and to aim readability.

@@ -81,11 +81,23 @@ function isColumnReadOnly(cc: ApiCustomColumn): boolean {
   return cc.readOnly ?? cc.read_only ?? !(cc.is_editable ?? true);
 }
 
-function insertAfter(list: Column[], col: Column, positionAfter: string | null | undefined): void {
-  const idx = positionAfter
+function insertPositioned(
+  list: Column[],
+  col: Column,
+  positionBefore: string | null | undefined,
+  positionAfter: string | null | undefined,
+): void {
+  const afterIdx = positionAfter
     ? list.findIndex((c) => c.id === positionAfter || c.customColumnId === positionAfter)
     : -1;
-  list.splice(idx >= 0 ? idx + 1 : list.length, 0, col);
+  if (afterIdx >= 0) {
+    list.splice(afterIdx + 1, 0, col);
+    return;
+  }
+  const beforeIdx = positionBefore
+    ? list.findIndex((c) => c.id === positionBefore || c.customColumnId === positionBefore)
+    : -1;
+  list.splice(beforeIdx >= 0 ? beforeIdx : list.length, 0, col);
 }
 
 /** Resolve the row-data key for a column.
@@ -120,9 +132,9 @@ function columnsFromMetadata(customColumns: ApiCustomColumn[], _rowSample?: Data
     const parentCol = parentId ? colMap.get(parentId) : null;
     if (parentCol) {
       if (!parentCol.subColumns) parentCol.subColumns = [];
-      insertAfter(parentCol.subColumns, col, cc.position_after);
+      insertPositioned(parentCol.subColumns, col, cc.position_before, cc.position_after);
     } else {
-      insertAfter(root, col, cc.position_after);
+      insertPositioned(root, col, cc.position_before, cc.position_after);
     }
   }
   return root;
@@ -808,6 +820,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       title: payload.title.trim(),
       description: payload.description,
       expression: payload.expression,
+      position_before: null,
       position_after: positionAfter,
       read_only: false,
       readOnly: false,
@@ -816,7 +829,13 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     };
     setCustomColumns((prev) => [...prev, col]);
     recordChange(`Create column "${col.title ?? col.id}"`);
-    api.createCustomColumn(tableId, { title: col.title, description: col.description, expression: col.expression, position_after: col.position_after }, id);
+    api.createCustomColumn(tableId, {
+      title: col.title,
+      description: col.description,
+      expression: col.expression,
+      position_before: col.position_before,
+      position_after: col.position_after,
+    }, id);
   }, [api, recordChange, tableId]);
 
   const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {

@@ -25,7 +25,10 @@ impl MongoStore {
             .await
             .context("MongoDB: invalid URI")?;
         let db = client.database(&db_name);
-        let store = MongoStore { db, db_id: db_id.to_string() };
+        let store = MongoStore {
+            db,
+            db_id: db_id.to_string(),
+        };
         store.ensure_schema().await?;
         Ok(store)
     }
@@ -172,6 +175,7 @@ fn doc_to_custom_column(doc: &Document) -> crate::custom_column::CustomColumn {
         title: opt_str_val(doc, "title"),
         description: opt_str_val(doc, "description"),
         expression: opt_str_val(doc, "expression"),
+        position_before: opt_str_val(doc, "position_before"),
         position_after: opt_str_val(doc, "position_after"),
         read_only: bool_val(doc, "read_only"),
         types: str_vec_val(doc, "types"),
@@ -195,7 +199,6 @@ fn doc_to_table(doc: &Document) -> crate::table::Table {
         modify_count: i32_val(doc, "modify_count"),
     }
 }
-
 
 fn doc_to_row_json(doc: &Document) -> serde_json::Value {
     let mut obj: serde_json::Map<String, serde_json::Value> = doc
@@ -285,8 +288,12 @@ impl DataStore for MongoStore {
         column_id: &str,
         path: Option<&[String]>,
     ) -> Result<crate::custom_column::CustomColumn> {
-        let path_bson = path.map(|p| bson::to_bson(p).unwrap_or(Bson::Null)).unwrap_or(Bson::Null);
-        let doc = self.db.collection::<Document>("custom_columns")
+        let path_bson = path
+            .map(|p| bson::to_bson(p).unwrap_or(Bson::Null))
+            .unwrap_or(Bson::Null);
+        let doc = self
+            .db
+            .collection::<Document>("custom_columns")
             .find_one_and_update(
                 doc! { "_id": column_id },
                 doc! { "$set": { "source_path": path_bson } },
@@ -300,16 +307,35 @@ impl DataStore for MongoStore {
 
     async fn nuke_user_data(&self) -> Result<()> {
         tracing::warn!(db_id = %self.db_id, "NUKE__DATA: dropping all MongoDB collections (recreated empty)");
-        for coll in ["flags","remarks","remark_targets","hidden_rows","hidden_columns",
-                     "custom_columns","tables","github_repos","operations_log","table_custom_columns"] {
-            self.db.collection::<mongodb::bson::Document>(coll).drop().await
+        for coll in [
+            "flags",
+            "remarks",
+            "remark_targets",
+            "hidden_rows",
+            "hidden_columns",
+            "custom_columns",
+            "tables",
+            "github_repos",
+            "operations_log",
+            "table_custom_columns",
+        ] {
+            self.db
+                .collection::<mongodb::bson::Document>(coll)
+                .drop()
+                .await
                 .with_context(|| format!("NUKE__DATA: drop collection {coll}"))?;
         }
         // Drop user row collections (named t_<table_id>).
-        let names = self.db.list_collection_names().await
+        let names = self
+            .db
+            .list_collection_names()
+            .await
             .context("NUKE__DATA: list collections")?;
         for name in names.iter().filter(|n| n.starts_with("t_")) {
-            self.db.collection::<mongodb::bson::Document>(name).drop().await
+            self.db
+                .collection::<mongodb::bson::Document>(name)
+                .drop()
+                .await
                 .with_context(|| format!("NUKE__DATA: drop collection {name}"))?;
         }
         tracing::warn!(db_id = %self.db_id, "NUKE__DATA: complete");
@@ -572,6 +598,7 @@ impl DataStore for MongoStore {
                         "title": opt_bson(input.title.as_deref()),
                         "description": opt_bson(input.description.as_deref()),
                         "expression": opt_bson(input.expression.as_deref()),
+                        "position_before": opt_bson(input.position_before.as_deref()),
                         "position_after": opt_bson(input.position_after.as_deref()),
                         "read_only": input.read_only,
                         "types": types_bson,

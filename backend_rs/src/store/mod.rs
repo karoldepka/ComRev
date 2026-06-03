@@ -40,6 +40,7 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
         title: Some(display.to_string()),
         description: None,
         expression: None,
+        position_before: None,
         position_after: None,
         read_only: true,
         types: vec![ty.to_string()],
@@ -285,7 +286,11 @@ pub async fn open_all(
         "all {} store connection(s) failed — cannot start",
         entries.len()
     );
-    tracing::info!(connected = stores.len(), attempted = entries.len(), "store: open_all complete");
+    tracing::info!(
+        connected = stores.len(),
+        attempted = entries.len(),
+        "store: open_all complete"
+    );
     Ok(Arc::new(multi_db::MultiStore::new(stores, event_tx)))
 }
 

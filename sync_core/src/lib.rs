@@ -164,10 +164,16 @@ impl QueuedOp {
             "create_custom_col" => Some(OpPayload::CreateCustomCol(CreateCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
                 // "title" is current; fall back to "name" for ops saved before the rename.
-                title: self.data["title"].as_str()
+                title: self.data["title"]
+                    .as_str()
                     .or_else(|| self.data["name"].as_str())
-                    .unwrap_or("").to_string(),
+                    .unwrap_or("")
+                    .to_string(),
                 expression: self.data["expression"].as_str().unwrap_or("").to_string(),
+                position_before: self.data["position_before"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
                 position_after: self.data["position_after"]
                     .as_str()
                     .unwrap_or("")
@@ -308,8 +314,7 @@ fn grpc_client(base_url: &str) -> GrpcSyncClient<WasmTransport> {
 /// Derive the REST base URL from the gRPC base URL.
 /// By convention the REST server runs on port 3001 and gRPC on 3002.
 fn rest_base(grpc_base: &str) -> String {
-    std::env::var("NEXT_PUBLIC_API_URL")
-        .unwrap_or_else(|_| grpc_base.replace(":3002", ":3001"))
+    std::env::var("NEXT_PUBLIC_API_URL").unwrap_or_else(|_| grpc_base.replace(":3002", ":3001"))
 }
 
 async fn http_get_text(url: &str) -> Result<JsValue, JsValue> {
@@ -318,9 +323,13 @@ async fn http_get_text(url: &str) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     if !resp.ok() {
-        return Err(JsValue::from_str(&format!("GET {url} — HTTP {}", resp.status())));
+        return Err(JsValue::from_str(&format!(
+            "GET {url} — HTTP {}",
+            resp.status()
+        )));
     }
-    resp.text().await
+    resp.text()
+        .await
         .map(|t| JsValue::from_str(&t))
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -334,9 +343,13 @@ async fn http_post_json(url: &str, body: &str) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     if !resp.ok() {
-        return Err(JsValue::from_str(&format!("POST {url} — HTTP {}", resp.status())));
+        return Err(JsValue::from_str(&format!(
+            "POST {url} — HTTP {}",
+            resp.status()
+        )));
     }
-    resp.text().await
+    resp.text()
+        .await
         .map(|t| JsValue::from_str(&t))
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -350,9 +363,13 @@ async fn http_patch_json(url: &str, body: &str) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     if !resp.ok() {
-        return Err(JsValue::from_str(&format!("PATCH {url} — HTTP {}", resp.status())));
+        return Err(JsValue::from_str(&format!(
+            "PATCH {url} — HTTP {}",
+            resp.status()
+        )));
     }
-    resp.text().await
+    resp.text()
+        .await
         .map(|t| JsValue::from_str(&t))
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -363,7 +380,10 @@ async fn http_delete(url: &str) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     if !resp.ok() {
-        return Err(JsValue::from_str(&format!("DELETE {url} — HTTP {}", resp.status())));
+        return Err(JsValue::from_str(&format!(
+            "DELETE {url} — HTTP {}",
+            resp.status()
+        )));
     }
     Ok(JsValue::UNDEFINED)
 }
@@ -935,7 +955,9 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_flags(tonic::Request::new(ListRequest { table_id: String::new() }))
+                .list_flags(tonic::Request::new(ListRequest {
+                    table_id: String::new(),
+                }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().flags)
@@ -949,7 +971,9 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_remarks(tonic::Request::new(ListRequest { table_id: String::new() }))
+                .list_remarks(tonic::Request::new(ListRequest {
+                    table_id: String::new(),
+                }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().remarks)
@@ -963,7 +987,9 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_hidden_rows(tonic::Request::new(ListRequest { table_id: String::new() }))
+                .list_hidden_rows(tonic::Request::new(ListRequest {
+                    table_id: String::new(),
+                }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().rows)
@@ -977,7 +1003,9 @@ impl SyncClient {
         future_to_promise(async move {
             let mut client = grpc_client(&base_url);
             let resp = client
-                .list_hidden_columns(tonic::Request::new(ListRequest { table_id: String::new() }))
+                .list_hidden_columns(tonic::Request::new(ListRequest {
+                    table_id: String::new(),
+                }))
                 .await
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let json = serde_json::to_string(&resp.into_inner().cols)
@@ -1009,9 +1037,9 @@ impl SyncClient {
 
     pub fn create_table(&self, payload_json: String) -> js_sys::Promise {
         let base = rest_base(&self.inner.borrow().base_url);
-        future_to_promise(async move {
-            http_post_json(&format!("{base}/tables"), &payload_json).await
-        })
+        future_to_promise(
+            async move { http_post_json(&format!("{base}/tables"), &payload_json).await },
+        )
     }
 
     pub fn patch_table(&self, id: String, patch_json: String) -> js_sys::Promise {
@@ -1031,36 +1059,74 @@ impl SyncClient {
         future_to_promise(async move { http_delete(&format!("{base}/NUKE__DB")).await })
     }
 
-    pub fn create_row(&self, table_id: String, row_id: String, values_json: String) -> js_sys::Promise {
+    pub fn create_row(
+        &self,
+        table_id: String,
+        row_id: String,
+        values_json: String,
+    ) -> js_sys::Promise {
         let base = rest_base(&self.inner.borrow().base_url);
         future_to_promise(async move {
             let payload = serde_json::json!({ "id": row_id, "values": serde_json::from_str::<serde_json::Value>(&values_json).unwrap_or_default() });
-            http_post_json(&format!("{base}/tables/{table_id}/rows"), &payload.to_string()).await
+            http_post_json(
+                &format!("{base}/tables/{table_id}/rows"),
+                &payload.to_string(),
+            )
+            .await
         })
     }
 
-    pub fn upsert_cell_value(&self, table_id: String, row_id: String, col_id: String, value_json: String) -> js_sys::Promise {
+    pub fn upsert_cell_value(
+        &self,
+        table_id: String,
+        row_id: String,
+        col_id: String,
+        value_json: String,
+    ) -> js_sys::Promise {
         let base = rest_base(&self.inner.borrow().base_url);
         future_to_promise(async move {
             let payload = serde_json::json!({ "col_id": col_id, "value": serde_json::from_str::<serde_json::Value>(&value_json).unwrap_or_default() });
-            http_patch_json(&format!("{base}/tables/{table_id}/rows/{row_id}/values"), &payload.to_string()).await
+            http_patch_json(
+                &format!("{base}/tables/{table_id}/rows/{row_id}/values"),
+                &payload.to_string(),
+            )
+            .await
         })
     }
 
-    pub fn set_column_frozen(&self, table_id: String, column_id: String, is_frozen: bool) -> js_sys::Promise {
+    pub fn set_column_frozen(
+        &self,
+        table_id: String,
+        column_id: String,
+        is_frozen: bool,
+    ) -> js_sys::Promise {
         let base = rest_base(&self.inner.borrow().base_url);
         future_to_promise(async move {
             let payload = serde_json::json!({ "is_frozen": is_frozen }).to_string();
-            http_patch_json(&format!("{base}/tables/{table_id}/custom-columns/{column_id}"), &payload).await
+            http_patch_json(
+                &format!("{base}/tables/{table_id}/custom-columns/{column_id}"),
+                &payload,
+            )
+            .await
         })
     }
 
-    pub fn set_column_source_path(&self, table_id: String, column_id: String, path_json: String) -> js_sys::Promise {
+    pub fn set_column_source_path(
+        &self,
+        table_id: String,
+        column_id: String,
+        path_json: String,
+    ) -> js_sys::Promise {
         let base = rest_base(&self.inner.borrow().base_url);
         future_to_promise(async move {
-            let path: serde_json::Value = serde_json::from_str(&path_json).unwrap_or(serde_json::Value::Null);
+            let path: serde_json::Value =
+                serde_json::from_str(&path_json).unwrap_or(serde_json::Value::Null);
             let payload = serde_json::json!({ "source_path": path }).to_string();
-            http_patch_json(&format!("{base}/tables/{table_id}/custom-columns/{column_id}"), &payload).await
+            http_patch_json(
+                &format!("{base}/tables/{table_id}/custom-columns/{column_id}"),
+                &payload,
+            )
+            .await
         })
     }
 
@@ -1158,10 +1224,11 @@ impl serde::Serialize for HiddenCol {
 impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("CustomCol", 10)?;
+        let mut st = s.serialize_struct("CustomCol", 11)?;
         st.serialize_field("id", &self.id)?;
         st.serialize_field("title", &self.title)?;
         st.serialize_field("expression", &self.expression)?;
+        st.serialize_field("position_before", &self.position_before)?;
         st.serialize_field("position_after", &self.position_after)?;
         st.serialize_field("description", &self.description)?;
         st.serialize_field("read_only", &self.read_only)?;
@@ -1249,7 +1316,8 @@ impl serde::Serialize for ServerEvent {
                         "kind": v.kind,
                         "data": v.data.as_ref().map(|d| serde_json::json!({
                             "id": d.id, "title": d.title,
-                            "expression": d.expression, "position_after": d.position_after,
+                            "expression": d.expression,
+                            "position_before": d.position_before, "position_after": d.position_after,
                             "description": d.description, "read_only": d.read_only,
                             "readOnly": d.read_only, "types": d.types,
                             "is_frozen": d.is_frozen,
@@ -1300,20 +1368,33 @@ mod tests {
     use proto::{client_op::Payload as OpPayload, *};
 
     fn op(kind: &str, data: serde_json::Value) -> QueuedOp {
-        QueuedOp { op_id: "test-op-id".into(), seq: 1, retries: 0, kind: kind.into(), data, enqueued_at: 0 }
+        QueuedOp {
+            op_id: "test-op-id".into(),
+            seq: 1,
+            retries: 0,
+            kind: kind.into(),
+            data,
+            enqueued_at: 0,
+        }
     }
 
     // ── describe_op ───────────────────────────────────────────────────────────
 
     #[test]
     fn describe_upsert_flag_with_color() {
-        let d = describe_op("upsert_flag", &serde_json::json!({ "key": "header:name", "color": "red" }));
+        let d = describe_op(
+            "upsert_flag",
+            &serde_json::json!({ "key": "header:name", "color": "red" }),
+        );
         assert_eq!(d, "Set red flag [header:name]");
     }
 
     #[test]
     fn describe_upsert_flag_no_color() {
-        let d = describe_op("upsert_flag", &serde_json::json!({ "key": "header:name", "color": "" }));
+        let d = describe_op(
+            "upsert_flag",
+            &serde_json::json!({ "key": "header:name", "color": "" }),
+        );
         assert_eq!(d, "Set flag [header:name]");
     }
 
@@ -1326,14 +1407,20 @@ mod tests {
     #[test]
     fn describe_upsert_remark_truncates_body() {
         let long_body = "x".repeat(50);
-        let d = describe_op("upsert_remark", &serde_json::json!({ "kind": "note", "body": long_body }));
+        let d = describe_op(
+            "upsert_remark",
+            &serde_json::json!({ "kind": "note", "body": long_body }),
+        );
         assert!(d.contains('…'), "long body must be truncated with ellipsis");
         assert!(d.starts_with("Save note: \""));
     }
 
     #[test]
     fn describe_upsert_remark_short_body() {
-        let d = describe_op("upsert_remark", &serde_json::json!({ "kind": "comment", "body": "Hello" }));
+        let d = describe_op(
+            "upsert_remark",
+            &serde_json::json!({ "kind": "comment", "body": "Hello" }),
+        );
         assert_eq!(d, "Save comment: \"Hello\"");
         assert!(!d.contains('…'));
     }
@@ -1370,7 +1457,10 @@ mod tests {
 
     #[test]
     fn into_client_op_upsert_flag() {
-        let q = op("upsert_flag", serde_json::json!({ "id": "f1", "key": "k", "color": "blue" }));
+        let q = op(
+            "upsert_flag",
+            serde_json::json!({ "id": "f1", "key": "k", "color": "blue" }),
+        );
         let cop = q.into_client_op().unwrap();
         assert!(matches!(cop.payload, Some(OpPayload::UpsertFlag(_))));
     }
@@ -1384,19 +1474,25 @@ mod tests {
 
     #[test]
     fn into_client_op_upsert_remark() {
-        let q = op("upsert_remark", serde_json::json!({
-            "id": "r1", "body": "hello", "kind": "note", "targets": []
-        }));
+        let q = op(
+            "upsert_remark",
+            serde_json::json!({
+                "id": "r1", "body": "hello", "kind": "note", "targets": []
+            }),
+        );
         let cop = q.into_client_op().unwrap();
         assert!(matches!(cop.payload, Some(OpPayload::UpsertRemark(_))));
     }
 
     #[test]
     fn into_client_op_create_custom_col() {
-        let q = op("create_custom_col", serde_json::json!({
-            "id": "c1", "title": "Stars", "expression": "",
-            "position_after": "", "description": "", "table_id": "gh_repos"
-        }));
+        let q = op(
+            "create_custom_col",
+            serde_json::json!({
+                "id": "c1", "title": "Stars", "expression": "",
+                "position_after": "", "description": "", "table_id": "gh_repos"
+            }),
+        );
         let cop = q.into_client_op().unwrap();
         assert!(matches!(cop.payload, Some(OpPayload::CreateCustomCol(_))));
     }

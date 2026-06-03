@@ -17,8 +17,13 @@ impl SyncBackend for AppState {
 
     async fn list_flags(&self) -> anyhow::Result<Vec<Flag>> {
         let flags = self.store.list_flags().await?;
-        Ok(flags.into_iter()
-            .map(|f| Flag { id: f.id, key: f.key, color: f.color })
+        Ok(flags
+            .into_iter()
+            .map(|f| Flag {
+                id: f.id,
+                key: f.key,
+                color: f.color,
+            })
             .collect())
     }
 
@@ -29,15 +34,23 @@ impl SyncBackend for AppState {
 
     async fn list_hidden_rows(&self) -> anyhow::Result<Vec<HiddenRow>> {
         let rows = self.store.list_hidden_rows().await?;
-        Ok(rows.into_iter()
-            .map(|r| HiddenRow { id: r.id, repo_id: r.row_id.parse().unwrap_or(0) })
+        Ok(rows
+            .into_iter()
+            .map(|r| HiddenRow {
+                id: r.id,
+                repo_id: r.row_id.parse().unwrap_or(0),
+            })
             .collect())
     }
 
     async fn list_hidden_columns(&self) -> anyhow::Result<Vec<HiddenCol>> {
         let cols = self.store.list_hidden_columns().await?;
-        Ok(cols.into_iter()
-            .map(|c| HiddenCol { id: c.id, column_id: c.column_id })
+        Ok(cols
+            .into_iter()
+            .map(|c| HiddenCol {
+                id: c.id,
+                column_id: c.column_id,
+            })
             .collect())
     }
 
@@ -48,13 +61,19 @@ impl SyncBackend for AppState {
 
     async fn list_repos(&self, req: ListReposRequest) -> anyhow::Result<PagedRepos> {
         let params = crate::types::RowQuery {
-            sort: if req.sort.is_empty() { None } else { Some(req.sort) },
+            sort: if req.sort.is_empty() {
+                None
+            } else {
+                Some(req.sort)
+            },
             page: req.page.max(1) as u32,
             per_page: req.per_page.clamp(1, 200) as u32,
             ..Default::default()
         };
         let paged = self.store.list_data_rows(&req.table_id, &params).await?;
-        let rows_json = paged.data.iter()
+        let rows_json = paged
+            .data
+            .iter()
             .map(|v| serde_json::to_vec(v).unwrap_or_default())
             .collect();
         Ok(PagedRepos {
@@ -69,7 +88,11 @@ impl SyncBackend for AppState {
 
     async fn upsert_flag(&self, id: &str, key: &str, color: &str) -> anyhow::Result<Flag> {
         let f = self.store.upsert_flag(id, key, color).await?;
-        Ok(Flag { id: f.id, key: f.key, color: f.color })
+        Ok(Flag {
+            id: f.id,
+            key: f.key,
+            color: f.color,
+        })
     }
 
     async fn delete_flag(&self, key: &str) -> anyhow::Result<()> {
@@ -77,13 +100,22 @@ impl SyncBackend for AppState {
     }
 
     async fn upsert_remark(&self, op: UpsertRemarkOp) -> anyhow::Result<Remark> {
-        let targets: Vec<crate::remark::RemarkTarget> = op.targets.iter()
+        let targets: Vec<crate::remark::RemarkTarget> = op
+            .targets
+            .iter()
             .map(|t| crate::remark::RemarkTarget {
-                row_id: if t.repo_id == 0 { String::new() } else { t.repo_id.to_string() },
+                row_id: if t.repo_id == 0 {
+                    String::new()
+                } else {
+                    t.repo_id.to_string()
+                },
                 column_id: t.column_id.clone(),
             })
             .collect();
-        let r = self.store.upsert_remark(&op.id, &op.body, &op.kind, false, None, &targets).await?;
+        let r = self
+            .store
+            .upsert_remark(&op.id, &op.body, &op.kind, false, None, &targets)
+            .await?;
         Ok(remark_to_proto(&r))
     }
 
@@ -93,7 +125,10 @@ impl SyncBackend for AppState {
 
     async fn add_hidden_row(&self, id: &str, repo_id: i64) -> anyhow::Result<HiddenRow> {
         let row = self.store.add_hidden_row(id, &repo_id.to_string()).await?;
-        Ok(HiddenRow { id: row.id, repo_id })
+        Ok(HiddenRow {
+            id: row.id,
+            repo_id,
+        })
     }
 
     async fn remove_hidden_row(&self, repo_id: i64) -> anyhow::Result<()> {
@@ -102,7 +137,10 @@ impl SyncBackend for AppState {
 
     async fn add_hidden_col(&self, id: &str, column_id: &str) -> anyhow::Result<HiddenCol> {
         let col = self.store.add_hidden_column(id, column_id).await?;
-        Ok(HiddenCol { id: col.id, column_id: col.column_id })
+        Ok(HiddenCol {
+            id: col.id,
+            column_id: col.column_id,
+        })
     }
 
     async fn remove_hidden_col(&self, column_id: &str) -> anyhow::Result<()> {
@@ -119,10 +157,14 @@ impl SyncBackend for AppState {
             title: (!op.title.is_empty()).then(|| op.title),
             description: (!op.description.is_empty()).then(|| op.description),
             expression: (!op.expression.is_empty()).then(|| op.expression),
+            position_before: (!op.position_before.is_empty()).then(|| op.position_before),
             position_after: (!op.position_after.is_empty()).then(|| op.position_after),
             ..Default::default()
         };
-        let col = self.store.upsert_custom_column(table_id, id, &input).await?;
+        let col = self
+            .store
+            .upsert_custom_column(table_id, id, &input)
+            .await?;
         Ok(custom_col_to_proto(&col))
     }
 
@@ -144,9 +186,15 @@ fn remark_to_proto(r: &crate::remark::Remark) -> Remark {
         kind: r.kind.clone(),
         is_private: r.is_private,
         resolved_at: r.resolved_at.map(|dt| dt.to_rfc3339()).unwrap_or_default(),
-        targets: r.targets.iter()
+        targets: r
+            .targets
+            .iter()
             .map(|t| RemarkTarget {
-                repo_id: if t.row_id.is_empty() { 0 } else { t.row_id.parse().unwrap_or(0) },
+                repo_id: if t.row_id.is_empty() {
+                    0
+                } else {
+                    t.row_id.parse().unwrap_or(0)
+                },
                 column_id: t.column_id.clone(),
             })
             .collect(),
@@ -159,6 +207,7 @@ fn custom_col_to_proto(c: &crate::custom_column::CustomColumn) -> CustomCol {
         title: c.title.clone().unwrap_or_default(),
         description: c.description.clone().unwrap_or_default(),
         expression: c.expression.clone().unwrap_or_default(),
+        position_before: c.position_before.clone().unwrap_or_default(),
         position_after: c.position_after.clone().unwrap_or_default(),
         read_only: c.read_only,
         types: c.types.clone(),

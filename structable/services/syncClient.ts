@@ -23,6 +23,7 @@ export type CustomColData = {
   id: string;
   title: string;
   expression: string;
+  position_before: string;
   position_after: string;
   read_only: boolean;
   readOnly: boolean;
@@ -215,7 +216,7 @@ export class SyncClient {
   deleteCustomColumn(id: string):                   Promise<void>   { return this.inner.delete_custom_column(id); }
 
   createCustomColumn(tableId: string, payload: {
-    title?: string | null; description?: string | null; expression?: string | null; position_after?: string | null;
+    title?: string | null; description?: string | null; expression?: string | null; position_before?: string | null; position_after?: string | null;
   }, id?: string): Promise<string> {
     return this.inner.create_custom_column(JSON.stringify({ ...payload, table_id: tableId, id: id ?? null }));
   }

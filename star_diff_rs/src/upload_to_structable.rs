@@ -57,8 +57,12 @@ struct YamlRepo {
     owner_url: Option<String>,
 }
 
-fn default_public() -> String { "public".to_string() }
-fn default_main()   -> String { "main".to_string() }
+fn default_public() -> String {
+    "public".to_string()
+}
+fn default_main() -> String {
+    "main".to_string()
+}
 
 // ─── DB row (serialized to JSON for PostgREST) ────────────────────────────────
 
@@ -73,7 +77,7 @@ struct DbRepo {
     watchers: i64,
     size: i64,
     stars_now: i64,
-    stars_diff: Json,           // JSONB — generated columns computed by Postgres
+    stars_diff: Json, // JSONB — generated columns computed by Postgres
     language: Option<String>,
     license: Option<String>,
     visibility: String,
@@ -98,7 +102,8 @@ struct DbRepo {
 
 impl From<YamlRepo> for DbRepo {
     fn from(r: YamlRepo) -> Self {
-        let stars_diff: serde_json::Map<String, Json> = r.stars_diff
+        let stars_diff: serde_json::Map<String, Json> = r
+            .stars_diff
             .into_iter()
             .filter_map(|(k, v)| {
                 let key = k.as_str()?.to_string();
@@ -160,10 +165,8 @@ fn yaml_path() -> PathBuf {
 }
 
 fn load_repos(path: &PathBuf) -> Result<Vec<YamlRepo>> {
-    let s = fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let raw: Vec<Yaml> = serde_yaml::from_str(&s)
-        .with_context(|| "parsing YAML")?;
+    let s = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let raw: Vec<Yaml> = serde_yaml::from_str(&s).with_context(|| "parsing YAML")?;
     let mut repos = Vec::with_capacity(raw.len());
     for item in raw {
         match serde_yaml::from_value::<YamlRepo>(item) {
@@ -196,11 +199,7 @@ async fn ensure_table_exists(client: &reqwest::Client, backend_url: &str) -> Res
     Ok(())
 }
 
-async fn upload_batch(
-    client: &reqwest::Client,
-    backend_url: &str,
-    batch: &[DbRepo],
-) -> Result<()> {
+async fn upload_batch(client: &reqwest::Client, backend_url: &str, batch: &[DbRepo]) -> Result<()> {
     let endpoint = format!(
         "{}/tables/{TABLE_ID}/rows/batch-upsert",
         backend_url.trim_end_matches('/')
@@ -369,7 +368,13 @@ mod tests {
         yaml.stars_diff.insert(yaml_key("24h"), yaml_i64(3));
 
         let db = DbRepo::from(yaml);
-        let keys: Vec<&str> = db.stars_diff.as_object().unwrap().keys().map(String::as_str).collect();
+        let keys: Vec<&str> = db
+            .stars_diff
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         assert_eq!(keys, vec!["6h", "12h", "24h"]);
     }
 
@@ -417,8 +422,8 @@ mod tests {
         let path = std::env::temp_dir().join("test_load_repos_defaults.yaml");
         std::fs::write(&path, content).unwrap();
         let repos = load_repos(&path).unwrap();
-        assert_eq!(repos[0].visibility, "public");       // default_public()
-        assert_eq!(repos[0].default_branch, "main");     // default_main()
+        assert_eq!(repos[0].visibility, "public"); // default_public()
+        assert_eq!(repos[0].default_branch, "main"); // default_main()
         assert!(!repos[0].archived);
         assert!(repos[0].topics.is_empty());
     }
@@ -468,15 +473,27 @@ mod tests {
     #[test]
     fn endpoint_url_strips_trailing_slash() {
         let backend_url = "http://localhost:3001/";
-        let endpoint = format!("{}/tables/{TABLE_ID}/rows/batch-upsert", backend_url.trim_end_matches('/'));
-        assert_eq!(endpoint, "http://localhost:3001/tables/github_repos/rows/batch-upsert");
+        let endpoint = format!(
+            "{}/tables/{TABLE_ID}/rows/batch-upsert",
+            backend_url.trim_end_matches('/')
+        );
+        assert_eq!(
+            endpoint,
+            "http://localhost:3001/tables/github_repos/rows/batch-upsert"
+        );
     }
 
     #[test]
     fn endpoint_url_no_trailing_slash() {
         let backend_url = "http://localhost:3001";
-        let endpoint = format!("{}/tables/{TABLE_ID}/rows/batch-upsert", backend_url.trim_end_matches('/'));
-        assert_eq!(endpoint, "http://localhost:3001/tables/github_repos/rows/batch-upsert");
+        let endpoint = format!(
+            "{}/tables/{TABLE_ID}/rows/batch-upsert",
+            backend_url.trim_end_matches('/')
+        );
+        assert_eq!(
+            endpoint,
+            "http://localhost:3001/tables/github_repos/rows/batch-upsert"
+        );
     }
 }
 
@@ -489,8 +506,8 @@ async fn main() -> Result<()> {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let backend_url = std::env::var("BACKEND_URL")
-        .unwrap_or_else(|_| "http://localhost:3001".to_string());
+    let backend_url =
+        std::env::var("BACKEND_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
     let client = reqwest::Client::new();
 
     // Provision only the table. backend_rs infers and maintains column metadata
@@ -512,7 +529,10 @@ async fn main() -> Result<()> {
         .collect();
     let duplicate_count = raw_count - unique.len();
     if duplicate_count > 0 {
-        warn!("⚠️  Skipped {} duplicate github_id entries", duplicate_count);
+        warn!(
+            "⚠️  Skipped {} duplicate github_id entries",
+            duplicate_count
+        );
     }
     let db_repos: Vec<DbRepo> = unique.into_values().collect();
 
@@ -526,9 +546,19 @@ async fn main() -> Result<()> {
             .await
             .with_context(|| format!("batch {}", i + 1))?;
         uploaded += chunk.len();
-        info!("🚀 {:>10?}  batch {} — {}/{} rows", t.elapsed(), i + 1, uploaded, total);
+        info!(
+            "🚀 {:>10?}  batch {} — {}/{} rows",
+            t.elapsed(),
+            i + 1,
+            uploaded,
+            total
+        );
     }
 
-    info!("✅ Upload complete — {} rows, total {:?}", total, t0.elapsed());
+    info!(
+        "✅ Upload complete — {} rows, total {:?}",
+        total,
+        t0.elapsed()
+    );
     Ok(())
 }

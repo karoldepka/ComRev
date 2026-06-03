@@ -23,7 +23,18 @@ pub async fn begin(pool: &sqlx::PgPool, id: &str, op: &str, payload: Value, tx_i
 
 /// Return all ops log entries with applied_at IS NULL, ordered by seq (insertion order).
 pub async fn pending(pool: &sqlx::PgPool) -> anyhow::Result<Vec<PendingOp>> {
-    let rows = sqlx::query_as::<_, (Option<i64>, String, String, serde_json::Value, chrono::DateTime<chrono::Utc>, Option<String>, Option<String>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            Option<i64>,
+            String,
+            String,
+            serde_json::Value,
+            chrono::DateTime<chrono::Utc>,
+            Option<String>,
+            Option<String>,
+        ),
+    >(
         "SELECT seq, id, op, payload, \
          COALESCE(when_created, NOW()) AS when_created, \
          who_created, tx_id \
@@ -33,9 +44,17 @@ pub async fn pending(pool: &sqlx::PgPool) -> anyhow::Result<Vec<PendingOp>> {
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(seq, id, op, payload, when_created, who_created, tx_id)| PendingOp {
-            seq, id, op, payload, when_created, who_created, tx_id,
-        })
+        .map(
+            |(seq, id, op, payload, when_created, who_created, tx_id)| PendingOp {
+                seq,
+                id,
+                op,
+                payload,
+                when_created,
+                who_created,
+                tx_id,
+            },
+        )
         .collect())
 }
 
@@ -171,6 +190,7 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
                         title: p["title"].as_str().map(str::to_owned),
                         description: p["description"].as_str().map(str::to_owned),
                         expression: p["expression"].as_str().map(str::to_owned),
+                        position_before: p["position_before"].as_str().map(str::to_owned),
                         position_after: p["position_after"].as_str().map(str::to_owned),
                         read_only: p["read_only"].as_bool().unwrap_or(false),
                         is_group: p["is_group"].as_bool().unwrap_or(false),
