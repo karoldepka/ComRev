@@ -763,38 +763,6 @@ impl DataStore for SurrealStore {
         Ok(count)
     }
 
-    // ── GitHub repos batch upsert ─────────────────────────────────────────────
-
-    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-        let mut count = 0usize;
-        for repo in repos {
-            let github_id = repo["github_id"]
-                .as_i64()
-                .map(|n| n.to_string())
-                .or_else(|| repo["id"].as_str().map(str::to_owned));
-            let id = match github_id {
-                Some(id) => id,
-                None => {
-                    tracing::warn!("upsert_github_repos_batch: repo missing github_id");
-                    continue;
-                }
-            };
-            let custom_values = {
-                let mut cv = repo.clone();
-                if let Some(obj) = cv.as_object_mut() {
-                    obj.remove("id");
-                }
-                cv
-            };
-            self.db
-                .upsert::<Option<serde_json::Value>>(("github_repos", id.as_str()))
-                .content(serde_json::json!({ "custom_values": custom_values }))
-                .await?;
-            count += 1;
-        }
-        Ok(count)
-    }
-
     // ── Ops log ───────────────────────────────────────────────────────────────
 
     async fn begin_ops_log(

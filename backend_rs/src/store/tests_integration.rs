@@ -1660,18 +1660,3 @@ async fn live_db_per_request_timeout_override() {
     assert!(page.total >= 1);
 }
 
-#[tokio::test]
-async fn integration_upsert_github_repos_no_duplicates() {
-    let store = setup!();
-    let repo = serde_json::json!({ "github_id": 1, "name": "repo-dedup", "stars": 1 });
-
-    store
-        .upsert_github_repos_batch(&[repo.clone()])
-        .await
-        .unwrap();
-    store.upsert_github_repos_batch(&[repo]).await.unwrap();
-
-    let updated = serde_json::json!({ "github_id": 1, "name": "repo-dedup", "stars": 99 });
-    let count = store.upsert_github_repos_batch(&[updated]).await.unwrap();
-    assert_eq!(count, 1);
-}

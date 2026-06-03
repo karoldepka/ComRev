@@ -908,36 +908,6 @@ impl DataStore for MongoStore {
         Ok(count)
     }
 
-    // ── GitHub repos batch upsert ─────────────────────────────────────────────
-
-    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-        let coll = self.db.collection::<Document>("github_repos");
-        let mut count = 0usize;
-        for repo in repos {
-            let github_id = repo["github_id"]
-                .as_i64()
-                .map(|n| n.to_string())
-                .or_else(|| repo["id"].as_str().map(str::to_owned));
-            let id = match github_id {
-                Some(id) => id,
-                None => {
-                    tracing::warn!("upsert_github_repos_batch: repo missing github_id");
-                    continue;
-                }
-            };
-            let bson_cv = bson::to_bson(repo).context("MongoDB: repo to BSON")?;
-            coll.update_one(
-                doc! { "_id": &id },
-                doc! { "$set": { "custom_values": bson_cv } },
-            )
-            .upsert(true)
-            .await
-            .context("MongoDB: upsert github repo")?;
-            count += 1;
-        }
-        Ok(count)
-    }
-
     // ── Ops log ───────────────────────────────────────────────────────────────
 
     async fn begin_ops_log(

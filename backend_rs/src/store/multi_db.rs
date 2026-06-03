@@ -731,17 +731,6 @@ impl DataStore for MultiStore {
         fan_write(results, "patch_row_value")
     }
 
-    // ── GitHub repos batch ─────────────────────────────────────────────────────
-
-    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-        fan_out!(
-            self,
-            "github_repos.batch_upsert",
-            serde_json::json!({"repos": repos}),
-            upsert_github_repos_batch(repos)
-        )
-    }
-
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
         fan_out!(
             self,
@@ -1133,11 +1122,6 @@ mod tests {
             self.record("patch_row_value");
             self.fail()
         }
-        async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-            self.record("upsert_github_repos_batch");
-            self.fail()?;
-            Ok(repos.len())
-        }
         async fn upsert_rows_batch(
             &self,
             _table_id: &str,
@@ -1325,40 +1309,6 @@ mod tests {
             .unwrap();
         assert!(p.was_called("patch_row_value"));
         assert!(s.was_called("patch_row_value"));
-    }
-
-    #[tokio::test]
-    async fn upsert_github_repos_batch_fans_out() {
-        let p = MockStore::new("store-a", false);
-        let s = MockStore::new("store-b", false);
-        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
-        let repos = vec![
-            serde_json::json!({ "github_id": 1, "name": "owner/repo-a" }),
-            serde_json::json!({ "github_id": 2, "name": "owner/repo-b" }),
-        ];
-        let count = store.upsert_github_repos_batch(&repos).await.unwrap();
-        assert_eq!(count, 2);
-        assert!(p.was_called("upsert_github_repos_batch"));
-        assert!(s.was_called("upsert_github_repos_batch"));
-    }
-
-    #[tokio::test]
-    async fn upsert_github_repos_batch_empty_slice() {
-        let p = MockStore::new("store-a", false);
-        let store = MultiStore::new(vec![p.clone()], None);
-        assert_eq!(store.upsert_github_repos_batch(&[]).await.unwrap(), 0);
-    }
-
-    #[tokio::test]
-    async fn upsert_github_repos_batch_one_failure_is_best_effort() {
-        let p = MockStore::new("store-a", false);
-        let s = MockStore::new("store-b", true);
-        let store = MultiStore::new(vec![p.clone(), s.clone()], None);
-        let result = store
-            .upsert_github_repos_batch(&[serde_json::json!({ "github_id": 99 })])
-            .await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1);
     }
 
     #[tokio::test]

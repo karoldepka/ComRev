@@ -102,13 +102,10 @@ function insertPositioned(
 
 /** Resolve the row-data key for a column.
  *  1. source_path from backend (authoritative)
- *  2. Double-underscore column IDs (e.g. "stars_diff__14d") map to dot-notation
- *     ("stars_diff.14d") so rowVal / sort expressions navigate nested JSONB correctly.
- *  3. Stable column id for flat user-created values. */
+ *  2. Stable column id for user-created values. `name` is user-facing/renameable. */
 function resolveColumnId(cc: ApiCustomColumn): string {
   if ((cc.source_path?.length ?? 0) > 1) return cc.source_path!.join('.');
   if (cc.source_path?.[0]) return cc.source_path[0];
-  if (cc.id.includes('__')) return cc.id.replace(/__/g, '.');
   return cc.id;
 }
 

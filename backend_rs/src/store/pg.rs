@@ -467,7 +467,7 @@ impl DataStore for PgStore {
         sqlx::query(
             "TRUNCATE TABLE remarks, remark_targets, custom_columns, cell_flags,
                           hidden_rows, hidden_columns, operations_log, tables,
-                          github_repos, table_custom_columns CASCADE",
+                          table_custom_columns CASCADE",
         )
         .execute(&self.pool)
         .await
@@ -489,6 +489,11 @@ impl DataStore for PgStore {
                 .await
                 .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): DROP {safe} failed: {e}"))?;
         }
+
+        // Clear the in-memory column cache so auto_create_columns_from_row
+        // recreates all columns (including group columns) on the next upload.
+        self.known_cols.write().unwrap().clear();
+
         tracing::warn!(db_id, user_tables = user_tables.len(), "NUKE__DATA: complete");
         Ok(())
     }
@@ -1144,13 +1149,7 @@ impl DataStore for PgStore {
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
             for (id, types, source_path) in col_type_rows {
-                col_types.insert(id.clone(), types.clone());
-                // For nested columns using the double-underscore naming convention
-                // (e.g. "stars_diff__14d"), also register the dot-notation key as a
-                // fallback so sort type lookups work even when source_path is null.
-                if id.contains("__") {
-                    col_types.entry(id.replace("__", ".")).or_insert_with(|| types.clone());
-                }
+                col_types.insert(id, types.clone());
                 if let Some(path) = source_path {
                     if !path.is_empty() {
                         col_types.insert(path.join("."), types);
@@ -1196,43 +1195,6 @@ impl DataStore for PgStore {
                 errors: vec![],
             });
         }
-    }
-
-    // ── GitHub repos batch upsert ─────────────────────────────────────────────
-    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize> {
-        if repos.is_empty() {
-            return Ok(0);
-        }
-        let json_array = serde_json::Value::Array(repos.to_vec());
-        // Each element has github_id + all other GitHub fields.
-        // Store id = github_id::text; all fields go into custom_values (minus the id key).
-        // DISTINCT ON deduplicates within the batch itself — Postgres raises an error if the
-        // same primary key appears twice in a single INSERT, so we must deduplicate first.
-        let count: i64 = sqlx::query_scalar(
-            "WITH deduped AS (
-               SELECT DISTINCT ON (github_id) github_id, custom_values
-               FROM (
-                 SELECT
-                   (r->>'github_id') AS github_id,
-                   (r - 'id')        AS custom_values
-                 FROM jsonb_array_elements($1::jsonb) AS r
-                 WHERE r->>'github_id' IS NOT NULL
-               ) sub
-               ORDER BY github_id
-             ),
-             upserted AS (
-               INSERT INTO github_repos (id, custom_values)
-               SELECT github_id, custom_values FROM deduped
-               ON CONFLICT (id) DO UPDATE SET
-                 custom_values      = EXCLUDED.custom_values,
-                 when_last_modified = NOW()
-               RETURNING 1
-             ) SELECT COUNT(*) FROM upserted",
-        )
-        .bind(json_array)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(count as usize)
     }
 
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {

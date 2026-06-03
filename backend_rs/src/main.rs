@@ -130,10 +130,6 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(data_row::batch_upsert_rows),
         )
         .route(
-            "/github-repos/upsert-batch",
-            axum::routing::post(data_row::upsert_github_repos_batch),
-        )
-        .route(
             "/tables/:table_id/rows/:row_id/values",
             axum::routing::patch(data_row::patch_cell_value),
         )

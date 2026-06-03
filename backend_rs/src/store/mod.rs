@@ -221,10 +221,6 @@ pub trait DataStore: Send + Sync {
     /// Used at startup to replay any ops that were logged before a crash.
     async fn pending_ops(&self) -> anyhow::Result<Vec<PendingOp>>;
 
-    // ── GitHub repos batch upsert ─────────────────────────────────────────────
-    /// Upsert a batch of raw GitHub repo objects (from star_diff_rs). Returns the upserted count.
-    async fn upsert_github_repos_batch(&self, repos: &[serde_json::Value]) -> Result<usize>;
-
     /// Upsert a batch of rows into any table. Each element is a JSON object; the row id is taken
     /// from the "id" field (falling back to "github_id" as a string). Everything becomes custom_values.
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize>;

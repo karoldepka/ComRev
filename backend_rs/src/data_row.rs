@@ -91,26 +91,6 @@ pub async fn create_row(
 }
 
 #[derive(Deserialize)]
-pub struct UpsertGithubReposBatchBody {
-    pub repos: Vec<serde_json::Value>,
-}
-
-pub async fn upsert_github_repos_batch(
-    State(state): State<AppState>,
-    Json(body): Json<UpsertGithubReposBatchBody>,
-) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
-    let count = state
-        .store
-        .upsert_github_repos_batch(&body.repos)
-        .await
-        .map_err(|e| db_err("github_repos_batch", e))?;
-    Ok((
-        StatusCode::OK,
-        Json(serde_json::json!({ "upserted": count })),
-    ))
-}
-
-#[derive(Deserialize)]
 pub struct BatchUpsertRowsBody {
     pub rows: Vec<serde_json::Value>,
 }

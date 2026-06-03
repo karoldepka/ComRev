@@ -169,9 +169,6 @@ impl DataStore for SqliteStore {
         not_impl!()
     }
 
-    async fn upsert_github_repos_batch(&self, _repos: &[serde_json::Value]) -> Result<usize> {
-        not_impl!()
-    }
     async fn upsert_rows_batch(
         &self,
         _table_id: &str,

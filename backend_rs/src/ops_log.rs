@@ -62,7 +62,7 @@ pub async fn pending(pool: &sqlx::PgPool) -> anyhow::Result<Vec<PendingOp>> {
 fn op_priority(op: &str) -> u8 {
     match op {
         "table.create" | "table.patch" | "table.delete" => 0,
-        "row.create" | "row.patch" | "rows.batch_upsert" | "github_repos.batch_upsert" => 1,
+        "row.create" | "row.patch" | "rows.batch_upsert" => 1,
         _ => 2,
     }
 }
@@ -256,15 +256,6 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
                     p["value"].clone(),
                 )
                 .await?;
-        }
-        "github_repos.batch_upsert" => {
-            let repos = p["repos"]
-                .as_array()
-                .ok_or_else(|| {
-                    anyhow::anyhow!("github_repos.batch_upsert payload missing 'repos'")
-                })?
-                .clone();
-            store.upsert_github_repos_batch(&repos).await?;
         }
         "rows.batch_upsert" => {
             let table_id = str(p, "table_id")?;

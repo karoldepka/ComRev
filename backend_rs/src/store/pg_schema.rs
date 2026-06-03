@@ -226,20 +226,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "DROP TRIGGER IF EXISTS trg_tables_when_last_modified ON tables;",
     "CREATE TRIGGER trg_tables_when_last_modified BEFORE UPDATE ON tables FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     r#"
-    CREATE TABLE IF NOT EXISTS github_repos (
-      id TEXT PRIMARY KEY,
-      who_created TEXT,
-      when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      who_last_modified TEXT,
-      when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      custom_values JSONB NOT NULL DEFAULT '{}'::jsonb,
-      modify_count INTEGER NOT NULL DEFAULT 0
-    );
-    "#,
-    "CREATE INDEX IF NOT EXISTS idx_gh_cv_gin ON github_repos USING gin (custom_values);",
-    "DROP TRIGGER IF EXISTS trg_gh_repos_when_last_modified ON github_repos;",
-    "CREATE TRIGGER trg_gh_repos_when_last_modified BEFORE UPDATE ON github_repos FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
-    r#"
     CREATE TABLE IF NOT EXISTS table_custom_columns (
       table_id TEXT NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
       column_id TEXT NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
@@ -280,7 +266,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     DECLARE
       t TEXT;
     BEGIN
-      FOREACH t IN ARRAY ARRAY['remarks','remark_targets','custom_columns','cell_flags','hidden_rows','hidden_columns','operations_log','tables','github_repos','table_custom_columns','table_rows'] LOOP
+      FOREACH t IN ARRAY ARRAY['remarks','remark_targets','custom_columns','cell_flags','hidden_rows','hidden_columns','operations_log','tables','table_custom_columns','table_rows'] LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
       END LOOP;
     END $$;
@@ -308,7 +294,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "DROP POLICY IF EXISTS ops_log_public_read ON operations_log;",
     "DROP POLICY IF EXISTS tables_public_read ON tables;",
     "DROP POLICY IF EXISTS tables_auth_write ON tables;",
-    "DROP POLICY IF EXISTS gh_repos_public_read ON github_repos;",
     "DROP POLICY IF EXISTS table_custom_columns_public_read ON table_custom_columns;",
     "DROP POLICY IF EXISTS table_custom_columns_auth_write ON table_custom_columns;",
     "DROP POLICY IF EXISTS table_rows_public_read ON table_rows;",
@@ -323,7 +308,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE POLICY ops_log_public_read ON operations_log FOR SELECT USING (true);",
     "CREATE POLICY tables_public_read ON tables FOR SELECT USING (true);",
     "CREATE POLICY tables_auth_write ON tables FOR ALL TO authenticated USING (true) WITH CHECK (true);",
-    "CREATE POLICY gh_repos_public_read ON github_repos FOR SELECT USING (true);",
     "CREATE POLICY table_custom_columns_public_read ON table_custom_columns FOR SELECT USING (true);",
     "CREATE POLICY table_custom_columns_auth_write ON table_custom_columns FOR ALL TO authenticated USING (true) WITH CHECK (true);",
     "CREATE POLICY table_rows_public_read ON table_rows FOR SELECT USING (true);",
