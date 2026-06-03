@@ -393,10 +393,12 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
 
     setLoading(true);
     setFetchError(null);
+    const sortColumn = customColumns.find((cc) => resolveColumnId(cc) === sort.col || cc.id === sort.col);
+    const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
     const params = new URLSearchParams({
       page: String(page),
       per_page: String(perPage),
-      sort: sort.colType ? `${sort.col}:${sort.dir}:${sort.colType}` : `${sort.col}:${sort.dir}`,
+      sort: sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`,
     });
     Object.entries(filters).forEach(([k, v]) => params.set(k, v));
     api.fetchDataRows(tableId, params, aborter.signal)
@@ -429,7 +431,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       aborter.abort();
       if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
     };
-  }, [page, sort, filters, api, tableId, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, sort, filters, api, tableId, retryKey, customColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch custom columns ───────────────────────────────────────────────────
   useEffect(() => {
@@ -686,7 +688,8 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSort = (col: string, dir: 'asc' | 'desc') => {
-    const colType = allLeafColumns.find((c) => c.id === col)?.types?.[0];
+    const column = allLeafColumns.find((c) => c.id === col);
+    const colType = column?.filterType ?? column?.types?.[0];
     setSort({ col, dir, colType });
     setPage(1);
     setOpenMenuColumn(null);

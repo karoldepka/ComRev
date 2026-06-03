@@ -181,12 +181,14 @@ impl PgStore {
         struct ColSpec {
             id: String,
             title: Option<String>,
+            position_after: Option<String>,
             types: Vec<String>,
             is_group: bool,
             parent_ids: Vec<String>,
             source_path: Option<Vec<String>>,
         }
         let mut specs: Vec<ColSpec> = Vec::new();
+        let mut previous_root_id: Option<String> = None;
 
         for (field, value) in obj {
             if SKIP.contains(&field.as_str()) || value.is_null() {
@@ -199,33 +201,41 @@ impl PgStore {
                 specs.push(ColSpec {
                     id: field.clone(),
                     title: None,
+                    position_after: previous_root_id.clone(),
                     types: vec![],
                     is_group: true,
                     parent_ids: vec![],
                     source_path: None,
                 });
+                let mut previous_child_id: Option<String> = None;
                 for (sub_key, sub_val) in sub_obj {
                     if sub_val.is_null() {
                         continue;
                     }
+                    let id = format!("{field}__{sub_key}");
                     specs.push(ColSpec {
-                        id: format!("{field}__{sub_key}"),
+                        id: id.clone(),
                         title: Some(sub_key.clone()),
+                        position_after: previous_child_id.clone(),
                         types: infer_col_types(sub_val),
                         is_group: false,
                         parent_ids: vec![field.clone()],
                         source_path: Some(vec![field.clone(), sub_key.clone()]),
                     });
+                    previous_child_id = Some(id);
                 }
+                previous_root_id = Some(field.clone());
             } else {
                 specs.push(ColSpec {
                     id: field.clone(),
                     title: None,
+                    position_after: previous_root_id.clone(),
                     types: infer_col_types(value),
                     is_group: false,
                     parent_ids: vec![],
                     source_path: None,
                 });
+                previous_root_id = Some(field.clone());
             }
         }
 
@@ -256,6 +266,7 @@ impl PgStore {
             };
             let inp = crate::custom_column::CustomColumnInput {
                 title: spec.title.clone(),
+                position_after: spec.position_after.clone(),
                 types: if spec.types.is_empty() {
                     None
                 } else {
@@ -596,7 +607,7 @@ impl DataStore for PgStore {
             return Ok(super::table_view_columns());
         }
 
-        let mut cols = sqlx::query_as::<_, CustomColumn>(
+        Ok(sqlx::query_as::<_, CustomColumn>(
             "SELECT c.id::text, c.title, c.description, c.expression,
                COALESCE(tcc.position_after, c.position_after) AS position_after,
                c.read_only, c.types, c.source_path,
@@ -611,30 +622,7 @@ impl DataStore for PgStore {
         )
         .bind(table_id)
         .fetch_all(&self.pool)
-        .await?;
-
-        for col in &mut cols {
-            let missing_path = col.source_path.as_ref().map_or(true, Vec::is_empty);
-            if missing_path {
-                if let Some(path) = inferred_nested_source_path(&col.id, &col.parent_ids) {
-                    col.source_path = Some(path.clone());
-                    sqlx::query(
-                        "UPDATE custom_columns
-                         SET source_path = $2, when_last_modified = NOW(),
-                             modify_count = modify_count + 1
-                         WHERE id = $1
-                           AND (source_path IS NULL OR cardinality(source_path) = 0)",
-                    )
-                    .bind(&col.id)
-                    .bind(&path)
-                    .execute(&self.pool)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("list_custom_columns: repair source_path {}: {e}", col.id))?;
-                }
-            }
-        }
-
-        Ok(cols)
+        .await?)
     }
 
     async fn upsert_custom_column(
@@ -1034,18 +1022,25 @@ impl DataStore for PgStore {
             // empty, not fail because their physical relation is not materialized.
             self.ensure_user_table(table_id).await?;
             let tname = user_table_ident(table_id);
-            let col_types: std::collections::HashMap<String, Vec<String>> =
-                sqlx::query_as::<_, (String, Vec<String>)>(
-                    "SELECT c.id, c.types
+            let col_type_rows = sqlx::query_as::<_, (String, Vec<String>, Option<Vec<String>>)>(
+                    "SELECT c.id, c.types, c.source_path
                      FROM custom_columns c
                      JOIN table_custom_columns tcc ON tcc.column_id = c.id
                      WHERE tcc.table_id = $1",
                 )
                 .bind(table_id)
                 .fetch_all(&self.pool)
-                .await?
-                .into_iter()
-                .collect();
+                .await?;
+            let mut col_types: std::collections::HashMap<String, Vec<String>> =
+                std::collections::HashMap::new();
+            for (id, types, source_path) in col_type_rows {
+                col_types.insert(id, types.clone());
+                if let Some(path) = source_path {
+                    if !path.is_empty() {
+                        col_types.insert(path.join("."), types);
+                    }
+                }
+            }
 
             let total: i64 = {
                 let mut qb = QueryBuilder::new(format!("SELECT COUNT(*) FROM {tname} WHERE "));
@@ -1054,7 +1049,7 @@ impl DataStore for PgStore {
                 qb.build_query_scalar().fetch_one(&self.pool).await?
             };
 
-            let order = validated_sort(params.sort.as_deref());
+            let order = validated_sort_with_types(params.sort.as_deref(), &col_types);
             let data: Vec<serde_json::Value> = {
                 let mut qb = QueryBuilder::new(format!(
                     "SELECT (jsonb_build_object(\
@@ -1373,6 +1368,13 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
 }
 
 pub(super) fn validated_sort(sort: Option<&str>) -> String {
+    validated_sort_with_types(sort, &std::collections::HashMap::new())
+}
+
+pub(super) fn validated_sort_with_types(
+    sort: Option<&str>,
+    col_types: &std::collections::HashMap<String, Vec<String>>,
+) -> String {
     // Sort param format: "col:dir[:type]" where type is a custom_columns.types element.
     // Multiple sorts are comma-separated.
     let parts: Vec<String> = sort
@@ -1386,7 +1388,9 @@ pub(super) fn validated_sort(sort: Option<&str>) -> String {
             let mut it = s.splitn(3, ':');
             let col = it.next()?;
             let dir = it.next().unwrap_or("desc");
-            let col_type = it.next();
+            let col_type = it
+                .next()
+                .or_else(|| col_types.get(col).and_then(|types| types.first().map(String::as_str)));
             let expr = col_to_sort_expr(col, col_type)?;
             let dir_sql = if dir.eq_ignore_ascii_case("asc") {
                 "ASC"
@@ -1584,6 +1588,16 @@ mod tests {
         assert_eq!(
             validated_sort(Some("stars:desc:integer")),
             "(custom_vals->>'stars')::numeric DESC NULLS LAST"
+        );
+    }
+
+    #[test]
+    fn sort_uses_known_type_for_dot_path_without_explicit_type() {
+        let mut col_types = std::collections::HashMap::new();
+        col_types.insert("metrics.views".to_string(), vec!["numeric".to_string()]);
+        assert_eq!(
+            validated_sort_with_types(Some("metrics.views:desc"), &col_types),
+            "(custom_vals->'metrics'->>'views')::numeric DESC NULLS LAST"
         );
     }
 

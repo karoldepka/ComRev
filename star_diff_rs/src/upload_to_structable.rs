@@ -4,7 +4,6 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use serde_yaml::Value as Yaml;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -25,7 +24,7 @@ struct YamlRepo {
     watchers: i64,
     size: i64,
     stars_now: i64,
-    stars_diff: HashMap<String, Option<i64>>,
+    stars_diff: serde_yaml::Mapping,
     language: Option<String>,
     license: Option<String>,
     #[serde(default = "default_public")]
@@ -101,7 +100,15 @@ impl From<YamlRepo> for DbRepo {
     fn from(r: YamlRepo) -> Self {
         let stars_diff: serde_json::Map<String, Json> = r.stars_diff
             .into_iter()
-            .map(|(k, v)| (k, v.map(Json::from).unwrap_or(Json::Null)))
+            .filter_map(|(k, v)| {
+                let key = k.as_str()?.to_string();
+                let value = match v {
+                    Yaml::Null => Json::Null,
+                    Yaml::Number(n) => n.as_i64().map(Json::from).unwrap_or(Json::Null),
+                    _ => Json::Null,
+                };
+                Some((key, value))
+            })
             .collect();
         Self {
             github_id: r.id,
@@ -221,6 +228,14 @@ async fn upload_batch(
 mod tests {
     use super::*;
 
+    fn yaml_key(key: &str) -> Yaml {
+        Yaml::String(key.to_string())
+    }
+
+    fn yaml_i64(value: i64) -> Yaml {
+        Yaml::Number(serde_yaml::Number::from(value))
+    }
+
     fn minimal_yaml_repo() -> YamlRepo {
         YamlRepo {
             id: 123,
@@ -232,7 +247,7 @@ mod tests {
             watchers: 500,
             size: 1024,
             stars_now: 500,
-            stars_diff: HashMap::new(),
+            stars_diff: serde_yaml::Mapping::new(),
             language: Some("Rust".to_string()),
             license: Some("MIT".to_string()),
             visibility: "public".to_string(),
@@ -329,7 +344,7 @@ mod tests {
     #[test]
     fn from_yaml_stars_diff_none_value_becomes_json_null() {
         let mut yaml = minimal_yaml_repo();
-        yaml.stars_diff.insert("7d".to_string(), None);
+        yaml.stars_diff.insert(yaml_key("7d"), Yaml::Null);
         let db = DbRepo::from(yaml);
         let obj = db.stars_diff.as_object().unwrap();
         assert_eq!(obj.get("7d"), Some(&serde_json::Value::Null));
@@ -338,12 +353,24 @@ mod tests {
     #[test]
     fn from_yaml_stars_diff_some_value_becomes_json_number() {
         let mut yaml = minimal_yaml_repo();
-        yaml.stars_diff.insert("30d".to_string(), Some(42));
-        yaml.stars_diff.insert("7d".to_string(), None);
+        yaml.stars_diff.insert(yaml_key("30d"), yaml_i64(42));
+        yaml.stars_diff.insert(yaml_key("7d"), Yaml::Null);
         let db = DbRepo::from(yaml);
         let obj = db.stars_diff.as_object().unwrap();
         assert_eq!(obj.get("30d"), Some(&serde_json::Value::from(42i64)));
         assert_eq!(obj.get("7d"), Some(&serde_json::Value::Null));
+    }
+
+    #[test]
+    fn from_yaml_stars_diff_preserves_window_order() {
+        let mut yaml = minimal_yaml_repo();
+        yaml.stars_diff.insert(yaml_key("6h"), yaml_i64(1));
+        yaml.stars_diff.insert(yaml_key("12h"), yaml_i64(2));
+        yaml.stars_diff.insert(yaml_key("24h"), yaml_i64(3));
+
+        let db = DbRepo::from(yaml);
+        let keys: Vec<&str> = db.stars_diff.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys, vec!["6h", "12h", "24h"]);
     }
 
     // ── load_repos ────────────────────────────────────────────────────────────

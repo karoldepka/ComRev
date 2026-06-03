@@ -550,6 +550,9 @@ async fn integration_batch_upsert_auto_creates_columns_for_nested_fields() {
     assert!(col_ids.contains(&"metrics"),        "nested field must become a group column");
     assert!(col_ids.contains(&"metrics__views"), "nested sub-key must become a child column");
     assert!(col_ids.contains(&"metrics__clicks"),"nested sub-key must become a child column");
+    let views_pos = col_ids.iter().position(|id| *id == "metrics__views").unwrap();
+    let clicks_pos = col_ids.iter().position(|id| *id == "metrics__clicks").unwrap();
+    assert!(views_pos < clicks_pos, "nested columns must preserve row field order");
 
     let group = cols.iter().find(|c| c.id == "metrics").unwrap();
     assert!(group.is_group, "parent column must be marked as a group");
@@ -562,6 +565,13 @@ async fn integration_batch_upsert_auto_creates_columns_for_nested_fields() {
         "child must have source_path pointing into the nested JSONB"
     );
     assert!(child.types.iter().any(|t| t == "numeric"), "numeric value must infer numeric type");
+
+    let second_child = cols.iter().find(|c| c.id == "metrics__clicks").unwrap();
+    assert_eq!(
+        second_child.position_after.as_deref(),
+        Some("metrics__views"),
+        "nested column order should be encoded in position_after"
+    );
 }
 
 #[tokio::test]
@@ -584,7 +594,29 @@ async fn integration_batch_upsert_discovers_nested_fields_after_empty_first_row(
 }
 
 #[tokio::test]
-async fn integration_list_custom_columns_repairs_stale_nested_source_path() {
+async fn integration_list_data_rows_sorts_nested_numeric_path_numerically() {
+    let store = setup!();
+    let table_id = "sort_nested_numeric";
+
+    store.upsert_rows_batch(table_id, &[
+        serde_json::json!({ "id": "row2", "metrics": { "views": 2 } }),
+        serde_json::json!({ "id": "row10", "metrics": { "views": 10 } }),
+    ]).await.unwrap();
+
+    let page = store
+        .list_data_rows(
+            table_id,
+            &RowQuery { page: 1, per_page: 50, sort: Some("metrics.views:desc".to_string()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.data[0]["id"], "row10", "10 must sort before 2 numerically");
+    assert_eq!(page.data[1]["id"], "row2", "2 must sort after 10 numerically");
+}
+
+#[tokio::test]
+async fn integration_batch_upsert_repairs_stale_nested_source_path() {
     let store = setup!();
     let table_id = "nested_cols_repair";
     let pool = store.direct_pool().await.expect("direct pool");
@@ -612,6 +644,11 @@ async fn integration_list_custom_columns_repairs_stale_nested_source_path() {
     .execute(&pool)
     .await
     .unwrap();
+
+    store.upsert_rows_batch(table_id, &[serde_json::json!({
+        "id": "row1",
+        "metrics": { "views": 100 }
+    })]).await.unwrap();
 
     let cols = store.list_custom_columns(table_id).await.unwrap();
     let col = cols.iter().find(|c| c.id == "metrics__views").unwrap();
