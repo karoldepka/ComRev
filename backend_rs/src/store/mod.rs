@@ -70,11 +70,8 @@ pub fn table_view_columns() -> Vec<CustomColumn> {
         .collect()
 }
 
-pub mod mongo;
 pub mod pg;
 mod pg_schema;
-pub mod sqlite;
-pub mod surreal;
 #[cfg(test)]
 pub mod tests_integration;
 
@@ -228,8 +225,6 @@ pub trait DataStore: Send + Sync {
 
 pub mod multi_db;
 
-/// Construct the appropriate store from a DB URL.
-/// Dispatch order: sqlite → surreal/wss/ws → mongodb → postgres.
 /// Open a Postgres store scoped to an isolated schema.
 ///
 /// Creates the schema if it doesn't exist and pins the search_path on every
@@ -241,19 +236,12 @@ pub async fn open_pg_isolated(db_id: &str, url: &str, schema: &str) -> Result<Ar
     Ok(Arc::new(multi_db::MultiStore::new(vec![pg], None)))
 }
 
+/// Construct a Postgres store from a DB URL (must start with `postgres://` or `postgresql://`).
 pub async fn open(db_id: &str, url: &str) -> Result<Arc<dyn DataStore>> {
     let short = url.split('@').last().unwrap_or(url);
     tracing::debug!(db_id, url = short, "store: opening connection");
-    if url.starts_with("sqlite") {
-        Ok(Arc::new(sqlite::SqliteStore))
-    } else if url.starts_with("surreal") || url.starts_with("wss://") || url.starts_with("ws://") {
-        Ok(Arc::new(surreal::SurrealStore::connect(db_id, url).await?))
-    } else if url.starts_with("mongodb") {
-        Ok(Arc::new(mongo::MongoStore::connect(db_id, url).await?))
-    } else {
-        // Covers postgres:// and postgresql://
-        Ok(Arc::new(PgStore::connect(db_id, url).await?))
-    }
+    // Covers postgres:// and postgresql://
+    Ok(Arc::new(PgStore::connect(db_id, url).await?))
 }
 
 /// Construct a MultiStore from a list of `(db_id, url)` pairs. All stores have equal standing.

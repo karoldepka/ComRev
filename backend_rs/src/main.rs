@@ -27,8 +27,7 @@ use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // rustls 0.22+ requires an explicit crypto provider when multiple crates
-    // (sqlx, surrealdb) each pull it in without agreeing on one.
+    // rustls 0.22+ requires an explicit crypto provider to be installed.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     dotenvy::dotenv().ok();
@@ -43,12 +42,8 @@ async fn main() -> anyhow::Result<()> {
         }
         None => {
             let raw = std::env::var("DB_URLS").unwrap_or_else(|_| {
-                let primary = std::env::var("DATABASE_URL")
-                    .expect("databases.toml, DB_URLS, or DATABASE_URL must be set");
-                match std::env::var("SURREAL_URL").ok().filter(|s| !s.is_empty()) {
-                    Some(surreal) => format!("{primary},{surreal}"),
-                    None => primary,
-                }
+                std::env::var("DATABASE_URL")
+                    .expect("databases.toml, DB_URLS, or DATABASE_URL must be set")
             });
             raw.split(',')
                 .map(str::trim)

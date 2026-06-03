@@ -245,28 +245,11 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE TRIGGER trg_table_custom_columns_when_last_modified BEFORE UPDATE ON table_custom_columns FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     "CREATE INDEX IF NOT EXISTS idx_table_custom_columns_column_id ON table_custom_columns (column_id);",
     r#"
-    CREATE TABLE IF NOT EXISTS table_rows (
-      id TEXT PRIMARY KEY,
-      table_id TEXT NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
-      who_created TEXT,
-      when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      who_last_modified TEXT,
-      when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      custom_values JSONB NOT NULL DEFAULT '{}'::jsonb,
-      modify_count INTEGER NOT NULL DEFAULT 0
-    );
-    "#,
-    "ALTER TABLE table_rows ADD COLUMN IF NOT EXISTS table_id TEXT, ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS custom_values JSONB NOT NULL DEFAULT '{}'::jsonb, ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;",
-    "DROP TRIGGER IF EXISTS trg_table_rows_when_last_modified ON table_rows;",
-    "CREATE TRIGGER trg_table_rows_when_last_modified BEFORE UPDATE ON table_rows FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
-    "CREATE INDEX IF NOT EXISTS idx_table_rows_table_id ON table_rows (table_id, when_created DESC);",
-    "CREATE INDEX IF NOT EXISTS idx_table_rows_custom_values_gin ON table_rows USING gin (custom_values);",
-    r#"
     DO $$
     DECLARE
       t TEXT;
     BEGIN
-      FOREACH t IN ARRAY ARRAY['remarks','remark_targets','custom_columns','cell_flags','hidden_rows','hidden_columns','operations_log','tables','table_custom_columns','table_rows'] LOOP
+      FOREACH t IN ARRAY ARRAY['remarks','remark_targets','custom_columns','cell_flags','hidden_rows','hidden_columns','operations_log','tables','table_custom_columns'] LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
       END LOOP;
     END $$;
@@ -296,8 +279,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "DROP POLICY IF EXISTS tables_auth_write ON tables;",
     "DROP POLICY IF EXISTS table_custom_columns_public_read ON table_custom_columns;",
     "DROP POLICY IF EXISTS table_custom_columns_auth_write ON table_custom_columns;",
-    "DROP POLICY IF EXISTS table_rows_public_read ON table_rows;",
-    "DROP POLICY IF EXISTS table_rows_auth_write ON table_rows;",
     "CREATE POLICY remarks_public_read ON remarks FOR SELECT USING (true);",
     "CREATE POLICY remark_targets_public_read ON remark_targets FOR SELECT USING (true);",
     "CREATE POLICY custom_cols_public_read ON custom_columns FOR SELECT USING (true);",
@@ -310,12 +291,9 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE POLICY tables_auth_write ON tables FOR ALL TO authenticated USING (true) WITH CHECK (true);",
     "CREATE POLICY table_custom_columns_public_read ON table_custom_columns FOR SELECT USING (true);",
     "CREATE POLICY table_custom_columns_auth_write ON table_custom_columns FOR ALL TO authenticated USING (true) WITH CHECK (true);",
-    "CREATE POLICY table_rows_public_read ON table_rows FOR SELECT USING (true);",
-    "CREATE POLICY table_rows_auth_write ON table_rows FOR ALL TO authenticated USING (true) WITH CHECK (true);",
     // ── Per-user-table physical tables ────────────────────────────────────────
     // For every entry in the `tables` registry, ensure a physical PG table exists
     // (named "t_<id>") with a custom_vals JSONB column and GIN index.
-    // Also migrates any legacy rows from the old flat `table_rows` table.
     r#"
     DO $$
     DECLARE
@@ -339,23 +317,10 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
           'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (custom_vals)',
           'idx_' || t.id || '_custom_vals', tbl
         );
-        -- Migrate legacy rows from the flat table_rows table if it exists.
-        IF EXISTS (SELECT 1 FROM information_schema.tables
-                   WHERE table_schema = 'public' AND table_name = 'table_rows') THEN
-          EXECUTE format($sql$
-            INSERT INTO %I (id, when_created, when_last_modified,
-                            who_created, who_last_modified, modify_count, custom_vals)
-            SELECT id, when_created, when_last_modified,
-                   who_created, who_last_modified, modify_count, custom_values
-            FROM table_rows WHERE table_id = %L
-            ON CONFLICT (id) DO NOTHING
-          $sql$, tbl, t.id);
-        END IF;
       END LOOP;
     END $$;
     "#,
     "ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
     "ALTER TABLE table_custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
 ];
-// Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore
-// trait and therefore works on all backends (Postgres, Mongo, Surreal, CouchDB, SQLite).
+// Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore trait.

@@ -1,4 +1,4 @@
-/// Integration tests against real database instances.
+/// Integration tests against real Postgres database instances.
 ///
 /// Tests run automatically when `databases.toml` (and `databases.secrets.toml`)
 /// are present and credentials are valid. They skip gracefully otherwise.
@@ -8,7 +8,7 @@
 /// Credentials are loaded from `databases.toml` / `databases.secrets.toml` in the
 /// backend_rs/ directory (the same files the server uses at startup).
 /// Legacy env vars still work as a fallback:
-///   DB_URLS, DATABASE_URL, SURREAL_URL
+///   DB_URLS, DATABASE_URL
 ///
 /// ## Isolation
 ///
@@ -18,9 +18,6 @@
 /// when the `TestStore` is dropped, so tests clean up after themselves even if
 /// they panic.  This means tests can run fully in parallel with no data
 /// interference and no global cleanup step.
-///
-/// SurrealDB (when configured) still uses the shared `_test` namespace because
-/// Surreal doesn't support per-connection `search_path`.
 use super::{open_pg_isolated, DataStore};
 use crate::types::RowQuery;
 use std::{ops::Deref, sync::Arc};
@@ -35,20 +32,7 @@ async fn global_test_init() {
     GLOBAL_INIT
         .get_or_init(|| async {
             let _ = rustls::crypto::ring::default_provider().install_default();
-
-            // Point Surreal at the test namespace/DB.  env mutation is safe here
-            // because this block runs exactly once before any parallel test starts.
             load_env();
-            let test_ns = std::env::var("SURREAL_TEST_NS").unwrap_or_else(|_| "_test".into());
-            let test_db = std::env::var("SURREAL_TEST_DB").unwrap_or_else(|_| "_test".into());
-            unsafe {
-                std::env::set_var("SURREAL_NS", &test_ns);
-                std::env::set_var("SURREAL_DB", &test_db);
-            }
-
-            // Wipe the shared Surreal test namespace once; individual tests are
-            // isolated in their own Postgres schemas and don't need per-test cleanup.
-            surreal_cleanup().await;
         })
         .await;
 }
@@ -83,11 +67,6 @@ fn all_db_urls() -> Vec<String> {
             urls.push(u);
         }
     }
-    if let Ok(u) = std::env::var("SURREAL_URL") {
-        if !u.is_empty() {
-            urls.push(u);
-        }
-    }
     urls
 }
 
@@ -95,12 +74,6 @@ fn pg_url() -> Option<String> {
     all_db_urls()
         .into_iter()
         .find(|u| u.starts_with("postgres"))
-}
-
-fn surreal_url() -> Option<String> {
-    all_db_urls()
-        .into_iter()
-        .find(|u| u.starts_with("surreal") || u.starts_with("wss://") || u.starts_with("ws://"))
 }
 
 // ── Per-test schema isolation ─────────────────────────────────────────────────
@@ -191,40 +164,6 @@ impl TestStore {
             .connect(&self.pg_url)
             .await
             .ok()
-    }
-}
-
-async fn surreal_cleanup() {
-    load_env();
-    let Some(url) = surreal_url() else { return };
-    let test_db = std::env::var("SURREAL_TEST_DB").unwrap_or_else(|_| "_test".into());
-    let ns = std::env::var("SURREAL_TEST_NS").unwrap_or_else(|_| "_test".into());
-    let Ok(db) = surrealdb::engine::any::connect(&url).await else {
-        return;
-    };
-    let user = std::env::var("SURREAL_USER").unwrap_or_default();
-    let pass = std::env::var("SURREAL_PASS").unwrap_or_default();
-    if !user.is_empty() {
-        let _ = db
-            .signin(surrealdb::opt::auth::Root {
-                username: user,
-                password: pass,
-            })
-            .await;
-    }
-    let _ = db.use_ns(&ns).use_db(&test_db).await;
-    for table in [
-        "table_rows",
-        "flags",
-        "remarks",
-        "hidden_rows",
-        "hidden_columns",
-        "custom_columns",
-        "app_tables",
-        "github_repos",
-        "ops_log",
-    ] {
-        let _ = db.query(format!("DELETE {table}")).await;
     }
 }
 
