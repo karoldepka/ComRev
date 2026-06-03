@@ -114,4 +114,4 @@ As much as possible code should be in sync_core wasm
 * for now, until further notice, don't worry about backward compatibility - keep the code clean and not polluted with backward compatibility edge cases. I will nuke the DB anyway and I'm the only user for now.
 
 # Naming
-Don't do weird shortcuts names like `futs` - instead call it `futures`, to avoid spellchecker error, and to aim readability.
+Don't do weird shortcuts names like `futs` or `tname` - instead call it `futures` and `table_name`, to avoid spellchecker error, and to aim readability.

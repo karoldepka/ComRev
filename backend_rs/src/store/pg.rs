@@ -169,14 +169,35 @@ impl PgStore {
     }
 
     /// Add a btree index for a specific custom column on a user table.
-    /// Called automatically when a column is first added to a table.
-    pub async fn ensure_column_index(&self, table_id: &str, col_id: &str) -> Result<()> {
+    /// `types` is the column's declared type list (e.g. `["numeric"]`); used to
+    /// cast the indexed expression so the index is usable by numeric sort queries.
+    pub async fn ensure_column_index(
+        &self,
+        table_id: &str,
+        col_id: &str,
+        types: &[String],
+    ) -> Result<()> {
         let tname = user_table_ident(table_id);
         let col_safe = col_id.replace('"', "");
         let idx = format!("idx_{table_id}_{col_safe}");
+        let cast = if types
+            .iter()
+            .any(|t| matches!(t.as_str(), "integer" | "bigint" | "numeric"))
+        {
+            "::numeric"
+        } else if types.iter().any(|t| t == "timestamptz") {
+            "::timestamptz"
+        } else {
+            ""
+        };
+        let expr = format!("custom_vals->>{col_safe:?}");
+        let indexed = if cast.is_empty() {
+            format!("({expr})")
+        } else {
+            format!("(({expr}){cast})")
+        };
         sqlx::query(&format!(
-            "CREATE INDEX IF NOT EXISTS \"{idx}\" ON {tname} \
-             USING btree ((custom_vals->>{col_safe:?}))"
+            "CREATE INDEX IF NOT EXISTS \"{idx}\" ON {tname} USING btree ({indexed})"
         ))
         .execute(&self.pool)
         .await
@@ -452,7 +473,8 @@ impl DataStore for PgStore {
         .await
         .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): TRUNCATE failed: {e}"))?;
 
-        // Truncate user-created physical row tables (named t_<table_id>).
+        // Drop user-created physical row tables (named t_<table_id>) entirely so
+        // that indexes are also removed and recreated fresh on the next upload.
         let user_tables: Vec<String> = sqlx::query_scalar(
             "SELECT tablename FROM pg_tables \
              WHERE schemaname = 'public' AND LEFT(tablename, 2) = 't_'",
@@ -462,10 +484,10 @@ impl DataStore for PgStore {
         .unwrap_or_default();
         for tbl in &user_tables {
             let safe = tbl.replace('"', "");
-            sqlx::query(&format!("TRUNCATE TABLE \"{safe}\" CASCADE"))
+            sqlx::query(&format!("DROP TABLE IF EXISTS \"{safe}\" CASCADE"))
                 .execute(&self.pool)
                 .await
-                .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): TRUNCATE {safe} failed: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): DROP {safe} failed: {e}"))?;
         }
         tracing::warn!(db_id, user_tables = user_tables.len(), "NUKE__DATA: complete");
         Ok(())
@@ -1122,7 +1144,13 @@ impl DataStore for PgStore {
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
             for (id, types, source_path) in col_type_rows {
-                col_types.insert(id, types.clone());
+                col_types.insert(id.clone(), types.clone());
+                // For nested columns using the double-underscore naming convention
+                // (e.g. "stars_diff__14d"), also register the dot-notation key as a
+                // fallback so sort type lookups work even when source_path is null.
+                if id.contains("__") {
+                    col_types.entry(id.replace("__", ".")).or_insert_with(|| types.clone());
+                }
                 if let Some(path) = source_path {
                     if !path.is_empty() {
                         col_types.insert(path.join("."), types);
