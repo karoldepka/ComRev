@@ -22,6 +22,10 @@ import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarge
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
+const ADD_COL_VIRTUAL_ID = '__add-col__';
+const ADD_COL_HEADER_KEY = `header:${ADD_COL_VIRTUAL_ID}:0`;
+const ADD_COL_VIRTUAL_COLUMN = { id: ADD_COL_VIRTUAL_ID, label: '+' };
+
 // ── Local types ────────────────────────────────────────────────────────────────
 
 type Column = {
@@ -377,7 +381,6 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; targets: CellTarget[] } | null>(null);
   const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment' | 'flag'>('menu');
   const [draftText, setDraftText] = useState('');
-  const [addColFocused, setAddColFocused] = useState(false);
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
   const pendingFocusColRef = useRef<string | null>(null);
@@ -605,17 +608,27 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     return map;
   }, [headerRows]);
 
+  // Include the virtual "add column" column in the selection system so cursor
+  // navigation, scrollIntoView, and highlight all work the same as real columns.
+  const allColumnsForSelection = useMemo(
+    () => [...visibleLeafColumns, ADD_COL_VIRTUAL_COLUMN],
+    [visibleLeafColumns],
+  );
+  const leafHeaderKeyWithVirtual = useMemo(
+    () => new Map([...leafHeaderKey, [ADD_COL_VIRTUAL_ID, ADD_COL_HEADER_KEY]]),
+    [leafHeaderKey],
+  );
+
   const {
     selectedKeys, setSelectedKeys,
     cursorPos, setCursorPos,
     selectedSet, selectedRows, selectedCols,
     selectKey: selectKeyHook, moveCursor,
     cursorToKey: cursorToKeyFn,
-  } = useTableSelection(visibleLeafColumns, leafHeaderKey, rows.length);
+  } = useTableSelection(allColumnsForSelection, leafHeaderKeyWithVirtual, rows.length);
 
   const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
     selectKeyHook(key, multi, shift);
-    setAddColFocused(false);
     wrapperRef.current?.focus();
   }, [selectKeyHook]);
 
@@ -649,13 +662,13 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     if (editingCell) return; // let the input handle keys
 
     if (e.key === 'Enter') {
-      if (addColFocused) {
+      // On the virtual add-column column: open the dialog regardless of row
+      if (cursorPos && cursorPos.col === visibleLeafColumns.length) {
         e.preventDefault();
         const lastCol = allLeafColumns[allLeafColumns.length - 1];
         setAddColAfter(lastCol?.id ?? '');
         setOpenMenuColumn(null);
         setMenuAnchor(null);
-        setAddColFocused(false);
         return;
       }
       if (cursorPos && cursorPos.row === rows.length) {
@@ -679,22 +692,6 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
 
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
-
-    if (addColFocused) {
-      if (e.key === 'ArrowLeft') {
-        setAddColFocused(false);
-        return;
-      }
-      // ArrowUp/Down: exit virtual col and move normally
-      setAddColFocused(false);
-      moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
-      return;
-    }
-
-    if (e.key === 'ArrowRight' && cursorPos && cursorPos.col === visibleLeafColumns.length - 1) {
-      setAddColFocused(true);
-      return;
-    }
 
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
   };
@@ -762,15 +759,17 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
         wrap.scrollLeft -= frozenRight - elRect.left;
       }
     }
-    // Update URL hash: #rowId--colId
+    // Update URL hash: #rowId--colId (skip for virtual columns)
     if (key.startsWith('cell:')) {
       const parts = key.split(':');
       const ri = parseInt(parts[1], 10);
       const colId = parts.slice(2).join(':');
-      const row = rows[ri];
-      if (row) {
-        const rowId = String(row['id'] ?? '');
-        history.replaceState(null, '', `#${encodeURIComponent(rowId)}--${encodeURIComponent(colId)}`);
+      if (colId !== ADD_COL_VIRTUAL_ID) {
+        const row = rows[ri];
+        if (row) {
+          const rowId = String(row['id'] ?? '');
+          history.replaceState(null, '', `#${encodeURIComponent(rowId)}--${encodeURIComponent(colId)}`);
+        }
       }
     }
   }, [cursorPos]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1297,13 +1296,21 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                     <th
                       key="__add-col__"
                       rowSpan={headerRows.length}
-                      className={`add-col-th${addColFocused ? ' add-col-th--focused' : ''}`}
+                      data-key={ADD_COL_HEADER_KEY}
+                      className={[
+                        'add-col-th',
+                        selectedSet.has(ADD_COL_HEADER_KEY)
+                          ? 'header-selected'
+                          : selectedCols.has(ADD_COL_VIRTUAL_ID) ? 'col-highlight' : '',
+                      ].filter(Boolean).join(' ') || undefined}
+                      onClick={(e) => selectKey(ADD_COL_HEADER_KEY, e.metaKey || e.ctrlKey, e.shiftKey)}
                     >
                       <button
                         type="button"
                         className="add-col-button"
                         title="Add column"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           const lastCol = allLeafColumns[allLeafColumns.length - 1];
                           setAddColAfter(lastCol?.id ?? '');
                           setOpenMenuColumn(null);
@@ -1399,7 +1406,17 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                         </td>
                       );
                     })}
-                    <td key="__add-col__" className="add-col-td" />
+                    <td
+                      key="__add-col__"
+                      data-key={`cell:${rowIndex}:${ADD_COL_VIRTUAL_ID}`}
+                      className={[
+                        'add-col-td',
+                        selectedSet.has(`cell:${rowIndex}:${ADD_COL_VIRTUAL_ID}`)
+                          ? 'cell-selected'
+                          : selectedCols.has(ADD_COL_VIRTUAL_ID) ? 'col-highlight' : '',
+                      ].filter(Boolean).join(' ') || undefined}
+                      onClick={(e) => selectKey(`cell:${rowIndex}:${ADD_COL_VIRTUAL_ID}`, e.metaKey || e.ctrlKey, e.shiftKey)}
+                    />
                   </tr>
                 );
               })}
@@ -1425,7 +1442,15 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                     </td>
                   );
                 })}
-                <td className="add-row-td add-col-td" />
+                <td
+                  data-key={`add-row:${ADD_COL_VIRTUAL_ID}`}
+                  className={[
+                    'add-row-td',
+                    'add-col-td',
+                    selectedSet.has(`add-row:${ADD_COL_VIRTUAL_ID}`) ? 'add-row-td--focused' : '',
+                  ].filter(Boolean).join(' ')}
+                  onClick={(e) => selectKey(`add-row:${ADD_COL_VIRTUAL_ID}`, e.metaKey || e.ctrlKey)}
+                />
               </tr>
             </tbody>
           </table>
