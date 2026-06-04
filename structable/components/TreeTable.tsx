@@ -380,6 +380,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const [addColFocused, setAddColFocused] = useState(false);
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
+  const pendingFocusColRef = useRef<string | null>(null);
   const perPage = 50;
 
   // ── Bootstrap: load flags, hidden columns, hidden rows, remarks ───────────
@@ -554,6 +555,20 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     () => allLeafColumns.filter((c) => !hiddenSet.has(c.id)),
     [allLeafColumns, hiddenSet],
   );
+  // After a new column is added, move selection to it on the current row.
+  useEffect(() => {
+    const colId = pendingFocusColRef.current;
+    if (!colId) return;
+    const colIdx = visibleLeafColumns.findIndex((c) => c.id === colId);
+    if (colIdx < 0) return;
+    pendingFocusColRef.current = null;
+    const rowIndex = cursorPos && cursorPos.row >= 0 ? cursorPos.row : 0;
+    if (rows.length === 0) return;
+    const key = `cell:${rowIndex}:${colId}`;
+    setSelectedKeys([key]);
+    setCursorPos({ row: rowIndex, col: colIdx });
+  }, [visibleLeafColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const frozenLeftByColumn = useMemo(() => {
     let left = 0;
     const map = new Map<string, number>();
@@ -906,6 +921,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       types: ['text'],
     };
     setCustomColumns((prev) => [...prev, col]);
+    pendingFocusColRef.current = id;
     recordChange(`Create column "${col.title ?? col.id}"`);
     api.createCustomColumn(tableId, {
       title: col.title,
