@@ -591,8 +591,8 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   }, [headerRows]);
 
   const {
-    selectedKeys,
-    cursorPos,
+    selectedKeys, setSelectedKeys,
+    cursorPos, setCursorPos,
     selectedSet, selectedRows, selectedCols,
     selectKey: selectKeyHook, moveCursor,
     cursorToKey: cursorToKeyFn,
@@ -684,17 +684,41 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
   };
 
+  const restoreEditCursor = useCallback((rowIndex: number, colId: string) => {
+    const key = `cell:${rowIndex}:${colId}`;
+    setSelectedKeys([key]);
+    const colIdx = visibleLeafColumns.findIndex((c) => c.id === colId);
+    if (colIdx >= 0) setCursorPos({ row: rowIndex, col: colIdx });
+  }, [setSelectedKeys, setCursorPos, visibleLeafColumns]);
+
   const commitEdit = useCallback(() => {
     if (!editingCell || !api) return;
     const { rowIndex, rowId, colId, value } = editingCell;
     setEditingCell(null);
+    restoreEditCursor(rowIndex, colId);
     // Optimistic local update
     setRows((prev) => prev.map((r, i) => i === rowIndex ? { ...r, [colId]: value } : r));
     recordChange(`Edit cell [${colId}]`);
     api.upsertCellValue(rowId, colId, value, tableId);
-  }, [editingCell, recordChange, api, tableId]);
+  }, [editingCell, recordChange, api, tableId, restoreEditCursor]);
 
-  const cancelEdit = useCallback(() => setEditingCell(null), []);
+  const cancelEdit = useCallback(() => {
+    if (!editingCell) return;
+    const { rowIndex, colId } = editingCell;
+    setEditingCell(null);
+    restoreEditCursor(rowIndex, colId);
+  }, [editingCell, restoreEditCursor]);
+
+  // Belt-and-suspenders: if selectedKeys was cleared in the same batch as setEditingCell(null)
+  // (e.g. by the onClick→dblclick toggle race), restore it in a separate effect batch.
+  const prevEditingCellRef = useRef(editingCell);
+  useEffect(() => {
+    const prev = prevEditingCellRef.current;
+    prevEditingCellRef.current = editingCell;
+    if (prev && !editingCell) {
+      restoreEditCursor(prev.rowIndex, prev.colId);
+    }
+  }, [editingCell, restoreEditCursor]);
 
   useEffect(() => {
     if (!cursorPos) return;

@@ -56,7 +56,7 @@ export function useTableSelection(
       setSelectedKeys((prev) => {
         const has = prev.includes(key);
         if (multi) return has ? prev.filter((k) => k !== key) : [...prev, key];
-        return has ? [] : [key];
+        return [key]; // single-click always selects; deselecting by re-clicking is non-standard in spreadsheets
       });
       if (!multi) anchorPosRef.current = pos;
       setCursorPos(pos);
