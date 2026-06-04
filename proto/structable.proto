@@ -54,6 +54,9 @@ message ClientOp {
     RemoveHiddenColumnOp remove_hidden_col   = 41;
     CreateCustomColOp    create_custom_col   = 50;
     DeleteCustomColOp    delete_custom_col   = 51;
+    CreateRowClassOp     create_row_class    = 60;
+    DeleteRowClassOp     delete_row_class    = 61;
+    SetManyToManyOp      set_many_to_many    = 62;
   }
 }
 
@@ -67,6 +70,9 @@ message AddHiddenColumnOp    { string id = 1; string column_id = 2; }
 message RemoveHiddenColumnOp { string column_id = 1; }
 message CreateCustomColOp    { string id = 1; string title = 2; reserved 3; string expression = 4; string position_after = 5; string description = 6; string table_id = 7; string position_before = 8; }
 message DeleteCustomColOp    { string id = 1; }
+message CreateRowClassOp     { string id = 1; string table_id = 2; string name = 3; string color = 4; }
+message DeleteRowClassOp     { string id = 1; string table_id = 2; }
+message SetManyToManyOp      { string table_id = 1; string row_id = 2; string field_id = 3; repeated string item_ids = 4; }
 
 // ── Server events (push) ───────────────────────────────────────────────────────
 
@@ -79,6 +85,8 @@ message ServerEvent {
     HiddenRowEvent   hidden_row  = 12;
     HiddenColEvent   hidden_col  = 13;
     CustomColEvent   custom_col  = 14;
+    RowClassEvent    row_class   = 15;
+    ManyToManyEvent  many_to_many = 16;
     StoreErrorEvent  store_error = 20;
   }
 }
@@ -99,6 +107,8 @@ message RemarkEvent    { EventKind kind = 1; Remark    data = 2; }
 message HiddenRowEvent { EventKind kind = 1; HiddenRow data = 2; }
 message HiddenColEvent { EventKind kind = 1; HiddenCol data = 3; }
 message CustomColEvent { EventKind kind = 1; CustomCol data = 4; }
+message RowClassEvent  { EventKind kind = 1; RowClass data = 2; }
+message ManyToManyEvent { EventKind kind = 1; ManyToManyValue data = 2; }
 
 // ── Entity types ───────────────────────────────────────────────────────────────
 
@@ -121,6 +131,8 @@ message Remark {
 
 message HiddenRow { string id = 1; int64  repo_id   = 2; }
 message HiddenCol { string id = 1; string column_id = 2; }
+message RowClass { string id = 1; string table_id = 2; string name = 3; string color = 4; }
+message ManyToManyValue { string table_id = 1; string row_id = 2; string field_id = 3; repeated string item_ids = 4; }
 message CustomCol {
   string id             = 1;
   optional string title = 2;

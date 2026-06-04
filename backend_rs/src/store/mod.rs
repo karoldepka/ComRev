@@ -110,6 +110,53 @@ pub trait DataStore: Send + Sync {
     ) -> Result<crate::remark::Remark>;
     async fn delete_remark(&self, id: &str) -> Result<()>;
 
+    // ── Row classes ───────────────────────────────────────────────────────────
+
+    async fn list_row_classes(&self, table_id: &str) -> Result<Vec<crate::row_class::RowClass>>;
+    async fn create_row_class(
+        &self,
+        table_id: &str,
+        id: &str,
+        name: &str,
+        color: Option<&str>,
+    ) -> Result<crate::row_class::RowClass>;
+    async fn delete_row_class(&self, table_id: &str, id: &str) -> Result<()>;
+    /// Return the full RowClass objects assigned to a row for field_id="classes".
+    async fn get_row_class_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>>;
+
+    /// Add items to a many-to-many field and sync the denormalized JSONB column.
+    /// `field_id` must be a valid identifier (e.g. "classes").
+    async fn add_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()>;
+
+    /// Remove items from a many-to-many field and sync the denormalized JSONB column.
+    async fn remove_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()>;
+
+    /// Atomically replace all items assigned to a many-to-many field and sync
+    /// the denormalized JSONB column on the row.
+    async fn set_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()>;
+
     // ── Hidden rows ───────────────────────────────────────────────────────────
     async fn list_hidden_rows(&self) -> Result<Vec<crate::hidden_row::HiddenRow>>;
     async fn add_hidden_row(&self, id: &str, row_id: &str) -> Result<crate::hidden_row::HiddenRow>;

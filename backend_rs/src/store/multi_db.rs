@@ -95,6 +95,11 @@ impl MergeKey for crate::table::Table {
         self.id.clone()
     }
 }
+impl MergeKey for crate::row_class::RowClass {
+    fn merge_key(&self) -> String {
+        self.id.clone()
+    }
+}
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
@@ -488,6 +493,120 @@ impl DataStore for MultiStore {
             "remark.delete",
             serde_json::json!({"id": id}),
             delete_remark(id)
+        )
+    }
+
+    // ── Row classes ────────────────────────────────────────────────────────────
+
+    async fn list_row_classes(
+        &self,
+        table_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>> {
+        let table_id = table_id.to_owned();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let table_id = table_id.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::row_class::RowClass>>> =
+                    Box::pin(async move { s.list_row_classes(&table_id).await });
+                (i, fut)
+            })
+            .collect();
+        self.fan_first_list("list_row_classes", futs).await
+    }
+
+    async fn create_row_class(
+        &self,
+        table_id: &str,
+        id: &str,
+        name: &str,
+        color: Option<&str>,
+    ) -> Result<crate::row_class::RowClass> {
+        fan_out!(
+            self,
+            "row_class.create",
+            serde_json::json!({"id": id, "table_id": table_id, "name": name, "color": color}),
+            create_row_class(table_id, id, name, color)
+        )
+    }
+
+    async fn delete_row_class(&self, table_id: &str, id: &str) -> Result<()> {
+        fan_out!(
+            self,
+            "row_class.delete",
+            serde_json::json!({"table_id": table_id, "id": id}),
+            delete_row_class(table_id, id)
+        )
+    }
+
+    async fn get_row_class_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>> {
+        let table_id = table_id.to_owned();
+        let row_id = row_id.to_owned();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let table_id = table_id.clone();
+                let row_id = row_id.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::row_class::RowClass>>> =
+                    Box::pin(async move { s.get_row_class_assignments(&table_id, &row_id).await });
+                (i, fut)
+            })
+            .collect();
+        self.fan_first_list("get_row_class_assignments", futs).await
+    }
+
+    async fn add_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()> {
+        fan_out!(
+            self,
+            "many_to_many.add",
+            serde_json::json!({"table_id": table_id, "row_id": row_id, "field_id": field_id, "item_ids": item_ids}),
+            add_many_to_many_assignments(table_id, row_id, field_id, item_ids)
+        )
+    }
+
+    async fn remove_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()> {
+        fan_out!(
+            self,
+            "many_to_many.remove",
+            serde_json::json!({"table_id": table_id, "row_id": row_id, "field_id": field_id, "item_ids": item_ids}),
+            remove_many_to_many_assignments(table_id, row_id, field_id, item_ids)
+        )
+    }
+
+    async fn set_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()> {
+        fan_out!(
+            self,
+            "many_to_many.set",
+            serde_json::json!({"table_id": table_id, "row_id": row_id, "field_id": field_id, "item_ids": item_ids}),
+            set_many_to_many_assignments(table_id, row_id, field_id, item_ids)
         )
     }
 
@@ -1005,6 +1124,74 @@ mod tests {
         }
         async fn remove_hidden_column(&self, _column_id: &str) -> Result<()> {
             self.record("remove_hidden_column");
+            self.fail()
+        }
+
+        async fn list_row_classes(
+            &self,
+            _table_id: &str,
+        ) -> Result<Vec<crate::row_class::RowClass>> {
+            self.record("list_row_classes");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn create_row_class(
+            &self,
+            table_id: &str,
+            id: &str,
+            name: &str,
+            color: Option<&str>,
+        ) -> Result<crate::row_class::RowClass> {
+            self.record("create_row_class");
+            self.fail()?;
+            Ok(crate::row_class::RowClass {
+                id: id.into(),
+                table_id: table_id.into(),
+                name: name.into(),
+                color: color.map(str::to_owned),
+            })
+        }
+        async fn delete_row_class(&self, _table_id: &str, _id: &str) -> Result<()> {
+            self.record("delete_row_class");
+            self.fail()
+        }
+        async fn get_row_class_assignments(
+            &self,
+            _table_id: &str,
+            _row_id: &str,
+        ) -> Result<Vec<crate::row_class::RowClass>> {
+            self.record("get_row_class_assignments");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn add_many_to_many_assignments(
+            &self,
+            _table_id: &str,
+            _row_id: &str,
+            _field_id: &str,
+            _item_ids: &[String],
+        ) -> Result<()> {
+            self.record("add_many_to_many_assignments");
+            self.fail()
+        }
+        async fn remove_many_to_many_assignments(
+            &self,
+            _table_id: &str,
+            _row_id: &str,
+            _field_id: &str,
+            _item_ids: &[String],
+        ) -> Result<()> {
+            self.record("remove_many_to_many_assignments");
+            self.fail()
+        }
+        async fn set_many_to_many_assignments(
+            &self,
+            _table_id: &str,
+            _row_id: &str,
+            _field_id: &str,
+            _item_ids: &[String],
+        ) -> Result<()> {
+            self.record("set_many_to_many_assignments");
             self.fail()
         }
 

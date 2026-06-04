@@ -96,6 +96,13 @@ fn describe_op(kind: &str, data: &serde_json::Value) -> String {
             }
         }
         "delete_custom_col" => "Delete column".to_string(),
+        "create_row_class" => format!("Create row class \"{}\"", s("name")),
+        "delete_row_class" => "Delete row class".to_string(),
+        "set_many_to_many" => {
+            let field = s("field_id");
+            let row = s("row_id");
+            format!("Update [{field}] for row {row}")
+        }
         _ => kind.to_string(),
     }
 }
@@ -186,6 +193,30 @@ impl QueuedOp {
             })),
             "delete_custom_col" => Some(OpPayload::DeleteCustomCol(DeleteCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
+            })),
+            "create_row_class" => Some(OpPayload::CreateRowClass(CreateRowClassOp {
+                id: self.data["id"].as_str().unwrap_or("").to_string(),
+                table_id: self.data["table_id"].as_str().unwrap_or("").to_string(),
+                name: self.data["name"].as_str().unwrap_or("").to_string(),
+                color: self.data["color"].as_str().unwrap_or("").to_string(),
+            })),
+            "delete_row_class" => Some(OpPayload::DeleteRowClass(DeleteRowClassOp {
+                id: self.data["id"].as_str().unwrap_or("").to_string(),
+                table_id: self.data["table_id"].as_str().unwrap_or("").to_string(),
+            })),
+            "set_many_to_many" => Some(OpPayload::SetManyToMany(SetManyToManyOp {
+                table_id: self.data["table_id"].as_str().unwrap_or("").to_string(),
+                row_id: self.data["row_id"].as_str().unwrap_or("").to_string(),
+                field_id: self.data["field_id"].as_str().unwrap_or("").to_string(),
+                item_ids: self.data["item_ids"]
+                    .as_array()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             })),
             _ => None,
         }?;
@@ -533,6 +564,13 @@ fn dedup_val(data: &serde_json::Value, fallback: &str) -> String {
     }
     if let Some(n) = data.get("repo_id").and_then(|v| v.as_i64()) {
         return n.to_string();
+    }
+    if let (Some(table_id), Some(row_id), Some(field_id)) = (
+        data.get("table_id").and_then(|v| v.as_str()),
+        data.get("row_id").and_then(|v| v.as_str()),
+        data.get("field_id").and_then(|v| v.as_str()),
+    ) {
+        return format!("{table_id}:{row_id}:{field_id}");
     }
     fallback.to_string()
 }
@@ -948,6 +986,69 @@ impl SyncClient {
         })
     }
 
+    pub fn create_row_class(
+        &self,
+        table_id: String,
+        id: String,
+        name: String,
+        color: String,
+    ) -> js_sys::Promise {
+        let inner = Rc::clone(&self.inner);
+        future_to_promise(async move {
+            enqueue(
+                inner,
+                "create_row_class",
+                serde_json::json!({
+                    "table_id": table_id,
+                    "id": id,
+                    "name": name,
+                    "color": color,
+                }),
+            )
+            .await;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    pub fn delete_row_class(&self, table_id: String, id: String) -> js_sys::Promise {
+        let inner = Rc::clone(&self.inner);
+        future_to_promise(async move {
+            enqueue(
+                inner,
+                "delete_row_class",
+                serde_json::json!({ "table_id": table_id, "id": id }),
+            )
+            .await;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    pub fn set_many_to_many(
+        &self,
+        table_id: String,
+        row_id: String,
+        field_id: String,
+        item_ids_json: String,
+    ) -> js_sys::Promise {
+        let inner = Rc::clone(&self.inner);
+        future_to_promise(async move {
+            let item_ids: serde_json::Value = serde_json::from_str(&item_ids_json)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            enqueue(
+                inner,
+                "set_many_to_many",
+                serde_json::json!({
+                    "table_id": table_id,
+                    "row_id": row_id,
+                    "field_id": field_id,
+                    "item_ids": item_ids,
+                }),
+            )
+            .await;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
     // ── Read methods (returns Promise<string> — JSON) ─────────────────────────
 
     pub fn fetch_flags(&self) -> js_sys::Promise {
@@ -1338,6 +1439,34 @@ impl serde::Serialize for ServerEvent {
                     }),
                 )?;
             }
+            Some(server_event::Payload::RowClass(v)) => {
+                map.serialize_entry(
+                    "row_class",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "id": d.id,
+                            "table_id": d.table_id,
+                            "name": d.name,
+                            "color": d.color,
+                        })),
+                    }),
+                )?;
+            }
+            Some(server_event::Payload::ManyToMany(v)) => {
+                map.serialize_entry(
+                    "many_to_many",
+                    &serde_json::json!({
+                        "kind": v.kind,
+                        "data": v.data.as_ref().map(|d| serde_json::json!({
+                            "table_id": d.table_id,
+                            "row_id": d.row_id,
+                            "field_id": d.field_id,
+                            "item_ids": d.item_ids,
+                        })),
+                    }),
+                )?;
+            }
             Some(server_event::Payload::StoreError(e)) => {
                 map.serialize_entry(
                     "store_error",
@@ -1378,7 +1507,7 @@ impl serde::Serialize for PagedRepos {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proto::{client_op::Payload as OpPayload, *};
+    use proto::client_op::Payload as OpPayload;
 
     fn op(kind: &str, data: serde_json::Value) -> QueuedOp {
         QueuedOp {
@@ -1508,6 +1637,42 @@ mod tests {
         );
         let cop = q.into_client_op().unwrap();
         assert!(matches!(cop.payload, Some(OpPayload::CreateCustomCol(_))));
+    }
+
+    #[test]
+    fn into_client_op_set_many_to_many_preserves_generic_relationship() {
+        let q = op(
+            "set_many_to_many",
+            serde_json::json!({
+                "table_id": "table-a",
+                "row_id": "row-1",
+                "field_id": "classes",
+                "item_ids": ["class-a", "class-b"]
+            }),
+        );
+        let cop = q.into_client_op().unwrap();
+        let Some(OpPayload::SetManyToMany(value)) = cop.payload else {
+            panic!("expected SetManyToMany payload");
+        };
+        assert_eq!(value.table_id, "table-a");
+        assert_eq!(value.row_id, "row-1");
+        assert_eq!(value.field_id, "classes");
+        assert_eq!(value.item_ids, vec!["class-a", "class-b"]);
+    }
+
+    #[test]
+    fn many_to_many_dedup_key_is_table_scoped() {
+        let row_a = serde_json::json!({
+            "table_id": "table-a", "row_id": "same-row", "field_id": "classes"
+        });
+        let row_b = serde_json::json!({
+            "table_id": "table-b", "row_id": "same-row", "field_id": "classes"
+        });
+        assert_eq!(dedup_val(&row_a, "fallback"), "table-a:same-row:classes");
+        assert_ne!(
+            dedup_val(&row_a, "fallback"),
+            dedup_val(&row_b, "fallback")
+        );
     }
 
     #[test]

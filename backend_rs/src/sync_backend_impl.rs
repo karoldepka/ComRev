@@ -172,6 +172,35 @@ impl SyncBackend for AppState {
         Ok(self.store.delete_custom_column(id).await?)
     }
 
+    async fn create_row_class(&self, op: CreateRowClassOp) -> anyhow::Result<RowClass> {
+        let row_class = self
+            .store
+            .create_row_class(
+                &op.table_id,
+                &op.id,
+                &op.name,
+                (!op.color.is_empty()).then_some(op.color.as_str()),
+            )
+            .await?;
+        Ok(row_class_to_proto(&row_class))
+    }
+
+    async fn delete_row_class(&self, table_id: &str, id: &str) -> anyhow::Result<()> {
+        Ok(self.store.delete_row_class(table_id, id).await?)
+    }
+
+    async fn set_many_to_many(&self, op: SetManyToManyOp) -> anyhow::Result<ManyToManyValue> {
+        self.store
+            .set_many_to_many_assignments(&op.table_id, &op.row_id, &op.field_id, &op.item_ids)
+            .await?;
+        Ok(ManyToManyValue {
+            table_id: op.table_id,
+            row_id: op.row_id,
+            field_id: op.field_id,
+            item_ids: op.item_ids,
+        })
+    }
+
     fn event_tx(&self) -> &EventTx {
         &self.event_tx
     }
@@ -216,5 +245,14 @@ fn custom_col_to_proto(c: &crate::custom_column::CustomColumn) -> CustomCol {
         data_types: c.data_types.clone(),
         parent_ids: c.parent_ids.clone(),
         is_group: c.is_group,
+    }
+}
+
+fn row_class_to_proto(row_class: &crate::row_class::RowClass) -> RowClass {
+    RowClass {
+        id: row_class.id.clone(),
+        table_id: row_class.table_id.clone(),
+        name: row_class.name.clone(),
+        color: row_class.color.clone().unwrap_or_default(),
     }
 }

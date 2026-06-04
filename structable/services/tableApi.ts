@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb';
 import { nanoid } from 'nanoid';
 import type {
   ApiCustomColumn, ApiFlag, ApiHiddenColumn,
-  ApiHiddenRow, ApiRemark, ApiTable, PagedResponse, RemarkTarget,
+  ApiHiddenRow, ApiRemark, ApiTable, PagedResponse, RemarkTarget, RowClass,
 } from '../types/table';
 import logger from '../utils/logger';
 
@@ -235,6 +235,10 @@ export class TableApi {
     return this.get<ApiHiddenColumn[]>('/hidden-columns');
   }
 
+  async fetchRowClasses(tableId: string): Promise<RowClass[]> {
+    return this.get<RowClass[]>(`/tables/${encodeURIComponent(tableId)}/row-classes`);
+  }
+
   // ── Write operations ───────────────────────────────────────────────────────
 
   async fetchTables(): Promise<ApiTable[]> {
@@ -375,6 +379,36 @@ export class TableApi {
       method: 'POST',
       path: `/tables/${encodeURIComponent(tableId)}/rows`,
       body: { id: rowId, ...values },
+      retries: 0,
+    });
+  }
+
+  createRowClass(tableId: string, id: string, name: string, color?: string | null): void {
+    this.enqueue({
+      id: `row-class:create:${id}`,
+      method: 'POST',
+      path: `/tables/${encodeURIComponent(tableId)}/row-classes`,
+      body: { id, name, color: color ?? null },
+      retries: 0,
+    });
+  }
+
+  deleteRowClass(tableId: string, classId: string): void {
+    this.cancelOp(`row-class:create:${classId}`);
+    this.enqueue({
+      id: `row-class:delete:${classId}`,
+      method: 'DELETE',
+      path: `/tables/${encodeURIComponent(tableId)}/row-classes/${encodeURIComponent(classId)}`,
+      retries: 0,
+    });
+  }
+
+  setRowClasses(tableId: string, rowId: string, classIds: string[]): void {
+    this.enqueue({
+      id: `row-class:set:${rowId}`,
+      method: 'PUT',
+      path: `/tables/${encodeURIComponent(tableId)}/rows/${encodeURIComponent(rowId)}/classes`,
+      body: { class_ids: classIds },
       retries: 0,
     });
   }

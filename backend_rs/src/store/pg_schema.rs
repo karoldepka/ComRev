@@ -323,5 +323,146 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
     "ALTER TABLE table_custom_columns ADD COLUMN IF NOT EXISTS position_before TEXT;",
     "UPDATE custom_columns SET title = NULL WHERE BTRIM(title) = '';",
+    // ── Row classes ────────────────────────────────────────────────────────────
+    r#"
+    CREATE TABLE IF NOT EXISTS row_classes (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT,
+      when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      who_created TEXT,
+      who_last_modified TEXT,
+      when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      modify_count INTEGER NOT NULL DEFAULT 0
+    );
+    "#,
+    "ALTER TABLE row_classes ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;",
+    "DROP TRIGGER IF EXISTS trg_row_classes_when_last_modified ON row_classes;",
+    "CREATE TRIGGER trg_row_classes_when_last_modified BEFORE UPDATE ON row_classes FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
+    "CREATE INDEX IF NOT EXISTS idx_row_classes_table_id ON row_classes (table_id);",
+    // Generic many-to-many junction table. field_id names the relationship
+    // (e.g. 'classes'). item_id is the referenced object id. No FK so it
+    // works across multiple entity tables.
+    r#"
+    CREATE TABLE IF NOT EXISTS many_to_many_assignments (
+      row_id   TEXT NOT NULL,
+      item_id  TEXT NOT NULL,
+      field_id TEXT NOT NULL,
+      table_id TEXT NOT NULL,
+      when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (table_id, row_id, field_id, item_id)
+    );
+    "#,
+    "ALTER TABLE many_to_many_assignments ADD COLUMN IF NOT EXISTS table_id TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW();",
+    r#"
+    UPDATE many_to_many_assignments mma
+    SET table_id = rc.table_id
+    FROM row_classes rc
+    WHERE mma.table_id IS NULL
+      AND mma.field_id = 'classes'
+      AND mma.item_id = rc.id;
+    "#,
+    "UPDATE many_to_many_assignments SET table_id = '' WHERE table_id IS NULL;",
+    "ALTER TABLE many_to_many_assignments ALTER COLUMN table_id SET NOT NULL;",
+    // Ensure older copies of the generic junction table include table_id in the
+    // primary key, because row IDs only need to be unique within a table.
+    r#"
+    DO $$
+    DECLARE
+      pkey_name TEXT;
+    BEGIN
+      SELECT conname
+      INTO pkey_name
+      FROM pg_constraint
+        WHERE conrelid = 'many_to_many_assignments'::regclass
+          AND contype = 'p'
+          AND pg_get_constraintdef(oid) <> 'PRIMARY KEY (table_id, row_id, field_id, item_id)';
+      IF pkey_name IS NOT NULL THEN
+        EXECUTE format(
+          'ALTER TABLE many_to_many_assignments DROP CONSTRAINT %I',
+          pkey_name
+        );
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'many_to_many_assignments'::regclass
+          AND contype = 'p'
+      ) THEN
+        ALTER TABLE many_to_many_assignments
+          ADD CONSTRAINT many_to_many_assignments_pkey
+          PRIMARY KEY (table_id, row_id, field_id, item_id);
+      END IF;
+    END $$;
+    "#,
+    // Preserve assignments created by the earlier row-class-specific junction
+    // table before removing it.
+    r#"
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'row_class_assignments') THEN
+        INSERT INTO many_to_many_assignments (table_id, row_id, field_id, item_id)
+        SELECT table_id, row_id, 'classes', class_id
+        FROM row_class_assignments
+        ON CONFLICT DO NOTHING;
+        DROP TABLE row_class_assignments CASCADE;
+      END IF;
+    END $$;
+    "#,
+    "CREATE INDEX IF NOT EXISTS idx_mma_row_field ON many_to_many_assignments (table_id, row_id, field_id);",
+    "CREATE INDEX IF NOT EXISTS idx_mma_item ON many_to_many_assignments (table_id, item_id);",
+    r#"
+    DO $$
+    BEGIN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', 'row_classes');
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', 'many_to_many_assignments');
+    END $$;
+    "#,
+    "DROP POLICY IF EXISTS row_classes_public_read ON row_classes;",
+    "DROP POLICY IF EXISTS row_classes_auth_write ON row_classes;",
+    "DROP POLICY IF EXISTS many_to_many_assignments_public_read ON many_to_many_assignments;",
+    "DROP POLICY IF EXISTS many_to_many_assignments_auth_write ON many_to_many_assignments;",
+    "CREATE POLICY row_classes_public_read ON row_classes FOR SELECT USING (true);",
+    "CREATE POLICY row_classes_auth_write ON row_classes FOR ALL TO authenticated USING (true) WITH CHECK (true);",
+    "CREATE POLICY many_to_many_assignments_public_read ON many_to_many_assignments FOR SELECT USING (true);",
+    "CREATE POLICY many_to_many_assignments_auth_write ON many_to_many_assignments FOR ALL TO authenticated USING (true) WITH CHECK (true);",
+    // Add `classes` JSONB column to all existing per-table physical tables.
+    r#"
+    DO $$
+    DECLARE
+      t RECORD;
+      tbl TEXT;
+    BEGIN
+      FOR t IN SELECT id FROM tables LOOP
+        tbl := 't_' || t.id;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = tbl
+        ) THEN
+          EXECUTE format(
+            'ALTER TABLE %I ADD COLUMN IF NOT EXISTS classes JSONB NOT NULL DEFAULT ''[]''::jsonb',
+            tbl
+          );
+          EXECUTE format(
+            'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (classes)',
+            'idx_' || t.id || '_classes', tbl
+          );
+          EXECUTE format(
+            'UPDATE %I SET custom_vals = custom_vals - ''classes'' WHERE custom_vals ? ''classes''',
+            tbl
+          );
+          EXECUTE format(
+            'UPDATE %I r
+             SET classes = COALESCE((
+               SELECT jsonb_agg(m.item_id ORDER BY m.when_created, m.item_id)
+               FROM many_to_many_assignments m
+               WHERE m.table_id = %L AND m.row_id = r.id AND m.field_id = ''classes''
+             ), ''[]''::jsonb)',
+            tbl, t.id
+          );
+        END IF;
+      END LOOP;
+    END $$;
+    "#,
 ];
 // Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore trait.

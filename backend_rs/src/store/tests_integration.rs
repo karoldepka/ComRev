@@ -1316,6 +1316,106 @@ async fn integration_table_create_idempotent() {
     assert_eq!(count, 1, "idempotent create produced duplicates");
 }
 
+// ── Row class tests ───────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn integration_row_classes_are_table_scoped_and_sync_jsonb() {
+    let store = setup!();
+    let (table_a, table_b, row_id) = ("classes_a", "classes_b", "shared_row");
+
+    for (id, title) in [(table_a, "Classes A"), (table_b, "Classes B")] {
+        store.create_table(id, title, None, None).await.unwrap();
+        store.create_row(id, row_id, None, None).await.unwrap();
+    }
+
+    store
+        .create_row_class(table_a, "class_a", "A", Some("#f97316"))
+        .await
+        .unwrap();
+    store
+        .create_row_class(table_b, "class_b", "B", Some("#2563eb"))
+        .await
+        .unwrap();
+
+    store
+        .set_many_to_many_assignments(
+            table_a,
+            row_id,
+            "classes",
+            &["class_a".to_owned(), "class_a".to_owned()],
+        )
+        .await
+        .unwrap();
+    store
+        .set_many_to_many_assignments(table_b, row_id, "classes", &["class_b".to_owned()])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        fetch_row(store.as_ref(), table_a, row_id).await.unwrap()["classes"],
+        serde_json::json!(["class_a"])
+    );
+    assert_eq!(
+        fetch_row(store.as_ref(), table_b, row_id).await.unwrap()["classes"],
+        serde_json::json!(["class_b"])
+    );
+    assert_eq!(
+        store
+            .get_row_class_assignments(table_a, row_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|class| class.id)
+            .collect::<Vec<_>>(),
+        vec!["class_a"]
+    );
+
+    let invalid = store
+        .set_many_to_many_assignments(table_a, row_id, "classes", &["class_b".to_owned()])
+        .await;
+    assert!(
+        invalid.is_err(),
+        "a class from another table must not be assignable"
+    );
+    assert_eq!(
+        fetch_row(store.as_ref(), table_a, row_id).await.unwrap()["classes"],
+        serde_json::json!(["class_a"]),
+        "failed replacement must preserve existing assignments"
+    );
+
+    store
+        .set_many_to_many_assignments(table_a, row_id, "classes", &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch_row(store.as_ref(), table_a, row_id).await.unwrap()["classes"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        fetch_row(store.as_ref(), table_b, row_id).await.unwrap()["classes"],
+        serde_json::json!(["class_b"])
+    );
+
+    store
+        .set_many_to_many_assignments(table_a, row_id, "classes", &["class_a".to_owned()])
+        .await
+        .unwrap();
+    store.delete_row_class(table_a, "class_a").await.unwrap();
+
+    assert_eq!(
+        fetch_row(store.as_ref(), table_a, row_id).await.unwrap()["classes"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        fetch_row(store.as_ref(), table_b, row_id).await.unwrap()["classes"],
+        serde_json::json!(["class_b"])
+    );
+    assert!(
+        store.list_row_classes(table_a).await.unwrap().is_empty(),
+        "deleted class remains in its table catalog"
+    );
+}
+
 // ── Custom column tests ───────────────────────────────────────────────────────
 
 #[tokio::test]

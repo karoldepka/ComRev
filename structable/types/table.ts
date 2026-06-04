@@ -70,6 +70,13 @@ export type ApiHiddenRow = {
   row_id: string;
 };
 
+export type RowClass = {
+  id: string;
+  table_id: string;
+  name: string;
+  color: string | null;
+};
+
 export type ApiHiddenColumn = {
   id: string;
   column_id: string;

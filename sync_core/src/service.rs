@@ -58,6 +58,9 @@ pub trait SyncBackend: Send + std::marker::Sync + 'static {
         op: CreateCustomColOp,
     ) -> anyhow::Result<CustomCol>;
     async fn delete_custom_col(&self, id: &str) -> anyhow::Result<()>;
+    async fn create_row_class(&self, op: CreateRowClassOp) -> anyhow::Result<RowClass>;
+    async fn delete_row_class(&self, table_id: &str, id: &str) -> anyhow::Result<()>;
+    async fn set_many_to_many(&self, op: SetManyToManyOp) -> anyhow::Result<ManyToManyValue>;
 
     fn event_tx(&self) -> &EventTx;
 }
@@ -250,6 +253,36 @@ impl<B: SyncBackend> SyncServiceImpl<B> {
                 self.backend.delete_custom_col(&p.id).await?;
                 Ok((custom_col_event(EventKind::Delete, CustomCol { id: p.id, ..Default::default() }), vec![]))
             }
+            OpPayload::CreateRowClass(p) => {
+                require_table_id(p.table_id.clone(), "CreateRowClass")
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let row_class = self.backend.create_row_class(p).await?;
+                let resp = serde_json::to_vec(&serde_json::json!({
+                    "id": row_class.id,
+                    "table_id": row_class.table_id,
+                    "name": row_class.name,
+                    "color": row_class.color,
+                }))?;
+                Ok((row_class_event(EventKind::Upsert, row_class), resp))
+            }
+            OpPayload::DeleteRowClass(p) => {
+                let table_id = require_table_id(p.table_id, "DeleteRowClass")
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                self.backend.delete_row_class(&table_id, &p.id).await?;
+                Ok((row_class_event(EventKind::Delete, RowClass { id: p.id, table_id, ..Default::default() }), vec![]))
+            }
+            OpPayload::SetManyToMany(p) => {
+                require_table_id(p.table_id.clone(), "SetManyToMany")
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let value = self.backend.set_many_to_many(p).await?;
+                let resp = serde_json::to_vec(&serde_json::json!({
+                    "table_id": value.table_id,
+                    "row_id": value.row_id,
+                    "field_id": value.field_id,
+                    "item_ids": value.item_ids,
+                }))?;
+                Ok((many_to_many_event(EventKind::Upsert, value), resp))
+            }
         }
     }
 }
@@ -270,6 +303,12 @@ pub fn hidden_col_event(kind: EventKind, data: HiddenCol) -> ServerEvent {
 }
 pub fn custom_col_event(kind: EventKind, data: CustomCol) -> ServerEvent {
     ServerEvent { payload: Some(server_event::Payload::CustomCol(CustomColEvent { kind: kind.into(), data: Some(data) })) }
+}
+pub fn row_class_event(kind: EventKind, data: RowClass) -> ServerEvent {
+    ServerEvent { payload: Some(server_event::Payload::RowClass(RowClassEvent { kind: kind.into(), data: Some(data) })) }
+}
+pub fn many_to_many_event(kind: EventKind, data: ManyToManyValue) -> ServerEvent {
+    ServerEvent { payload: Some(server_event::Payload::ManyToMany(ManyToManyEvent { kind: kind.into(), data: Some(data) })) }
 }
 pub fn store_error_event(method: impl Into<String>, message: impl Into<String>) -> ServerEvent {
     ServerEvent { payload: Some(server_event::Payload::StoreError(StoreErrorEvent { method: method.into(), message: message.into() })) }
@@ -315,6 +354,18 @@ mod tests {
             Ok(CustomCol { id: id.into(), ..Default::default() })
         }
         async fn delete_custom_col(&self, _: &str) -> anyhow::Result<()> { Ok(()) }
+        async fn create_row_class(&self, op: CreateRowClassOp) -> anyhow::Result<RowClass> {
+            Ok(RowClass { id: op.id, table_id: op.table_id, name: op.name, color: op.color })
+        }
+        async fn delete_row_class(&self, _: &str, _: &str) -> anyhow::Result<()> { Ok(()) }
+        async fn set_many_to_many(&self, op: SetManyToManyOp) -> anyhow::Result<ManyToManyValue> {
+            Ok(ManyToManyValue {
+                table_id: op.table_id,
+                row_id: op.row_id,
+                field_id: op.field_id,
+                item_ids: op.item_ids,
+            })
+        }
         fn event_tx(&self) -> &EventTx { unimplemented!() }
     }
 

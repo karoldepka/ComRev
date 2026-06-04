@@ -7,6 +7,7 @@ mod hidden_column;
 mod hidden_row;
 mod ops_log;
 mod remark;
+mod row_class;
 mod store;
 mod sync_backend_impl;
 mod sync_service;
@@ -150,6 +151,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/flags/:key", delete(flag::delete))
         .route("/hidden-rows", get(hidden_row::list).post(hidden_row::add))
         .route("/hidden-rows/:repo_id", delete(hidden_row::remove))
+        .route(
+            "/tables/:table_id/row-classes",
+            get(row_class::list_for_table).post(row_class::create_for_table),
+        )
+        .route(
+            "/tables/:table_id/row-classes/:class_id",
+            delete(row_class::delete_for_table),
+        )
+        .route(
+            "/tables/:table_id/rows/:row_id/classes",
+            get(row_class::get_row_classes).put(row_class::set_row_classes),
+        )
         .route(
             "/hidden-columns",
             get(hidden_column::list).post(hidden_column::add),

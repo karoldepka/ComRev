@@ -198,12 +198,20 @@ impl PgStore {
                 who_created       TEXT,
                 who_last_modified TEXT,
                 modify_count      INTEGER     NOT NULL DEFAULT 0,
-                custom_vals       JSONB       NOT NULL DEFAULT '{{}}'
+                custom_vals       JSONB       NOT NULL DEFAULT '{{}}',
+                classes           JSONB       NOT NULL DEFAULT '[]'
             )"#
         ))
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table({table_id}): {e}"))?;
+        // Ensure classes column exists for tables created before this migration.
+        sqlx::query(&format!(
+            "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS classes JSONB NOT NULL DEFAULT '[]'::jsonb"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table classes column({table_id}): {e}"))?;
 
         sqlx::query(&format!(
             "CREATE INDEX IF NOT EXISTS \"idx_{table_id}_custom_vals\" \
@@ -212,6 +220,14 @@ impl PgStore {
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table index({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{}_classes\" ON {tname} USING GIN (classes)",
+            table_id.replace('"', "")
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table classes index({table_id}): {e}"))?;
 
         Ok(())
     }
@@ -315,6 +331,7 @@ impl PgStore {
             "when_created",
             "when_last_modified",
             "modify_count",
+            "classes",
         ];
 
         let Some(obj) = sample.as_object() else {
@@ -588,7 +605,7 @@ impl DataStore for PgStore {
         sqlx::query(
             "TRUNCATE TABLE remarks, remark_targets, custom_columns, cell_flags,
                           hidden_rows, hidden_columns, operations_log, tables,
-                          table_custom_columns CASCADE",
+                          table_custom_columns, row_classes, many_to_many_assignments CASCADE",
         )
         .execute(&self.pool)
         .await
@@ -819,6 +836,204 @@ impl DataStore for PgStore {
             .bind(column_id)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    // ── Row classes ───────────────────────────────────────────────────────────
+
+    async fn list_row_classes(
+        &self,
+        table_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>> {
+        Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
+            "SELECT id, table_id, name, color FROM row_classes WHERE table_id = $1 ORDER BY name",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    async fn create_row_class(
+        &self,
+        table_id: &str,
+        id: &str,
+        name: &str,
+        color: Option<&str>,
+    ) -> Result<crate::row_class::RowClass> {
+        let name = name.trim();
+        anyhow::ensure!(!name.is_empty(), "row class name must not be blank");
+        Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
+            "INSERT INTO row_classes (id, table_id, name, color)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO UPDATE
+             SET name = EXCLUDED.name,
+                 color = EXCLUDED.color,
+                 who_last_modified = EXCLUDED.who_created,
+                 when_last_modified = NOW(),
+                 modify_count = row_classes.modify_count + 1
+             WHERE row_classes.table_id = EXCLUDED.table_id
+             RETURNING id, table_id, name, color",
+        )
+        .bind(id)
+        .bind(table_id)
+        .bind(name)
+        .bind(color)
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    async fn delete_row_class(&self, table_id: &str, id: &str) -> Result<()> {
+        self.ensure_user_table(table_id).await?;
+        let mut transaction = self.pool.begin().await?;
+        let affected_rows: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT row_id
+             FROM many_to_many_assignments
+             WHERE table_id = $1 AND field_id = 'classes' AND item_id = $2",
+        )
+        .bind(table_id)
+        .bind(id)
+        .fetch_all(&mut *transaction)
+        .await?;
+
+        sqlx::query(
+            "DELETE FROM many_to_many_assignments
+             WHERE table_id = $1 AND field_id = 'classes' AND item_id = $2",
+        )
+        .bind(table_id)
+        .bind(id)
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query("DELETE FROM row_classes WHERE table_id = $1 AND id = $2")
+            .bind(table_id)
+            .bind(id)
+            .execute(&mut *transaction)
+            .await?;
+
+        for row_id in affected_rows {
+            sync_many_to_many_jsonb(&mut transaction, table_id, &row_id, "classes").await?;
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn get_row_class_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>> {
+        Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
+            "SELECT rc.id, rc.table_id, rc.name, rc.color
+             FROM row_classes rc
+             JOIN many_to_many_assignments mma ON mma.item_id = rc.id
+             WHERE mma.row_id = $1 AND mma.table_id = $2 AND mma.field_id = 'classes'
+               AND rc.table_id = mma.table_id
+             ORDER BY mma.when_created, rc.id",
+        )
+        .bind(row_id)
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    async fn add_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()> {
+        if item_ids.is_empty() {
+            return Ok(());
+        }
+        validate_field_id(field_id)?;
+        self.ensure_user_table(table_id).await?;
+        let mut transaction = self.pool.begin().await?;
+        let item_ids = unique_item_ids(item_ids);
+        validate_many_to_many_items(&mut transaction, table_id, field_id, &item_ids).await?;
+        for item_id in item_ids {
+            sqlx::query(
+                "INSERT INTO many_to_many_assignments (row_id, item_id, field_id, table_id)
+                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            )
+            .bind(row_id)
+            .bind(item_id)
+            .bind(field_id)
+            .bind(table_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        sync_many_to_many_jsonb(&mut transaction, table_id, row_id, field_id).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()> {
+        if item_ids.is_empty() {
+            return Ok(());
+        }
+        validate_field_id(field_id)?;
+        self.ensure_user_table(table_id).await?;
+        let mut transaction = self.pool.begin().await?;
+        for item_id in unique_item_ids(item_ids) {
+            sqlx::query(
+                "DELETE FROM many_to_many_assignments
+                 WHERE table_id = $1 AND row_id = $2 AND item_id = $3 AND field_id = $4",
+            )
+            .bind(table_id)
+            .bind(row_id)
+            .bind(item_id)
+            .bind(field_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        sync_many_to_many_jsonb(&mut transaction, table_id, row_id, field_id).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn set_many_to_many_assignments(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        field_id: &str,
+        item_ids: &[String],
+    ) -> Result<()> {
+        validate_field_id(field_id)?;
+        self.ensure_user_table(table_id).await?;
+        let mut transaction = self.pool.begin().await?;
+        let item_ids = unique_item_ids(item_ids);
+        validate_many_to_many_items(&mut transaction, table_id, field_id, &item_ids).await?;
+        sqlx::query(
+            "DELETE FROM many_to_many_assignments
+             WHERE table_id = $1 AND row_id = $2 AND field_id = $3",
+        )
+        .bind(table_id)
+        .bind(row_id)
+        .bind(field_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        for item_id in item_ids {
+            sqlx::query(
+                "INSERT INTO many_to_many_assignments (table_id, row_id, field_id, item_id)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(table_id)
+            .bind(row_id)
+            .bind(field_id)
+            .bind(item_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        sync_many_to_many_jsonb(&mut transaction, table_id, row_id, field_id).await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -1182,6 +1397,22 @@ impl DataStore for PgStore {
                 .await?;
             return Ok(());
         }
+        if col_id == "classes" {
+            let values = value
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("classes cell value must be an array of class ids"))?;
+            let item_ids = values
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| anyhow::anyhow!("classes cell values must be class ids"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            return self
+                .set_many_to_many_assignments(table_id, row_id, col_id, &item_ids)
+                .await;
+        }
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
         sqlx::query(&format!(
@@ -1218,7 +1449,8 @@ impl DataStore for PgStore {
                'who_created', who_created, \
                'when_created', when_created, \
                'when_last_modified', when_last_modified, \
-               'modify_count', modify_count) || custom_vals"
+               'modify_count', modify_count, \
+               'classes', COALESCE(classes, '[]'::jsonb)) || (custom_vals - 'classes')"
         );
         let inserted: Option<serde_json::Value> = sqlx::query_scalar(&format!(
             "INSERT INTO {tname} (id, who_created, custom_vals)
@@ -1298,6 +1530,7 @@ impl DataStore for PgStore {
             .await?;
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
+            col_types.insert("classes".to_string(), vec!["array".to_string()]);
             let mut col_paths: std::collections::HashMap<String, String> =
                 std::collections::HashMap::new();
             for (id, types, source_path) in col_type_rows {
@@ -1324,8 +1557,9 @@ impl DataStore for PgStore {
                        'when_created', when_created, \
                        'who_created', who_created, \
                        'when_last_modified', when_last_modified, \
-                       'who_last_modified', who_last_modified\
-                     ) || custom_vals) FROM {tname} WHERE ",
+                       'who_last_modified', who_last_modified, \
+                       'classes', COALESCE(classes, '[]'::jsonb)\
+                     ) || (custom_vals - 'classes')) FROM {tname} WHERE ",
                 ));
                 qb.push("id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
@@ -1394,7 +1628,7 @@ impl DataStore for PgStore {
             "WITH incoming AS (
                SELECT DISTINCT ON (row_id)
                  COALESCE(r->>'id', r->>'github_id') AS row_id,
-                 r AS custom_vals
+                 r - 'classes' AS custom_vals
                FROM jsonb_array_elements($1::jsonb) AS r
                WHERE COALESCE(r->>'id', r->>'github_id') IS NOT NULL
                ORDER BY row_id
@@ -1572,9 +1806,98 @@ fn validated_path_parts(path: &str) -> Option<Vec<&str>> {
     Some(parts)
 }
 
+/// Validate that a field_id is a safe SQL identifier (lowercase letters, digits, underscores).
+/// Used to guard dynamic column names in UPDATE statements.
+fn validate_field_id(field_id: &str) -> Result<()> {
+    if field_id.is_empty()
+        || !field_id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        return Err(anyhow::anyhow!(
+            "invalid field_id '{}': must be lowercase letters, digits, or underscores",
+            field_id
+        ));
+    }
+    Ok(())
+}
+
+fn unique_item_ids(item_ids: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    item_ids
+        .iter()
+        .filter(|id| !id.is_empty() && seen.insert(id.as_str()))
+        .cloned()
+        .collect()
+}
+
+async fn validate_many_to_many_items(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    table_id: &str,
+    field_id: &str,
+    item_ids: &[String],
+) -> Result<()> {
+    if field_id != "classes" || item_ids.is_empty() {
+        return Ok(());
+    }
+    let found: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM row_classes WHERE table_id = $1 AND id = ANY($2)",
+    )
+    .bind(table_id)
+    .bind(item_ids)
+    .fetch_one(&mut **transaction)
+    .await?;
+    anyhow::ensure!(
+        found as usize == item_ids.len(),
+        "one or more row classes do not exist in table '{table_id}'"
+    );
+    Ok(())
+}
+
+/// Recompute the current item_ids for (row_id, field_id) from many_to_many_assignments
+/// and write them to the denormalized JSONB column on the per-table row.
+async fn sync_many_to_many_jsonb(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    table_id: &str,
+    row_id: &str,
+    field_id: &str,
+) -> Result<()> {
+    let item_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT item_id FROM many_to_many_assignments
+         WHERE row_id = $1 AND field_id = $2 AND table_id = $3
+         ORDER BY when_created",
+    )
+    .bind(row_id)
+    .bind(field_id)
+    .bind(table_id)
+    .fetch_all(&mut **transaction)
+    .await?;
+
+    let tname = user_table_ident(table_id);
+    // field_id is validated before calling this function — safe to interpolate.
+    let result = sqlx::query(&format!(
+        "UPDATE {tname}
+         SET {field_id} = $1, when_last_modified = NOW(), modify_count = modify_count + 1
+         WHERE id = $2"
+    ))
+    .bind(serde_json::to_value(&item_ids)?)
+    .bind(row_id)
+    .execute(&mut **transaction)
+    .await?;
+    anyhow::ensure!(
+        result.rows_affected() == 1,
+        "row '{row_id}' does not exist in table '{table_id}'"
+    );
+
+    Ok(())
+}
+
 /// Returns a JSONB expression (all `->` navigation, last segment also `->`)
 /// for use with operators like `?|` that need a JSONB value, not text.
 fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
+    if path == "classes" {
+        return Some("classes".to_string());
+    }
     let parts = validated_path_parts(path)?;
     let mut expr = String::from("custom_vals");
     for &seg in &parts {
@@ -1612,6 +1935,7 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
         "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => {
             return Some(col.to_string());
         }
+        "classes" => return Some("classes".to_string()),
         _ => path_to_jsonb_expr(col)?,
     };
     let cast = match col_type {
@@ -1810,6 +2134,11 @@ mod tests {
     }
 
     #[test]
+    fn jsonb_value_expr_builtin_classes() {
+        assert_eq!(path_to_jsonb_value_expr("classes"), Some("classes".into()));
+    }
+
+    #[test]
     fn jsonb_value_expr_two_segments() {
         assert_eq!(
             path_to_jsonb_value_expr("topics.name"),
@@ -1835,6 +2164,11 @@ mod tests {
             col_to_sort_expr("when_created", None),
             Some("when_created".into())
         );
+    }
+
+    #[test]
+    fn sort_expr_builtin_classes() {
+        assert_eq!(col_to_sort_expr("classes", None), Some("classes".into()));
     }
 
     #[test]

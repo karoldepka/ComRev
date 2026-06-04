@@ -62,7 +62,7 @@ pub async fn pending(pool: &sqlx::PgPool) -> anyhow::Result<Vec<PendingOp>> {
 fn op_priority(op: &str) -> u8 {
     match op {
         "table.create" | "table.patch" | "table.delete" => 0,
-        "row.create" | "row.patch" | "rows.batch_upsert" => 1,
+        "row.create" | "row.patch" | "rows.batch_upsert" | "row_class.create" => 1,
         _ => 2,
     }
 }
@@ -157,6 +157,54 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
         }
         "remark.delete" => {
             store.delete_remark(str(p, "id")?).await?;
+        }
+        "row_class.create" => {
+            store
+                .create_row_class(
+                    str(p, "table_id")?,
+                    str(p, "id")?,
+                    str(p, "name")?,
+                    p["color"].as_str(),
+                )
+                .await?;
+        }
+        "row_class.delete" => {
+            store
+                .delete_row_class(str(p, "table_id")?, str(p, "id")?)
+                .await?;
+        }
+        "many_to_many.add" => {
+            let item_ids = string_array(p, "item_ids")?;
+            store
+                .add_many_to_many_assignments(
+                    str(p, "table_id")?,
+                    str(p, "row_id")?,
+                    str(p, "field_id")?,
+                    &item_ids,
+                )
+                .await?;
+        }
+        "many_to_many.remove" => {
+            let item_ids = string_array(p, "item_ids")?;
+            store
+                .remove_many_to_many_assignments(
+                    str(p, "table_id")?,
+                    str(p, "row_id")?,
+                    str(p, "field_id")?,
+                    &item_ids,
+                )
+                .await?;
+        }
+        "many_to_many.set" => {
+            let item_ids = string_array(p, "item_ids")?;
+            store
+                .set_many_to_many_assignments(
+                    str(p, "table_id")?,
+                    str(p, "row_id")?,
+                    str(p, "field_id")?,
+                    &item_ids,
+                )
+                .await?;
         }
         "hidden_row.add" => {
             store
@@ -283,6 +331,18 @@ fn str<'a>(p: &'a Value, key: &str) -> anyhow::Result<&'a str> {
 
 fn str_or<'a>(p: &'a Value, key: &str, default: &'a str) -> &'a str {
     p[key].as_str().unwrap_or(default)
+}
+
+fn string_array(p: &Value, key: &str) -> anyhow::Result<Vec<String>> {
+    p[key]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("missing array field '{key}' in op payload"))
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect()
+        })
 }
 
 /// Mark an ops log entry as applied (applied_at = now()). Idempotent: no-op if already set.
