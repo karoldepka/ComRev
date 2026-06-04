@@ -400,13 +400,6 @@ th[draggable] {
   color: #ea580c;
 }
 
-.add-row-td--focused {
-  background: rgba(234, 88, 12, 0.09) !important;
-  outline: 2px solid #ea580c;
-  outline-offset: -2px;
-  color: #ea580c;
-}
-
 .context-menu {
   min-width: 160px;
   background: #ffffff;
@@ -959,10 +952,7 @@ th[draggable] {
     color: #f97316;
   }
 
-  .add-row-td--focused {
-    background: rgba(234, 88, 12, 0.12) !important;
-    color: #f97316;
-  }
+
 
   .context-menu {
     background: #1e293b;

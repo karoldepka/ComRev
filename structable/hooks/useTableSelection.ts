@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 type Column = { id: string; subColumns?: Column[] };
 
-function keyToCursor(key: string, leafCols: Column[]): { row: number; col: number } | null {
+function keyToCursor(key: string, leafCols: Column[], numRows: number): { row: number; col: number } | null {
   if (key.startsWith('header:')) {
     const colId = key.split(':')[1];
     const idx = leafCols.findIndex((c) => c.id === colId);
@@ -12,6 +12,11 @@ function keyToCursor(key: string, leafCols: Column[]): { row: number; col: numbe
     const parts = key.split(':');
     const idx = leafCols.findIndex((c) => c.id === parts[2]);
     return idx >= 0 ? { row: parseInt(parts[1], 10), col: idx } : null;
+  }
+  if (key.startsWith('add-row:')) {
+    const colId = key.split(':')[1];
+    const idx = leafCols.findIndex((c) => c.id === colId);
+    return idx >= 0 ? { row: numRows, col: idx } : null;
   }
   return null;
 }
@@ -40,7 +45,7 @@ export function useTableSelection(
   const anchorPosRef = useRef<{ row: number; col: number } | null>(null);
 
   const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
-    const pos = keyToCursor(key, visibleLeafColumns);
+    const pos = keyToCursor(key, visibleLeafColumns, numRows);
     if (shift && anchorPosRef.current && pos) {
       const anchor = anchorPosRef.current;
       const newKeys: string[] = [];
@@ -84,12 +89,15 @@ export function useTableSelection(
   const selectedCols = new Set([
     ...selectedKeys.filter((k) => k.startsWith('cell:')).map((k) => k.split(':')[2]),
     ...selectedKeys.filter((k) => k.startsWith('header:')).map((k) => k.split(':')[1]),
+    ...selectedKeys.filter((k) => k.startsWith('add-row:')).map((k) => k.split(':')[1]),
   ]);
+  const addRowIsSelected = selectedKeys.some((k) => k.startsWith('add-row:'));
 
   return {
     selectedKeys, setSelectedKeys,
     cursorPos, setCursorPos,
     selectedSet, selectedRows, selectedCols,
+    addRowIsSelected,
     selectKey,
     moveCursor,
     cursorToKey: (pos: { row: number; col: number }) =>

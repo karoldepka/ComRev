@@ -623,6 +623,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     selectedKeys, setSelectedKeys,
     cursorPos, setCursorPos,
     selectedSet, selectedRows, selectedCols,
+    addRowIsSelected,
     selectKey: selectKeyHook, moveCursor,
     cursorToKey: cursorToKeyFn,
   } = useTableSelection(allColumnsForSelection, leafHeaderKeyWithVirtual, rows.length);
@@ -1426,17 +1427,23 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
               >
                 {visibleLeafColumns.map((col, colIdx) => {
                   const addRowKey = `add-row:${col.id}`;
-                  const isFocused = selectedSet.has(addRowKey);
+                  const isSelected = selectedSet.has(addRowKey);
                   return (
                     <td
                       key={col.id}
+                      data-key={addRowKey}
                       className={[
                         'add-row-td',
-                        isFocused ? 'add-row-td--focused' : '',
+                        isSelected
+                          ? 'cell-selected'
+                          : [
+                              addRowIsSelected ? 'row-highlight' : '',
+                              selectedCols.has(col.id) ? 'col-highlight' : '',
+                            ].filter(Boolean).join(' '),
                         col.isFrozen ? 'sticky-col' : '',
                       ].filter(Boolean).join(' ')}
                       style={col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined}
-                      onClick={(e) => selectKey(addRowKey, e.metaKey || e.ctrlKey)}
+                      onClick={(e) => selectKey(addRowKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                     >
                       {colIdx === 0 ? '+ Add row' : ''}
                     </td>
@@ -1447,7 +1454,12 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                   className={[
                     'add-row-td',
                     'add-col-td',
-                    selectedSet.has(`add-row:${ADD_COL_VIRTUAL_ID}`) ? 'add-row-td--focused' : '',
+                    selectedSet.has(`add-row:${ADD_COL_VIRTUAL_ID}`)
+                      ? 'cell-selected'
+                      : [
+                          addRowIsSelected ? 'row-highlight' : '',
+                          selectedCols.has(ADD_COL_VIRTUAL_ID) ? 'col-highlight' : '',
+                        ].filter(Boolean).join(' '),
                   ].filter(Boolean).join(' ')}
                   onClick={(e) => selectKey(`add-row:${ADD_COL_VIRTUAL_ID}`, e.metaKey || e.ctrlKey)}
                 />
