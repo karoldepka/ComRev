@@ -697,6 +697,8 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const cancelEdit = useCallback(() => setEditingCell(null), []);
 
   useEffect(() => {
+    logger.debug("dbg useEffect for scroll");
+
     if (!cursorPos) return;
     const key = cursorToKeyFn(cursorPos);
     if (!key) return;
@@ -721,6 +723,22 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       const frozenRight = frozenCells.reduce((max, td) => Math.max(max, td.getBoundingClientRect().right), 0);
       if (frozenRight > 0 && elRect.left < frozenRight) {
         wrap.scrollLeft -= frozenRight - elRect.left;
+      }
+    }
+    // Compensate for the sticky thead: if the row is now behind the header, scroll up enough to clear it.
+    const wrap = wrapperRef.current;
+    if (el && wrap) {
+      const elRect = el.getBoundingClientRect();
+      // All thead th cells have position:sticky; top:0 — with multi-level headers each row stacks
+      // at top:0 independently. Use the maximum bottom across all th cells so we account for the
+      // tallest header row, not just the first one.
+      const allThs = Array.from(wrap.querySelectorAll('thead th'));
+      const headerBottom = allThs.reduce((max, th) => Math.max(max, th.getBoundingClientRect().bottom), 0);
+      logger.info({ elTop: elRect.top, headerBottom, thCount: allThs.length }, 'scroll compensation check');
+      if (elRect.top < headerBottom) {
+        const adjustment = headerBottom - elRect.top;
+        logger.info({ adjustment }, 'scroll adjusted for sticky header');
+        wrap.scrollTop -= adjustment;
       }
     }
     // Update URL hash: #rowId--colId
