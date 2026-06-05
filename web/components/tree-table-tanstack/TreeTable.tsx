@@ -10,6 +10,7 @@ import { useState, useMemo } from "react";
 import type { ColNode, ColType, RowData } from "@/lib/table-types";
 import { useTableState } from "./use-table-state";
 import { AddColumnDialog } from "@/components/tree-table/AddColumnDialog";
+import { AiFillDialog } from "@/components/tree-table/AiFillDialog";
 import { ColumnVisibilityPanel } from "@/components/tree-table/ColumnVisibilityPanel";
 
 // --- column def builder ---
@@ -75,14 +76,17 @@ function hiddenLabel(root: number, sub: number) {
 interface Props {
   initialColumns: ColNode[];
   initialRows: RowData[];
+  /** Backend table ID — required to enable the AI fill feature. */
+  tableId?: string | null;
 }
 
-export function TreeTable({ initialColumns, initialRows }: Props) {
+export function TreeTable({ initialColumns, initialRows, tableId }: Props) {
   const { columns, rows, columnVisibility, hiddenCounts, userHiddenIds, addColumn, hideColumn, showColumn } =
     useTableState(initialColumns, initialRows);
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
+  const [showAiFill, setShowAiFill] = useState(false);
 
   const columnDefs = useMemo(() => [NAME_COL, ...buildDefs(columns)], [columns]);
 
@@ -107,6 +111,14 @@ export function TreeTable({ initialColumns, initialRows }: Props) {
         >
           + Add column
         </button>
+        {tableId && (
+          <button
+            onClick={() => setShowAiFill(true)}
+            className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+          >
+            ✦ AI Fill
+          </button>
+        )}
         <div className="relative">
           {hiddenTotal > 0 && (
             <button
@@ -213,6 +225,14 @@ export function TreeTable({ initialColumns, initialRows }: Props) {
             setShowAddDialog(false);
           }}
           onClose={() => setShowAddDialog(false)}
+        />
+      )}
+
+      {showAiFill && tableId && (
+        <AiFillDialog
+          tableId={tableId}
+          columns={columns}
+          onClose={() => setShowAiFill(false)}
         />
       )}
     </div>

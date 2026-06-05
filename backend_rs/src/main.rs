@@ -1,3 +1,4 @@
+mod ai_fill;
 mod custom_column;
 mod data_row;
 mod db_config;
@@ -172,6 +173,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/tables/:id",
             axum::routing::patch(table::patch).delete(table::delete),
+        )
+        .route(
+            "/tables/:table_id/ai-fill",
+            axum::routing::post(ai_fill::handler),
         )
         .route("/NUKE__USER_DATA", delete(nuke_user_data_handler))
         .route("/NUKE__DB",   delete(nuke_db))

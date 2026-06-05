@@ -13,6 +13,7 @@ import AddRowDialog from './AddRowDialog';
 import type { AddRowPayload } from './AddRowDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
 import ColumnPropertiesDialog, { type ColumnPropertiesPayload } from './ColumnPropertiesDialog';
+import AiFillDialog from './AiFillDialog';
 import CellContent from './CellContent';
 import SyncIndicator from './SyncIndicator';
 import RowClassEditor from './RowClassEditor';
@@ -413,6 +414,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   type PendingDelete = { colId: string; label: string; notes: number; comments: number; flags: number };
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
   const [propertiesCol, setPropertiesCol] = useState<ApiCustomColumn | null>(null);
+  const [showAiFill, setShowAiFill] = useState(false);
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
   const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff__14d', dir: 'desc' });
@@ -1606,6 +1608,14 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       </div>
       <div className="table-note">
         <span>{total.toLocaleString()} rows — page {page} of {totalPages}</span>
+        <button
+          type="button"
+          className="ai-fill-trigger-button"
+          onClick={() => setShowAiFill(true)}
+          title="Fill columns using AI"
+        >
+          ✦ AI Fill
+        </button>
         <span style={{ marginLeft: '1rem' }}>
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
           {' '}
@@ -1680,6 +1690,13 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
           column={propertiesCol}
           onSave={saveColumnProperties}
           onClose={() => setPropertiesCol(null)}
+        />
+      )}
+      {showAiFill && (
+        <AiFillDialog
+          tableId={tableId}
+          columns={customColumns}
+          onClose={() => setShowAiFill(false)}
         />
       )}
       {classEditorState && (
