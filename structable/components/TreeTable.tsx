@@ -784,6 +784,16 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight', e.shiftKey);
   };
 
+  const handleTableMouseDownCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!e.shiftKey || e.button !== 0) return;
+    if (!(e.target instanceof HTMLElement)) return;
+    if (!e.target.closest('[data-key]')) return;
+    if (e.target.closest('input, textarea, select, button, [contenteditable], [role="textbox"]')) return;
+
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
   const restoreEditCursor = useCallback((rowIndex: number, colId: string) => {
     const key = `cell:${rowIndex}:${colId}`;
     setSelectedKeys([key]);
@@ -1200,6 +1210,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
           className="tree-table-wrap"
           tabIndex={0}
           onKeyDown={handleTableKeyDown}
+          onMouseDownCapture={handleTableMouseDownCapture}
           style={{ outline: 'none' }}
         >
           <table className="tree-table">
