@@ -1,0 +1,2 @@
+# Allow built WASM artifacts to be committed
+!*

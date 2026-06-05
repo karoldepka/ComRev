@@ -1,0 +1,11 @@
+{
+  "rootDirectory": "structable",
+  "headers": [
+    {
+      "source": "/wasm/(.*)\\.wasm",
+      "headers": [
+        { "key": "Content-Type", "value": "application/wasm" }
+      ]
+    }
+  ]
+}

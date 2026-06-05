@@ -1232,11 +1232,10 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                       ? (hiddenSet.has(column.id) ? [] : [column.id])
                       : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
                     ).filter((id) => !allLeafColumns.find((c) => c.id === id)?.isFrozen);
-                    const selectedHeaderLeafIds = selectedKeys
-                      .filter((k) => k.startsWith('header:'))
-                      .map((k) => k.split(':')[1])
-                      .filter((id) => !hiddenSet.has(id) && !allLeafColumns.find((c) => c.id === id)?.isFrozen && allLeafColumns.some((c) => c.id === id));
-                    const allColsToHide = [...new Set([...leafIdsToHide, ...selectedHeaderLeafIds])];
+                    const selectedLeafIds = allLeafColumns
+                      .filter((c) => selectedCols.has(c.id) && !hiddenSet.has(c.id) && !c.isFrozen)
+                      .map((c) => c.id);
+                    const allColsToHide = [...new Set([...leafIdsToHide, ...selectedLeafIds])];
                     const showMenu = leafIdsToHide.length > 0 || isLeaf;
                     const frozenLeft = isLeaf ? frozenLeftByColumn.get(column.id) : undefined;
                     const isSticky = frozenLeft !== undefined;
