@@ -33,6 +33,17 @@ export function useColumnPrefs() {
     localStore.setColumnOrder(next);
   }, []);
 
+  const insertColumnAfter = useCallback((newColId: string, afterColId: string | null) => {
+    setColumnOrder((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      const idx = afterColId ? prev.indexOf(afterColId) : -1;
+      next.splice(idx >= 0 ? idx + 1 : next.length, 0, newColId);
+      localStore.setColumnOrder(next);
+      return next;
+    });
+  }, []);
+
   const addColumnGroup = useCallback((label: string, childIds: string[]) => {
     setColumnGroups((prev) => {
       // Remove these children from any existing groups; dissolve groups that drop below 2
@@ -68,6 +79,7 @@ export function useColumnPrefs() {
     columnWidths, setColumnWidths,
     columnOrder, setColumnOrder,
     reorderColumns,
+    insertColumnAfter,
     columnGroups,
     addColumnGroup,
     addToGroup,

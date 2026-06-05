@@ -374,6 +374,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     columnWidths, setColumnWidths,
     columnOrder,
     reorderColumns,
+    insertColumnAfter,
     columnGroups,
     addColumnGroup,
     addToGroup,
@@ -780,7 +781,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
 
-    moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight');
+    moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight', e.shiftKey);
   };
 
   const restoreEditCursor = useCallback((rowIndex: number, colId: string) => {
@@ -1035,6 +1036,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       types: ['text'],
     };
     setCustomColumns((prev) => [...prev, col]);
+    insertColumnAfter(id, positionAfter);
     pendingFocusColRef.current = id;
     recordChange(`Create column "${col.title ?? col.id}"`);
     api.createCustomColumn(tableId, {
@@ -1044,7 +1046,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       position_before: col.position_before,
       position_after: col.position_after,
     }, id);
-  }, [api, recordChange, tableId]);
+  }, [api, recordChange, tableId, insertColumnAfter]);
 
   const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {
     const col = allLeafColumns.find((c) => c.id === colId);

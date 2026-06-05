@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 
 type Column = { id: string; subColumns?: Column[] };
+type CursorPos = { row: number; col: number };
+type ArrowDirection = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight';
 
-function keyToCursor(key: string, leafCols: Column[], numRows: number): { row: number; col: number } | null {
+function keyToCursor(key: string, leafCols: Column[], numRows: number): CursorPos | null {
   if (key.startsWith('header:')) {
     const colId = key.split(':')[1];
     const idx = leafCols.findIndex((c) => c.id === colId);
@@ -22,7 +24,7 @@ function keyToCursor(key: string, leafCols: Column[], numRows: number): { row: n
 }
 
 function cursorToKey(
-  pos: { row: number; col: number },
+  pos: CursorPos,
   leafCols: Column[],
   leafHeaderKey: Map<string, string>,
   numRows: number,
@@ -35,27 +37,52 @@ function cursorToKey(
   return `cell:${pos.row}:${col.id}`;
 }
 
+function keysInRange(
+  anchor: CursorPos,
+  pos: CursorPos,
+  leafCols: Column[],
+  leafHeaderKey: Map<string, string>,
+  numRows: number,
+): string[] {
+  const keys: string[] = [];
+  for (let r = Math.min(anchor.row, pos.row); r <= Math.max(anchor.row, pos.row); r++) {
+    for (let c = Math.min(anchor.col, pos.col); c <= Math.max(anchor.col, pos.col); c++) {
+      const key = cursorToKey({ row: r, col: c }, leafCols, leafHeaderKey, numRows);
+      if (key) keys.push(key);
+    }
+  }
+  return keys;
+}
+
+function movePosition(pos: CursorPos, direction: ArrowDirection, leafColumnCount: number, numRows: number): CursorPos {
+  let { row, col } = pos;
+  if (direction === 'ArrowUp') {
+    if (row === numRows) row = numRows > 0 ? numRows - 1 : -1;
+    else if (row > 0) row--;
+    else if (row === 0) row = -1;
+  }
+  if (direction === 'ArrowDown') {
+    if (row === -1) row = 0;
+    else if (row < numRows) row++;
+  }
+  if (direction === 'ArrowLeft' && col > 0) col--;
+  if (direction === 'ArrowRight' && col < leafColumnCount - 1) col++;
+  return { row, col };
+}
+
 export function useTableSelection(
   visibleLeafColumns: Column[],
   leafHeaderKey: Map<string, string>,
   numRows: number,
 ) {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [cursorPos, setCursorPos] = useState<{ row: number; col: number } | null>(null);
-  const anchorPosRef = useRef<{ row: number; col: number } | null>(null);
+  const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
+  const anchorPosRef = useRef<CursorPos | null>(null);
 
   const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
     const pos = keyToCursor(key, visibleLeafColumns, numRows);
     if (shift && anchorPosRef.current && pos) {
-      const anchor = anchorPosRef.current;
-      const newKeys: string[] = [];
-      for (let r = Math.min(anchor.row, pos.row); r <= Math.max(anchor.row, pos.row); r++) {
-        for (let c = Math.min(anchor.col, pos.col); c <= Math.max(anchor.col, pos.col); c++) {
-          const k = cursorToKey({ row: r, col: c }, visibleLeafColumns, leafHeaderKey, numRows);
-          if (k) newKeys.push(k);
-        }
-      }
-      setSelectedKeys(newKeys);
+      setSelectedKeys(keysInRange(anchorPosRef.current, pos, visibleLeafColumns, leafHeaderKey, numRows));
       setCursorPos(pos);
     } else {
       setSelectedKeys((prev) => {
@@ -68,18 +95,20 @@ export function useTableSelection(
     }
   }, [visibleLeafColumns, leafHeaderKey, numRows]);
 
-  const moveCursor = useCallback((direction: 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight') => {
+  const moveCursor = useCallback((direction: ArrowDirection, extend = false) => {
     setCursorPos((cur) => {
       const pos = cur ?? (numRows > 0 && visibleLeafColumns.length > 0 ? { row: 0, col: 0 } : null);
       if (!pos) return cur;
-      let { row, col } = pos;
-      if (direction === 'ArrowUp')    { if (row === numRows) row = numRows > 0 ? numRows - 1 : -1; else if (row > 0) row--; else if (row === 0) row = -1; }
-      if (direction === 'ArrowDown')  { if (row === -1) row = 0; else if (row < numRows) row++; }
-      if (direction === 'ArrowLeft')  { if (col > 0) col--; }
-      if (direction === 'ArrowRight') { if (col < visibleLeafColumns.length - 1) col++; }
-      const newPos = { row, col };
+      const newPos = movePosition(pos, direction, visibleLeafColumns.length, numRows);
       const key = cursorToKey(newPos, visibleLeafColumns, leafHeaderKey, numRows);
-      if (key) setSelectedKeys([key]);
+      if (extend) {
+        const anchor = anchorPosRef.current ?? pos;
+        anchorPosRef.current = anchor;
+        setSelectedKeys(keysInRange(anchor, newPos, visibleLeafColumns, leafHeaderKey, numRows));
+      } else {
+        if (key) setSelectedKeys([key]);
+        anchorPosRef.current = newPos;
+      }
       return newPos;
     });
   }, [visibleLeafColumns, leafHeaderKey, numRows]);
@@ -100,7 +129,7 @@ export function useTableSelection(
     addRowIsSelected,
     selectKey,
     moveCursor,
-    cursorToKey: (pos: { row: number; col: number }) =>
+    cursorToKey: (pos: CursorPos) =>
       cursorToKey(pos, visibleLeafColumns, leafHeaderKey, numRows),
   };
 }
