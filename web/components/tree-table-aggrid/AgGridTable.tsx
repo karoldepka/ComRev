@@ -10,6 +10,7 @@ import {
   type ColGroupDef,
 } from "ag-grid-community";
 import type { ColNode, ColType, RowData } from "@/lib/table-types";
+import { formatNumberWithSpaces, formatNumericStringWithSpaces } from "@/lib/formatting";
 import { AddColumnDialog } from "@/components/tree-table/AddColumnDialog";
 import { AiFillDialog } from "@/components/tree-table/AiFillDialog";
 import { ColumnVisibilityPanel } from "@/components/tree-table/ColumnVisibilityPanel";
@@ -83,7 +84,8 @@ function buildAgDefs(
 function renderCellValue(value: unknown, colType: ColType): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean" || colType === "boolean") return value ? "✓" : "✗";
-  if (typeof value === "number") return value.toLocaleString();
+  if (typeof value === "number") return formatNumberWithSpaces(value);
+  if (colType === "number" && typeof value === "string") return formatNumericStringWithSpaces(value) ?? value;
   return String(value);
 }
 

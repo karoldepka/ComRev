@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { useState, useMemo } from "react";
 import type { ColNode, ColType, RowData } from "@/lib/table-types";
+import { formatNumberWithSpaces, formatNumericStringWithSpaces } from "@/lib/formatting";
 import { useTableState } from "./use-table-state";
 import { AddColumnDialog } from "@/components/tree-table/AddColumnDialog";
 import { AiFillDialog } from "@/components/tree-table/AiFillDialog";
@@ -55,7 +56,10 @@ function CellValue({ value, colType }: { value: unknown; colType?: ColType }) {
     );
   }
   if (typeof value === "number") {
-    return <span className="tabular-nums">{value.toLocaleString()}</span>;
+    return <span className="tabular-nums">{formatNumberWithSpaces(value)}</span>;
+  }
+  if (colType === "number" && typeof value === "string") {
+    return <span className="tabular-nums">{formatNumericStringWithSpaces(value) ?? value}</span>;
   }
   return <span>{String(value)}</span>;
 }

@@ -10,6 +10,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import type { DataRow } from '../types/table';
+import { formatCell } from '../utils/formatting';
 import TableToolbar from './TableToolbar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -47,7 +48,11 @@ export default function TanStackTable() {
   const columns = useMemo(() => {
     const first = data[0];
     const keys = first ? Object.keys(first) : ['id', 'when_created'];
-    return keys.map((key) => helper.accessor(key, { header: labelFor(key), size: 120 }));
+    return keys.map((key) => helper.accessor(key, {
+      header: labelFor(key),
+      size: 120,
+      cell: (info) => formatCell(info.getValue()),
+    }));
   }, [data]);
 
   const table = useReactTable({

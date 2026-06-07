@@ -1569,6 +1569,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                               colId={col.id}
                               sourcePath={col.sourcePath}
                               types={col.types}
+                              formatNumericStrings={col.filterType === 'numeric' || col.types?.includes('numeric')}
                               compiledExpr={compiledExprs.get(col.id)}
                               hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
                               hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
