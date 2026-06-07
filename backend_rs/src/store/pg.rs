@@ -1155,13 +1155,13 @@ impl DataStore for PgStore {
         let mut index_input = input.clone();
         index_input.source_path = effective_source_path;
         let jsonb_expr = build_index_expr(id, &index_input);
-        let types = index_input.effective_types();
-        let (cast, direction) = if types
+        let data_types = index_input.effective_data_types();
+        let (cast, direction) = if data_types
             .iter()
             .any(|t| matches!(t.as_str(), "integer" | "bigint" | "numeric"))
         {
             ("::numeric", " DESC NULLS LAST")
-        } else if types.iter().any(|t| t == "timestamptz") {
+        } else if data_types.iter().any(|t| t == "timestamptz") {
             ("::timestamptz", " DESC NULLS LAST")
         } else {
             ("", "")
@@ -1939,7 +1939,7 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
         _ => path_to_jsonb_expr(col)?,
     };
     let cast = match col_type {
-        Some("integer") | Some("bigint") | Some("numeric") => "::numeric",
+        Some("integer") | Some("bigint") | Some("numeric") | Some("rating") => "::numeric",
         Some("timestamptz") => "::timestamptz",
         Some("boolean") => "::boolean",
         _ => "",
@@ -2184,6 +2184,14 @@ mod tests {
         assert_eq!(
             col_to_sort_expr("stars", Some("integer")),
             Some("(custom_vals->>'stars')::numeric".into())
+        );
+    }
+
+    #[test]
+    fn sort_expr_custom_rating() {
+        assert_eq!(
+            col_to_sort_expr("my_rating", Some("rating")),
+            Some("(custom_vals->>'my_rating')::numeric".into())
         );
     }
 

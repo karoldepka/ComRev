@@ -396,6 +396,7 @@ mod tests {
             "array",
             "jsonb",
             "url",
+            "rating",
         ];
         for col in table_registry_columns() {
             for t in &col.types {

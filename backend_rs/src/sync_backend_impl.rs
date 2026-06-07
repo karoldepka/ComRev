@@ -159,6 +159,8 @@ impl SyncBackend for AppState {
             expression: (!op.expression.is_empty()).then(|| op.expression),
             position_before: (!op.position_before.is_empty()).then(|| op.position_before),
             position_after: (!op.position_after.is_empty()).then(|| op.position_after),
+            types: (!op.types.is_empty()).then(|| op.types),
+            data_types: (!op.data_types.is_empty()).then(|| op.data_types),
             ..Default::default()
         };
         let col = self

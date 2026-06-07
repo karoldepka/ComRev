@@ -268,12 +268,18 @@ export class TableApi {
   /** Client generates a nanoid so the column is usable immediately offline. */
   createCustomColumn(
     tableId: string,
-    payload: Omit<ApiCustomColumn, 'id' | 'read_only' | 'readOnly' | 'is_editable' | 'types'>,
+    payload: Omit<ApiCustomColumn, 'id' | 'read_only' | 'readOnly' | 'is_editable'>,
     id?: string,
     onConfirmed?: (confirmed: ApiCustomColumn) => void,
   ): ApiCustomColumn {
     const columnId = id ?? nanoid();
-    const temp: ApiCustomColumn = { ...payload, id: columnId, read_only: false, readOnly: false, types: ['text'] };
+    const temp: ApiCustomColumn = {
+      ...payload,
+      id: columnId,
+      read_only: false,
+      readOnly: false,
+      types: payload.types ?? ['text'],
+    };
     this.enqueue({
       id: `custom-col:create:${columnId}`,
       method: 'POST',

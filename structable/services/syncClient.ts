@@ -224,6 +224,7 @@ export class SyncClient {
 
   createCustomColumn(tableId: string, payload: {
     title?: string | null; description?: string | null; expression?: string | null; position_before?: string | null; position_after?: string | null;
+    types?: string[]; data_types?: string[];
   }, id?: string): Promise<string> {
     return this.inner.create_custom_column(JSON.stringify({ ...payload, table_id: tableId, id: id ?? null }));
   }

@@ -2,6 +2,7 @@
 
 import type { DataRow } from '../types/table';
 import { rowVal } from './TreeTable';
+import RatingStars, { isRatingColumnType } from './RatingStars';
 
 const PINNED_COL = 'name';
 
@@ -20,15 +21,23 @@ type Props = {
   row: DataRow;
   colId: string;
   sourcePath?: string[] | null;
+  types?: string[];
   compiledExpr?: (row: DataRow) => unknown;
   hasNote?: boolean;
   hasComment?: boolean;
 };
 
-export default function CellContent({ row, colId, sourcePath, compiledExpr, hasNote, hasComment }: Props) {
+export default function CellContent({ row, colId, sourcePath, types, compiledExpr, hasNote, hasComment }: Props) {
   let content: React.ReactNode;
 
-  if (colId === PINNED_COL) {
+  if (isRatingColumnType(types)) {
+    try {
+      const value = compiledExpr ? compiledExpr(row) : rowVal(row, colId, sourcePath);
+      content = <RatingStars value={value} readOnly />;
+    } catch {
+      content = '#ERR';
+    }
+  } else if (colId === PINNED_COL) {
     content = (
       <a
         href={`https://github.com/${String(rowVal(row, colId, sourcePath))}`}

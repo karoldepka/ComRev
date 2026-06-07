@@ -8,13 +8,14 @@ import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import type { ColumnGroup } from '../hooks/useColumnPrefs';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
-import AddColumnDialog from './AddColumnDialog';
+import AddColumnDialog, { type AddColumnPayload, type ColumnDataType } from './AddColumnDialog';
 import AddRowDialog from './AddRowDialog';
 import type { AddRowPayload } from './AddRowDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
 import ColumnPropertiesDialog, { type ColumnPropertiesPayload } from './ColumnPropertiesDialog';
 import AiFillDialog from './AiFillDialog';
 import CellContent from './CellContent';
+import RatingStars, { isRatingColumnType } from './RatingStars';
 import SyncIndicator from './SyncIndicator';
 import RowClassEditor from './RowClassEditor';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
@@ -118,6 +119,15 @@ function deriveColumns(row: DataRow): Column[] {
 
 function isColumnReadOnly(cc: ApiCustomColumn): boolean {
   return cc.readOnly ?? cc.read_only ?? !(cc.is_editable ?? true);
+}
+
+function columnTypesForDataType(columnType: ColumnDataType): { types: string[]; data_types: string[] } {
+  if (columnType === 'rating') return { types: ['rating'], data_types: ['numeric'] };
+  return { types: ['text'], data_types: ['text'] };
+}
+
+function isRatingColumn(column: Column): boolean {
+  return isRatingColumnType(column.types);
 }
 
 function insertPositioned(
@@ -767,7 +777,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       if (cursorPos && cursorPos.row >= 0) {
         const col = visibleLeafColumns[cursorPos.col];
         const row = rows[cursorPos.row];
-        if (col && row && isCellEditable(col.id)) {
+        if (col && row && isCellEditable(col.id) && !isRatingColumn(col)) {
           e.preventDefault();
           const rowId = String(row['id'] ?? '');
           const rawVal = rowVal(row, col.id, col.sourcePath);
@@ -801,16 +811,21 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     if (colIdx >= 0) setCursorPos({ row: rowIndex, col: colIdx });
   }, [setSelectedKeys, setCursorPos, visibleLeafColumns]);
 
-  const commitEdit = useCallback(() => {
-    if (!editingCell || !api) return;
-    const { rowIndex, rowId, colId, value } = editingCell;
-    setEditingCell(null);
+  const saveCellValue = useCallback((rowIndex: number, rowId: string, colId: string, value: unknown) => {
+    if (!api) return;
     restoreEditCursor(rowIndex, colId);
-    // Optimistic local update
     setRows((prev) => prev.map((r, i) => i === rowIndex ? { ...r, [colId]: value } : r));
     recordChange(`Edit cell [${colId}]`);
-    api.upsertCellValue(rowId, colId, value, tableId);
-  }, [editingCell, recordChange, api, tableId, restoreEditCursor]);
+    api.upsertCellValue(rowId, colId, value, tableId)
+      .catch((err: unknown) => toast.error(`Failed to queue cell edit: ${errMsg(err)}`));
+  }, [recordChange, api, tableId, restoreEditCursor]);
+
+  const commitEdit = useCallback(() => {
+    if (!editingCell) return;
+    const { rowIndex, rowId, colId, value } = editingCell;
+    setEditingCell(null);
+    saveCellValue(rowIndex, rowId, colId, value);
+  }, [editingCell, saveCellValue]);
 
   const cancelEdit = useCallback(() => {
     if (!editingCell) return;
@@ -1025,14 +1040,14 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     ...customColumns.map((cc) => cc.id),
   ]), [allLeafColumns, customColumns]);
 
-  const handleDialogConfirm = useCallback((afterColId: string, payload: import('./AddColumnDialog').AddColumnPayload) => {
+  const handleDialogConfirm = useCallback((afterColId: string, payload: AddColumnPayload) => {
     if (!api) return;
     setAddColAfter(null);
     setOpenMenuColumn(null);
     setMenuAnchor(null);
-    const derivedName = payload.title.trim();
     const id = payload.customId ?? nanoid();
     const positionAfter = afterColId || null;
+    const typeMetadata = columnTypesForDataType(payload.columnType);
     const col: ApiCustomColumn = {
       id,
       title: payload.title.trim(),
@@ -1043,7 +1058,8 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       read_only: false,
       readOnly: false,
       is_frozen: false,
-      types: ['text'],
+      types: typeMetadata.types,
+      data_types: typeMetadata.data_types,
     };
     setCustomColumns((prev) => [...prev, col]);
     insertColumnAfter(id, positionAfter);
@@ -1055,6 +1071,8 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       expression: col.expression,
       position_before: col.position_before,
       position_after: col.position_after,
+      types: col.types,
+      data_types: col.data_types,
     }, id);
   }, [api, recordChange, tableId, insertColumnAfter]);
 
@@ -1231,9 +1249,9 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                     const leafIdsToHide = (isLeaf
                       ? (hiddenSet.has(column.id) ? [] : [column.id])
                       : getVisibleLeafColumns(column, hiddenSet).map((c) => c.id)
-                    ).filter((id) => !allLeafColumns.find((c) => c.id === id)?.isFrozen);
+                    ).filter((id) => allLeafColumns.some((c) => c.id === id));
                     const selectedLeafIds = allLeafColumns
-                      .filter((c) => selectedCols.has(c.id) && !hiddenSet.has(c.id) && !c.isFrozen)
+                      .filter((c) => selectedCols.has(c.id) && !hiddenSet.has(c.id))
                       .map((c) => c.id);
                     const allColsToHide = [...new Set([...leafIdsToHide, ...selectedLeafIds])];
                     const showMenu = leafIdsToHide.length > 0 || isLeaf;
@@ -1485,6 +1503,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                               setClassEditorState({ rowId, anchor: { top: e.clientY, left: e.clientX } });
                               return;
                             }
+                            if (isRatingColumn(col)) return;
                             if (!isCellEditable(col.id)) return;
                             e.stopPropagation();
                             const rawVal = rowVal(row, col.id, col.sourcePath);
@@ -1539,11 +1558,17 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                                 if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); wrapperRef.current?.focus(); }
                               }}
                             />
+                          ) : isRatingColumn(col) && isCellEditable(col.id) ? (
+                            <RatingStars
+                              value={rowVal(row, col.id, col.sourcePath)}
+                              onChange={(value) => saveCellValue(rowIndex, rowId, col.id, value)}
+                            />
                           ) : (
                             <CellContent
                               row={row}
                               colId={col.id}
                               sourcePath={col.sourcePath}
+                              types={col.types}
                               compiledExpr={compiledExprs.get(col.id)}
                               hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
                               hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}

@@ -190,6 +190,28 @@ impl QueuedOp {
                     .as_str()
                     .unwrap_or("gh_repos")
                     .to_string(),
+                types: self
+                    .data
+                    .get("types")
+                    .and_then(|value| value.as_array())
+                    .map(|array| {
+                        array
+                            .iter()
+                            .filter_map(|item| item.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                data_types: self
+                    .data
+                    .get("data_types")
+                    .and_then(|value| value.as_array())
+                    .map(|array| {
+                        array
+                            .iter()
+                            .filter_map(|item| item.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             })),
             "delete_custom_col" => Some(OpPayload::DeleteCustomCol(DeleteCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
@@ -1632,11 +1654,16 @@ mod tests {
             "create_custom_col",
             serde_json::json!({
                 "id": "c1", "title": "Stars", "expression": "",
-                "position_after": "", "description": "", "table_id": "gh_repos"
+                "position_after": "", "description": "", "table_id": "gh_repos",
+                "types": ["rating"], "data_types": ["numeric"]
             }),
         );
         let cop = q.into_client_op().unwrap();
-        assert!(matches!(cop.payload, Some(OpPayload::CreateCustomCol(_))));
+        let Some(OpPayload::CreateCustomCol(value)) = cop.payload else {
+            panic!("expected CreateCustomCol payload");
+        };
+        assert_eq!(value.types, vec!["rating"]);
+        assert_eq!(value.data_types, vec!["numeric"]);
     }
 
     #[test]
@@ -1669,10 +1696,7 @@ mod tests {
             "table_id": "table-b", "row_id": "same-row", "field_id": "classes"
         });
         assert_eq!(dedup_val(&row_a, "fallback"), "table-a:same-row:classes");
-        assert_ne!(
-            dedup_val(&row_a, "fallback"),
-            dedup_val(&row_b, "fallback")
-        );
+        assert_ne!(dedup_val(&row_a, "fallback"), dedup_val(&row_b, "fallback"));
     }
 
     #[test]

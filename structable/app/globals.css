@@ -563,7 +563,9 @@ th[draggable] {
   font-size: 0.875rem;
 }
 
-.dialog-field input {
+.dialog-field input,
+.dialog-field select,
+.dialog-field textarea {
   padding: 0.4rem 0.6rem;
   border: 1px solid #cbd5e1;
   border-radius: 5px;
@@ -572,7 +574,13 @@ th[draggable] {
   outline: none;
 }
 
-.dialog-field input:focus {
+.dialog-field textarea {
+  resize: vertical;
+}
+
+.dialog-field input:focus,
+.dialog-field select:focus,
+.dialog-field textarea:focus {
   border-color: var(--color-primary, #ea580c);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary, #ea580c) 20%, transparent);
 }
@@ -626,7 +634,9 @@ th[draggable] {
 
 @media (prefers-color-scheme: dark) {
   .dialog { background: #1e293b; color: #f1f5f9; }
-  .dialog-field input { background: #0f172a; border-color: #334155; color: #f1f5f9; }
+  .dialog-field input,
+  .dialog-field select,
+  .dialog-field textarea { background: #0f172a; border-color: #334155; color: #f1f5f9; }
   .dialog-btn-secondary { border-color: #475569; }
 }
 
@@ -768,6 +778,65 @@ th[draggable] {
   vertical-align: middle;
   flex-shrink: 0;
   cursor: default;
+}
+
+.rating-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.rating-star {
+  width: 18px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: #d1d5db;
+}
+
+.rating-star-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.rating-star-button:hover,
+.rating-star-button:focus-visible {
+  background: rgba(234, 88, 12, 0.08);
+  outline: none;
+}
+
+.rating-star-shell {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  font-size: 1rem;
+}
+
+.rating-star-empty,
+.rating-star-fill {
+  position: absolute;
+  inset: 0;
+}
+
+.rating-star-fill {
+  overflow: hidden;
+  color: var(--color-primary, #ea580c);
+}
+
+.rating-stars-unset {
+  opacity: 0.42;
+}
+
+.rating-stars-unset .rating-star-fill {
+  color: #94a3b8;
 }
 
 .menu-add-col textarea {

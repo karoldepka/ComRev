@@ -40,7 +40,7 @@ pub struct CustomColumnInput {
     #[serde(default)]
     pub parent_ids: Vec<String>,
     pub source_path: Option<Vec<String>>,
-    /// Column display/filter type (e.g. "text", "numeric", "boolean", "array", "timestamptz").
+    /// Column display/filter type (e.g. "text", "numeric", "boolean", "array", "timestamptz", "rating").
     /// Defaults to ["text"].
     pub types: Option<Vec<String>>,
     /// Underlying data type for queries. Defaults to same as `types`.

@@ -118,19 +118,15 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;
     "#,
+    "ALTER TABLE custom_columns DROP CONSTRAINT IF EXISTS custom_columns_types_check;",
     r#"
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'custom_columns_types_check') THEN
-        ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_types_check
-          CHECK (types <@ ARRAY['text','integer','bigint','numeric','boolean','url','array','jsonb','timestamptz']::TEXT[] AND array_length(types, 1) > 0);
-      END IF;
-
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'custom_columns_data_types_check') THEN
-        ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_data_types_check
-          CHECK (data_types <@ ARRAY['numeric','text','categorical','boolean']::TEXT[]);
-      END IF;
-    END $$;
+    ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_types_check
+      CHECK (types <@ ARRAY['text','integer','bigint','numeric','boolean','url','array','jsonb','timestamptz','rating']::TEXT[] AND array_length(types, 1) > 0);
+    "#,
+    "ALTER TABLE custom_columns DROP CONSTRAINT IF EXISTS custom_columns_data_types_check;",
+    r#"
+    ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_data_types_check
+      CHECK (data_types <@ ARRAY['numeric','text','categorical','boolean']::TEXT[]);
     "#,
     "DROP TRIGGER IF EXISTS trg_custom_columns_when_last_modified ON custom_columns;",
     "CREATE TRIGGER trg_custom_columns_when_last_modified BEFORE UPDATE ON custom_columns FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",

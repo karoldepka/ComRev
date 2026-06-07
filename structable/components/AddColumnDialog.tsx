@@ -10,11 +10,14 @@ const BUILTIN_IDS = new Set([
 
 export type AddColumnPayload = {
   title: string;
+  columnType: ColumnDataType;
   /** null → caller generates a nanoid */
   customId: string | null;
   description: string | null;
   expression: string | null;
 };
+
+export type ColumnDataType = 'text' | 'rating';
 
 type Props = {
   afterColId: string;
@@ -26,6 +29,7 @@ type Props = {
 
 export default function AddColumnDialog({ afterColId, existingNames, onConfirm, onClose }: Props) {
   const [label, setLabel]           = useState('');
+  const [columnType, setColumnType] = useState<ColumnDataType>('text');
   const [description, setDescription] = useState('');
   const [expression, setExpression] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -48,6 +52,7 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
     if (!canSubmit) return;
     onConfirm(afterColId, {
       title: label.trim(),
+      columnType,
       customId: customId.trim() || null,
       description: description.trim() || null,
       expression: expression.trim() || null,
@@ -82,6 +87,17 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
             onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
             placeholder="e.g. My rating"
           />
+        </label>
+
+        <label className="dialog-field">
+          <span className="dialog-label">Data type</span>
+          <select
+            value={columnType}
+            onChange={(e) => setColumnType(e.target.value as ColumnDataType)}
+          >
+            <option value="text">Text</option>
+            <option value="rating">0..5 star rating</option>
+          </select>
         </label>
 
         <label className="dialog-field">
