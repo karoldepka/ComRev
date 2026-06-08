@@ -343,5 +343,13 @@ if duplicates:
     print(f"⚠️ {len(duplicates)} duplicate topic(s) detected:", duplicates)
 
 # --- Deduplication while preserving order ---
+# Explicit repos to include in every fetch run, independent of topic search results.
+# Accepts full GitHub URLs or owner/repo identifiers.
+HARDCODED_REPOS_RAW = [
+    "https://github.com/anomalyco/opencode",
+]
+
+HARDCODED_REPOS = list(dict.fromkeys(HARDCODED_REPOS_RAW))
+
 TOPICS = list(dict.fromkeys(TOPICS_RAW))
 

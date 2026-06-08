@@ -7,10 +7,11 @@ from typing import Dict, List, Optional
 from models import Repo
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from github_topics import TOPICS
+from github_topics import TOPICS, HARDCODED_REPOS
 
 
-GITHUB_API = "https://api.github.com/search/repositories"
+GITHUB_API_SEARCH_REPOS = "https://api.github.com/search/repositories"
+GITHUB_REPO_API = "https://api.github.com/repos"
 
 
 # =========================
@@ -67,7 +68,7 @@ def build_query(topic: str) -> str:
 
 async def github_request(client: httpx.AsyncClient, query: str, page: int):
     r = await client.get(
-        GITHUB_API,
+        GITHUB_API_SEARCH_REPOS,
         params={
             "q": query,
             "sort": "stars",
@@ -84,6 +85,40 @@ async def github_request(client: httpx.AsyncClient, query: str, page: int):
         print(f"[GitHub {r.status_code}] query={query} page={page}")
         print(r.text[:200])
         return {"items": []}
+
+    return r.json()
+
+
+def normalize_owner_repo(owner_repo: str) -> str:
+    if owner_repo.startswith("https://github.com/"):
+        owner_repo = owner_repo[len("https://github.com/"):]
+    elif owner_repo.startswith("http://github.com/"):
+        owner_repo = owner_repo[len("http://github.com/"):]
+
+    # Strip query params and fragments
+    if "?" in owner_repo:
+        owner_repo = owner_repo.split("?", 1)[0]
+    if "#" in owner_repo:
+        owner_repo = owner_repo.split("#", 1)[0]
+
+    # Keep only owner/repo, ignore extra path segments
+    parts = [segment for segment in owner_repo.split("/") if segment]
+    owner_repo = "/".join(parts[:2])
+
+    return owner_repo
+
+
+async def github_repo_request(client: httpx.AsyncClient, owner_repo: str):
+    owner_repo = normalize_owner_repo(owner_repo)
+    r = await client.get(f"{GITHUB_REPO_API}/{owner_repo}")
+
+    print_rate_limit(r.headers)
+    handle_rate_limit(r.headers)
+
+    if r.status_code != 200:
+        print(f"[GitHub {r.status_code}] repo={owner_repo}")
+        print(r.text[:200])
+        return None
 
     return r.json()
 
@@ -150,6 +185,11 @@ async def fetch_page(client: httpx.AsyncClient, query: str, page: int):
     return await github_request(client, query, page)
 
 
+@retry(stop=stop_after_attempt(4), wait=wait_exponential(min=1, max=8))
+async def fetch_repo(client: httpx.AsyncClient, owner_repo: str):
+    return await github_repo_request(client, owner_repo)
+
+
 async def fetch_repos(topics: List[str] = TOPICS) -> List[Repo]:
     headers = {
         "Accept": "application/vnd.github.mercy-preview+json"
@@ -171,6 +211,21 @@ async def fetch_repos(topics: List[str] = TOPICS) -> List[Repo]:
     total = len(topics)
 
     async with httpx.AsyncClient(timeout=20, headers=headers, http2=False) as client:
+        if HARDCODED_REPOS:
+            print("\n📌 Adding hardcoded repository list")
+            for owner_repo in HARDCODED_REPOS:
+                print(f"Fetching hardcoded repo: {owner_repo}")
+                try:
+                    data = await fetch_repo(client, owner_repo)
+                except RuntimeError:
+                    data = await fetch_repo(client, owner_repo)
+
+                if not data:
+                    continue
+
+                repo = parse_repo(data)
+                repos[repo.id] = repo
+
         for i, topic in enumerate(topics, start=1):
             log_topic(i, total, topic)
 
@@ -198,5 +253,7 @@ async def fetch_repos(topics: List[str] = TOPICS) -> List[Repo]:
 
                 if not found_recent:
                     break
+
+
 
     return sorted(repos.values(), key=lambda x: x.stars, reverse=True)
