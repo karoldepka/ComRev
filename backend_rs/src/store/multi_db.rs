@@ -565,6 +565,43 @@ impl DataStore for MultiStore {
         self.fan_first_list("get_row_class_assignments", futs).await
     }
 
+    async fn list_row_class_superclasses(
+        &self,
+        table_id: &str,
+        class_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>> {
+        let table_id = table_id.to_owned();
+        let class_id = class_id.to_owned();
+        let futs = self
+            .stores
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let s = s.clone();
+                let table_id = table_id.clone();
+                let class_id = class_id.clone();
+                let fut: BoxFuture<'static, Result<Vec<crate::row_class::RowClass>>> =
+                    Box::pin(async move { s.list_row_class_superclasses(&table_id, &class_id).await });
+                (i, fut)
+            })
+            .collect();
+        self.fan_first_list("list_row_class_superclasses", futs).await
+    }
+
+    async fn set_row_class_superclasses(
+        &self,
+        table_id: &str,
+        class_id: &str,
+        superclass_ids: &[String],
+    ) -> Result<()> {
+        fan_out!(
+            self,
+            "row_class.superclasses.set",
+            serde_json::json!({"table_id": table_id, "class_id": class_id, "superclass_ids": superclass_ids}),
+            set_row_class_superclasses(table_id, class_id, superclass_ids)
+        )
+    }
+
     async fn add_many_to_many_assignments(
         &self,
         table_id: &str,
@@ -1163,6 +1200,24 @@ mod tests {
             self.record("get_row_class_assignments");
             self.fail()?;
             Ok(vec![])
+        }
+        async fn list_row_class_superclasses(
+            &self,
+            _table_id: &str,
+            _class_id: &str,
+        ) -> Result<Vec<crate::row_class::RowClass>> {
+            self.record("list_row_class_superclasses");
+            self.fail()?;
+            Ok(vec![])
+        }
+        async fn set_row_class_superclasses(
+            &self,
+            _table_id: &str,
+            _class_id: &str,
+            _superclass_ids: &[String],
+        ) -> Result<()> {
+            self.record("set_row_class_superclasses");
+            self.fail()
         }
         async fn add_many_to_many_assignments(
             &self,

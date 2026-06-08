@@ -264,6 +264,69 @@ function errMsg(e: unknown): string {
   return raw;
 }
 
+type GlobalSearchResult =
+  | {
+      id: string;
+      kind: 'column';
+      columnId: string;
+      title: string;
+      detail: string;
+      hidden: boolean;
+    }
+  | {
+      id: string;
+      kind: 'displayed-row';
+      rowIndex: number;
+      rowId: string;
+      columnId: string;
+      title: string;
+      detail: string;
+    }
+  | {
+      id: string;
+      kind: 'all-row';
+      rowId: string;
+      columnId: string | null;
+      title: string;
+      detail: string;
+    };
+
+function searchText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  if (Array.isArray(value)) return value.map(searchText).filter(Boolean).join(' ');
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  }
+  return String(value);
+}
+
+function rowTitle(row: DataRow): string {
+  const title = rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
+  const text = searchText(title).trim();
+  return text || 'Untitled row';
+}
+
+function truncateText(text: string, max = 96): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  return compact.length > max ? `${compact.slice(0, max - 1)}...` : compact;
+}
+
+function includesNeedle(value: unknown, needle: string): boolean {
+  return searchText(value).toLowerCase().includes(needle);
+}
+
+function searchResultKindLabel(result: GlobalSearchResult): string {
+  if (result.kind === 'column') return 'Column';
+  if (result.kind === 'displayed-row') return 'Displayed row';
+  return 'All rows';
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -291,11 +354,45 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   type EditingCell = { rowIndex: number; rowId: string; colId: string; value: string };
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
 
+  // ── Global search ──────────────────────────────────────────────────────────
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
+  const [allRowSearch, setAllRowSearch] = useState<{
+    query: string;
+    loading: boolean;
+    rows: DataRow[];
+    total: number;
+    error: string | null;
+  }>({ query: '', loading: false, rows: [], total: 0, error: null });
+  const [pendingSearchTarget, setPendingSearchTarget] = useState<{ rowId: string; columnId: string | null } | null>(null);
+  const [pendingSearchColumnId, setPendingSearchColumnId] = useState<string | null>(null);
+  const globalSearchInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     getSyncClient()
       .then(setApi)
       .catch((err) => toast.error(`Sync init failed: ${errMsg(err)}`));
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.altKey && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) return;
+      e.preventDefault();
+      setIsGlobalSearchOpen(true);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!isGlobalSearchOpen) return;
+    const focusTimer = setTimeout(() => {
+      globalSearchInputRef.current?.focus();
+      globalSearchInputRef.current?.select();
+    }, 0);
+    return () => clearTimeout(focusTimer);
+  }, [isGlobalSearchOpen]);
 
   useEffect(() => {
     setRows([]);
@@ -740,6 +837,169 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     return cc ? !isColumnReadOnly(cc) : true; // no metadata yet → fallback columns are editable
   }, [compiledExprs, customColByColumnId]);
 
+  const globalSearchTerm = globalSearchQuery.trim();
+  const globalSearchNeedle = globalSearchTerm.toLowerCase();
+
+  const cellSearchValue = useCallback((row: DataRow, col: Column): unknown => {
+    if (col.id === CLASSES_COL_ID) {
+      return rowClassIds(row)
+        .map((classId) => rowClasses.find((candidate) => candidate.id === classId)?.name ?? classId)
+        .join(' ');
+    }
+    const compiled = compiledExprs.get(col.id);
+    if (compiled) {
+      try {
+        return compiled(row);
+      } catch {
+        return '';
+      }
+    }
+    return rowVal(row, col.id, col.sourcePath);
+  }, [compiledExprs, rowClasses]);
+
+  useEffect(() => {
+    if (!api || !isGlobalSearchOpen || globalSearchTerm.length === 0) {
+      setAllRowSearch({ query: globalSearchTerm, loading: false, rows: [], total: 0, error: null });
+      return;
+    }
+
+    let active = true;
+    setAllRowSearch((prev) => ({
+      query: globalSearchTerm,
+      loading: prev.query !== globalSearchTerm || prev.loading,
+      rows: prev.query === globalSearchTerm ? prev.rows : [],
+      total: prev.query === globalSearchTerm ? prev.total : 0,
+      error: null,
+    }));
+
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({
+        page: '1',
+        per_page: '20',
+        q: globalSearchTerm,
+      });
+      Object.entries(filters).forEach(([key, value]) => {
+        if (key !== 'q') params.set(key, value);
+      });
+      const sortColumn = customColumns.find((cc) => cc.id === sort.col);
+      const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
+      params.set('sort', sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`);
+
+      api.fetchDataRows(tableId, params)
+        .then((payload) => {
+          if (!active) return;
+          setAllRowSearch({
+            query: globalSearchTerm,
+            loading: false,
+            rows: payload.data,
+            total: payload.total,
+            error: null,
+          });
+        })
+        .catch((err: unknown) => {
+          if (!active) return;
+          setAllRowSearch({
+            query: globalSearchTerm,
+            loading: false,
+            rows: [],
+            total: 0,
+            error: errMsg(err),
+          });
+        });
+    }, 180);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [api, isGlobalSearchOpen, globalSearchTerm, sort, tableId, customColumns, filters]);
+
+  const globalSearchResults = useMemo<GlobalSearchResult[]>(() => {
+    if (globalSearchNeedle.length === 0) return [];
+
+    const columnResults: GlobalSearchResult[] = allLeafColumns
+      .filter((col) => `${col.label} ${col.id}`.toLowerCase().includes(globalSearchNeedle))
+      .slice(0, 8)
+      .map((col) => ({
+        id: `column:${col.id}`,
+        kind: 'column' as const,
+        columnId: col.id,
+        title: col.label,
+        detail: hiddenSet.has(col.id) ? 'Column hidden' : 'Column',
+        hidden: hiddenSet.has(col.id),
+      }));
+
+    const displayedResults: GlobalSearchResult[] = [];
+    for (let rowIndex = 0; rowIndex < rows.length && displayedResults.length < 16; rowIndex++) {
+      const row = rows[rowIndex];
+      const rowId = String(row['id'] ?? '');
+      if (!rowId || hiddenRowIds.has(rowId)) continue;
+      for (const col of visibleLeafColumns) {
+        const value = cellSearchValue(row, col);
+        if (!includesNeedle(value, globalSearchNeedle)) continue;
+        displayedResults.push({
+          id: `displayed:${rowId}:${col.id}`,
+          kind: 'displayed-row',
+          rowIndex,
+          rowId,
+          columnId: col.id,
+          title: rowTitle(row),
+          detail: `${col.label}: ${truncateText(searchText(value))}`,
+        });
+        break;
+      }
+    }
+
+    const loadedRowIds = new Set(rows.map((row) => String(row['id'] ?? '')).filter(Boolean));
+    const allRowResults: GlobalSearchResult[] = [];
+    for (const row of allRowSearch.query === globalSearchTerm ? allRowSearch.rows : []) {
+      const rowId = String(row['id'] ?? '');
+      if (!rowId || loadedRowIds.has(rowId)) continue;
+      let matchedColumn: Column | undefined;
+      let matchedValue: unknown;
+      for (const col of allLeafColumns) {
+        const value = cellSearchValue(row, col);
+        if (includesNeedle(value, globalSearchNeedle)) {
+          matchedColumn = col;
+          matchedValue = value;
+          break;
+        }
+      }
+      allRowResults.push({
+        id: `all:${rowId}:${matchedColumn?.id ?? ''}`,
+        kind: 'all-row',
+        rowId,
+        columnId: matchedColumn?.id ?? null,
+        title: rowTitle(row),
+        detail: matchedColumn
+          ? `${matchedColumn.label}: ${truncateText(searchText(matchedValue))}`
+          : 'All rows',
+      });
+      if (allRowResults.length >= 16) break;
+    }
+
+    return [...columnResults, ...displayedResults, ...allRowResults];
+  }, [
+    allLeafColumns,
+    allRowSearch,
+    cellSearchValue,
+    globalSearchNeedle,
+    globalSearchTerm,
+    hiddenRowIds,
+    hiddenSet,
+    rows,
+    visibleLeafColumns,
+  ]);
+
+  useEffect(() => {
+    setSelectedSearchIndex(0);
+  }, [globalSearchTerm]);
+
+  useEffect(() => {
+    if (selectedSearchIndex < globalSearchResults.length) return;
+    setSelectedSearchIndex(Math.max(0, globalSearchResults.length - 1));
+  }, [globalSearchResults.length, selectedSearchIndex]);
+
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -975,15 +1235,74 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     setMenuAnchor(null);
   }, [api]);
 
-  const showColumn = (id: string) => {
+  const showColumn = useCallback((id: string) => {
     setHiddenColumns((prev) => prev.filter((c) => c !== id));
     api?.removeHiddenColumn(id);
-  };
-  const showAllColumns = () => {
+  }, [api]);
+  const showAllColumns = useCallback(() => {
     hiddenColumns.forEach((id) => api?.removeHiddenColumn(id));
     setHiddenColumns([]);
     setOpenMenuColumn(null);
-  };
+  }, [api, hiddenColumns]);
+
+  const closeGlobalSearch = useCallback(() => {
+    setIsGlobalSearchOpen(false);
+    wrapperRef.current?.focus();
+  }, []);
+
+  const selectSearchCell = useCallback((rowIndex: number, columnId: string | null) => {
+    const selectedColumnId = columnId && visibleLeafColumns.some((col) => col.id === columnId)
+      ? columnId
+      : visibleLeafColumns[0]?.id;
+    if (!selectedColumnId) return;
+    selectKey(`cell:${rowIndex}:${selectedColumnId}`, false);
+  }, [selectKey, visibleLeafColumns]);
+
+  const activateGlobalSearchResult = useCallback((result: GlobalSearchResult | undefined) => {
+    if (!result) return;
+
+    if (result.kind === 'column') {
+      if (hiddenSet.has(result.columnId)) showColumn(result.columnId);
+      setPendingSearchColumnId(result.columnId);
+      closeGlobalSearch();
+      return;
+    }
+
+    if (result.kind === 'displayed-row') {
+      selectSearchCell(result.rowIndex, result.columnId);
+      closeGlobalSearch();
+      return;
+    }
+
+    setPendingSearchTarget({ rowId: result.rowId, columnId: result.columnId });
+    setFilters((prev) => ({ ...prev, q: globalSearchTerm }));
+    setPage(1);
+    closeGlobalSearch();
+  }, [closeGlobalSearch, globalSearchTerm, hiddenSet, selectSearchCell, showColumn]);
+
+  useEffect(() => {
+    if (!pendingSearchColumnId) return;
+    if (hiddenSet.has(pendingSearchColumnId)) {
+      showColumn(pendingSearchColumnId);
+      return;
+    }
+    const headerKey = leafHeaderKey.get(pendingSearchColumnId);
+    if (!headerKey) return;
+    selectKey(headerKey, false);
+    setPendingSearchColumnId(null);
+  }, [hiddenSet, leafHeaderKey, pendingSearchColumnId, selectKey, showColumn]);
+
+  useEffect(() => {
+    if (!pendingSearchTarget) return;
+    const rowIndex = rows.findIndex((row) => String(row['id'] ?? '') === pendingSearchTarget.rowId);
+    if (rowIndex < 0) return;
+    if (pendingSearchTarget.columnId && hiddenSet.has(pendingSearchTarget.columnId)) {
+      showColumn(pendingSearchTarget.columnId);
+      return;
+    }
+    selectSearchCell(rowIndex, pendingSearchTarget.columnId);
+    setPendingSearchTarget(null);
+  }, [hiddenSet, pendingSearchTarget, rows, selectSearchCell, showColumn]);
 
   const hideRows = useCallback((rowIds: string[]) => {
     if (!api) return;
@@ -1209,6 +1528,88 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   return (
     <>
       <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
+      {isGlobalSearchOpen && (
+        <div
+          className="global-search-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeGlobalSearch();
+          }}
+        >
+          <div className="global-search-panel" role="dialog" aria-modal="true" aria-label="Global search">
+            <div className="global-search-input-row">
+              <input
+                ref={globalSearchInputRef}
+                className="global-search-input"
+                value={globalSearchQuery}
+                placeholder="Search columns and rows"
+                onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeGlobalSearch();
+                    return;
+                  }
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSelectedSearchIndex((idx) => globalSearchResults.length === 0
+                      ? 0
+                      : Math.min(globalSearchResults.length - 1, idx + 1));
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSelectedSearchIndex((idx) => Math.max(0, idx - 1));
+                    return;
+                  }
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    activateGlobalSearchResult(globalSearchResults[selectedSearchIndex]);
+                  }
+                }}
+              />
+              <kbd className="global-search-shortcut">Ctrl Alt F</kbd>
+              <button
+                type="button"
+                className="global-search-close"
+                aria-label="Close global search"
+                onClick={closeGlobalSearch}
+              >
+                x
+              </button>
+            </div>
+            <div className="global-search-results" role="listbox" aria-label="Search results">
+              {globalSearchTerm.length > 0 && globalSearchResults.map((result, idx) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  className={[
+                    'global-search-result',
+                    idx === selectedSearchIndex ? 'is-active' : '',
+                  ].filter(Boolean).join(' ')}
+                  role="option"
+                  aria-selected={idx === selectedSearchIndex}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setSelectedSearchIndex(idx)}
+                  onClick={() => activateGlobalSearchResult(result)}
+                >
+                  <span className="global-search-result-kind">{searchResultKindLabel(result)}</span>
+                  <span className="global-search-result-main">{result.title}</span>
+                  <span className="global-search-result-detail">{result.detail}</span>
+                </button>
+              ))}
+              {globalSearchTerm.length > 0 && globalSearchResults.length === 0 && !allRowSearch.loading && !allRowSearch.error && (
+                <div className="global-search-empty">No matches</div>
+              )}
+              {globalSearchTerm.length > 0 && allRowSearch.loading && (
+                <div className="global-search-status">Searching all rows...</div>
+              )}
+              {globalSearchTerm.length > 0 && allRowSearch.error && (
+                <div className="global-search-error">All-row search failed: {allRowSearch.error}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {rows.length === 0 && columns.length === 0 ? (
         fetchError
           ? <div style={{ padding: '1rem', color: 'red' }}>Error: {fetchError}</div>

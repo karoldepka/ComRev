@@ -338,6 +338,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       table_id TEXT NOT NULL,
       name TEXT NOT NULL,
       color TEXT,
+      superclasses JSONB NOT NULL DEFAULT '[]'::jsonb,
       when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       who_created TEXT,
       who_last_modified TEXT,
@@ -345,10 +346,11 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       modify_count INTEGER NOT NULL DEFAULT 0
     );
     "#,
-    "ALTER TABLE row_classes ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE row_classes ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS superclasses JSONB NOT NULL DEFAULT '[]'::jsonb;",
     "DROP TRIGGER IF EXISTS trg_row_classes_when_last_modified ON row_classes;",
     "CREATE TRIGGER trg_row_classes_when_last_modified BEFORE UPDATE ON row_classes FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     "CREATE INDEX IF NOT EXISTS idx_row_classes_table_id ON row_classes (table_id);",
+    "CREATE INDEX IF NOT EXISTS idx_row_classes_superclasses ON row_classes USING GIN (superclasses);",
     // Generic many-to-many junction table. field_id names the relationship
     // (e.g. 'classes'). item_id is the referenced object id. No FK so it
     // works across multiple entity tables.

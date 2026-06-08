@@ -27,6 +27,11 @@ pub struct SetRowClasses {
     pub class_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SetRowClassSuperclasses {
+    pub superclass_ids: Vec<String>,
+}
+
 pub async fn list_for_table(
     State(state): State<AppState>,
     Path(table_id): Path<String>,
@@ -59,6 +64,31 @@ pub async fn delete_for_table(
     state
         .store
         .delete_row_class(&table_id, &class_id)
+        .await
+        .map_err(|e| db_err("row_class", e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn list_superclasses(
+    State(state): State<AppState>,
+    Path((table_id, class_id)): Path<(String, String)>,
+) -> Result<Json<Vec<RowClass>>, (StatusCode, String)> {
+    state
+        .store
+        .list_row_class_superclasses(&table_id, &class_id)
+        .await
+        .map(Json)
+        .map_err(|e| db_err("row_class", e))
+}
+
+pub async fn set_superclasses(
+    State(state): State<AppState>,
+    Path((table_id, class_id)): Path<(String, String)>,
+    Json(body): Json<SetRowClassSuperclasses>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    state
+        .store
+        .set_row_class_superclasses(&table_id, &class_id, &body.superclass_ids)
         .await
         .map_err(|e| db_err("row_class", e))?;
     Ok(StatusCode::NO_CONTENT)

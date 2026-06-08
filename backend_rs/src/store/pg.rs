@@ -901,9 +901,21 @@ impl DataStore for PgStore {
         .fetch_all(&mut *transaction)
         .await?;
 
+        let affected_subclasses: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT row_id
+             FROM many_to_many_assignments
+             WHERE table_id = $1 AND field_id = 'superclasses' AND item_id = $2",
+        )
+        .bind(table_id)
+        .bind(id)
+        .fetch_all(&mut *transaction)
+        .await?;
+
         sqlx::query(
             "DELETE FROM many_to_many_assignments
-             WHERE table_id = $1 AND field_id = 'classes' AND item_id = $2",
+             WHERE table_id = $1
+               AND ((field_id = 'classes' AND item_id = $2)
+                    OR (field_id = 'superclasses' AND (item_id = $2 OR row_id = $2)))",
         )
         .bind(table_id)
         .bind(id)
@@ -918,6 +930,9 @@ impl DataStore for PgStore {
 
         for row_id in affected_rows {
             sync_many_to_many_jsonb(&mut transaction, table_id, &row_id, "classes").await?;
+        }
+        for subclass_id in affected_subclasses {
+            sync_many_to_many_jsonb(&mut transaction, table_id, &subclass_id, "superclasses").await?;
         }
         transaction.commit().await?;
         Ok(())
@@ -940,6 +955,35 @@ impl DataStore for PgStore {
         .bind(table_id)
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    async fn list_row_class_superclasses(
+        &self,
+        table_id: &str,
+        class_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>> {
+        Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
+            "SELECT rc.id, rc.table_id, rc.name, rc.color
+             FROM row_classes rc
+             JOIN many_to_many_assignments mma ON mma.item_id = rc.id
+             WHERE mma.row_id = $1 AND mma.table_id = $2 AND mma.field_id = 'superclasses'
+               AND rc.table_id = mma.table_id
+             ORDER BY mma.when_created, rc.id",
+        )
+        .bind(class_id)
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    async fn set_row_class_superclasses(
+        &self,
+        table_id: &str,
+        class_id: &str,
+        superclass_ids: &[String],
+    ) -> Result<()> {
+        self.set_many_to_many_assignments(table_id, class_id, "superclasses", superclass_ids)
+            .await
     }
 
     async fn add_many_to_many_assignments(
@@ -1760,13 +1804,36 @@ fn push_filter_conditions<'q>(
                 .push(")");
         }
     }
-    if let Some(ref q) = p.q {
+    if let Some(q) = p.q.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         let pat = format!("%{q}%");
-        qb.push(" AND (custom_vals->>'name' ILIKE ")
-            .push_bind(pat.clone())
-            .push(" OR custom_vals->>'description' ILIKE ")
-            .push_bind(pat)
-            .push(")");
+        let mut paths = vec![
+            "name".to_string(),
+            "title".to_string(),
+            "description".to_string(),
+        ];
+        for (path, types) in col_types {
+            if types.iter().any(|t| matches!(t.as_str(), "text" | "string")) {
+                paths.push(path.clone());
+            }
+        }
+        paths.sort();
+        paths.dedup();
+
+        qb.push(" AND (");
+        let mut pushed = false;
+        for path in paths {
+            if let Some(expr) = path_to_jsonb_expr(&path) {
+                if pushed {
+                    qb.push(" OR ");
+                }
+                qb.push(format!("({expr}) ILIKE ")).push_bind(pat.clone());
+                pushed = true;
+            }
+        }
+        if !pushed {
+            qb.push("FALSE");
+        }
+        qb.push(")");
     }
 }
 
@@ -1843,20 +1910,22 @@ async fn validate_many_to_many_items(
     field_id: &str,
     item_ids: &[String],
 ) -> Result<()> {
-    if field_id != "classes" || item_ids.is_empty() {
+    if item_ids.is_empty() {
         return Ok(());
     }
-    let found: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM row_classes WHERE table_id = $1 AND id = ANY($2)",
-    )
-    .bind(table_id)
-    .bind(item_ids)
-    .fetch_one(&mut **transaction)
-    .await?;
-    anyhow::ensure!(
-        found as usize == item_ids.len(),
-        "one or more row classes do not exist in table '{table_id}'"
-    );
+    if field_id == "classes" || field_id == "superclasses" {
+        let found: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM row_classes WHERE table_id = $1 AND id = ANY($2)",
+        )
+        .bind(table_id)
+        .bind(item_ids)
+        .fetch_one(&mut **transaction)
+        .await?;
+        anyhow::ensure!(
+            found as usize == item_ids.len(),
+            "one or more row classes do not exist in table '{table_id}'"
+        );
+    }
     Ok(())
 }
 
@@ -1879,17 +1948,30 @@ async fn sync_many_to_many_jsonb(
     .fetch_all(&mut **transaction)
     .await?;
 
-    let tname = user_table_ident(table_id);
-    // field_id is validated before calling this function — safe to interpolate.
-    let result = sqlx::query(&format!(
-        "UPDATE {tname}
-         SET {field_id} = $1, when_last_modified = NOW(), modify_count = modify_count + 1
-         WHERE id = $2"
-    ))
-    .bind(serde_json::to_value(&item_ids)?)
-    .bind(row_id)
-    .execute(&mut **transaction)
-    .await?;
+    let result = if field_id == "superclasses" {
+        sqlx::query(
+            "UPDATE row_classes
+             SET superclasses = $1, when_last_modified = NOW(), modify_count = modify_count + 1
+             WHERE table_id = $2 AND id = $3",
+        )
+        .bind(serde_json::to_value(&item_ids)?)
+        .bind(table_id)
+        .bind(row_id)
+        .execute(&mut **transaction)
+        .await?
+    } else {
+        let tname = user_table_ident(table_id);
+        // field_id is validated before calling this function — safe to interpolate.
+        sqlx::query(&format!(
+            "UPDATE {tname}
+             SET {field_id} = $1, when_last_modified = NOW(), modify_count = modify_count + 1
+             WHERE id = $2"
+        ))
+        .bind(serde_json::to_value(&item_ids)?)
+        .bind(row_id)
+        .execute(&mut **transaction)
+        .await?
+    };
     anyhow::ensure!(
         result.rows_affected() == 1,
         "row '{row_id}' does not exist in table '{table_id}'"

@@ -342,6 +342,8 @@ duplicates = [item for item, count in counts.items() if count > 1]
 if duplicates:
     print(f"⚠️ {len(duplicates)} duplicate topic(s) detected:", duplicates)
 
+TOPICS = list(dict.fromkeys(TOPICS_RAW))
+
 # --- Deduplication while preserving order ---
 # Explicit repos to include in every fetch run, independent of topic search results.
 # Accepts full GitHub URLs or owner/repo identifiers.
@@ -351,5 +353,4 @@ HARDCODED_REPOS_RAW = [
 
 HARDCODED_REPOS = list(dict.fromkeys(HARDCODED_REPOS_RAW))
 
-TOPICS = list(dict.fromkeys(TOPICS_RAW))
 

@@ -165,6 +165,10 @@ async fn main() -> anyhow::Result<()> {
             get(row_class::get_row_classes).put(row_class::set_row_classes),
         )
         .route(
+            "/tables/:table_id/row-classes/:class_id/superclasses",
+            get(row_class::list_superclasses).put(row_class::set_superclasses),
+        )
+        .route(
             "/hidden-columns",
             get(hidden_column::list).post(hidden_column::add),
         )

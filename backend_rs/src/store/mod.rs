@@ -128,6 +128,19 @@ pub trait DataStore: Send + Sync {
         row_id: &str,
     ) -> Result<Vec<crate::row_class::RowClass>>;
 
+    async fn list_row_class_superclasses(
+        &self,
+        table_id: &str,
+        class_id: &str,
+    ) -> Result<Vec<crate::row_class::RowClass>>;
+
+    async fn set_row_class_superclasses(
+        &self,
+        table_id: &str,
+        class_id: &str,
+        superclass_ids: &[String],
+    ) -> Result<()>;
+
     /// Add items to a many-to-many field and sync the denormalized JSONB column.
     /// `field_id` must be a valid identifier (e.g. "classes").
     async fn add_many_to_many_assignments(

@@ -60,16 +60,16 @@ impl SyncBackend for AppState {
     }
 
     async fn list_repos(&self, req: ListReposRequest) -> anyhow::Result<PagedRepos> {
-        let params = crate::types::RowQuery {
-            sort: if req.sort.is_empty() {
-                None
-            } else {
-                Some(req.sort)
-            },
-            page: req.page.max(1) as u32,
-            per_page: req.per_page.clamp(1, 200) as u32,
-            ..Default::default()
-        };
+        let mut raw_params = req.filters;
+        if !req.sort.is_empty() {
+            raw_params.insert("sort".to_string(), req.sort);
+        }
+        raw_params.insert("page".to_string(), req.page.max(1).to_string());
+        raw_params.insert(
+            "per_page".to_string(),
+            req.per_page.clamp(1, 200).to_string(),
+        );
+        let params = crate::types::RowQuery::from_map(&raw_params);
         let paged = self.store.list_data_rows(&req.table_id, &params).await?;
         let rows_json = paged
             .data

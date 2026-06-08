@@ -1440,6 +1440,67 @@ async fn integration_row_classes_are_table_scoped_and_sync_jsonb() {
     );
 }
 
+#[tokio::test]
+async fn integration_row_class_superclasses_support_many_to_many_inheritance() {
+    let store = setup!();
+    let table_id = "classes_super";
+
+    store
+        .create_table(table_id, "Superclass table", None, None)
+        .await
+        .unwrap();
+
+    store
+        .create_row_class(table_id, "base", "Base", None)
+        .await
+        .unwrap();
+    store
+        .create_row_class(table_id, "derived", "Derived", None)
+        .await
+        .unwrap();
+
+    store
+        .set_row_class_superclasses(table_id, "derived", &["base".to_owned()])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store
+            .list_row_class_superclasses(table_id, "derived")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|class| class.id)
+            .collect::<Vec<_>>(),
+        vec!["base"]
+    );
+
+    let other_table = "classes_super_other";
+    store
+        .create_table(other_table, "Other table", None, None)
+        .await
+        .unwrap();
+    store
+        .create_row_class(other_table, "other_base", "OtherBase", None)
+        .await
+        .unwrap();
+
+    let invalid = store
+        .set_row_class_superclasses(table_id, "derived", &["other_base".to_owned()])
+        .await;
+    assert!(invalid.is_err(), "a superclass from another table must not be assignable");
+
+    store.delete_row_class(table_id, "base").await.unwrap();
+    assert!(
+        store
+            .list_row_class_superclasses(table_id, "derived")
+            .await
+            .unwrap()
+            .is_empty(),
+        "derived class should lose deleted superclasses"
+    );
+}
+
 // ── Custom column tests ───────────────────────────────────────────────────────
 
 #[tokio::test]
