@@ -626,7 +626,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       }
       return changed ? next : prev;
     });
-  }, [columns]);
+  }, [columns, setColumnWidths]);
 
   // ── Sync filter draft when column menu opens ───────────────────────────────
   useEffect(() => {
@@ -1133,7 +1133,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     setCustomColumns((prev) => prev.filter((c) => c.id !== colMeta.id));
     setHiddenColumns((prev) => prev.filter((c) => c !== colId));
     setPendingDeleteCol(null);
-  }, [api, customColByColumnId, pendingDeleteCol]);
+  }, [api, customColByColumnId, pendingDeleteCol, recordChange]);
 
   const handleAddRowConfirm = useCallback((payload: AddRowPayload) => {
     if (!api) return;
@@ -1153,7 +1153,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     });
     Object.entries(toSet).forEach(([key, color]) => { recordChange(`Set ${color} flag`); api.upsertFlag(key, color); });
     toDelete.forEach((key) => { recordChange('Remove flag'); api.deleteFlag(key); });
-  }, [api]);
+  }, [api, recordChange]);
 
   const saveRemark = useCallback((
     targets: RemarkTarget[],
@@ -1191,7 +1191,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       return next;
     });
     api.upsertRemark(rid, kind, body, targets);
-  }, [api]);
+  }, [api, recordChange]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
