@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Search } from 'lucide-react';
 import type { ApiTable } from '../types/table';
 import NukeDbDialog from './NukeDbDialog';
 
@@ -12,6 +13,7 @@ type Props = {
   tables?: ApiTable[];
   onAddTable?: () => void;
   onAddColumn?: () => void;
+  onOpenSearch?: () => void;
   onShowAllTables?: () => void;
   onRenameTable?: (id: string, title: string) => void;
   onNukeUserData?: () => Promise<void>;
@@ -24,7 +26,7 @@ const TABLE_IMPLS = [
 ];
 
 export default function TableToolbar({
-  tableId, title, tables = [], onAddTable, onAddColumn, onShowAllTables, onRenameTable,
+  tableId, title, tables = [], onAddTable, onAddColumn, onOpenSearch, onShowAllTables, onRenameTable,
   onNukeUserData, onNukeDb,
 }: Props) {
   const path = usePathname();
@@ -184,6 +186,17 @@ export default function TableToolbar({
         >
           {displayTitle}
         </span>
+      )}
+      {onOpenSearch && (
+        <button
+          type="button"
+          className="table-search-button"
+          aria-label="Open table search"
+          title="Search table (Ctrl Alt F)"
+          onClick={onOpenSearch}
+        >
+          <Search aria-hidden="true" size={15} strokeWidth={2} />
+        </button>
       )}
     </div>
     {nukeUserDataOpen && onNukeUserData && (

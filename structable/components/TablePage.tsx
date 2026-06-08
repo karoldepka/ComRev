@@ -16,6 +16,7 @@ export default function TablePage({ tableId }: Props) {
   const router = useRouter();
   const [tables, setTables] = useState<ApiTable[]>([]);
   const [showAddTable, setShowAddTable] = useState(false);
+  const [searchOpenRequest, setSearchOpenRequest] = useState(0);
 
   useEffect(() => {
     getSyncClient()
@@ -59,6 +60,7 @@ export default function TablePage({ tableId }: Props) {
         tableId={tableId}
         tables={tables}
         onAddTable={() => setShowAddTable(true)}
+        onOpenSearch={() => setSearchOpenRequest((request) => request + 1)}
         onShowAllTables={() => router.push('/')}
         onRenameTable={handleRenameTable}
         onNukeUserData={handleNukeUserData}
@@ -72,6 +74,7 @@ export default function TablePage({ tableId }: Props) {
       )}
       <TreeTable
         tableId={tableId}
+        searchOpenRequest={searchOpenRequest}
         onRowClick={tableId === 'tables' ? (id) => router.push(`/t/${id}`) : undefined}
       />
     </>

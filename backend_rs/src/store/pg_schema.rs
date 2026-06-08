@@ -421,6 +421,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "#,
     "CREATE INDEX IF NOT EXISTS idx_mma_row_field ON many_to_many_assignments (table_id, row_id, field_id);",
     "CREATE INDEX IF NOT EXISTS idx_mma_item ON many_to_many_assignments (table_id, item_id);",
+    "CREATE INDEX IF NOT EXISTS idx_mma_parent_lookup ON many_to_many_assignments (table_id, field_id, item_id);",
     r#"
     DO $$
     BEGIN
@@ -454,11 +455,19 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
             tbl
           );
           EXECUTE format(
+            'ALTER TABLE %I ADD COLUMN IF NOT EXISTS parent_child JSONB NOT NULL DEFAULT ''[]''::jsonb',
+            tbl
+          );
+          EXECUTE format(
             'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (classes)',
             'idx_' || t.id || '_classes', tbl
           );
           EXECUTE format(
-            'UPDATE %I SET custom_vals = custom_vals - ''classes'' WHERE custom_vals ? ''classes''',
+            'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (parent_child)',
+            'idx_' || t.id || '_parent_child', tbl
+          );
+          EXECUTE format(
+            'UPDATE %I SET custom_vals = custom_vals - ''classes'' - ''parent_child'' WHERE custom_vals ? ''classes'' OR custom_vals ? ''parent_child''',
             tbl
           );
           EXECUTE format(
@@ -466,7 +475,16 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
              SET classes = COALESCE((
                SELECT jsonb_agg(m.item_id ORDER BY m.when_created, m.item_id)
                FROM many_to_many_assignments m
-               WHERE m.table_id = %L AND m.row_id = r.id AND m.field_id = ''classes''
+             WHERE m.table_id = %L AND m.row_id = r.id AND m.field_id = ''classes''
+             ), ''[]''::jsonb)',
+            tbl, t.id
+          );
+          EXECUTE format(
+            'UPDATE %I r
+             SET parent_child = COALESCE((
+               SELECT jsonb_agg(m.item_id ORDER BY m.when_created, m.item_id)
+               FROM many_to_many_assignments m
+               WHERE m.table_id = %L AND m.row_id = r.id AND m.field_id = ''parent_child''
              ), ''[]''::jsonb)',
             tbl, t.id
           );

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { nanoid } from 'nanoid';
+import type { DataRow } from '../types/table';
+import { rowVal } from '../utils/rowVal';
 
 export type AddRowPayload = {
   id: string;
@@ -12,19 +14,32 @@ export type AddRowPayload = {
 type Props = {
   onConfirm: (payload: AddRowPayload) => void;
   onClose: () => void;
+  parentRows?: DataRow[];
 };
 
 function titleToId(t: string): string {
   return t.trim().replace(/\s+/g, '_');
 }
 
-export default function AddRowDialog({ onConfirm, onClose }: Props) {
+function rowTitle(row: DataRow): string {
+  const value = rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
+  const text = value == null ? '' : String(value).trim();
+  return text || 'Untitled row';
+}
+
+export default function AddRowDialog({ onConfirm, onClose, parentRows = [] }: Props) {
   const [title, setTitle]         = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [customId, setCustomId]   = useState('');
   const [idEdited, setIdEdited]   = useState(false);
 
   const canSubmit = title.trim().length > 0;
+  const isChild = parentRows.length > 0;
+  const headingText = isChild ? 'Add child row' : 'Add row';
+  const submitText = isChild ? 'Add child' : 'Add row';
+  const parentSummary = isChild
+    ? `Add child of ${parentRows.map(rowTitle).join(', ')}`
+    : null;
 
   const handleTitleChange = (v: string) => {
     setTitle(v);
@@ -62,10 +77,11 @@ export default function AddRowDialog({ onConfirm, onClose }: Props) {
         className="dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Add row"
+        aria-label={headingText}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2 className="dialog-title">Add row</h2>
+        <h2 className="dialog-title">{headingText}</h2>
+        {parentSummary && <p className="dialog-context">{parentSummary}</p>}
 
         <label className="dialog-field">
           <span className="dialog-label">Title</span>
@@ -111,7 +127,7 @@ export default function AddRowDialog({ onConfirm, onClose }: Props) {
             disabled={!canSubmit}
             onClick={handleSubmit}
           >
-            Add row
+            {submitText}
           </button>
         </div>
       </div>

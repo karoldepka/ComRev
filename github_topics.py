@@ -349,6 +349,7 @@ TOPICS = list(dict.fromkeys(TOPICS_RAW))
 # Accepts full GitHub URLs or owner/repo identifiers.
 HARDCODED_REPOS_RAW = [
     "https://github.com/anomalyco/opencode",
+    "https://github.com/googleapis/js-genai",
 ]
 
 HARDCODED_REPOS = list(dict.fromkeys(HARDCODED_REPOS_RAW))

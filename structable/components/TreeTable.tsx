@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
+import { ChevronDown, ChevronRight, CircleDot } from 'lucide-react';
 import { getSyncClient, SyncClient } from '../services/syncClient';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import type { ColumnGroup } from '../hooks/useColumnPrefs';
@@ -41,6 +42,7 @@ const ADD_COL_HEADER_KEY = `header:${ADD_COL_VIRTUAL_ID}:0`;
 const ADD_COL_VIRTUAL_COLUMN = { id: ADD_COL_VIRTUAL_ID, label: '+' };
 
 const CLASSES_COL_ID = 'classes';
+const PARENT_CHILD_FIELD_ID = 'parent_child';
 
 // ── Local types ────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,15 @@ const CLASSES_COLUMN: Column = {
 };
 
 type HeaderCell = { column: Column; colSpan: number; rowSpan: number; depth: number };
+type TreeRow = {
+  row: DataRow;
+  rowId: string;
+  depth: number;
+  parentId: string | null;
+  childIds: string[];
+  hasChildren: boolean;
+  isExpanded: boolean;
+};
 
 // ── Utility functions ──────────────────────────────────────────────────────────
 
@@ -86,6 +97,23 @@ function columnLabel(cc: ApiCustomColumn): string {
 function rowClassIds(row: DataRow | undefined): string[] {
   const value = row?.[CLASSES_COL_ID];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function relationshipIds(row: DataRow | undefined, fieldId: string): string[] {
+  const value = row?.[fieldId];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function appendUniqueId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+function insertIdAfter(ids: string[], afterId: string | null | undefined, id: string): string[] {
+  const withoutId = ids.filter((candidate) => candidate !== id);
+  if (!afterId) return [...withoutId, id];
+  const idx = withoutId.indexOf(afterId);
+  if (idx < 0) return [...withoutId, id];
+  return [...withoutId.slice(0, idx + 1), id, ...withoutId.slice(idx + 1)];
 }
 
 function deriveColumns(row: DataRow): Column[] {
@@ -321,9 +349,10 @@ function includesNeedle(value: unknown, needle: string): boolean {
 type Props = {
   tableId: string;
   onRowClick?: (rowId: string) => void;
+  searchOpenRequest?: number;
 };
 
-export default function TreeTable({ tableId, onRowClick }: Props) {
+export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }: Props) {
   const [api, setApi] = useState<SyncClient | null>(null);
   const [syncPending, setSyncPending] = useState(0);
   const [cellPending, setCellPending] = useState(0);
@@ -383,10 +412,18 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   }, [isGlobalSearchOpen]);
 
   useEffect(() => {
+    if (searchOpenRequest <= 0) return;
+    setIsGlobalSearchOpen(true);
+  }, [searchOpenRequest]);
+
+  useEffect(() => {
     setRows([]);
     setCustomColumns([]);
     setRowClasses([]);
     setClassEditorState(null);
+    setCollapsedRowIds(new Set());
+    setRowMenu(null);
+    setAddRowRelation(null);
     setTotal(0);
     setPage(1);
     setFetchError(null);
@@ -424,6 +461,14 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
         setRows((prev) => prev.map((row) =>
           String(row['id'] ?? '') === assignment.row_id
             ? { ...row, [CLASSES_COL_ID]: assignment.item_ids }
+            : row,
+        ));
+      }
+      if ('many_to_many' in ev && ev.many_to_many.data.table_id === tableId && ev.many_to_many.data.field_id === PARENT_CHILD_FIELD_ID) {
+        const assignment = ev.many_to_many.data;
+        setRows((prev) => prev.map((row) =>
+          String(row['id'] ?? '') === assignment.row_id
+            ? { ...row, [PARENT_CHILD_FIELD_ID]: assignment.item_ids }
             : row,
         ));
       }
@@ -499,6 +544,14 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const [classEditorState, setClassEditorState] = useState<ClassEditorState | null>(null);
   const [rowClassesRetryKey, setRowClassesRetryKey] = useState(0);
   const rowClassesRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Tree row state ─────────────────────────────────────────────────────────
+  const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
+  const [rowMenu, setRowMenu] = useState<{ rowId: string; anchor: { top: number; left: number } } | null>(null);
+  const [addRowRelation, setAddRowRelation] = useState<{
+    parentIds: string[];
+    afterSiblingId?: string | null;
+  } | null>(null);
 
   // ── Column menu state ──────────────────────────────────────────────────────
   const [openMenuColumn, setOpenMenuColumn] = useState<string | null>(null);
@@ -682,9 +735,10 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     const dataColumns = customColumns.length > 0
       ? columnsFromMetadata(customColumns, rows[0])
       : (rows[0] ? deriveColumns(rows[0]) : []);
+    const userDataColumns = dataColumns.filter((col) => col.id !== PARENT_CHILD_FIELD_ID);
     const result = tableId === 'tables'
-      ? dataColumns.filter((col) => col.id !== CLASSES_COL_ID)
-      : [...dataColumns.filter((col) => col.id !== CLASSES_COL_ID), CLASSES_COLUMN];
+      ? userDataColumns.filter((col) => col.id !== CLASSES_COL_ID)
+      : [...userDataColumns.filter((col) => col.id !== CLASSES_COL_ID), CLASSES_COLUMN];
     let flat = result;
     if (columnOrder.length > 0) {
       const map = new Map(result.map((c) => [c.id, c]));
@@ -728,6 +782,70 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     () => allLeafColumns.filter((c) => !hiddenSet.has(c.id)),
     [allLeafColumns, hiddenSet],
   );
+  const treeChildIdsByParent = useMemo(() => {
+    const visibleRows = rows.filter((row) => {
+      const rowId = String(row['id'] ?? '');
+      return rowId && !hiddenRowIds.has(rowId);
+    });
+    const rowById = new Map(visibleRows.map((row) => [String(row['id'] ?? ''), row]));
+    const childrenByParent = new Map<string, string[]>();
+
+    for (const row of visibleRows) {
+      const parentId = String(row['id'] ?? '');
+      const childIds = relationshipIds(row, PARENT_CHILD_FIELD_ID)
+        .filter((childId) => childId !== parentId && rowById.has(childId));
+      if (childIds.length === 0) continue;
+      childrenByParent.set(parentId, childIds);
+    }
+
+    return childrenByParent;
+  }, [hiddenRowIds, rows]);
+
+  const treeRows = useMemo<TreeRow[]>(() => {
+    const visibleRows = rows.filter((row) => {
+      const rowId = String(row['id'] ?? '');
+      return rowId && !hiddenRowIds.has(rowId);
+    });
+    const rowById = new Map(visibleRows.map((row) => [String(row['id'] ?? ''), row]));
+    const parentsByChild = new Map<string, Set<string>>();
+
+    for (const [parentId, childIds] of treeChildIdsByParent) {
+      for (const childId of childIds) {
+        const parents = parentsByChild.get(childId) ?? new Set<string>();
+        parents.add(parentId);
+        parentsByChild.set(childId, parents);
+      }
+    }
+
+    const result: TreeRow[] = [];
+    const pushRow = (row: DataRow, depth: number, parentId: string | null, branch: Set<string>) => {
+      const rowId = String(row['id'] ?? '');
+      if (!rowId || branch.has(rowId)) return;
+      const childIds = treeChildIdsByParent.get(rowId) ?? [];
+      const isExpanded = !collapsedRowIds.has(rowId);
+      result.push({
+        row,
+        rowId,
+        depth,
+        parentId,
+        childIds,
+        hasChildren: childIds.length > 0,
+        isExpanded,
+      });
+      if (!isExpanded) return;
+      const nextBranch = new Set(branch);
+      nextBranch.add(rowId);
+      for (const childId of childIds) {
+        const child = rowById.get(childId);
+        if (child) pushRow(child, depth + 1, rowId, nextBranch);
+      }
+    };
+
+    const roots = visibleRows.filter((row) => !parentsByChild.has(String(row['id'] ?? '')));
+    const rowsToRender = roots.length > 0 ? roots : visibleRows;
+    rowsToRender.forEach((row) => pushRow(row, 0, null, new Set()));
+    return result;
+  }, [collapsedRowIds, hiddenRowIds, rows, treeChildIdsByParent]);
   // After a new column is added, move selection to it on the current row.
   useEffect(() => {
     const colId = pendingFocusColRef.current;
@@ -736,11 +854,11 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     if (colIdx < 0) return;
     pendingFocusColRef.current = null;
     const rowIndex = cursorPos && cursorPos.row >= 0 ? cursorPos.row : 0;
-    if (rows.length === 0) return;
+    if (treeRows.length === 0) return;
     const key = `cell:${rowIndex}:${colId}`;
     setSelectedKeys([key]);
     setCursorPos({ row: rowIndex, col: colIdx });
-  }, [visibleLeafColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visibleLeafColumns, treeRows.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const frozenLeftByColumn = useMemo(() => {
     let left = 0;
@@ -795,7 +913,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     addRowIsSelected,
     selectKey: selectKeyHook, moveCursor,
     cursorToKey: cursorToKeyFn,
-  } = useTableSelection(allColumnsForSelection, leafHeaderKeyWithVirtual, rows.length);
+  } = useTableSelection(allColumnsForSelection, leafHeaderKeyWithVirtual, treeRows.length);
 
   const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
     selectKeyHook(key, multi, shift);
@@ -918,10 +1036,9 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       }));
 
     const displayedResults: GlobalSearchResult[] = [];
-    for (let rowIndex = 0; rowIndex < rows.length && displayedResults.length < 16; rowIndex++) {
-      const row = rows[rowIndex];
-      const rowId = String(row['id'] ?? '');
-      if (!rowId || hiddenRowIds.has(rowId)) continue;
+    for (let rowIndex = 0; rowIndex < treeRows.length && displayedResults.length < 16; rowIndex++) {
+      const { row, rowId } = treeRows[rowIndex];
+      if (!rowId) continue;
       for (const col of visibleLeafColumns) {
         const value = cellSearchValue(row, col);
         if (!includesNeedle(value, globalSearchNeedle)) continue;
@@ -973,9 +1090,9 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     cellSearchValue,
     globalSearchNeedle,
     globalSearchTerm,
-    hiddenRowIds,
     hiddenSet,
     rows,
+    treeRows,
     visibleLeafColumns,
   ]);
 
@@ -991,15 +1108,170 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     () => globalSearchResults.filter((result) => result.kind === 'all-row'),
     [globalSearchResults],
   );
+  const addRowParentRows = useMemo(() => {
+    const parentIds = addRowRelation?.parentIds ?? [];
+    if (parentIds.length === 0) return [];
+    return parentIds
+      .map((parentId) => rows.find((candidate) => String(candidate['id'] ?? '') === parentId))
+      .filter((row): row is DataRow => !!row);
+  }, [addRowRelation, rows]);
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  const selectedTreeRowIds = (): string[] => {
+    const ids = Array.from(selectedRows)
+      .map((rowIndex) => treeRows[parseInt(rowIndex, 10)]?.rowId)
+      .filter((id): id is string => !!id);
+    if (ids.length > 0) return [...new Set(ids)];
+    if (cursorPos && cursorPos.row >= 0 && cursorPos.row < treeRows.length) {
+      return [treeRows[cursorPos.row].rowId];
+    }
+    return [];
+  };
+
+  const treeRowIdsWithDescendants = (rowIds: string[]): string[] => {
+    const stack = [...rowIds];
+    const seen = new Set<string>();
+
+    while (stack.length > 0) {
+      const rowId = stack.pop();
+      if (!rowId || seen.has(rowId)) continue;
+      seen.add(rowId);
+      for (const childId of treeChildIdsByParent.get(rowId) ?? []) {
+        stack.push(childId);
+      }
+    }
+
+    return [...seen];
+  };
+
+  const setRowsRecursivelyExpanded = (expand: boolean) => {
+    const rootRowIds = selectedTreeRowIds();
+    if (rootRowIds.length === 0) {
+      toast.info('Select one or more rows first.');
+      return;
+    }
+
+    const rowIds = treeRowIdsWithDescendants(rootRowIds);
+    setCollapsedRowIds((prev) => {
+      const next = new Set(prev);
+      for (const rowId of rowIds) {
+        if (expand) next.delete(rowId);
+        else if ((treeChildIdsByParent.get(rowId) ?? []).length > 0) next.add(rowId);
+      }
+      return next;
+    });
+  };
+
+  const openAddSiblingDialog = () => {
+    if (!cursorPos || cursorPos.row < 0 || cursorPos.row >= treeRows.length) {
+      setAddRowRelation(null);
+      setShowAddRowDialog(true);
+      return;
+    }
+    const treeRow = treeRows[cursorPos.row];
+    setAddRowRelation({
+      parentIds: treeRow.parentId ? [treeRow.parentId] : [],
+      afterSiblingId: treeRow.rowId,
+    });
+    setShowAddRowDialog(true);
+  };
+
+  const openAddChildDialogForRows = (parentIds: string[]) => {
+    const uniqueParentIds = [...new Set(parentIds)].filter(Boolean);
+    if (uniqueParentIds.length === 0) {
+      toast.info('Select one or more rows before adding a child.');
+      return;
+    }
+    setAddRowRelation({ parentIds: uniqueParentIds });
+    setShowAddRowDialog(true);
+  };
+
+  const cellTargetFromKey = (key: string): CellTarget | null => {
+    const parts = key.split(':');
+    if (parts[0] !== 'cell') return null;
+    const rowIndex = parseInt(parts[1], 10);
+    const colId = parts.slice(2).join(':');
+    if (!Number.isFinite(rowIndex) || colId === ADD_COL_VIRTUAL_ID) return null;
+    const rowId = treeRows[rowIndex]?.rowId;
+    if (!rowId) return null;
+    return { rowId, colId };
+  };
+
+  const openSelectedCellMenu = () => {
+    const cursorKey = cursorPos ? cursorToKeyFn(cursorPos) : null;
+    const selectedCellKeys = selectedKeys.filter((key) => cellTargetFromKey(key));
+    const cursorTarget = cursorKey ? cellTargetFromKey(cursorKey) : null;
+    const targetKeys = selectedCellKeys.length > 0
+      ? selectedCellKeys
+      : cursorKey && cursorTarget
+        ? [cursorKey]
+        : [];
+    const seen = new Set<string>();
+    const targets: CellTarget[] = [];
+
+    for (const key of targetKeys) {
+      const target = cellTargetFromKey(key);
+      if (!target) continue;
+      const targetId = `${target.rowId}:${target.colId}`;
+      if (seen.has(targetId)) continue;
+      seen.add(targetId);
+      targets.push(target);
+    }
+
+    if (targets.length === 0) {
+      toast.info('Select one or more cells first.');
+      return;
+    }
+
+    const anchorKey = cursorKey && cursorTarget && targetKeys.includes(cursorKey)
+      ? cursorKey
+      : targetKeys[0];
+    const rect = anchorKey
+      ? wrapperRef.current?.querySelector(`[data-key="${CSS.escape(anchorKey)}"]`)?.getBoundingClientRect()
+      : null;
+    const fallbackRect = wrapperRef.current?.getBoundingClientRect();
+    setCellMenu({
+      anchor: {
+        top: (rect?.bottom ?? fallbackRect?.top ?? 0) + window.scrollY + 4,
+        left: (rect?.left ?? fallbackRect?.left ?? 0) + window.scrollX,
+      },
+      targets,
+    });
+    setCellMenuMode('menu');
+    setDraftText('');
+  };
+
   const handleTableKeyDown = (e: React.KeyboardEvent) => {
     if (editingCell) return; // let the input handle keys
 
+    if (e.key === 'ContextMenu' || e.key === 'Apps') {
+      e.preventDefault();
+      e.stopPropagation();
+      openSelectedCellMenu();
+      return;
+    }
+
     if (e.key === 'Enter') {
+      if ((e.metaKey || e.ctrlKey) && e.altKey) {
+        e.preventDefault();
+        openAddChildDialogForRows(selectedTreeRowIds());
+        return;
+      }
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        openAddSiblingDialog();
+        return;
+      }
+      if (e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        openSelectedCellMenu();
+        return;
+      }
+
       const selectedColumnId = cursorPos ? allColumnsForSelection[cursorPos.col]?.id : undefined;
       // On the virtual add-column column: open the dialog regardless of row
       if (selectedColumnId === ADD_COL_VIRTUAL_ID) {
@@ -1010,9 +1282,9 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
         setMenuAnchor(null);
         return;
       }
-      if (selectedColumnId === CLASSES_COL_ID && cursorPos && cursorPos.row >= 0 && cursorPos.row < rows.length) {
+      if (selectedColumnId === CLASSES_COL_ID && cursorPos && cursorPos.row >= 0 && cursorPos.row < treeRows.length) {
         e.preventDefault();
-        const rowId = String(rows[cursorPos.row]?.['id'] ?? '');
+        const rowId = treeRows[cursorPos.row]?.rowId ?? '';
         const key = `cell:${cursorPos.row}:${CLASSES_COL_ID}`;
         const rect = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`)?.getBoundingClientRect();
         setClassEditorState({
@@ -1021,14 +1293,15 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
         });
         return;
       }
-      if (cursorPos && cursorPos.row === rows.length) {
+      if (cursorPos && cursorPos.row === treeRows.length) {
         e.preventDefault();
+        setAddRowRelation(null);
         setShowAddRowDialog(true);
         return;
       }
       if (cursorPos && cursorPos.row >= 0) {
         const col = visibleLeafColumns[cursorPos.col];
-        const row = rows[cursorPos.row];
+        const row = treeRows[cursorPos.row]?.row;
         if (col && row && isCellEditable(col.id) && !isRatingColumn(col)) {
           e.preventDefault();
           const rowId = String(row['id'] ?? '');
@@ -1042,6 +1315,38 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
 
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     e.preventDefault();
+
+    if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      setRowsRecursivelyExpanded(e.key === 'ArrowRight');
+      return;
+    }
+
+    if (e.ctrlKey && e.altKey && !e.shiftKey && cursorPos && cursorPos.row >= 0 && cursorPos.row < treeRows.length) {
+      const treeRow = treeRows[cursorPos.row];
+      if (e.key === 'ArrowRight' && treeRow.hasChildren && !treeRow.isExpanded) {
+        setCollapsedRowIds((prev) => {
+          const next = new Set(prev);
+          next.delete(treeRow.rowId);
+          return next;
+        });
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        if (treeRow.hasChildren && treeRow.isExpanded) {
+          setCollapsedRowIds((prev) => new Set(prev).add(treeRow.rowId));
+          return;
+        }
+        if (treeRow.parentId) {
+          const parentIndex = treeRows.findIndex((candidate) => candidate.rowId === treeRow.parentId);
+          if (parentIndex >= 0) {
+            const colId = allColumnsForSelection[cursorPos.col]?.id;
+            if (colId) selectKey(`cell:${parentIndex}:${colId}`, false);
+            return;
+          }
+        }
+      }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') return;
+    }
 
     moveCursor(e.key as 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight', e.shiftKey);
   };
@@ -1066,7 +1371,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   const saveCellValue = useCallback((rowIndex: number, rowId: string, colId: string, value: unknown) => {
     if (!api) return;
     restoreEditCursor(rowIndex, colId);
-    setRows((prev) => prev.map((r, i) => i === rowIndex ? { ...r, [colId]: value } : r));
+    setRows((prev) => prev.map((row) => String(row['id'] ?? '') === rowId ? { ...row, [colId]: value } : row));
     recordChange(`Edit cell [${colId}]`);
     api.upsertCellValue(rowId, colId, value, tableId)
       .catch((err: unknown) => toast.error(`Failed to queue cell edit: ${errMsg(err)}`));
@@ -1158,31 +1463,31 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       const ri = parseInt(parts[1], 10);
       const colId = parts.slice(2).join(':');
       if (colId !== ADD_COL_VIRTUAL_ID) {
-        const row = rows[ri];
+        const row = treeRows[ri]?.row;
         if (row) {
           const rowId = String(row['id'] ?? '');
           history.replaceState(null, '', `#${encodeURIComponent(rowId)}--${encodeURIComponent(colId)}`);
         }
       }
     }
-  }, [cursorPos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cursorPos, treeRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // On rows load, jump to the cell referenced in the URL hash.
   useEffect(() => {
-    if (rows.length === 0 || typeof window === 'undefined') return;
+    if (treeRows.length === 0 || typeof window === 'undefined') return;
     const hash = window.location.hash.slice(1);
     if (!hash) return;
     const sepIdx = hash.indexOf('--');
     if (sepIdx < 0) return;
     const targetRowId = decodeURIComponent(hash.slice(0, sepIdx));
     const targetColId = decodeURIComponent(hash.slice(sepIdx + 2));
-    const ri = rows.findIndex((r) => String(r['id'] ?? '') === targetRowId);
+    const ri = treeRows.findIndex((r) => r.rowId === targetRowId);
     if (ri < 0) return;
     const bodyKey = `cell:${ri}:${targetColId}`;
     const el = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(bodyKey)}"]`);
     el?.scrollIntoView({ block: 'center', inline: 'nearest' });
     selectKey(bodyKey, false);
-  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [treeRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSort = (col: string, dir: 'asc' | 'desc') => {
     const column = allLeafColumns.find((c) => c.id === col);
@@ -1286,7 +1591,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
 
   useEffect(() => {
     if (!pendingSearchTarget) return;
-    const rowIndex = rows.findIndex((row) => String(row['id'] ?? '') === pendingSearchTarget.rowId);
+    const rowIndex = treeRows.findIndex((row) => row.rowId === pendingSearchTarget.rowId);
     if (rowIndex < 0) return;
     if (pendingSearchTarget.columnId && hiddenSet.has(pendingSearchTarget.columnId)) {
       showColumn(pendingSearchTarget.columnId);
@@ -1294,7 +1599,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     }
     selectSearchCell(rowIndex, pendingSearchTarget.columnId);
     setPendingSearchTarget(null);
-  }, [hiddenSet, pendingSearchTarget, rows, selectSearchCell, showColumn]);
+  }, [hiddenSet, pendingSearchTarget, treeRows, selectSearchCell, showColumn]);
 
   const hideRows = useCallback((rowIds: string[]) => {
     if (!api) return;
@@ -1344,6 +1649,15 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
   }, [cellMenu]);
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest('.row-object-menu')) setRowMenu(null);
+    };
+    window.addEventListener('pointerdown', onDown);
+    return () => window.removeEventListener('pointerdown', onDown);
+  }, [rowMenu]);
 
   // All stable column ids currently visible, used for duplicate-ID validation.
   const existingColNames = useMemo<Set<string>>(() => new Set([
@@ -1446,14 +1760,61 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     setPendingDeleteCol(null);
   }, [api, customColByColumnId, pendingDeleteCol, recordChange]);
 
+  const openAddChildDialog = useCallback((parentId: string) => {
+    setAddRowRelation({ parentIds: [parentId] });
+    setShowAddRowDialog(true);
+    setRowMenu(null);
+  }, []);
+
   const handleAddRowConfirm = useCallback((payload: AddRowPayload) => {
     if (!api) return;
-    setRows((prev) => [...prev, { id: payload.id, title: payload.title }]);
+    const relation = addRowRelation;
+    setRows((prev) => {
+      const childRow = { id: payload.id, title: payload.title, [PARENT_CHILD_FIELD_ID]: [] };
+      const insertAfterRow = (nextRows: DataRow[]) => {
+        if (!relation?.afterSiblingId) return [...nextRows, childRow];
+        const idx = nextRows.findIndex((row) => String(row['id'] ?? '') === relation.afterSiblingId);
+        if (idx < 0) return [...nextRows, childRow];
+        return [...nextRows.slice(0, idx + 1), childRow, ...nextRows.slice(idx + 1)];
+      };
+      if (!relation || relation.parentIds.length === 0) return insertAfterRow(prev);
+      const parentIds = new Set(relation.parentIds);
+      const nextRows = prev.map((row) => {
+          const rowId = String(row['id'] ?? '');
+          if (!parentIds.has(rowId)) return row;
+          const existingIds = relationshipIds(row, PARENT_CHILD_FIELD_ID);
+          const nextIds = relation.afterSiblingId
+            ? insertIdAfter(existingIds, relation.afterSiblingId, payload.id)
+            : appendUniqueId(existingIds, payload.id);
+          return {
+            ...row,
+            [PARENT_CHILD_FIELD_ID]: nextIds,
+          };
+        });
+      return insertAfterRow(nextRows);
+    });
     setTotal((t) => t + 1);
-    recordChange(`Add row "${payload.title}"`);
+    recordChange(relation?.parentIds.length ? `Add related row "${payload.title}"` : `Add row "${payload.title}"`);
     api.createRow(tableId, payload.id, { title: payload.title });
+    if (relation?.parentIds.length) {
+      setCollapsedRowIds((prev) => {
+        const next = new Set(prev);
+        relation.parentIds.forEach((parentId) => next.delete(parentId));
+        return next;
+      });
+      relation.parentIds.forEach((parentId) => {
+        const parent = rows.find((row) => String(row['id'] ?? '') === parentId);
+        const existingIds = relationshipIds(parent, PARENT_CHILD_FIELD_ID);
+        const nextChildren = relation.afterSiblingId
+          ? insertIdAfter(existingIds, relation.afterSiblingId, payload.id)
+          : appendUniqueId(existingIds, payload.id);
+        api.setManyToMany(tableId, parentId, PARENT_CHILD_FIELD_ID, nextChildren)
+          .catch((err: unknown) => toast.error(`Failed to attach child row: ${errMsg(err)}`));
+      });
+    }
+    setAddRowRelation(null);
     setShowAddRowDialog(false);
-  }, [api, recordChange, tableId]);
+  }, [addRowRelation, api, recordChange, rows, tableId]);
 
   const handleFlagsChange = useCallback((toSet: Record<string, string>, toDelete: string[]) => {
     if (!api) return;
@@ -1849,18 +2210,20 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
               ))}
             </thead>
             <tbody>
-              {rows.map((row: DataRow, rowIndex: number) => {
-                const rowId = String(row['id'] ?? '');
-                if (hiddenRowIds.has(rowId)) return null;
+              {treeRows.map((treeRow: TreeRow, rowIndex: number) => {
+                const { row, rowId } = treeRow;
                 return (
                   <tr
-                    key={rowIndex}
+                    key={`${rowId}:${treeRow.parentId ?? 'root'}:${rowIndex}`}
+                    className={treeRow.depth > 0 ? 'tree-child-row' : undefined}
+                    data-tree-depth={treeRow.depth}
                     style={onRowClick ? { cursor: 'pointer' } : undefined}
                   >
-                    {visibleLeafColumns.map((col: Column) => {
+                    {visibleLeafColumns.map((col: Column, colIdx: number) => {
                       const bodyKey = `cell:${rowIndex}:${col.id}`;
                       const noteKey = `${rowId}:${col.id}`;
                       const isClassesColumn = col.id === CLASSES_COL_ID;
+                      const isTreeControlCell = colIdx === 0;
                       return (
                         <td
                           key={bodyKey}
@@ -1901,7 +2264,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                               ? selBodyKeys.map((k) => {
                                   const p = k.split(':');
                                   return {
-                                    rowId: String(rows[parseInt(p[1], 10)]?.['id'] ?? ''),
+                                    rowId: treeRows[parseInt(p[1], 10)]?.rowId ?? '',
                                     colId: p[2],
                                   };
                                 })
@@ -1911,51 +2274,94 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
                             setDraftText('');
                           }}
                         >
-                          {isClassesColumn ? (
-                            <div className="classes-cell-chips">
-                              {rowClassIds(row).map((classId) => {
-                                const cls = rowClasses.find((candidate) => candidate.id === classId);
-                                if (!cls) return null;
-                                return (
-                                  <span
-                                    key={classId}
-                                    className="row-class-chip"
-                                    style={{ background: cls.color ?? '#6366f1' }}
-                                  >
-                                    {cls.name}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ) : editingCell?.rowIndex === rowIndex && editingCell?.colId === col.id ? (
-                            <input
-                              className="cell-editor"
-                              autoFocus
-                              value={editingCell.value}
-                              onChange={(e) => setEditingCell((prev) => prev ? { ...prev, value: e.target.value } : null)}
-                              onBlur={commitEdit}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') { e.preventDefault(); commitEdit(); wrapperRef.current?.focus(); }
-                                if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); wrapperRef.current?.focus(); }
-                              }}
-                            />
-                          ) : isRatingColumn(col) && isCellEditable(col.id) ? (
-                            <RatingStars
-                              value={rowVal(row, col.id, col.sourcePath)}
-                              onChange={(value) => saveCellValue(rowIndex, rowId, col.id, value)}
-                            />
-                          ) : (
-                            <CellContent
-                              row={row}
-                              colId={col.id}
-                              sourcePath={col.sourcePath}
-                              types={col.types}
-                              formatNumericStrings={col.filterType === 'numeric' || col.types?.includes('numeric')}
-                              compiledExpr={compiledExprs.get(col.id)}
-                              hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
-                              hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
-                            />
+                          {isTreeControlCell && (
+                            <span className="tree-row-controls" style={{ paddingLeft: `${treeRow.depth}ch` }}>
+                              {treeRow.hasChildren ? (
+                                <button
+                                  type="button"
+                                  className="tree-expand-button"
+                                  aria-label={treeRow.isExpanded ? 'Collapse row' : 'Expand row'}
+                                  title={treeRow.isExpanded ? 'Collapse row' : 'Expand row'}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCollapsedRowIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(rowId)) next.delete(rowId);
+                                      else next.add(rowId);
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  {treeRow.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                </button>
+                              ) : (
+                                <span className="tree-expand-spacer" />
+                              )}
+                              <button
+                                type="button"
+                                className="row-object-button"
+                                aria-label={`Row actions for ${rowTitle(row)}`}
+                                title="Row actions"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setRowMenu({
+                                    rowId,
+                                    anchor: { top: rect.bottom + window.scrollY + 6, left: rect.left + window.scrollX },
+                                  });
+                                }}
+                              >
+                                <CircleDot size={13} />
+                              </button>
+                            </span>
                           )}
+                          <span className={isTreeControlCell ? 'tree-cell-content' : undefined}>
+                            {isClassesColumn ? (
+                              <div className="classes-cell-chips">
+                                {rowClassIds(row).map((classId) => {
+                                  const cls = rowClasses.find((candidate) => candidate.id === classId);
+                                  if (!cls) return null;
+                                  return (
+                                    <span
+                                      key={classId}
+                                      className="row-class-chip"
+                                      style={{ background: cls.color ?? '#6366f1' }}
+                                    >
+                                      {cls.name}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : editingCell?.rowIndex === rowIndex && editingCell?.colId === col.id ? (
+                              <input
+                                className="cell-editor"
+                                autoFocus
+                                value={editingCell.value}
+                                onChange={(e) => setEditingCell((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                                onBlur={commitEdit}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.preventDefault(); commitEdit(); wrapperRef.current?.focus(); }
+                                  if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); wrapperRef.current?.focus(); }
+                                }}
+                              />
+                            ) : isRatingColumn(col) && isCellEditable(col.id) ? (
+                              <RatingStars
+                                value={rowVal(row, col.id, col.sourcePath)}
+                                onChange={(value) => saveCellValue(rowIndex, rowId, col.id, value)}
+                              />
+                            ) : (
+                              <CellContent
+                                row={row}
+                                colId={col.id}
+                                sourcePath={col.sourcePath}
+                                types={col.types}
+                                formatNumericStrings={col.filterType === 'numeric' || col.types?.includes('numeric')}
+                                compiledExpr={compiledExprs.get(col.id)}
+                                hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
+                                hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
+                              />
+                            )}
+                          </span>
                           <div
                             className="resizer"
                             onPointerDown={(e) => { e.stopPropagation(); handleResizerPointerDown(e, col.id); }}
@@ -1979,7 +2385,7 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
               })}
               <tr
                 className="add-row-tr"
-                onDoubleClick={() => setShowAddRowDialog(true)}
+                onDoubleClick={() => { setAddRowRelation(null); setShowAddRowDialog(true); }}
               >
                 {visibleLeafColumns.map((col, colIdx) => {
                   const addRowKey = `add-row:${col.id}`;
@@ -2080,6 +2486,19 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
           onClose={() => setCellMenu(null)}
         />
       )}
+      {rowMenu && (
+        <div
+          className="row-object-menu"
+          style={{ position: 'absolute', top: rowMenu.anchor.top, left: rowMenu.anchor.left }}
+        >
+          <button
+            type="button"
+            onClick={() => openAddChildDialog(rowMenu.rowId)}
+          >
+            Add child
+          </button>
+        </div>
+      )}
       {addColAfter !== null && (
         <AddColumnDialog
           afterColId={addColAfter}
@@ -2100,8 +2519,9 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
       )}
       {showAddRowDialog && (
         <AddRowDialog
+          parentRows={addRowParentRows}
           onConfirm={handleAddRowConfirm}
-          onClose={() => setShowAddRowDialog(false)}
+          onClose={() => { setShowAddRowDialog(false); setAddRowRelation(null); }}
         />
       )}
       {propertiesCol && (

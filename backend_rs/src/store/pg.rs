@@ -199,7 +199,8 @@ impl PgStore {
                 who_last_modified TEXT,
                 modify_count      INTEGER     NOT NULL DEFAULT 0,
                 custom_vals       JSONB       NOT NULL DEFAULT '{{}}',
-                classes           JSONB       NOT NULL DEFAULT '[]'
+                classes           JSONB       NOT NULL DEFAULT '[]',
+                parent_child      JSONB       NOT NULL DEFAULT '[]'
             )"#
         ))
         .execute(&self.pool)
@@ -212,6 +213,13 @@ impl PgStore {
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table classes column({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS parent_child JSONB NOT NULL DEFAULT '[]'::jsonb"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table parent_child column({table_id}): {e}"))?;
 
         sqlx::query(&format!(
             "CREATE INDEX IF NOT EXISTS \"idx_{table_id}_custom_vals\" \
@@ -229,6 +237,38 @@ impl PgStore {
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table classes index({table_id}): {e}"))?;
 
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{}_parent_child\" ON {tname} USING GIN (parent_child)",
+            table_id.replace('"', "")
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table parent_child index({table_id}): {e}"))?;
+
+        Ok(())
+    }
+
+    async fn ensure_many_to_many_field(&self, table_id: &str, field_id: &str) -> Result<()> {
+        if field_id == "superclasses" {
+            return Ok(());
+        }
+        validate_field_id(field_id)?;
+        self.ensure_user_table(table_id).await?;
+        let tname = user_table_ident(table_id);
+        sqlx::query(&format!(
+            "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS {field_id} JSONB NOT NULL DEFAULT '[]'::jsonb"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_many_to_many_field column({table_id}.{field_id}): {e}"))?;
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{}_{}\" ON {tname} USING GIN ({field_id})",
+            table_id.replace('"', ""),
+            field_id.replace('"', ""),
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_many_to_many_field index({table_id}.{field_id}): {e}"))?;
         Ok(())
     }
 
@@ -997,7 +1037,7 @@ impl DataStore for PgStore {
             return Ok(());
         }
         validate_field_id(field_id)?;
-        self.ensure_user_table(table_id).await?;
+        self.ensure_many_to_many_field(table_id, field_id).await?;
         let mut transaction = self.pool.begin().await?;
         let item_ids = unique_item_ids(item_ids);
         validate_many_to_many_items(&mut transaction, table_id, field_id, &item_ids).await?;
@@ -1029,7 +1069,7 @@ impl DataStore for PgStore {
             return Ok(());
         }
         validate_field_id(field_id)?;
-        self.ensure_user_table(table_id).await?;
+        self.ensure_many_to_many_field(table_id, field_id).await?;
         let mut transaction = self.pool.begin().await?;
         for item_id in unique_item_ids(item_ids) {
             sqlx::query(
@@ -1056,7 +1096,7 @@ impl DataStore for PgStore {
         item_ids: &[String],
     ) -> Result<()> {
         validate_field_id(field_id)?;
-        self.ensure_user_table(table_id).await?;
+        self.ensure_many_to_many_field(table_id, field_id).await?;
         let mut transaction = self.pool.begin().await?;
         let item_ids = unique_item_ids(item_ids);
         validate_many_to_many_items(&mut transaction, table_id, field_id, &item_ids).await?;
@@ -1608,8 +1648,9 @@ impl DataStore for PgStore {
                        'who_created', who_created, \
                        'when_last_modified', when_last_modified, \
                        'who_last_modified', who_last_modified, \
-                       'classes', COALESCE(classes, '[]'::jsonb)\
-                     ) || (custom_vals - 'classes')) FROM {tname} WHERE ",
+                       'classes', COALESCE(classes, '[]'::jsonb),\
+                       'parent_child', COALESCE(parent_child, '[]'::jsonb)\
+                     ) || (custom_vals - 'classes' - 'parent_child')) FROM {tname} WHERE ",
                 ));
                 qb.push("id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
