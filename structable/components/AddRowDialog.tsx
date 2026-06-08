@@ -22,7 +22,7 @@ function titleToId(t: string): string {
 }
 
 function rowTitle(row: DataRow): string {
-  const value = rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
+  const value = rowVal(row, 'full_name') ?? rowVal(row, 'fullName') ?? rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
   const text = value == null ? '' : String(value).trim();
   return text || 'Untitled row';
 }

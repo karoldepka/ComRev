@@ -1199,6 +1199,17 @@ impl SyncClient {
         })
     }
 
+    pub fn delete_row(
+        &self,
+        table_id: String,
+        row_id: String,
+    ) -> js_sys::Promise {
+        let base = rest_base(&self.inner.borrow().base_url);
+        future_to_promise(async move {
+            http_delete(&format!("{base}/tables/{table_id}/rows/{row_id}")).await
+        })
+    }
+
     pub fn upsert_cell_value(
         &self,
         table_id: String,

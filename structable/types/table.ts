@@ -1,13 +1,3 @@
-export type FlagColorId = 'blue' | 'green' | 'yellow' | 'orange' | 'red';
-
-export const FLAG_COLORS: readonly { id: FlagColorId; label: string; bg: string }[] = [
-  { id: 'blue',   label: 'Uncertain',   bg: '#2563eb' },
-  { id: 'green',  label: 'Good',        bg: '#16a34a' },
-  { id: 'yellow', label: 'Warning',     bg: '#d97706' },
-  { id: 'orange', label: 'Investigate', bg: '#ea580c' },
-  { id: 'red',    label: 'Bad',         bg: '#dc2626' },
-] as const;
-
 export type CellTarget = { rowId: string; colId: string };
 
 export type ToastMessage = {

@@ -198,14 +198,48 @@ impl PgStore {
                 who_created       TEXT,
                 who_last_modified TEXT,
                 modify_count      INTEGER     NOT NULL DEFAULT 0,
+                full_name         TEXT        NOT NULL DEFAULT '',
                 custom_vals       JSONB       NOT NULL DEFAULT '{{}}',
                 classes           JSONB       NOT NULL DEFAULT '[]',
-                parent_child      JSONB       NOT NULL DEFAULT '[]'
+                parent_child      JSONB       NOT NULL DEFAULT '[]',
+                when_deleted      TIMESTAMPTZ
             )"#
         ))
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT ''"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table full_name column({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "UPDATE {tname}
+             SET full_name = COALESCE(
+               NULLIF(full_name, ''),
+               NULLIF(custom_vals->>'full_name', ''),
+               NULLIF(custom_vals->>'title', ''),
+               NULLIF(custom_vals->>'name', ''),
+               id
+             )
+             WHERE full_name = ''"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table full_name backfill({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "UPDATE {tname}
+             SET custom_vals = custom_vals - 'full_name'
+             WHERE custom_vals ? 'full_name'"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table full_name cleanup({table_id}): {e}"))?;
+
         // Ensure classes column exists for tables created before this migration.
         sqlx::query(&format!(
             "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS classes JSONB NOT NULL DEFAULT '[]'::jsonb"
@@ -222,12 +256,45 @@ impl PgStore {
         .map_err(|e| anyhow::anyhow!("ensure_user_table parent_child column({table_id}): {e}"))?;
 
         sqlx::query(&format!(
+            "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS when_deleted TIMESTAMPTZ"
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table when_deleted column({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{}_when_deleted\" \
+             ON {tname} (when_deleted) WHERE when_deleted IS NOT NULL",
+            table_id.replace('"', "")
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table when_deleted index({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
             "CREATE INDEX IF NOT EXISTS \"idx_{table_id}_custom_vals\" \
              ON {tname} USING GIN (custom_vals)"
         ))
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table index({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{}_full_name_fts\"
+             ON {tname} USING GIN (to_tsvector('simple', COALESCE(full_name, '')))",
+            table_id.replace('"', "")
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table full_name fts index({table_id}): {e}"))?;
+
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS \"idx_{}_full_name_lower\" ON {tname} (LOWER(full_name))",
+            table_id.replace('"', "")
+        ))
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("ensure_user_table full_name lower index({table_id}): {e}"))?;
 
         sqlx::query(&format!(
             "CREATE INDEX IF NOT EXISTS \"idx_{}_classes\" ON {tname} USING GIN (classes)",
@@ -367,6 +434,7 @@ impl PgStore {
             "id",
             "github_id",
             "table_id",
+            "full_name",
             "who_created",
             "when_created",
             "when_last_modified",
@@ -1135,7 +1203,8 @@ impl DataStore for PgStore {
         }
         self.repair_nested_columns_from_existing_rows(table_id).await?;
 
-        Ok(sqlx::query_as::<_, CustomColumn>(
+        let mut columns = super::row_builtin_columns();
+        columns.extend(sqlx::query_as::<_, CustomColumn>(
             "SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
                COALESCE(tcc.position_before, c.position_before) AS position_before,
                COALESCE(tcc.position_after, c.position_after) AS position_after,
@@ -1151,7 +1220,10 @@ impl DataStore for PgStore {
         )
         .bind(table_id)
         .fetch_all(&self.pool)
-        .await?)
+        .await?
+        .into_iter()
+        .filter(|column| column.id != "full_name"));
+        Ok(columns)
     }
 
     async fn upsert_custom_column(
@@ -1160,6 +1232,11 @@ impl DataStore for PgStore {
         id: &str,
         input: &crate::custom_column::CustomColumnInput,
     ) -> Result<CustomColumn> {
+        if id == "full_name" {
+            return Err(anyhow::anyhow!(
+                "full_name is a built-in physical column and cannot be created as a custom column"
+            ));
+        }
         if table_id != "tables" {
             self.ensure_user_table(table_id).await?;
             sqlx::query(
@@ -1468,7 +1545,7 @@ impl DataStore for PgStore {
         // The `tables` registry table is patched directly.
         if table_id == "tables" {
             let sql = match col_id {
-                "title" => {
+                "title" | "full_name" => {
                     "UPDATE tables SET title = $2::text,
                               when_last_modified = NOW(), modify_count = modify_count + 1
                             WHERE id = $1"
@@ -1503,6 +1580,23 @@ impl DataStore for PgStore {
                 .set_many_to_many_assignments(table_id, row_id, col_id, &item_ids)
                 .await;
         }
+        if col_id == "full_name" {
+            self.ensure_user_table(table_id).await?;
+            let tname = user_table_ident(table_id);
+            sqlx::query(&format!(
+                "INSERT INTO {tname} (id, full_name)
+                 VALUES ($1, $2)
+                 ON CONFLICT (id) DO UPDATE
+                   SET full_name = EXCLUDED.full_name,
+                       when_last_modified = NOW(),
+                       modify_count = {tname}.modify_count + 1",
+            ))
+            .bind(row_id)
+            .bind(value.as_str().unwrap_or(""))
+            .execute(&self.pool)
+            .await?;
+            return Ok(());
+        }
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
         sqlx::query(&format!(
@@ -1530,27 +1624,27 @@ impl DataStore for PgStore {
     ) -> Result<serde_json::Value> {
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
-        let initial = title
-            .map(|t| serde_json::json!({ "title": t }))
-            .unwrap_or_else(|| serde_json::json!({}));
+        let full_name = title.unwrap_or("");
         let row_json_expr = format!(
             "jsonb_build_object(\
                'id', id, 'table_id', '{table_id}', \
+               'full_name', full_name, \
                'who_created', who_created, \
                'when_created', when_created, \
                'when_last_modified', when_last_modified, \
                'modify_count', modify_count, \
-               'classes', COALESCE(classes, '[]'::jsonb)) || (custom_vals - 'classes')"
+               'classes', COALESCE(classes, '[]'::jsonb), \
+               'parent_child', COALESCE(parent_child, '[]'::jsonb)) || (custom_vals - 'classes' - 'parent_child' - 'full_name')"
         );
         let inserted: Option<serde_json::Value> = sqlx::query_scalar(&format!(
-            "INSERT INTO {tname} (id, who_created, custom_vals)
+            "INSERT INTO {tname} (id, full_name, who_created)
              VALUES ($1, $2, $3)
              ON CONFLICT (id) DO NOTHING
              RETURNING ({row_json_expr})",
         ))
         .bind(row_id)
+        .bind(full_name)
         .bind(who_created)
-        .bind(initial)
         .fetch_optional(&self.pool)
         .await?;
         let row = match inserted {
@@ -1567,6 +1661,18 @@ impl DataStore for PgStore {
         Ok(row)
     }
 
+    async fn delete_row(&self, table_id: &str, row_id: &str) -> Result<()> {
+        self.ensure_user_table(table_id).await?;
+        let tname = user_table_ident(table_id);
+        sqlx::query(&format!(
+            "UPDATE {tname} SET when_deleted = NOW() WHERE id = $1 AND when_deleted IS NULL"
+        ))
+        .bind(row_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn list_data_rows(&self, table_id: &str, params: &RowQuery) -> Result<PagedResponse> {
         let per_page = params.per_page.clamp(1, 200) as i64;
         let offset = (params.page.max(1) - 1) as i64 * per_page;
@@ -1578,6 +1684,7 @@ impl DataStore for PgStore {
             let rows = sqlx::query(
                 "SELECT jsonb_build_object(
                    'id', id,
+                   'full_name', title,
                    'title', title,
                    'description', description,
                    'who_created', who_created,
@@ -1620,6 +1727,7 @@ impl DataStore for PgStore {
             .await?;
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
+            col_types.insert("full_name".to_string(), vec!["text".to_string()]);
             col_types.insert("classes".to_string(), vec!["array".to_string()]);
             let mut col_paths: std::collections::HashMap<String, String> =
                 std::collections::HashMap::new();
@@ -1634,7 +1742,7 @@ impl DataStore for PgStore {
 
             let total: i64 = {
                 let mut qb = QueryBuilder::new(format!("SELECT COUNT(*) FROM {tname} WHERE "));
-                qb.push("id NOT IN (SELECT row_id FROM hidden_rows)");
+                qb.push("when_deleted IS NULL AND id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
                 qb.build_query_scalar().fetch_one(&self.pool).await?
             };
@@ -1644,15 +1752,16 @@ impl DataStore for PgStore {
                 let mut qb = QueryBuilder::new(format!(
                     "SELECT (jsonb_build_object(\
                        'id', id, \
+                       'full_name', full_name, \
                        'when_created', when_created, \
                        'who_created', who_created, \
                        'when_last_modified', when_last_modified, \
                        'who_last_modified', who_last_modified, \
                        'classes', COALESCE(classes, '[]'::jsonb),\
                        'parent_child', COALESCE(parent_child, '[]'::jsonb)\
-                     ) || (custom_vals - 'classes' - 'parent_child')) FROM {tname} WHERE ",
+                     ) || (custom_vals - 'classes' - 'parent_child' - 'full_name')) FROM {tname} WHERE ",
                 ));
-                qb.push("id NOT IN (SELECT row_id FROM hidden_rows)");
+                qb.push("when_deleted IS NULL AND id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
                 qb.push(format!(" ORDER BY {order}"));
                 qb.push(" LIMIT ").push_bind(per_page);
@@ -1719,15 +1828,17 @@ impl DataStore for PgStore {
             "WITH incoming AS (
                SELECT DISTINCT ON (row_id)
                  COALESCE(r->>'id', r->>'github_id') AS row_id,
-                 r - 'classes' AS custom_vals
+                 COALESCE(NULLIF(r->>'full_name', ''), NULLIF(r->>'title', ''), NULLIF(r->>'name', ''), COALESCE(r->>'id', r->>'github_id')) AS full_name,
+                 r - 'classes' - 'full_name' AS custom_vals
                FROM jsonb_array_elements($1::jsonb) AS r
                WHERE COALESCE(r->>'id', r->>'github_id') IS NOT NULL
                ORDER BY row_id
              ),
              upserted AS (
-               INSERT INTO {tname} (id, custom_vals, when_created, when_last_modified)
-               SELECT row_id, custom_vals, NOW(), NOW() FROM incoming
+               INSERT INTO {tname} (id, full_name, custom_vals, when_created, when_last_modified)
+               SELECT row_id, full_name, custom_vals, NOW(), NOW() FROM incoming
                ON CONFLICT (id) DO UPDATE SET
+                 full_name          = COALESCE(NULLIF(EXCLUDED.full_name, ''), {tname}.full_name),
                  custom_vals        = {tname}.custom_vals || EXCLUDED.custom_vals,
                  when_last_modified = NOW(),
                  modify_count       = {tname}.modify_count + 1
@@ -1848,6 +1959,7 @@ fn push_filter_conditions<'q>(
     if let Some(q) = p.q.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         let pat = format!("%{q}%");
         let mut paths = vec![
+            "full_name".to_string(),
             "name".to_string(),
             "title".to_string(),
             "description".to_string(),
@@ -1861,8 +1973,15 @@ fn push_filter_conditions<'q>(
         paths.dedup();
 
         qb.push(" AND (");
-        let mut pushed = false;
+        qb.push("to_tsvector('simple', COALESCE(full_name, '')) @@ websearch_to_tsquery('simple', ")
+            .push_bind(q.to_string())
+            .push(") OR full_name ILIKE ")
+            .push_bind(pat.clone());
+        let mut pushed = true;
         for path in paths {
+            if path == "full_name" {
+                continue;
+            }
             if let Some(expr) = path_to_jsonb_expr(&path) {
                 if pushed {
                     qb.push(" OR ");
@@ -2024,6 +2143,9 @@ async fn sync_many_to_many_jsonb(
 /// Returns a JSONB expression (all `->` navigation, last segment also `->`)
 /// for use with operators like `?|` that need a JSONB value, not text.
 fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
+    if path == "full_name" {
+        return Some("to_jsonb(full_name)".to_string());
+    }
     if path == "classes" {
         return Some("classes".to_string());
     }
@@ -2041,6 +2163,9 @@ fn path_to_jsonb_value_expr(path: &str) -> Option<String> {
 /// "stars_diff.6h"   → custom_vals->'stars_diff'->>'6h'
 /// "a.b.c"           → custom_vals->'a'->'b'->>'c'
 fn path_to_jsonb_expr(path: &str) -> Option<String> {
+    if path == "full_name" {
+        return Some("full_name".to_string());
+    }
     let parts = validated_path_parts(path)?;
     let n = parts.len();
     let mut expr = String::from("custom_vals");
@@ -2064,6 +2189,7 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
         "id" | "when_created" | "who_created" | "when_last_modified" | "who_last_modified" => {
             return Some(col.to_string());
         }
+        "full_name" => return Some("full_name".to_string()),
         "classes" => return Some("classes".to_string()),
         _ => path_to_jsonb_expr(col)?,
     };
@@ -2268,6 +2394,14 @@ mod tests {
     }
 
     #[test]
+    fn jsonb_value_expr_builtin_full_name() {
+        assert_eq!(
+            path_to_jsonb_value_expr("full_name"),
+            Some("to_jsonb(full_name)".into())
+        );
+    }
+
+    #[test]
     fn jsonb_value_expr_two_segments() {
         assert_eq!(
             path_to_jsonb_value_expr("topics.name"),
@@ -2298,6 +2432,14 @@ mod tests {
     #[test]
     fn sort_expr_builtin_classes() {
         assert_eq!(col_to_sort_expr("classes", None), Some("classes".into()));
+    }
+
+    #[test]
+    fn sort_expr_builtin_full_name() {
+        assert_eq!(
+            col_to_sort_expr("full_name", None),
+            Some("full_name".into())
+        );
     }
 
     #[test]

@@ -42,6 +42,7 @@ const ADD_COL_HEADER_KEY = `header:${ADD_COL_VIRTUAL_ID}:0`;
 const ADD_COL_VIRTUAL_COLUMN = { id: ADD_COL_VIRTUAL_ID, label: '+' };
 
 const CLASSES_COL_ID = 'classes';
+const FULL_NAME_COL_ID = 'full_name';
 const PARENT_CHILD_FIELD_ID = 'parent_child';
 
 // ── Local types ────────────────────────────────────────────────────────────────
@@ -118,7 +119,11 @@ function insertIdAfter(ids: string[], afterId: string | null | undefined, id: st
 
 function deriveColumns(row: DataRow): Column[] {
   const keys = Object.keys(row);
-  const sorted = [...(keys.includes('name') ? ['name'] : []), ...keys.filter((k) => k !== 'name')];
+  const sorted = [
+    ...(keys.includes(FULL_NAME_COL_ID) ? [FULL_NAME_COL_ID] : []),
+    ...(keys.includes('name') ? ['name'] : []),
+    ...keys.filter((k) => k !== FULL_NAME_COL_ID && k !== 'name'),
+  ];
   return sorted.map((key) => {
     const val = row[key];
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
@@ -136,7 +141,7 @@ function deriveColumns(row: DataRow): Column[] {
         })),
       };
     }
-    return { id: key, label: labelFor(key), width: 120, minWidth: 60, isFrozen: key === 'name' };
+    return { id: key, label: labelFor(key), width: 120, minWidth: 60, isFrozen: key === FULL_NAME_COL_ID };
   });
 }
 
@@ -330,7 +335,7 @@ function searchText(value: unknown): string {
 }
 
 function rowTitle(row: DataRow): string {
-  const title = rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
+  const title = rowVal(row, FULL_NAME_COL_ID) ?? rowVal(row, 'fullName') ?? rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
   const text = searchText(title).trim();
   return text || 'Untitled row';
 }
@@ -575,7 +580,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const [cellFlags, setCellFlags] = useState<Record<string, string>>({});
 
   // ── Cell menu state ────────────────────────────────────────────────────────
-  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; targets: CellTarget[] } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ anchor: { top: number; left: number }; targets: CellTarget[]; focusOnOpen?: boolean; returnFocusKey?: string | null } | null>(null);
   const [cellMenuMode, setCellMenuMode] = useState<'menu' | 'note' | 'comment' | 'flag'>('menu');
   const [draftText, setDraftText] = useState('');
 
@@ -1239,9 +1244,28 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
         left: (rect?.left ?? fallbackRect?.left ?? 0) + window.scrollX,
       },
       targets,
+      focusOnOpen: true,
+      returnFocusKey: anchorKey,
     });
     setCellMenuMode('menu');
     setDraftText('');
+  };
+
+  const focusTableCell = (key?: string | null) => {
+    window.setTimeout(() => {
+      const fallbackKey = cursorPos ? cursorToKeyFn(cursorPos) : null;
+      const focusKey = key ?? fallbackKey;
+      const cell = focusKey
+        ? wrapperRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"]`)
+        : null;
+      (cell ?? wrapperRef.current)?.focus();
+    }, 0);
+  };
+
+  const closeCellMenu = () => {
+    const returnFocusKey = cellMenu?.returnFocusKey;
+    setCellMenu(null);
+    focusTableCell(returnFocusKey);
   };
 
   const handleTableKeyDown = (e: React.KeyboardEvent) => {
@@ -1644,11 +1668,11 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   useEffect(() => {
     if (!cellMenu) return;
     const onDown = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement).closest('.context-menu')) setCellMenu(null);
+      if (!(e.target as HTMLElement).closest('.context-menu')) closeCellMenu();
     };
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
-  }, [cellMenu]);
+  }, [cellMenu]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!rowMenu) return;
@@ -1760,6 +1784,16 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     setPendingDeleteCol(null);
   }, [api, customColByColumnId, pendingDeleteCol, recordChange]);
 
+  const deleteRow = useCallback((rowId: string) => {
+    if (!api) return;
+    setRowMenu(null);
+    setRows((prev) => prev.filter((r) => String(r['id'] ?? '') !== rowId));
+    setTotal((t) => Math.max(0, t - 1));
+    recordChange(`Delete row`);
+    api.deleteRow(tableId, rowId)
+      .catch((err: unknown) => toast.error(`Failed to delete row: ${errMsg(err)}`));
+  }, [api, recordChange, tableId]);
+
   const openAddChildDialog = useCallback((parentId: string) => {
     setAddRowRelation({ parentIds: [parentId] });
     setShowAddRowDialog(true);
@@ -1770,7 +1804,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     if (!api) return;
     const relation = addRowRelation;
     setRows((prev) => {
-      const childRow = { id: payload.id, title: payload.title, [PARENT_CHILD_FIELD_ID]: [] };
+      const childRow = { id: payload.id, [FULL_NAME_COL_ID]: payload.title, [PARENT_CHILD_FIELD_ID]: [] };
       const insertAfterRow = (nextRows: DataRow[]) => {
         if (!relation?.afterSiblingId) return [...nextRows, childRow];
         const idx = nextRows.findIndex((row) => String(row['id'] ?? '') === relation.afterSiblingId);
@@ -1795,7 +1829,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     });
     setTotal((t) => t + 1);
     recordChange(relation?.parentIds.length ? `Add related row "${payload.title}"` : `Add row "${payload.title}"`);
-    api.createRow(tableId, payload.id, { title: payload.title });
+    api.createRow(tableId, payload.id, { full_name: payload.title });
     if (relation?.parentIds.length) {
       setCollapsedRowIds((prev) => {
         const next = new Set(prev);
@@ -1823,9 +1857,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       toDelete.forEach((k) => delete next[k]);
       return next;
     });
-    Object.entries(toSet).forEach(([key, color]) => { recordChange(`Set ${color} flag`); api.upsertFlag(key, color); });
+    Object.entries(toSet).forEach(([key, classId]) => {
+      const cls = rowClasses.find((c) => c.id === classId);
+      recordChange(`Flag: ${cls?.name ?? classId}`);
+      api.upsertFlag(key, classId);
+    });
     toDelete.forEach((key) => { recordChange('Remove flag'); api.deleteFlag(key); });
-  }, [api, recordChange]);
+  }, [api, recordChange, rowClasses]);
 
   const saveRemark = useCallback((
     targets: RemarkTarget[],
@@ -2004,6 +2042,12 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                       return !!p && !!filters[p];
                     };
 
+                    const headerFlagClassId = cellFlags[`header:${column.id}`];
+                    const headerFlagClass = headerFlagClassId ? rowClasses.find((c) => c.id === headerFlagClassId) : undefined;
+                    const headerFlagStyle: React.CSSProperties | undefined = headerFlagClass?.color
+                      ? { background: `${headerFlagClass.color}1a`, boxShadow: `inset 3px 0 0 ${headerFlagClass.color}` }
+                      : undefined;
+
                     return (
                       <th
                         key={headerKey}
@@ -2063,11 +2107,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                         className={[
                           isHeaderSelected ? 'header-selected' : (isLeaf && selectedCols.has(column.id) ? 'col-highlight' : ''),
                           isSticky ? 'sticky-col' : '',
-                          cellFlags[`header:${column.id}`] ? `flag-${cellFlags[`header:${column.id}`]}` : '',
                           dragOverCol === column.id ? 'col-drag-over' : '',
                           dragGroupTarget === column.id ? 'col-drag-group' : '',
                         ].filter(Boolean).join(' ') || undefined}
-                        style={isSticky ? { left: frozenLeft } : undefined}
+                        style={{ ...(isSticky ? { left: frozenLeft } : undefined), ...headerFlagStyle }}
                         onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                         onContextMenu={(e) => {
                           if (!showMenu) return;
@@ -2164,6 +2207,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                     if (cc) setPropertiesCol(cc);
                                     setOpenMenuColumn(null); setMenuAnchor(null);
                                   }}
+                                  availableClasses={rowClasses}
                                   onClose={() => { setOpenMenuColumn(null); setMenuAnchor(null); }}
                                 />
                               )}
@@ -2224,10 +2268,16 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                       const noteKey = `${rowId}:${col.id}`;
                       const isClassesColumn = col.id === CLASSES_COL_ID;
                       const isTreeControlCell = colIdx === 0;
+                      const flagClassId = cellFlags[noteKey];
+                      const flagClass = flagClassId ? rowClasses.find((c) => c.id === flagClassId) : undefined;
+                      const flagStyle: React.CSSProperties | undefined = flagClass?.color
+                        ? { background: `${flagClass.color}1a`, boxShadow: `inset 3px 0 0 ${flagClass.color}` }
+                        : undefined;
                       return (
                         <td
                           key={bodyKey}
                           data-key={bodyKey}
+                          tabIndex={-1}
                           className={[
                             selectedSet.has(bodyKey)
                               ? 'cell-selected'
@@ -2237,9 +2287,8 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                 ].filter(Boolean).join(' '),
                             col.isFrozen ? 'sticky-col' : '',
                             isClassesColumn ? 'classes-col-td' : '',
-                            cellFlags[noteKey] ? `flag-${cellFlags[noteKey]}` : '',
                           ].filter(Boolean).join(' ') || undefined}
-                          style={col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined}
+                          style={{ ...(col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined), ...flagStyle }}
                           onClick={(e) => { selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey); onRowClick?.(rowId); }}
                           onDoubleClick={(e) => {
                             if (isClassesColumn) {
@@ -2269,7 +2318,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                   };
                                 })
                               : [{ rowId, colId: col.id }];
-                            setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, targets });
+                            setCellMenu({ anchor: { top: e.clientY + window.scrollY, left: e.clientX + window.scrollX }, targets, returnFocusKey: bodyKey });
                             setCellMenuMode('menu');
                             setDraftText('');
                           }}
@@ -2473,6 +2522,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           kind="cell"
           anchor={cellMenu.anchor}
           targets={cellMenu.targets}
+          focusOnOpen={cellMenu.focusOnOpen}
           mode={cellMenuMode}
           draftText={draftText}
           cellFlags={cellFlags}
@@ -2483,7 +2533,8 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           onSetMode={setCellMenuMode}
           onHideCols={hideColumns}
           onHideRows={hideRows}
-          onClose={() => setCellMenu(null)}
+          availableClasses={rowClasses}
+          onClose={closeCellMenu}
         />
       )}
       {rowMenu && (
@@ -2496,6 +2547,12 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
             onClick={() => openAddChildDialog(rowMenu.rowId)}
           >
             Add child
+          </button>
+          <button
+            type="button"
+            onClick={() => deleteRow(rowMenu.rowId)}
+          >
+            Delete row
           </button>
         </div>
       )}

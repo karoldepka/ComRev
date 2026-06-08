@@ -68,7 +68,9 @@ pub async fn list_data_rows_for_table(
 #[derive(Deserialize)]
 pub struct CreateRowBody {
     pub id: String,
+    pub full_name: Option<String>,
     pub title: Option<String>,
+    pub values: Option<serde_json::Value>,
     pub who_created: Option<String>,
 }
 
@@ -82,7 +84,11 @@ pub async fn create_row(
         .create_row(
             &table_id,
             &body.id,
-            body.title.as_deref(),
+            body.full_name
+                .as_deref()
+                .or(body.title.as_deref())
+                .or_else(|| body.values.as_ref().and_then(|values| values.get("full_name")).and_then(|v| v.as_str()))
+                .or_else(|| body.values.as_ref().and_then(|values| values.get("title")).and_then(|v| v.as_str())),
             body.who_created.as_deref(),
         )
         .await
@@ -115,6 +121,19 @@ pub async fn batch_upsert_rows(
 pub struct PatchCellValueBody {
     pub col_id: String,
     pub value: serde_json::Value,
+}
+
+pub async fn delete_row(
+    State(state): State<AppState>,
+    Path((table_id, row_id)): Path<(String, String)>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    tracing::info!(%table_id, %row_id, "delete row requested");
+    state
+        .store
+        .delete_row(&table_id, &row_id)
+        .await
+        .map_err(|e| db_err("row.delete", e))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn patch_cell_value(

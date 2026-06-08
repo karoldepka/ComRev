@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 // Column ids that are reserved by the built-in table schema.
 const BUILTIN_IDS = new Set([
   'id', 'when_created', 'who_created', 'when_last_modified', 'who_last_modified', 'custom_values',
+  'full_name', 'fullName',
 ]);
 
 export type AddColumnPayload = {

@@ -51,6 +51,7 @@ export class SyncClient {
     delete_custom_column(id: string): Promise<any>;
     delete_flag(key: string): Promise<any>;
     delete_remark(id: string): Promise<any>;
+    delete_row(table_id: string, row_id: string): Promise<any>;
     delete_row_class(table_id: string, id: string): Promise<any>;
     delete_table(id: string): Promise<any>;
     fetch_custom_columns(table_id: string): Promise<any>;
@@ -111,6 +112,7 @@ export interface InitOutput {
     readonly syncclient_delete_custom_column: (a: number, b: number, c: number) => any;
     readonly syncclient_delete_flag: (a: number, b: number, c: number) => any;
     readonly syncclient_delete_remark: (a: number, b: number, c: number) => any;
+    readonly syncclient_delete_row: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly syncclient_delete_row_class: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly syncclient_delete_table: (a: number, b: number, c: number) => any;
     readonly syncclient_fetch_custom_columns: (a: number, b: number, c: number) => any;

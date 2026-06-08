@@ -1,6 +1,6 @@
 'use client';
 
-import { FLAG_COLORS } from '../types/table';
+import type { RowClass } from '../types/table';
 
 export type FlagSubmenuProps = {
   flagKeys: string[];
@@ -8,6 +8,7 @@ export type FlagSubmenuProps = {
   onFlagsChange: (toSet: Record<string, string>, toDelete: string[]) => void;
   onClose: () => void;
   onBack: () => void;
+  availableClasses: RowClass[];
 };
 
 export default function FlagSubmenu({
@@ -16,12 +17,19 @@ export default function FlagSubmenu({
   onFlagsChange,
   onClose,
   onBack,
+  availableClasses,
 }: FlagSubmenuProps) {
   const hasAnyFlag = flagKeys.some((k) => cellFlags[k]);
 
+  const items = availableClasses.map((cls) => ({
+    id: cls.id,
+    label: cls.name,
+    bg: cls.color ?? '#6366f1',
+  }));
+
   return (
     <div className="menu-flag-col" onClick={(e) => e.stopPropagation()}>
-      {FLAG_COLORS.map(({ id, label, bg }) => {
+      {items.map(({ id, label, bg }) => {
         const active = flagKeys.every((k) => cellFlags[k] === id);
         return (
           <button
@@ -43,6 +51,11 @@ export default function FlagSubmenu({
           </button>
         );
       })}
+      {items.length === 0 && (
+        <div style={{ padding: '8px 12px', color: '#94a3b8', fontSize: '0.8rem' }}>
+          No classes defined yet.
+        </div>
+      )}
       {hasAnyFlag && (
         <button
           type="button"

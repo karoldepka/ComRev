@@ -26,7 +26,7 @@ pub struct PendingOp {
 pub fn table_registry_columns() -> Vec<CustomColumn> {
     [
         ("id", "ID", "text"),
-        ("title", "Title", "text"),
+        ("full_name", "Full Name", "text"),
         ("description", "Description", "text"),
         ("who_created", "Created by", "text"),
         ("when_created", "Created", "timestamptz"),
@@ -48,7 +48,7 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
         data_types: vec![if ty == "integer" { "numeric" } else { "text" }.to_string()],
         is_group: false,
         parent_ids: vec![],
-        is_frozen: id == "title",
+        is_frozen: id == "full_name",
     })
     .collect()
 }
@@ -59,7 +59,7 @@ pub fn table_view_columns() -> Vec<CustomColumn> {
     table_registry_columns()
         .into_iter()
         .map(|mut c| {
-            if c.id == "title" || c.id == "description" {
+            if c.id == "full_name" || c.id == "description" {
                 c.read_only = false;
             }
             if c.id == "id" {
@@ -68,6 +68,24 @@ pub fn table_view_columns() -> Vec<CustomColumn> {
             c
         })
         .collect()
+}
+
+pub fn row_builtin_columns() -> Vec<CustomColumn> {
+    vec![CustomColumn {
+        id: "full_name".to_string(),
+        title: Some("Full Name".to_string()),
+        description: Some("Human-readable row name stored as a physical column.".to_string()),
+        expression: None,
+        position_before: None,
+        position_after: None,
+        read_only: false,
+        types: vec!["text".to_string()],
+        source_path: None,
+        data_types: vec!["text".to_string()],
+        is_group: false,
+        parent_ids: vec![],
+        is_frozen: true,
+    }]
 }
 
 pub mod pg;
@@ -254,6 +272,9 @@ pub trait DataStore: Send + Sync {
         who_created: Option<&str>,
     ) -> Result<serde_json::Value>;
 
+    /// Soft-delete a row by setting when_deleted = NOW(). Idempotent.
+    async fn delete_row(&self, table_id: &str, row_id: &str) -> Result<()>;
+
     /// Updates a single column value for a row without touching other columns.
     /// Implementations must ensure concurrent edits to different columns do not overwrite each other.
     async fn patch_row_value(
@@ -358,11 +379,11 @@ mod tests {
     }
 
     #[test]
-    fn registry_columns_include_id_and_title() {
+    fn registry_columns_include_id_and_full_name() {
         let cols = table_registry_columns();
         let ids: Vec<&str> = cols.iter().map(|c| c.id.as_str()).collect();
         assert!(ids.contains(&"id"), "missing id column");
-        assert!(ids.contains(&"title"), "missing title column");
+        assert!(ids.contains(&"full_name"), "missing full_name column");
     }
 
     #[test]
@@ -373,19 +394,19 @@ mod tests {
     }
 
     #[test]
-    fn registry_columns_title_is_frozen() {
+    fn registry_columns_full_name_is_frozen() {
         let cols = table_registry_columns();
-        let title = cols
+        let full_name = cols
             .iter()
-            .find(|c| c.id == "title")
-            .expect("title column missing");
-        assert!(title.is_frozen, "title column should be frozen");
+            .find(|c| c.id == "full_name")
+            .expect("full_name column missing");
+        assert!(full_name.is_frozen, "full_name column should be frozen");
     }
 
     #[test]
-    fn registry_columns_non_title_not_frozen() {
+    fn registry_columns_non_full_name_not_frozen() {
         for col in table_registry_columns() {
-            if col.id != "title" {
+            if col.id != "full_name" {
                 assert!(!col.is_frozen, "column '{}' should not be frozen", col.id);
             }
         }

@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import FlagSubmenu from './FlagSubmenu';
-import type { ApiRemark, CellTarget, RemarkTarget } from '../types/table';
+import type { ApiRemark, CellTarget, RemarkTarget, RowClass } from '../types/table';
 import { colType, colFilterParam, colFilterPlaceholder, type ColType } from '../utils/columnFilters';
 
 type Column = { id: string; label: string; readOnly?: boolean; isFrozen?: boolean; filterType?: ColType | null; subColumns?: Column[] };
@@ -12,6 +12,7 @@ type Column = { id: string; label: string; readOnly?: boolean; isFrozen?: boolea
 
 type BaseProps = {
   anchor: { top: number; left: number };
+  focusOnOpen?: boolean;
   cellFlags: Record<string, string>;
   cellRemarks: Record<string, ApiRemark[]>;       // key: `${rowId}:${colId}` (rowId='' for headers)
   onFlagsChange: (toSet: Record<string, string>, toDelete: string[]) => void;
@@ -22,6 +23,7 @@ type BaseProps = {
     existingId: string | null,
   ) => void;
   onClose: () => void;
+  availableClasses: RowClass[];
 };
 
 export type HeaderMenuProps = BaseProps & {
@@ -64,7 +66,8 @@ export type ContextMenuProps = HeaderMenuProps | CellMenuProps;
 // ── Unified component ──────────────────────────────────────────────────────────
 
 export default function ContextMenu(props: ContextMenuProps) {
-  const { anchor, cellFlags, cellRemarks, onFlagsChange, onSaveRemark, onClose } = props;
+  const { anchor, cellFlags, cellRemarks, onFlagsChange, onSaveRemark, onClose, availableClasses } = props;
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -72,7 +75,6 @@ export default function ContextMenu(props: ContextMenuProps) {
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({
     position: 'absolute',
     top: anchor.top,
@@ -103,6 +105,40 @@ export default function ContextMenu(props: ContextMenuProps) {
     });
   }, [anchor.top, anchor.left, props.kind]);
 
+  useEffect(() => {
+    if (!props.focusOnOpen || props.mode !== 'menu') return;
+    const timer = window.setTimeout(() => {
+      const firstButton = menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+      firstButton?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [anchor.top, anchor.left, props.focusOnOpen, props.mode]);
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    if (
+      e.target instanceof HTMLElement
+      && e.target.closest('input, textarea, select, [contenteditable], [role="textbox"]')
+    ) {
+      return;
+    }
+    const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+    if (buttons.length === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const currentIndex = buttons.findIndex((button) => button === document.activeElement);
+    let nextIndex = 0;
+    if (e.key === 'End') {
+      nextIndex = buttons.length - 1;
+    } else if (e.key === 'ArrowUp') {
+      nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+    } else if (e.key === 'ArrowDown') {
+      nextIndex = currentIndex < 0 || currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
+    }
+    buttons[nextIndex]?.focus();
+  };
+
   if (typeof document === 'undefined') return null;
 
   let content: React.ReactNode;
@@ -132,6 +168,7 @@ export default function ContextMenu(props: ContextMenuProps) {
         onFlagsChange={onFlagsChange}
         onClose={onClose}
         onBack={() => onSetMode('menu')}
+        availableClasses={availableClasses}
       />
     ) : (mode === 'note' || mode === 'comment') ? (
       <div className="menu-add-col" onClick={(e) => e.stopPropagation()}>
@@ -385,6 +422,7 @@ export default function ContextMenu(props: ContextMenuProps) {
             onFlagsChange={onFlagsChange}
             onClose={onClose}
             onBack={() => onSetMode('menu')}
+            availableClasses={availableClasses}
           />
         )}
         {(mode === 'note' || mode === 'comment') && (
@@ -422,7 +460,14 @@ export default function ContextMenu(props: ContextMenuProps) {
   }
 
   return createPortal(
-    <div ref={menuRef} className="context-menu" style={menuStyle}>
+    <div
+      ref={menuRef}
+      className="context-menu"
+      style={menuStyle}
+      role="menu"
+      tabIndex={-1}
+      onKeyDown={handleMenuKeyDown}
+    >
       {content}
     </div>,
     document.body,

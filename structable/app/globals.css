@@ -594,12 +594,6 @@
     @apply min-h-[60px] w-full resize-y rounded-md border border-app-border-strong bg-app-surface px-2 py-1.5 text-sm text-app-fg outline-none;
   }
 
-  .flag-blue { background: rgba(37, 99, 235, 0.10) !important; box-shadow: inset 3px 0 0 #2563eb; }
-  .flag-green { background: rgba(22, 163, 74, 0.10) !important; box-shadow: inset 3px 0 0 #16a34a; }
-  .flag-yellow { background: rgba(217, 119, 6, 0.10) !important; box-shadow: inset 3px 0 0 #d97706; }
-  .flag-orange { background: rgba(234, 88, 12, 0.10) !important; box-shadow: inset 3px 0 0 #ea580c; }
-  .flag-red { background: rgba(220, 38, 38, 0.10) !important; box-shadow: inset 3px 0 0 #dc2626; }
-
   .menu-flag-row {
     @apply flex-wrap gap-1.5 px-3.5 py-2;
   }

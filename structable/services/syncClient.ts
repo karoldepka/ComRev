@@ -272,6 +272,9 @@ export class SyncClient {
   async createRow(tableId: string, rowId: string, values: Record<string, unknown> = {}): Promise<void> {
     await this.inner.create_row(tableId, rowId, JSON.stringify(values));
   }
+  async deleteRow(tableId: string, rowId: string): Promise<void> {
+    await this.inner.delete_row(tableId, rowId);
+  }
   async upsertCellValue(rowId: string, colId: string, value: unknown, tableId: string): Promise<void> {
     await this.inner.upsert_cell_value(tableId, rowId, colId, JSON.stringify(value));
   }

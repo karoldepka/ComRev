@@ -867,6 +867,15 @@ impl DataStore for MultiStore {
             create_row(table_id, row_id, title, who_created)
         )
     }
+    async fn delete_row(&self, table_id: &str, row_id: &str) -> Result<()> {
+        fan_out!(
+            self,
+            "row.delete",
+            serde_json::json!({"table_id": table_id, "row_id": row_id}),
+            delete_row(table_id, row_id)
+        )
+    }
+
     async fn patch_row_value(
         &self,
         table_id: &str,
@@ -1397,6 +1406,10 @@ mod tests {
                 "custom_vals": {},
                 "modify_count": 0,
             }))
+        }
+        async fn delete_row(&self, _table_id: &str, _row_id: &str) -> Result<()> {
+            self.record("delete_row");
+            self.fail()
         }
         async fn patch_row_value(
             &self,

@@ -11,6 +11,7 @@ export const syncclient_create_table: (a: number, b: number, c: number) => any;
 export const syncclient_delete_custom_column: (a: number, b: number, c: number) => any;
 export const syncclient_delete_flag: (a: number, b: number, c: number) => any;
 export const syncclient_delete_remark: (a: number, b: number, c: number) => any;
+export const syncclient_delete_row: (a: number, b: number, c: number, d: number, e: number) => any;
 export const syncclient_delete_row_class: (a: number, b: number, c: number, d: number, e: number) => any;
 export const syncclient_delete_table: (a: number, b: number, c: number) => any;
 export const syncclient_fetch_custom_columns: (a: number, b: number, c: number) => any;

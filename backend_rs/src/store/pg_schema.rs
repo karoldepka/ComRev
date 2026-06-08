@@ -318,12 +318,25 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
             who_created       TEXT,
             who_last_modified TEXT,
             modify_count      INTEGER     NOT NULL DEFAULT 0,
+            full_name         TEXT        NOT NULL DEFAULT '',
             custom_vals       JSONB       NOT NULL DEFAULT '{}'::jsonb
           )
         $sql$, tbl);
         EXECUTE format(
+          'ALTER TABLE %I ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT ''''',
+          tbl
+        );
+        EXECUTE format(
+          'ALTER TABLE %I ADD COLUMN IF NOT EXISTS custom_vals JSONB NOT NULL DEFAULT ''{}''::jsonb',
+          tbl
+        );
+        EXECUTE format(
           'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (custom_vals)',
           'idx_' || t.id || '_custom_vals', tbl
+        );
+        EXECUTE format(
+          'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (to_tsvector(''simple'', COALESCE(full_name, '''')))',
+          'idx_' || t.id || '_full_name_fts', tbl
         );
       END LOOP;
     END $$;
@@ -451,6 +464,10 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
           WHERE table_schema = current_schema() AND table_name = tbl
         ) THEN
           EXECUTE format(
+            'ALTER TABLE %I ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT ''''',
+            tbl
+          );
+          EXECUTE format(
             'ALTER TABLE %I ADD COLUMN IF NOT EXISTS classes JSONB NOT NULL DEFAULT ''[]''::jsonb',
             tbl
           );
@@ -467,7 +484,28 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
             'idx_' || t.id || '_parent_child', tbl
           );
           EXECUTE format(
-            'UPDATE %I SET custom_vals = custom_vals - ''classes'' - ''parent_child'' WHERE custom_vals ? ''classes'' OR custom_vals ? ''parent_child''',
+            'CREATE INDEX IF NOT EXISTS %I ON %I USING GIN (to_tsvector(''simple'', COALESCE(full_name, '''')))',
+            'idx_' || t.id || '_full_name_fts', tbl
+          );
+          EXECUTE format(
+            'CREATE INDEX IF NOT EXISTS %I ON %I (LOWER(full_name))',
+            'idx_' || t.id || '_full_name_lower', tbl
+          );
+          EXECUTE format(
+            'UPDATE %I
+             SET full_name = COALESCE(
+               NULLIF(full_name, ''''),
+               NULLIF(custom_vals->>''full_name'', ''''),
+               NULLIF(custom_vals->>''fullName'', ''''),
+               NULLIF(custom_vals->>''title'', ''''),
+               NULLIF(custom_vals->>''name'', ''''),
+               id
+             )
+             WHERE full_name = ''''',
+            tbl
+          );
+          EXECUTE format(
+            'UPDATE %I SET custom_vals = custom_vals - ''classes'' - ''parent_child'' - ''full_name'' - ''fullName'' WHERE custom_vals ? ''classes'' OR custom_vals ? ''parent_child'' OR custom_vals ? ''full_name'' OR custom_vals ? ''fullName''',
             tbl
           );
           EXECUTE format(
@@ -487,6 +525,31 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
                WHERE m.table_id = %L AND m.row_id = r.id AND m.field_id = ''parent_child''
              ), ''[]''::jsonb)',
             tbl, t.id
+          );
+        END IF;
+      END LOOP;
+    END $$;
+    "#,
+    // Add when_deleted soft-delete column + index to all existing per-user-table physical tables.
+    r#"
+    DO $$
+    DECLARE
+      t RECORD;
+      tbl TEXT;
+    BEGIN
+      FOR t IN SELECT id FROM tables LOOP
+        tbl := 't_' || t.id;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = tbl
+        ) THEN
+          EXECUTE format(
+            'ALTER TABLE %I ADD COLUMN IF NOT EXISTS when_deleted TIMESTAMPTZ',
+            tbl
+          );
+          EXECUTE format(
+            'CREATE INDEX IF NOT EXISTS %I ON %I (when_deleted) WHERE when_deleted IS NOT NULL',
+            'idx_' || t.id || '_when_deleted', tbl
           );
         END IF;
       END LOOP;

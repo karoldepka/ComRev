@@ -120,4 +120,4 @@ Don't do weird shortcuts names like `futs` or `tname` - instead call it `futures
 * id-s should not contain special characters, except _ or __. Double underscore is for parent_column__sub_column
 
 # Naming the names
-* canonical convention of user-facing names "Full Name" (fullName), "Short Name" (shortName), "Acronym". Previously it was `title` and we should move away from `title`. Id, especially auto-generated, should not be visible by default (only as part of current/sharing URL or when opening advanced properties)
+* canonical convention of user-facing names: not `title` but "Full Name" (full_name), "Short Name" (short_name), "Acronym". Previously it was `title` and we should move away from `title`. Id, especially auto-generated, should not be visible by default (only as part of current/sharing URL or when opening advanced properties)

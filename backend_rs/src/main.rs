@@ -127,6 +127,10 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(data_row::batch_upsert_rows),
         )
         .route(
+            "/tables/:table_id/rows/:row_id",
+            delete(data_row::delete_row),
+        )
+        .route(
             "/tables/:table_id/rows/:row_id/values",
             axum::routing::patch(data_row::patch_cell_value),
         )
