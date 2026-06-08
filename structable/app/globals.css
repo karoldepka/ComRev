@@ -1030,6 +1030,29 @@
   }
 }
 
+@keyframes col-cell-delete {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.col-deleting-cell {
+  overflow: hidden !important;
+  pointer-events: none;
+  animation: col-cell-delete 0.15s ease-out forwards;
+}
+
+@keyframes row-delete {
+  0%   { opacity: 1; transform: scaleY(1); }
+  60%  { opacity: 0; transform: scaleY(1); }
+  100% { opacity: 0; transform: scaleY(0); }
+}
+
+tr.row-deleting {
+  animation: row-delete 0.32s ease-out forwards;
+  transform-origin: top;
+  pointer-events: none;
+}
+
 @keyframes sync-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }

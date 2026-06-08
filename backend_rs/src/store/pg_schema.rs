@@ -555,5 +555,6 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       END LOOP;
     END $$;
     "#,
+    "ALTER TABLE tables ADD COLUMN IF NOT EXISTS tagline TEXT;",
 ];
 // Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore trait.

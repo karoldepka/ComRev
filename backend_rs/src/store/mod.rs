@@ -243,6 +243,7 @@ pub trait DataStore: Send + Sync {
         &self,
         id: &str,
         title: &str,
+        tagline: Option<&str>,
         description: Option<&str>,
         who_created: Option<&str>,
     ) -> Result<crate::table::Table>;
@@ -250,6 +251,7 @@ pub trait DataStore: Send + Sync {
         &self,
         id: &str,
         title: Option<&str>,
+        tagline: Option<&str>,
         description: Option<&str>,
         who_last_modified: Option<&str>,
     ) -> Result<crate::table::Table>;

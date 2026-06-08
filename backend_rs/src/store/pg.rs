@@ -959,6 +959,22 @@ impl DataStore for PgStore {
         &self,
         table_id: &str,
     ) -> Result<Vec<crate::row_class::RowClass>> {
+        if table_id == "classes" {
+            let t0 = std::time::Instant::now();
+            self.ensure_user_table("classes").await?;
+            let result = sqlx::query_as::<_, crate::row_class::RowClass>(
+                r#"SELECT id, 'classes'::text AS table_id,
+                          COALESCE(full_name, id) AS name,
+                          custom_vals->>'color' AS color
+                   FROM "t_classes"
+                   WHERE when_deleted IS NULL
+                   ORDER BY full_name NULLS LAST"#,
+            )
+            .fetch_all(&self.pool)
+            .await?;
+            tracing::debug!(elapsed_ms = t0.elapsed().as_millis(), rows = result.len(), "list_row_classes from t_classes");
+            return Ok(result);
+        }
         Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
             "SELECT id, table_id, name, color FROM row_classes WHERE table_id = $1 ORDER BY name",
         )
@@ -976,6 +992,33 @@ impl DataStore for PgStore {
     ) -> Result<crate::row_class::RowClass> {
         let name = name.trim();
         anyhow::ensure!(!name.is_empty(), "row class name must not be blank");
+        if table_id == "classes" {
+            self.ensure_user_table("classes").await?;
+            let color_json: serde_json::Value = match color.filter(|c| !c.is_empty()) {
+                Some(c) => serde_json::json!({ "color": c }),
+                None => serde_json::json!({}),
+            };
+            sqlx::query(
+                r#"INSERT INTO "t_classes" (id, full_name, custom_vals)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (id) DO UPDATE
+                   SET full_name = EXCLUDED.full_name,
+                       custom_vals = COALESCE("t_classes".custom_vals, '{}') || EXCLUDED.custom_vals,
+                       when_last_modified = NOW()
+                   WHERE "t_classes".when_deleted IS NULL"#,
+            )
+            .bind(id)
+            .bind(name)
+            .bind(&color_json)
+            .execute(&self.pool)
+            .await?;
+            return Ok(crate::row_class::RowClass {
+                id: id.to_string(),
+                table_id: "classes".to_string(),
+                name: name.to_string(),
+                color: color.filter(|c| !c.is_empty()).map(|c| c.to_string()),
+            });
+        }
         Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
             "INSERT INTO row_classes (id, table_id, name, color)
              VALUES ($1, $2, $3, $4)
@@ -1457,7 +1500,7 @@ impl DataStore for PgStore {
 
     async fn list_tables(&self) -> Result<Vec<Table>> {
         Ok(sqlx::query_as::<_, Table>(
-            "SELECT id, title, description, who_created, when_created, who_last_modified, when_last_modified, modify_count \
+            "SELECT id, title, tagline, description, who_created, when_created, who_last_modified, when_last_modified, modify_count \
              FROM tables ORDER BY when_created",
         )
         .fetch_all(&self.pool)
@@ -1468,21 +1511,23 @@ impl DataStore for PgStore {
         &self,
         id: &str,
         title: &str,
+        tagline: Option<&str>,
         description: Option<&str>,
         who_created: Option<&str>,
     ) -> Result<Table> {
-        const SEL: &str = "SELECT id, title, description, who_created, when_created, \
+        const SEL: &str = "SELECT id, title, tagline, description, who_created, when_created, \
                            who_last_modified, when_last_modified, modify_count \
                            FROM tables WHERE id = $1";
         let row = sqlx::query_as::<_, Table>(
-            "INSERT INTO tables (id, title, description, who_created)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO tables (id, title, tagline, description, who_created)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (id) DO NOTHING
-             RETURNING id, title, description, who_created, when_created,
+             RETURNING id, title, tagline, description, who_created, when_created,
                        who_last_modified, when_last_modified, modify_count",
         )
         .bind(id)
         .bind(title)
+        .bind(tagline)
         .bind(description)
         .bind(who_created)
         .fetch_optional(&self.pool)
@@ -1502,20 +1547,22 @@ impl DataStore for PgStore {
         &self,
         id: &str,
         title: Option<&str>,
+        tagline: Option<&str>,
         description: Option<&str>,
         who_last_modified: Option<&str>,
     ) -> Result<Table> {
         Ok(sqlx::query_as::<_, Table>(
             "UPDATE tables
              SET title = COALESCE($2, title),
-                 description = COALESCE($3, description),
-                 who_last_modified = $4,
+                 tagline = COALESCE($3, tagline),
+                 description = COALESCE($4, description),
+                 who_last_modified = $5,
                  when_last_modified = NOW(),
                  modify_count = modify_count + 1
              WHERE id = $1
-             RETURNING id, title, description, who_created, when_created, who_last_modified, when_last_modified, modify_count",
+             RETURNING id, title, tagline, description, who_created, when_created, who_last_modified, when_last_modified, modify_count",
         )
-        .bind(id).bind(title).bind(description).bind(who_last_modified)
+        .bind(id).bind(title).bind(tagline).bind(description).bind(who_last_modified)
         .fetch_one(&self.pool)
         .await?)
     }

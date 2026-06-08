@@ -28,9 +28,9 @@ export default function TablePage({ tableId }: Props) {
   const handleCreateTable = useCallback((payload: AddTablePayload) => {
     const id = payload.customId ?? nanoid();
     getSyncClient()
-      .then((c) => c.createTable({ id, title: payload.title, description: payload.description }))
+      .then((c) => c.createTable({ id, title: payload.title, tagline: payload.tagline, description: payload.description }))
       .catch((err: unknown) => toast.error(`Failed to create table: ${err instanceof Error ? err.message : String(err)}`));
-    setTables((prev) => [...prev, { id, title: payload.title, description: payload.description }]);
+    setTables((prev) => [...prev, { id, title: payload.title, tagline: payload.tagline, description: payload.description }]);
     setShowAddTable(false);
     router.push(`/t/${id}`);
   }, [router]);

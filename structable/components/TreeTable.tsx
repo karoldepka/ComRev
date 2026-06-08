@@ -13,6 +13,7 @@ import AddColumnDialog, { type AddColumnPayload, type ColumnDataType } from './A
 import AddRowDialog from './AddRowDialog';
 import type { AddRowPayload } from './AddRowDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
+import RowDeleteConfirmDialog from './RowDeleteConfirmDialog';
 import ColumnPropertiesDialog, { type ColumnPropertiesPayload } from './ColumnPropertiesDialog';
 import AiFillDialog from './AiFillDialog';
 import CellContent from './CellContent';
@@ -449,7 +450,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           duration: 8000,
         });
       }
-      if ('row_class' in ev && ev.row_class.data.table_id === tableId) {
+      if ('row_class' in ev && ev.row_class.data.table_id === 'classes') {
         const cls = ev.row_class.data;
         setRowClasses((prev) => ev.row_class.kind === 1
           ? prev.filter((candidate) => candidate.id !== cls.id)
@@ -519,6 +520,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     columnWidths, setColumnWidths,
     columnOrder,
     reorderColumns,
+    moveColumnsToLeftEdge,
     insertColumnAfter,
     columnGroups,
     addColumnGroup,
@@ -531,6 +533,8 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   // ── Column state ───────────────────────────────────────────────────────────
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
+  const customColumnsRef = useRef(customColumns);
+  customColumnsRef.current = customColumns;
 
   // ── Drag-to-reorder / drag-to-group state ─────────────────────────────────
   const dragColRef = useRef<string | null>(null);
@@ -567,6 +571,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const [showAddRowDialog, setShowAddRowDialog] = useState(false);
   type PendingDelete = { colId: string; label: string; notes: number; comments: number; flags: number };
   const [pendingDeleteCol, setPendingDeleteCol] = useState<PendingDelete | null>(null);
+  const [deletingCols, setDeletingCols] = useState<Set<string>>(new Set());
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<{ rowId: string; label: string } | null>(null);
+  const [deletingRows, setDeletingRows] = useState<Set<string>>(new Set());
   const [propertiesCol, setPropertiesCol] = useState<ApiCustomColumn | null>(null);
   const [showAiFill, setShowAiFill] = useState(false);
 
@@ -643,7 +650,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
 
     setLoading(true);
     setFetchError(null);
-    const sortColumn = customColumns.find((cc) => cc.id === sort.col);
+    const sortColumn = customColumnsRef.current.find((cc) => cc.id === sort.col);
     const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
     const params = new URLSearchParams({
       page: String(page),
@@ -681,13 +688,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       aborter.abort();
       if (fetchRetryTimerRef.current !== null) { clearTimeout(fetchRetryTimerRef.current); fetchRetryTimerRef.current = null; }
     };
-  }, [page, sort, filters, api, tableId, retryKey, customColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, sort, filters, api, tableId, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch row classes ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!api || tableId === 'tables') return;
     let active = true;
-    api.fetchRowClasses(tableId)
+    api.fetchRowClasses('classes')
       .then((classes) => { if (active) setRowClasses(classes); })
       .catch((err: unknown) => {
         if (!active) return;
@@ -1431,7 +1438,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     ]);
     for (const cls of newClasses) {
       try {
-        await api.createRowClass(tableId, cls.id, cls.name, cls.color);
+        await api.createRowClass('classes', cls.id, cls.name, cls.color);
       } catch (err) {
         toast.error(`Failed to create class "${cls.name}": ${errMsg(err)}`);
       }
@@ -1550,7 +1557,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     setHiddenColumns((prev) => {
       const toAdd = ids.filter((id) => !prev.includes(id));
       toAdd.forEach((id) => api.addHiddenColumn(id));
-      return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+      if (toAdd.length === 0) return prev;
+      setDeletingCols((d) => new Set([...d, ...toAdd]));
+      setTimeout(() => {
+        setHiddenColumns((h) => [...h, ...toAdd.filter((id) => !h.includes(id))]);
+        setDeletingCols((d) => { const next = new Set(d); toAdd.forEach((id) => next.delete(id)); return next; });
+      }, 380);
+      return prev;
     });
     setOpenMenuColumn(null);
     setMenuAnchor(null);
@@ -1779,20 +1792,36 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     if (!colMeta || isColumnReadOnly(colMeta)) return;
     recordChange(`Delete column "${pendingDeleteCol.label}"`);
     api.deleteCustomColumn(colMeta.id);
-    setCustomColumns((prev) => prev.filter((c) => c.id !== colMeta.id));
     setHiddenColumns((prev) => prev.filter((c) => c !== colId));
     setPendingDeleteCol(null);
+    setDeletingCols((prev) => new Set([...prev, colId]));
+    setTimeout(() => {
+      setCustomColumns((prev) => prev.filter((c) => c.id !== colMeta.id));
+      setDeletingCols((prev) => { const next = new Set(prev); next.delete(colId); return next; });
+    }, 380);
   }, [api, customColByColumnId, pendingDeleteCol, recordChange]);
 
   const deleteRow = useCallback((rowId: string) => {
-    if (!api) return;
     setRowMenu(null);
-    setRows((prev) => prev.filter((r) => String(r['id'] ?? '') !== rowId));
-    setTotal((t) => Math.max(0, t - 1));
+    const rowData = rows.find((r) => String(r['id'] ?? '') === rowId);
+    const label = rowTitle(rowData ?? {});
+    setPendingDeleteRow({ rowId, label });
+  }, [rows]);
+
+  const confirmDeleteRow = useCallback(() => {
+    if (!pendingDeleteRow || !api) return;
+    const { rowId } = pendingDeleteRow;
+    setPendingDeleteRow(null);
+    setDeletingRows((prev) => new Set([...prev, rowId]));
     recordChange(`Delete row`);
     api.deleteRow(tableId, rowId)
       .catch((err: unknown) => toast.error(`Failed to delete row: ${errMsg(err)}`));
-  }, [api, recordChange, tableId]);
+    setTimeout(() => {
+      setRows((prev) => prev.filter((r) => String(r['id'] ?? '') !== rowId));
+      setTotal((t) => Math.max(0, t - 1));
+      setDeletingRows((prev) => { const next = new Set(prev); next.delete(rowId); return next; });
+    }, 330);
+  }, [api, pendingDeleteRow, recordChange, tableId]);
 
   const openAddChildDialog = useCallback((parentId: string) => {
     setAddRowRelation({ parentIds: [parentId] });
@@ -2014,7 +2043,14 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           <table className="tree-table">
             <colgroup>
               {visibleLeafColumns.map((col) => (
-                <col key={col.id} style={{ width: `${columnWidths[col.id] ?? 120}px`, minWidth: '8px' }} />
+                <col
+                  key={col.id}
+                  style={{
+                    width: deletingCols.has(col.id) ? '0px' : `${columnWidths[col.id] ?? 120}px`,
+                    minWidth: deletingCols.has(col.id) ? '0px' : '8px',
+                    transition: 'width 0.3s ease-out, min-width 0.3s ease-out',
+                  }}
+                />
               ))}
               <col key="__add-col__" style={{ width: '48px', minWidth: '48px' }} />
             </colgroup>
@@ -2109,6 +2145,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                           isSticky ? 'sticky-col' : '',
                           dragOverCol === column.id ? 'col-drag-over' : '',
                           dragGroupTarget === column.id ? 'col-drag-group' : '',
+                          isLeaf && deletingCols.has(column.id) ? 'col-deleting-cell' : '',
                         ].filter(Boolean).join(' ') || undefined}
                         style={{ ...(isSticky ? { left: frozenLeft } : undefined), ...headerFlagStyle }}
                         onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
@@ -2198,6 +2235,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                   onApplyFilter={applyFilter}
                                   onClearFilter={clearColFilter}
                                   onHide={hideColumns}
+                                  onMoveToLeftEdge={(colIds) => { moveColumnsToLeftEdge(colIds, allLeafColumns.map((c) => c.id)); setOpenMenuColumn(null); setMenuAnchor(null); }}
                                   onAddColClick={(colId) => { setAddColAfter(colId || null); setOpenMenuColumn(null); setMenuAnchor(null); }}
                                   onToggleFrozen={column.id === CLASSES_COL_ID ? undefined : toggleColumnFrozen}
                                   onDeleteCol={deleteCustomColumn}
@@ -2259,7 +2297,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                 return (
                   <tr
                     key={`${rowId}:${treeRow.parentId ?? 'root'}:${rowIndex}`}
-                    className={treeRow.depth > 0 ? 'tree-child-row' : undefined}
+                    className={[
+                      treeRow.depth > 0 ? 'tree-child-row' : '',
+                      deletingRows.has(rowId) ? 'row-deleting' : '',
+                    ].filter(Boolean).join(' ') || undefined}
                     data-tree-depth={treeRow.depth}
                     style={onRowClick ? { cursor: 'pointer' } : undefined}
                   >
@@ -2287,6 +2328,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                 ].filter(Boolean).join(' '),
                             col.isFrozen ? 'sticky-col' : '',
                             isClassesColumn ? 'classes-col-td' : '',
+                            deletingCols.has(col.id) ? 'col-deleting-cell' : '',
                           ].filter(Boolean).join(' ') || undefined}
                           style={{ ...(col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined), ...flagStyle }}
                           onClick={(e) => { selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey); onRowClick?.(rowId); }}
@@ -2572,6 +2614,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           flagsCount={pendingDeleteCol.flags}
           onConfirm={confirmDeleteCustomColumn}
           onCancel={() => setPendingDeleteCol(null)}
+        />
+      )}
+      {pendingDeleteRow && (
+        <RowDeleteConfirmDialog
+          rowLabel={pendingDeleteRow.label}
+          onConfirm={confirmDeleteRow}
+          onCancel={() => setPendingDeleteRow(null)}
         />
       )}
       {showAddRowDialog && (

@@ -33,6 +33,7 @@ export type ApiFlag = {
 export type ApiTable = {
   id: string;
   title: string;
+  tagline: string | null;
   description: string | null;
 };
 

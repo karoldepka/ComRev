@@ -93,6 +93,7 @@ interface WasmSyncClient {
   delete_table(id: string): Promise<void>;
   nuke_db(): Promise<void>;
   create_row(tableId: string, rowId: string, valuesJson: string): Promise<string>;
+  delete_row(tableId: string, rowId: string): Promise<void>;
   upsert_cell_value(tableId: string, rowId: string, colId: string, valueJson: string): Promise<void>;
   set_column_frozen(tableId: string, columnId: string, isFrozen: boolean): Promise<string>;
   set_column_source_path(tableId: string, columnId: string, pathJson: string): Promise<string>;
@@ -249,10 +250,10 @@ export class SyncClient {
   async fetchTables(): Promise<import('../types/table').ApiTable[]> {
     return JSON.parse(await this.inner.fetch_tables());
   }
-  async createTable(payload: { id: string; title: string; description?: string | null }): Promise<void> {
+  async createTable(payload: { id: string; title: string; tagline?: string | null; description?: string | null }): Promise<void> {
     await this.inner.create_table(JSON.stringify(payload));
   }
-  async patchTable(id: string, updates: { title?: string; description?: string | null }): Promise<void> {
+  async patchTable(id: string, updates: { title?: string; tagline?: string | null; description?: string | null }): Promise<void> {
     await this.inner.patch_table(id, JSON.stringify(updates));
   }
   async deleteTable(id: string): Promise<void> {

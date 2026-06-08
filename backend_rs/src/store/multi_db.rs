@@ -799,28 +799,30 @@ impl DataStore for MultiStore {
         &self,
         id: &str,
         title: &str,
+        tagline: Option<&str>,
         description: Option<&str>,
         who_created: Option<&str>,
     ) -> Result<crate::table::Table> {
         fan_out!(
             self,
             "table.create",
-            serde_json::json!({"id": id, "title": title, "description": description, "who_created": who_created}),
-            create_table(id, title, description, who_created)
+            serde_json::json!({"id": id, "title": title, "tagline": tagline, "description": description, "who_created": who_created}),
+            create_table(id, title, tagline, description, who_created)
         )
     }
     async fn patch_table(
         &self,
         id: &str,
         title: Option<&str>,
+        tagline: Option<&str>,
         description: Option<&str>,
         who_last_modified: Option<&str>,
     ) -> Result<crate::table::Table> {
         fan_out!(
             self,
             "table.patch",
-            serde_json::json!({"id": id, "title": title, "description": description, "who_last_modified": who_last_modified}),
-            patch_table(id, title, description, who_last_modified)
+            serde_json::json!({"id": id, "title": title, "tagline": tagline, "description": description, "who_last_modified": who_last_modified}),
+            patch_table(id, title, tagline, description, who_last_modified)
         )
     }
     async fn delete_table(&self, id: &str) -> Result<()> {
@@ -1332,6 +1334,7 @@ mod tests {
             &self,
             id: &str,
             title: &str,
+            tagline: Option<&str>,
             description: Option<&str>,
             who_created: Option<&str>,
         ) -> Result<crate::table::Table> {
@@ -1341,6 +1344,7 @@ mod tests {
             Ok(crate::table::Table {
                 id: id.into(),
                 title: title.into(),
+                tagline: tagline.map(Into::into),
                 description: description.map(Into::into),
                 who_created: who_created.map(Into::into),
                 when_created: now,
@@ -1353,6 +1357,7 @@ mod tests {
             &self,
             id: &str,
             title: Option<&str>,
+            tagline: Option<&str>,
             description: Option<&str>,
             who_last_modified: Option<&str>,
         ) -> Result<crate::table::Table> {
@@ -1362,6 +1367,7 @@ mod tests {
             Ok(crate::table::Table {
                 id: id.into(),
                 title: title.unwrap_or("").into(),
+                tagline: tagline.map(Into::into),
                 description: description.map(Into::into),
                 who_created: None,
                 when_created: now,

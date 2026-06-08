@@ -84,7 +84,7 @@ export default function AddRowDialog({ onConfirm, onClose, parentRows = [] }: Pr
         {parentSummary && <p className="dialog-context">{parentSummary}</p>}
 
         <label className="dialog-field">
-          <span className="dialog-label">Title</span>
+          <span className="dialog-label">Full Name</span>
           <input
             autoFocus
             value={title}

@@ -8,6 +8,7 @@ const ALLOW_TABLE_NAME_UPPERCASE =
 
 export type AddTablePayload = {
   title: string;
+  tagline: string | null;
   description: string | null;
   customId: string | null;
 };
@@ -19,6 +20,7 @@ type Props = {
 
 export default function AddTableDialog({ onConfirm, onClose }: Props) {
   const [title, setTitle]             = useState('');
+  const [tagline, setTagline]         = useState('');
   const [description, setDescription] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [customId, setCustomId]       = useState('');
@@ -46,6 +48,7 @@ export default function AddTableDialog({ onConfirm, onClose }: Props) {
     if (!canSubmit) return;
     onConfirm({
       title: title.trim(),
+      tagline: tagline.trim() || null,
       description: description.trim() || null,
       customId: customId.trim() || null,
     });
@@ -71,7 +74,7 @@ export default function AddTableDialog({ onConfirm, onClose }: Props) {
         <h2 className="dialog-title">New table</h2>
 
         <label className="dialog-field">
-          <span className="dialog-label">Title</span>
+          <span className="dialog-label">Full Name</span>
           <input
             autoFocus
             value={title}
@@ -79,6 +82,22 @@ export default function AddTableDialog({ onConfirm, onClose }: Props) {
             onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
             placeholder="e.g. My comparison"
           />
+        </label>
+
+        <label className="dialog-field">
+          <span className="dialog-label">
+            Tagline
+            <span className="dialog-hint"> — optional</span>
+          </span>
+          <input
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
+            placeholder="e.g. A side-by-side comparison of open-source tools"
+          />
+          <span className="dialog-hint" style={{ marginTop: 4, display: 'block' }}>
+            A tagline is a short memorable phrase that describes a brand, product, person, project, or idea.
+          </span>
         </label>
 
         <label className="dialog-field">

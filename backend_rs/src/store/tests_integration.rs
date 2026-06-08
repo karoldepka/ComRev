@@ -1256,7 +1256,7 @@ async fn integration_table_create_list_patch_delete() {
     let id = "table_001";
 
     let t = store
-        .create_table(id, "Test Table", Some("A test"), Some("tester"))
+        .create_table(id, "Test Table", None, Some("A test"), Some("tester"))
         .await
         .unwrap();
     assert_eq!(t.id, id);
@@ -1322,11 +1322,11 @@ async fn integration_table_create_idempotent() {
     let id = "table_idem";
 
     store
-        .create_table(id, "First Title", None, None)
+        .create_table(id, "First Title", None, None, None)
         .await
         .unwrap();
     store
-        .create_table(id, "Second Title", None, None)
+        .create_table(id, "Second Title", None, None, None)
         .await
         .unwrap();
 
@@ -1348,7 +1348,7 @@ async fn integration_row_classes_are_table_scoped_and_sync_jsonb() {
     let (table_a, table_b, row_id) = ("classes_a", "classes_b", "shared_row");
 
     for (id, title) in [(table_a, "Classes A"), (table_b, "Classes B")] {
-        store.create_table(id, title, None, None).await.unwrap();
+        store.create_table(id, title, None, None, None).await.unwrap();
         store.create_row(id, row_id, None, None).await.unwrap();
     }
 
@@ -1446,7 +1446,7 @@ async fn integration_row_class_superclasses_support_many_to_many_inheritance() {
     let table_id = "classes_super";
 
     store
-        .create_table(table_id, "Superclass table", None, None)
+        .create_table(table_id, "Superclass table", None, None, None)
         .await
         .unwrap();
 
@@ -1477,7 +1477,7 @@ async fn integration_row_class_superclasses_support_many_to_many_inheritance() {
 
     let other_table = "classes_super_other";
     store
-        .create_table(other_table, "Other table", None, None)
+        .create_table(other_table, "Other table", None, None, None)
         .await
         .unwrap();
     store
@@ -1508,7 +1508,7 @@ async fn integration_custom_column_upsert_and_list() {
     let store = setup!();
     let table_id = "table_cols";
     store
-        .create_table(table_id, "Col test table", None, None)
+        .create_table(table_id, "Col test table", None, None, None)
         .await
         .unwrap();
 
@@ -1531,7 +1531,7 @@ async fn integration_custom_column_group_with_sub_columns() {
     let store = setup!();
     let table_id = "table_groups";
     store
-        .create_table(table_id, "Group test", None, None)
+        .create_table(table_id, "Group test", None, None, None)
         .await
         .unwrap();
 
@@ -1575,7 +1575,7 @@ async fn integration_custom_column_delete() {
     let store = setup!();
     let table_id = "table_col_del";
     store
-        .create_table(table_id, "Del test", None, None)
+        .create_table(table_id, "Del test", None, None, None)
         .await
         .unwrap();
     store
@@ -1608,7 +1608,7 @@ async fn integration_custom_column_freeze() {
     let store = setup!();
     let table_id = "table_freeze";
     store
-        .create_table(table_id, "Freeze test", None, None)
+        .create_table(table_id, "Freeze test", None, None, None)
         .await
         .unwrap();
     store
@@ -1638,7 +1638,7 @@ async fn integration_custom_column_full_metadata_round_trips() {
     let store = setup!();
     let table_id = "table_meta";
     store
-        .create_table(table_id, "Meta test", None, None)
+        .create_table(table_id, "Meta test", None, None, None)
         .await
         .unwrap();
 

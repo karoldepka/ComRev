@@ -33,6 +33,15 @@ export function useColumnPrefs() {
     localStore.setColumnOrder(next);
   }, []);
 
+  const moveColumnsToLeftEdge = useCallback((colIds: string[], allLeafIds: string[]) => {
+    const colIdSet = new Set(colIds);
+    const moving = allLeafIds.filter((id) => colIdSet.has(id));
+    const rest = allLeafIds.filter((id) => !colIdSet.has(id));
+    const next = [...moving, ...rest];
+    setColumnOrder(next);
+    localStore.setColumnOrder(next);
+  }, []);
+
   const insertColumnAfter = useCallback((newColId: string, afterColId: string | null) => {
     setColumnOrder((prev) => {
       if (prev.length === 0) return prev;
@@ -79,6 +88,7 @@ export function useColumnPrefs() {
     columnWidths, setColumnWidths,
     columnOrder, setColumnOrder,
     reorderColumns,
+    moveColumnsToLeftEdge,
     insertColumnAfter,
     columnGroups,
     addColumnGroup,

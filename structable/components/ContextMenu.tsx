@@ -42,7 +42,8 @@ export type HeaderMenuProps = BaseProps & {
   onSort:       (col: string, dir: 'asc' | 'desc') => void;
   onApplyFilter:(colId: string) => void;
   onClearFilter:(colId: string) => void;
-  onHide:       (ids: string[]) => void;
+  onHide:             (ids: string[]) => void;
+  onMoveToLeftEdge?:  (colIds: string[]) => void;
   onAddColClick:(colId: string) => void;
   onToggleFrozen?: (colId: string, next: boolean) => void;
   onDeleteCol:    (colId: string) => void;
@@ -151,7 +152,7 @@ export default function ContextMenu(props: ContextMenuProps) {
       sort, filters, filterDraft, setFilterDraft,
       draftText, setDraftText,
       onSetMode, onSort, onApplyFilter, onClearFilter,
-      onHide, onAddColClick, onToggleFrozen, onDeleteCol, onUngroup, onProperties,
+      onHide, onMoveToLeftEdge, onAddColClick, onToggleFrozen, onDeleteCol, onUngroup, onProperties,
     } = props;
 
     const flagKey    = `header:${column.id}`;
@@ -301,6 +302,16 @@ export default function ContextMenu(props: ContextMenuProps) {
                   ? `Hide ${allColsToHide.length} columns`
                   : isLeaf ? 'Hide column' : 'Hide group'}
               </button>
+              {onMoveToLeftEdge && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onMoveToLeftEdge(allColsToHide); onClose(); }}
+                >
+                  {allColsToHide.length > 1
+                    ? `Move ${allColsToHide.length} columns to left edge`
+                    : 'Move column to left edge'}
+                </button>
+              )}
             </>
           )}
         </>

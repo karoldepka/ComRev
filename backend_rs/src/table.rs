@@ -12,6 +12,7 @@ use crate::{data_row::AppState, error::db_err};
 pub struct Table {
     pub id: String,
     pub title: String,
+    pub tagline: Option<String>,
     pub description: Option<String>,
     pub who_created: Option<String>,
     pub when_created: DateTime<Utc>,
@@ -26,6 +27,7 @@ pub struct CreateTable {
     /// Client provides the nanoid so creation works offline.
     pub id: String,
     pub title: String,
+    pub tagline: Option<String>,
     pub description: Option<String>,
     pub who_created: Option<String>,
 }
@@ -33,6 +35,7 @@ pub struct CreateTable {
 #[derive(Debug, Deserialize)]
 pub struct PatchTable {
     pub title: Option<String>,
+    pub tagline: Option<String>,
     pub description: Option<String>,
     pub who_last_modified: Option<String>,
 }
@@ -55,6 +58,7 @@ pub async fn create(
         .create_table(
             &body.id,
             &body.title,
+            body.tagline.as_deref(),
             body.description.as_deref(),
             body.who_created.as_deref(),
         )
@@ -73,6 +77,7 @@ pub async fn patch(
         .patch_table(
             &id,
             body.title.as_deref(),
+            body.tagline.as_deref(),
             body.description.as_deref(),
             body.who_last_modified.as_deref(),
         )

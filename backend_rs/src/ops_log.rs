@@ -267,6 +267,7 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
                 .create_table(
                     str(p, "id")?,
                     str(p, "title")?,
+                    p["tagline"].as_str(),
                     p["description"].as_str(),
                     p["who_created"].as_str(),
                 )
@@ -277,6 +278,7 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
                 .patch_table(
                     str(p, "id")?,
                     p["title"].as_str(),
+                    p["tagline"].as_str(),
                     p["description"].as_str(),
                     p["who_last_modified"].as_str(),
                 )
