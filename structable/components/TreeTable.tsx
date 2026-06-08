@@ -17,6 +17,17 @@ import AiFillDialog from './AiFillDialog';
 import CellContent from './CellContent';
 import RatingStars, { isRatingColumnType } from './RatingStars';
 import SyncIndicator from './SyncIndicator';
+import { rowVal } from '../utils/rowVal';
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from './ui/command';
 import RowClassEditor from './RowClassEditor';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
 import logger from '../utils/logger';
@@ -70,22 +81,6 @@ function labelFor(key: string): string {
 function columnLabel(cc: ApiCustomColumn): string {
   const title = cc.title?.trim();
   return title && title.length > 0 ? title : labelFor(cc.id);
-}
-
-function readPath(row: DataRow, path: string[]): unknown {
-  let value: unknown = row;
-  for (const part of path) {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-    value = (value as Record<string, unknown>)[part];
-  }
-  return value;
-}
-
-/** Resolve a column id/source path against a row object. */
-export function rowVal(row: DataRow, id: string, sourcePath?: string[] | null): unknown {
-  if (sourcePath?.length) return readPath(row, sourcePath);
-  if (Object.prototype.hasOwnProperty.call(row, id)) return row[id];
-  return undefined;
 }
 
 function rowClassIds(row: DataRow | undefined): string[] {
@@ -321,12 +316,6 @@ function includesNeedle(value: unknown, needle: string): boolean {
   return searchText(value).toLowerCase().includes(needle);
 }
 
-function searchResultKindLabel(result: GlobalSearchResult): string {
-  if (result.kind === 'column') return 'Column';
-  if (result.kind === 'displayed-row') return 'Displayed row';
-  return 'All rows';
-}
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -357,7 +346,6 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
   // ── Global search ──────────────────────────────────────────────────────────
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
-  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [allRowSearch, setAllRowSearch] = useState<{
     query: string;
     loading: boolean;
@@ -991,14 +979,18 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     visibleLeafColumns,
   ]);
 
-  useEffect(() => {
-    setSelectedSearchIndex(0);
-  }, [globalSearchTerm]);
-
-  useEffect(() => {
-    if (selectedSearchIndex < globalSearchResults.length) return;
-    setSelectedSearchIndex(Math.max(0, globalSearchResults.length - 1));
-  }, [globalSearchResults.length, selectedSearchIndex]);
+  const columnSearchResults = useMemo(
+    () => globalSearchResults.filter((result) => result.kind === 'column'),
+    [globalSearchResults],
+  );
+  const displayedRowSearchResults = useMemo(
+    () => globalSearchResults.filter((result) => result.kind === 'displayed-row'),
+    [globalSearchResults],
+  );
+  const allRowSearchResults = useMemo(
+    () => globalSearchResults.filter((result) => result.kind === 'all-row'),
+    [globalSearchResults],
+  );
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
@@ -1529,86 +1521,74 @@ export default function TreeTable({ tableId, onRowClick }: Props) {
     <>
       <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
       {isGlobalSearchOpen && (
-        <div
-          className="global-search-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closeGlobalSearch();
-          }}
-        >
-          <div className="global-search-panel" role="dialog" aria-modal="true" aria-label="Global search">
-            <div className="global-search-input-row">
-              <input
+        <CommandDialog open={isGlobalSearchOpen} onOpenChange={(open) => (open ? setIsGlobalSearchOpen(true) : closeGlobalSearch())}>
+          <Command shouldFilter={false}>
+            <div className="flex items-center border-b border-app-border">
+              <CommandInput
                 ref={globalSearchInputRef}
-                className="global-search-input"
                 value={globalSearchQuery}
+                onValueChange={setGlobalSearchQuery}
                 placeholder="Search columns and rows"
-                onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    closeGlobalSearch();
-                    return;
-                  }
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setSelectedSearchIndex((idx) => globalSearchResults.length === 0
-                      ? 0
-                      : Math.min(globalSearchResults.length - 1, idx + 1));
-                    return;
-                  }
-                  if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setSelectedSearchIndex((idx) => Math.max(0, idx - 1));
-                    return;
-                  }
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    activateGlobalSearchResult(globalSearchResults[selectedSearchIndex]);
-                  }
-                }}
               />
-              <kbd className="global-search-shortcut">Ctrl Alt F</kbd>
-              <button
-                type="button"
-                className="global-search-close"
-                aria-label="Close global search"
-                onClick={closeGlobalSearch}
-              >
-                x
-              </button>
+              <CommandShortcut className="mr-3 hidden rounded-app border border-app-border bg-app-soft px-2 py-1 font-semibold tracking-normal sm:inline-block">
+                Ctrl Alt F
+              </CommandShortcut>
             </div>
-            <div className="global-search-results" role="listbox" aria-label="Search results">
-              {globalSearchTerm.length > 0 && globalSearchResults.map((result, idx) => (
-                <button
-                  key={result.id}
-                  type="button"
-                  className={[
-                    'global-search-result',
-                    idx === selectedSearchIndex ? 'is-active' : '',
-                  ].filter(Boolean).join(' ')}
-                  role="option"
-                  aria-selected={idx === selectedSearchIndex}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setSelectedSearchIndex(idx)}
-                  onClick={() => activateGlobalSearchResult(result)}
-                >
-                  <span className="global-search-result-kind">{searchResultKindLabel(result)}</span>
-                  <span className="global-search-result-main">{result.title}</span>
-                  <span className="global-search-result-detail">{result.detail}</span>
-                </button>
-              ))}
+            <CommandList>
+              {globalSearchTerm.length > 0 && columnSearchResults.length > 0 && (
+                <CommandGroup heading="Columns">
+                  {columnSearchResults.map((result) => (
+                    <CommandItem
+                      key={result.id}
+                      value={result.id}
+                      onSelect={() => activateGlobalSearchResult(result)}
+                    >
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold">{result.title}</span>
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-app-muted">{result.detail}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {globalSearchTerm.length > 0 && displayedRowSearchResults.length > 0 && (
+                <CommandGroup heading="Displayed Rows">
+                  {displayedRowSearchResults.map((result) => (
+                    <CommandItem
+                      key={result.id}
+                      value={result.id}
+                      onSelect={() => activateGlobalSearchResult(result)}
+                    >
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold">{result.title}</span>
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-app-muted">{result.detail}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {globalSearchTerm.length > 0 && allRowSearchResults.length > 0 && (
+                <CommandGroup heading="All Rows">
+                  {allRowSearchResults.map((result) => (
+                    <CommandItem
+                      key={result.id}
+                      value={result.id}
+                      onSelect={() => activateGlobalSearchResult(result)}
+                    >
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold">{result.title}</span>
+                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-app-muted">{result.detail}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
               {globalSearchTerm.length > 0 && globalSearchResults.length === 0 && !allRowSearch.loading && !allRowSearch.error && (
-                <div className="global-search-empty">No matches</div>
+                <CommandEmpty>No matches</CommandEmpty>
               )}
               {globalSearchTerm.length > 0 && allRowSearch.loading && (
-                <div className="global-search-status">Searching all rows...</div>
+                <div className="px-3 py-4 text-sm text-app-muted">Searching all rows...</div>
               )}
               {globalSearchTerm.length > 0 && allRowSearch.error && (
-                <div className="global-search-error">All-row search failed: {allRowSearch.error}</div>
+                <div className="px-3 py-4 text-sm text-app-danger">All-row search failed: {allRowSearch.error}</div>
               )}
-            </div>
-          </div>
-        </div>
+            </CommandList>
+          </Command>
+        </CommandDialog>
       )}
       {rows.length === 0 && columns.length === 0 ? (
         fetchError

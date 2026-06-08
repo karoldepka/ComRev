@@ -2,7 +2,7 @@
 
 import type { DataRow } from '../types/table';
 import { formatCell } from '../utils/formatting';
-import { rowVal } from './TreeTable';
+import { rowVal } from '../utils/rowVal';
 import RatingStars, { isRatingColumnType } from './RatingStars';
 
 const PINNED_COL = 'name';
