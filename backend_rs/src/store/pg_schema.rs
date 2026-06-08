@@ -5,6 +5,15 @@
 
 pub const POSTGRES_SCHEMA: &[&str] = &[
     r#"
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id              TEXT PRIMARY KEY,
+      schema_hash     TEXT NOT NULL,
+      statement_index INTEGER NOT NULL,
+      statement_sql   TEXT NOT NULL,
+      applied_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    "#,
+    r#"
     CREATE OR REPLACE FUNCTION set_when_last_modified()
     RETURNS TRIGGER LANGUAGE plpgsql AS $$
     BEGIN
@@ -218,6 +227,9 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
       modify_count INTEGER NOT NULL DEFAULT 0
     );
     "#,
+    "INSERT INTO tables (id, title, description)
+     VALUES ('classes', 'Classes', 'Row class definitions and class metadata.')
+     ON CONFLICT (id) DO NOTHING;",
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS description TEXT, ADD COLUMN IF NOT EXISTS who_created TEXT, ADD COLUMN IF NOT EXISTS when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS who_last_modified TEXT, ADD COLUMN IF NOT EXISTS when_last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW(), ADD COLUMN IF NOT EXISTS modify_count INTEGER NOT NULL DEFAULT 0;",
     "DROP TRIGGER IF EXISTS trg_tables_when_last_modified ON tables;",
     "CREATE TRIGGER trg_tables_when_last_modified BEFORE UPDATE ON tables FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",

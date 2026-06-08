@@ -503,20 +503,15 @@ impl DataStore for PgStore {
         let stmts = super::pg_schema::POSTGRES_SCHEMA;
         let db_id = &self.db_id;
 
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                id              TEXT PRIMARY KEY,
-                schema_hash     TEXT NOT NULL,
-                statement_index INTEGER NOT NULL,
-                statement_sql   TEXT NOT NULL,
-                applied_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )",
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!("PgStore({db_id}): schema_migrations bootstrap failed: {e}")
-        })?;
+        let bootstrap_stmt = stmts
+            .first()
+            .expect("POSTGRES_SCHEMA must contain at least one statement");
+        sqlx::query(bootstrap_stmt)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("PgStore({db_id}): schema_migrations bootstrap failed: {e}")
+            })?;
 
         let applied_rows: Vec<(String, String)> =
             sqlx::query_as("SELECT id, schema_hash FROM schema_migrations")
@@ -605,11 +600,22 @@ impl DataStore for PgStore {
         sqlx::query(
             "TRUNCATE TABLE remarks, remark_targets, custom_columns, cell_flags,
                           hidden_rows, hidden_columns, operations_log, tables,
-                          table_custom_columns, row_classes, many_to_many_assignments CASCADE",
+                          table_custom_columns, row_classes, many_to_many_assignments,
+                          schema_migrations CASCADE",
         )
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): TRUNCATE failed: {e}"))?;
+
+        // Restore the builtin classes table entry after truncation.
+        sqlx::query(
+            "INSERT INTO tables (id, title, description)
+             VALUES ('classes', 'Classes', 'Row class definitions and class metadata.')
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): restore builtin classes table failed: {e}"))?;
 
         // Drop user-created physical row tables (named t_<table_id>) entirely so
         // that indexes are also removed and recreated fresh on the next upload.

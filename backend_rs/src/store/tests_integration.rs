@@ -1292,6 +1292,30 @@ async fn integration_table_create_list_patch_delete() {
 }
 
 #[tokio::test]
+async fn integration_builtin_classes_table_is_listed() {
+    let store = setup!();
+
+    let tables = store.list_tables().await.unwrap();
+    assert!(
+        tables.iter().any(|t| t.id == "classes" && t.title == "Classes"),
+        "builtin classes table should appear in the table registry"
+    );
+
+    let page = store
+        .list_data_rows(
+            "classes",
+            &RowQuery {
+                page: 1,
+                per_page: 10,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.total, 0, "builtin classes table should be empty by default");
+}
+
+#[tokio::test]
 async fn integration_table_create_idempotent() {
     // Creating the same table id twice must produce exactly one entry.
     let store = setup!();
