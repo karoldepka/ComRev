@@ -350,7 +350,13 @@ TOPICS = list(dict.fromkeys(TOPICS_RAW))
 HARDCODED_REPOS_RAW = [
     "https://github.com/anomalyco/opencode",
     "https://github.com/googleapis/js-genai",
+
     "https://github.com/Wei-Shaw/sub2api",
+    "https://github.com/AmazingAng/auth2api",
+    "https://github.com/kittors/CliRelay",
+    "https://github.com/router-for-me/CLIProxyAPI",
+    "https://github.com/AlexAnys/ai-sub-auth",
+
 ]
 
 HARDCODED_REPOS = list(dict.fromkeys(HARDCODED_REPOS_RAW))
