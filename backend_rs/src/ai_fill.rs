@@ -114,7 +114,10 @@ async fn complete(
                 model: model.clone(),
                 max_tokens: 1024,
                 system: system.to_string(),
-                messages: vec![ChatMessage { role: "user".into(), content: user.to_string() }],
+                messages: vec![ChatMessage {
+                    role: "user".into(),
+                    content: user.to_string(),
+                }],
             };
             let resp = http
                 .post("https://api.anthropic.com/v1/messages")
@@ -142,8 +145,14 @@ async fn complete(
                 model: model.clone(),
                 stream: false,
                 messages: vec![
-                    ChatMessage { role: "system".into(), content: system.to_string() },
-                    ChatMessage { role: "user".into(),   content: user.to_string() },
+                    ChatMessage {
+                        role: "system".into(),
+                        content: system.to_string(),
+                    },
+                    ChatMessage {
+                        role: "user".into(),
+                        content: user.to_string(),
+                    },
                 ],
             };
             let url = format!("{base_url}/v1/chat/completions");
@@ -172,17 +181,26 @@ pub async fn handler(
     Json(body): Json<AiFillRequest>,
 ) -> Result<Json<AiFillResult>, (StatusCode, String)> {
     if body.source_column_ids.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "source_column_ids cannot be empty".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "source_column_ids cannot be empty".into(),
+        ));
     }
     if body.target_column_ids.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "target_column_ids cannot be empty".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "target_column_ids cannot be empty".into(),
+        ));
     }
 
     // Resolve provider.
     let provider = if let Some(ollama_model) = body.ollama_model.filter(|s| !s.is_empty()) {
-        let base_url = std::env::var("OLLAMA_URL")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        Provider::Ollama { base_url, model: ollama_model }
+        let base_url =
+            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
+        Provider::Ollama {
+            base_url,
+            model: ollama_model,
+        }
     } else {
         let api_key = body
             .api_key
@@ -217,7 +235,11 @@ pub async fn handler(
         .collect();
 
     // Fetch all rows (up to 10 000 — sufficient for a comparison table).
-    let params = RowQuery { page: 1, per_page: 10_000, ..Default::default() };
+    let params = RowQuery {
+        page: 1,
+        per_page: 10_000,
+        ..Default::default()
+    };
     let page = state
         .store
         .list_data_rows(&table_id, &params)
@@ -264,7 +286,10 @@ pub async fn handler(
     for row in &rows {
         let row_id = match row.get("id").and_then(|v| v.as_str()) {
             Some(id) => id.to_string(),
-            None => { errors.push("row missing id field — skipped".into()); continue; }
+            None => {
+                errors.push("row missing id field — skipped".into());
+                continue;
+            }
         };
 
         let custom_vals = row.get("custom_vals").and_then(|v| v.as_object());
@@ -283,14 +308,19 @@ pub async fn handler(
                 let val = resolve_val(col_id);
                 !val.is_null() && val.as_str().map(|s| !s.is_empty()).unwrap_or(true)
             });
-            if all_filled { continue; }
+            if all_filled {
+                continue;
+            }
         }
 
         let source_lines: Vec<String> = body
             .source_column_ids
             .iter()
             .map(|col_id| {
-                let title = column_titles.get(col_id).cloned().unwrap_or_else(|| col_id.clone());
+                let title = column_titles
+                    .get(col_id)
+                    .cloned()
+                    .unwrap_or_else(|| col_id.clone());
                 let val = resolve_val(col_id);
                 format!("  {title}: {val}")
             })
@@ -303,7 +333,10 @@ pub async fn handler(
 
         let text = match complete(&http_client, &provider, &system_prompt, &user_message).await {
             Ok(t) => t,
-            Err(e) => { errors.push(format!("row {row_id}: {e}")); continue; }
+            Err(e) => {
+                errors.push(format!("row {row_id}: {e}"));
+                continue;
+            }
         };
 
         // Strip markdown code fences the model sometimes wraps JSON in.
@@ -329,7 +362,9 @@ pub async fn handler(
 
         for col_id in &body.target_column_ids {
             if let Some(value) = filled.get(col_id) {
-                if value.is_null() { continue; }
+                if value.is_null() {
+                    continue;
+                }
                 match state
                     .store
                     .patch_row_value(&table_id, &row_id, col_id, value.clone())
@@ -352,5 +387,9 @@ pub async fn handler(
         "ai_fill completed"
     );
 
-    Ok(Json(AiFillResult { rows_processed, cells_filled, errors }))
+    Ok(Json(AiFillResult {
+        rows_processed,
+        cells_filled,
+        errors,
+    }))
 }

@@ -31,6 +31,7 @@ import {
   CommandShortcut,
 } from './ui/command';
 import RowClassEditor from './RowClassEditor';
+import type { PickerItem } from './ItemPicker';
 import { colFilterParam, type ColType } from '../utils/columnFilters';
 import logger from '../utils/logger';
 
@@ -549,6 +550,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
 
   // ── Row classes ────────────────────────────────────────────────────────────
   const [rowClasses, setRowClasses] = useState<RowClass[]>([]);
+  const [classDataRows, setClassDataRows] = useState<DataRow[]>([]);
   type ClassEditorState = { rowId: string; anchor: { top: number; left: number } };
   const [classEditorState, setClassEditorState] = useState<ClassEditorState | null>(null);
   const [rowClassesRetryKey, setRowClassesRetryKey] = useState(0);
@@ -704,6 +706,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           setRowClassesRetryKey((key) => key + 1);
         }, 1_000);
       });
+    // Fetch full data rows for tree structure (parent-child) used by the class picker.
+    api.fetchDataRows('classes', new URLSearchParams({ page: '1', per_page: '500' }))
+      .then((resp) => { if (active) setClassDataRows(resp.data); })
+      .catch(() => { /* non-critical — picker falls back to flat list */ });
     return () => {
       active = false;
       if (rowClassesRetryTimerRef.current !== null) {
@@ -858,6 +864,45 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     rowsToRender.forEach((row) => pushRow(row, 0, null, new Set()));
     return result;
   }, [collapsedRowIds, hiddenRowIds, rows, treeChildIdsByParent]);
+
+  // ── Class picker items: tree-ordered PickerItem[] from /t/classes ──────────
+  const treePickerItems = useMemo((): PickerItem[] => {
+    const classMap = new Map(rowClasses.map((cls) => [cls.id, cls]));
+    if (classDataRows.length === 0) {
+      return rowClasses.map((cls) => ({ id: cls.id, label: cls.name, color: cls.color, parentId: null }));
+    }
+    const rowById = new Map(classDataRows.map((row) => [String(row['id'] ?? ''), row]));
+    const childrenByParent = new Map<string, string[]>();
+    const childSet = new Set<string>();
+    for (const row of classDataRows) {
+      const parentId = String(row['id'] ?? '');
+      const childIds = relationshipIds(row, PARENT_CHILD_FIELD_ID)
+        .filter((id) => id !== parentId && rowById.has(id));
+      if (childIds.length > 0) {
+        childrenByParent.set(parentId, childIds);
+        childIds.forEach((id) => childSet.add(id));
+      }
+    }
+    const result: PickerItem[] = [];
+    const addRow = (row: DataRow, depth: number, branch: Set<string>, parentId: string | null) => {
+      const id = String(row['id'] ?? '');
+      if (!id || branch.has(id)) return;
+      const cls = classMap.get(id);
+      const label = cls?.name ?? String(row['full_name'] ?? id);
+      const color = cls?.color ?? null;
+      result.push({ id, label, color, depth, parentId });
+      const nextBranch = new Set(branch);
+      nextBranch.add(id);
+      for (const childId of childrenByParent.get(id) ?? []) {
+        const child = rowById.get(childId);
+        if (child) addRow(child, depth + 1, nextBranch, id);
+      }
+    };
+    const roots = classDataRows.filter((row) => !childSet.has(String(row['id'] ?? '')));
+    roots.forEach((row) => addRow(row, 0, new Set(), null));
+    return result;
+  }, [classDataRows, rowClasses]);
+
   // After a new column is added, move selection to it on the current row.
   useEffect(() => {
     const colId = pendingFocusColRef.current;
@@ -2647,7 +2692,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       {classEditorState && (
         <RowClassEditor
           tableId={tableId}
-          availableClasses={rowClasses}
+          availableItems={treePickerItems}
           selectedClassIds={rowClassIds(rows.find((row) => String(row['id'] ?? '') === classEditorState.rowId))}
           anchor={classEditorState.anchor}
           onConfirm={(selectedIds, newClasses) =>

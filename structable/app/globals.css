@@ -233,7 +233,7 @@
   .table-dropdown-link:hover,
   .context-menu button:hover,
   .flag-swatch-row:hover {
-    @apply bg-app-soft;
+    background: color-mix(in srgb, var(--app-fg) 10%, transparent);
   }
 
   .sync-panel-dot {
@@ -347,7 +347,7 @@
   }
 
   .row-object-menu button:hover {
-    @apply bg-app-soft;
+    background: color-mix(in srgb, var(--app-fg) 10%, transparent);
   }
 
   .header-selected {
@@ -448,7 +448,8 @@
   .column-action-button:hover,
   .table-hamburger:hover,
   .table-search-button:hover {
-    @apply border-app-border-strong bg-app-soft;
+    @apply border-app-border-strong;
+    background: color-mix(in srgb, var(--app-fg) 10%, transparent);
   }
 
   .add-col-th {
@@ -855,7 +856,7 @@
   }
 
   .item-picker-item {
-    @apply gap-2 px-3.5 py-1.5;
+    @apply gap-1.5 pr-3.5 py-1;
   }
 
   .item-picker-item input[type='checkbox'] {
@@ -864,6 +865,20 @@
 
   .item-picker-label {
     @apply text-sm text-app-fg;
+  }
+
+  .item-picker-label-wrap {
+    @apply flex min-w-0 flex-1 cursor-pointer items-center;
+  }
+
+  .item-picker-tree-toggle {
+    @apply flex flex-shrink-0 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-app-muted;
+    width: 14px;
+    height: 14px;
+  }
+
+  .item-picker-tree-toggle:hover {
+    @apply text-app-fg;
   }
 
   .item-picker-add {

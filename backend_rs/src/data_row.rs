@@ -87,8 +87,18 @@ pub async fn create_row(
             body.full_name
                 .as_deref()
                 .or(body.title.as_deref())
-                .or_else(|| body.values.as_ref().and_then(|values| values.get("full_name")).and_then(|v| v.as_str()))
-                .or_else(|| body.values.as_ref().and_then(|values| values.get("title")).and_then(|v| v.as_str())),
+                .or_else(|| {
+                    body.values
+                        .as_ref()
+                        .and_then(|values| values.get("full_name"))
+                        .and_then(|v| v.as_str())
+                })
+                .or_else(|| {
+                    body.values
+                        .as_ref()
+                        .and_then(|values| values.get("title"))
+                        .and_then(|v| v.as_str())
+                }),
             body.who_created.as_deref(),
         )
         .await

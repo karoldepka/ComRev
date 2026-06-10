@@ -8,7 +8,6 @@
 /// The middleware reads the accumulated messages after the handler returns and
 /// attaches them as the `x-store-errors` JSON response header so the client
 /// can surface them in one round-trip.
-
 use std::sync::{Arc, Mutex};
 
 tokio::task_local! {

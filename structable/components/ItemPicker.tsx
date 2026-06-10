@@ -1,11 +1,14 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 export type PickerItem = {
   id: string;
   label: string;
   color?: string | null;
+  depth?: number;
+  parentId?: string | null;
 };
 
 type Props = {
@@ -48,6 +51,7 @@ export default function ItemPicker({
   const [newColor, setNewColor] = useState(colorChoices[0] ?? '#6366f1');
   const [localItems, setLocalItems] = useState<PickerItem[]>(items);
   const [pendingNew, setPendingNew] = useState<PickerItem[]>([]);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -66,12 +70,52 @@ export default function ItemPicker({
     };
   }, [onClose]);
 
-  const filtered = localItems.filter((item) =>
-    item.label.toLowerCase().includes(search.toLowerCase()),
-  );
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, PickerItem[]>();
+    for (const item of localItems) {
+      const parent = item.parentId ?? null;
+      if (!map.has(parent)) map.set(parent, []);
+      map.get(parent)!.push(item);
+    }
+    return map;
+  }, [localItems]);
+
+  const hasChildrenSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of localItems) {
+      if (item.parentId != null) set.add(item.parentId);
+    }
+    return set;
+  }, [localItems]);
+
+  const needle = search.toLowerCase();
+
+  // When searching show all label-matching items flat; otherwise traverse the tree respecting collapse.
+  const visibleItems = useMemo<PickerItem[]>(() => {
+    if (needle) {
+      return localItems.filter((item) => item.label.toLowerCase().includes(needle));
+    }
+    const result: PickerItem[] = [];
+    const visit = (parentId: string | null) => {
+      for (const item of (childrenByParent.get(parentId) ?? [])) {
+        result.push(item);
+        if (!collapsedIds.has(item.id)) visit(item.id);
+      }
+    };
+    visit(null);
+    return result;
+  }, [needle, localItems, childrenByParent, collapsedIds]);
 
   function toggle(id: string) {
     setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleCollapse(id: string) {
+    setCollapsedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -117,27 +161,48 @@ export default function ItemPicker({
         </div>
 
         <div className="item-picker-list">
-          {filtered.length === 0 && (
+          {visibleItems.length === 0 && (
             <div className="item-picker-empty">
               {search ? 'No matches.' : 'No items yet. Add one below.'}
             </div>
           )}
-          {filtered.map((item) => (
-            <label key={item.id} className="item-picker-item">
-              <input
-                type="checkbox"
-                checked={selected.has(item.id)}
-                onChange={() => toggle(item.id)}
-              />
-              {item.color != null ? (
-                <span className="row-class-chip" style={{ background: item.color }}>
-                  {item.label}
-                </span>
-              ) : (
-                <span className="item-picker-label">{item.label}</span>
-              )}
-            </label>
-          ))}
+          {visibleItems.map((item) => {
+            const hasChildren = hasChildrenSet.has(item.id);
+            const isExpanded = !collapsedIds.has(item.id);
+            const indent = (item.depth ?? 0) * 14;
+            return (
+              <div
+                key={item.id}
+                className="item-picker-item"
+                style={{ paddingLeft: indent + 2 }}
+              >
+                <button
+                  type="button"
+                  className="item-picker-tree-toggle"
+                  style={{ visibility: hasChildren ? 'visible' : 'hidden' }}
+                  onClick={() => toggleCollapse(item.id)}
+                  aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                >
+                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                </button>
+                <input
+                  type="checkbox"
+                  id={`pick-${item.id}`}
+                  checked={selected.has(item.id)}
+                  onChange={() => toggle(item.id)}
+                />
+                <label htmlFor={`pick-${item.id}`} className="item-picker-label-wrap">
+                  {item.color != null ? (
+                    <span className="row-class-chip" style={{ background: item.color }}>
+                      {item.label}
+                    </span>
+                  ) : (
+                    <span className="item-picker-label">{item.label}</span>
+                  )}
+                </label>
+              </div>
+            );
+          })}
         </div>
 
         {allowCreate && createItem && (

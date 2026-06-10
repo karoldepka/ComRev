@@ -498,10 +498,7 @@ impl DataStore for MultiStore {
 
     // ── Row classes ────────────────────────────────────────────────────────────
 
-    async fn list_row_classes(
-        &self,
-        table_id: &str,
-    ) -> Result<Vec<crate::row_class::RowClass>> {
+    async fn list_row_classes(&self, table_id: &str) -> Result<Vec<crate::row_class::RowClass>> {
         let table_id = table_id.to_owned();
         let futs = self
             .stores
@@ -580,12 +577,14 @@ impl DataStore for MultiStore {
                 let s = s.clone();
                 let table_id = table_id.clone();
                 let class_id = class_id.clone();
-                let fut: BoxFuture<'static, Result<Vec<crate::row_class::RowClass>>> =
-                    Box::pin(async move { s.list_row_class_superclasses(&table_id, &class_id).await });
+                let fut: BoxFuture<'static, Result<Vec<crate::row_class::RowClass>>> = Box::pin(
+                    async move { s.list_row_class_superclasses(&table_id, &class_id).await },
+                );
                 (i, fut)
             })
             .collect();
-        self.fan_first_list("list_row_class_superclasses", futs).await
+        self.fan_first_list("list_row_class_superclasses", futs)
+            .await
     }
 
     async fn set_row_class_superclasses(

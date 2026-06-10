@@ -135,7 +135,13 @@ impl PgStore {
             .connect(url)
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
-        tracing::info!(db_id, url = short, max_conn, acquire_timeout_secs = acquire_secs, "PgStore: connected");
+        tracing::info!(
+            db_id,
+            url = short,
+            max_conn,
+            acquire_timeout_secs = acquire_secs,
+            "PgStore: connected"
+        );
         Ok(Self {
             pool,
             db_id: db_id.to_string(),
@@ -167,15 +173,21 @@ impl PgStore {
                 let s = schema_owned.clone();
                 Box::pin(async move {
                     sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{s}\""))
-                        .execute(&mut *conn).await?;
+                        .execute(&mut *conn)
+                        .await?;
                     sqlx::query(&format!("SET search_path TO \"{s}\""))
-                        .execute(&mut *conn).await?;
+                        .execute(&mut *conn)
+                        .await?;
                     Ok(())
                 })
             })
             .connect(url)
             .await
-            .map_err(|e| anyhow::anyhow!("PgStore({db_id}, schema={schema}): failed to connect to {short}: {e}"))?;
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "PgStore({db_id}, schema={schema}): failed to connect to {short}: {e}"
+                )
+            })?;
         tracing::info!(db_id, url = short, schema, "PgStore: connected with schema");
         Ok(Self {
             pool,
@@ -335,7 +347,9 @@ impl PgStore {
         ))
         .execute(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("ensure_many_to_many_field index({table_id}.{field_id}): {e}"))?;
+        .map_err(|e| {
+            anyhow::anyhow!("ensure_many_to_many_field index({table_id}.{field_id}): {e}")
+        })?;
         Ok(())
     }
 
@@ -362,7 +376,9 @@ impl PgStore {
         ))
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("repair_nested_columns_from_existing_rows({table_id}): {e}"))?;
+        .map_err(|e| {
+            anyhow::anyhow!("repair_nested_columns_from_existing_rows({table_id}): {e}")
+        })?;
 
         let mut repaired = 0usize;
         let base = crate::custom_column::CustomColumnInput::default();
@@ -536,8 +552,7 @@ impl PgStore {
                 .enumerate()
                 .filter(|(_, s)| {
                     let exists = known.map_or(false, |k| k.contains(&s.id));
-                    let nested_def_verified =
-                        nested_known.map_or(false, |k| k.contains(&s.id));
+                    let nested_def_verified = nested_known.map_or(false, |k| k.contains(&s.id));
                     !exists || (s.source_path.is_some() && !nested_def_verified)
                 })
                 .map(|(i, _)| i)
@@ -579,7 +594,9 @@ impl PgStore {
             };
             match self.upsert_custom_column(table_id, &spec.id, &inp).await {
                 Ok(_) => succeeded_ids.push(spec.id.clone()),
-                Err(e) => tracing::warn!(table_id, col_id = %spec.id, "auto-create column failed: {e}"),
+                Err(e) => {
+                    tracing::warn!(table_id, col_id = %spec.id, "auto-create column failed: {e}")
+                }
             }
         }
         stats.upsert_ms = upsert_started.elapsed().as_millis();
@@ -701,7 +718,10 @@ impl DataStore for PgStore {
 
     async fn nuke_user_data(&self) -> Result<()> {
         let db_id = &self.db_id;
-        tracing::warn!(db_id, "NUKE__DATA: truncating all user data (schema preserved)");
+        tracing::warn!(
+            db_id,
+            "NUKE__DATA: truncating all user data (schema preserved)"
+        );
 
         // Truncate all known application tables in one shot.
         // CASCADE handles FK-ordered dependencies automatically.
@@ -723,7 +743,9 @@ impl DataStore for PgStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("NUKE__DATA({db_id}): restore builtin classes table failed: {e}"))?;
+        .map_err(|e| {
+            anyhow::anyhow!("NUKE__DATA({db_id}): restore builtin classes table failed: {e}")
+        })?;
 
         // Drop user-created physical row tables (named t_<table_id>) entirely so
         // that indexes are also removed and recreated fresh on the next upload.
@@ -748,7 +770,11 @@ impl DataStore for PgStore {
         self.known_nested_defs.write().unwrap().clear();
         self.nested_row_repairs.write().unwrap().clear();
 
-        tracing::warn!(db_id, user_tables = user_tables.len(), "NUKE__DATA: complete");
+        tracing::warn!(
+            db_id,
+            user_tables = user_tables.len(),
+            "NUKE__DATA: complete"
+        );
         Ok(())
     }
 
@@ -955,10 +981,7 @@ impl DataStore for PgStore {
 
     // ── Row classes ───────────────────────────────────────────────────────────
 
-    async fn list_row_classes(
-        &self,
-        table_id: &str,
-    ) -> Result<Vec<crate::row_class::RowClass>> {
+    async fn list_row_classes(&self, table_id: &str) -> Result<Vec<crate::row_class::RowClass>> {
         if table_id == "classes" {
             let t0 = std::time::Instant::now();
             self.ensure_user_table("classes").await?;
@@ -972,7 +995,11 @@ impl DataStore for PgStore {
             )
             .fetch_all(&self.pool)
             .await?;
-            tracing::debug!(elapsed_ms = t0.elapsed().as_millis(), rows = result.len(), "list_row_classes from t_classes");
+            tracing::debug!(
+                elapsed_ms = t0.elapsed().as_millis(),
+                rows = result.len(),
+                "list_row_classes from t_classes"
+            );
             return Ok(result);
         }
         Ok(sqlx::query_as::<_, crate::row_class::RowClass>(
@@ -1083,7 +1110,8 @@ impl DataStore for PgStore {
             sync_many_to_many_jsonb(&mut transaction, table_id, &row_id, "classes").await?;
         }
         for subclass_id in affected_subclasses {
-            sync_many_to_many_jsonb(&mut transaction, table_id, &subclass_id, "superclasses").await?;
+            sync_many_to_many_jsonb(&mut transaction, table_id, &subclass_id, "superclasses")
+                .await?;
         }
         transaction.commit().await?;
         Ok(())
@@ -1244,7 +1272,8 @@ impl DataStore for PgStore {
         if table_id == "tables" {
             return Ok(super::table_view_columns());
         }
-        self.repair_nested_columns_from_existing_rows(table_id).await?;
+        self.repair_nested_columns_from_existing_rows(table_id)
+            .await?;
 
         let mut columns = super::row_builtin_columns();
         columns.extend(sqlx::query_as::<_, CustomColumn>(
@@ -1294,10 +1323,7 @@ impl DataStore for PgStore {
             .map_err(|e| anyhow::anyhow!("upsert_custom_column: ensure table {table_id}: {e}"))?;
         }
 
-        let effective_source_path = input
-            .source_path
-            .clone()
-            .filter(|path| !path.is_empty());
+        let effective_source_path = input.source_path.clone().filter(|path| !path.is_empty());
         let title = input.title.as_deref().and_then(non_blank_text);
         let types = input.effective_types();
         let data_types = input.effective_data_types();
@@ -1473,11 +1499,7 @@ impl DataStore for PgStore {
         .await?)
     }
 
-    async fn set_column_title(
-        &self,
-        column_id: &str,
-        title: Option<&str>,
-    ) -> Result<CustomColumn> {
+    async fn set_column_title(&self, column_id: &str, title: Option<&str>) -> Result<CustomColumn> {
         let title = title.and_then(non_blank_text);
         Ok(sqlx::query_as::<_, CustomColumn>(
             "UPDATE custom_columns
@@ -1612,9 +1634,9 @@ impl DataStore for PgStore {
             return Ok(());
         }
         if col_id == "classes" {
-            let values = value
-                .as_array()
-                .ok_or_else(|| anyhow::anyhow!("classes cell value must be an array of class ids"))?;
+            let values = value.as_array().ok_or_else(|| {
+                anyhow::anyhow!("classes cell value must be an array of class ids")
+            })?;
             let item_ids = values
                 .iter()
                 .map(|item| {
@@ -2012,7 +2034,10 @@ fn push_filter_conditions<'q>(
             "description".to_string(),
         ];
         for (path, types) in col_types {
-            if types.iter().any(|t| matches!(t.as_str(), "text" | "string")) {
+            if types
+                .iter()
+                .any(|t| matches!(t.as_str(), "text" | "string"))
+            {
                 paths.push(path.clone());
             }
         }
@@ -2020,10 +2045,12 @@ fn push_filter_conditions<'q>(
         paths.dedup();
 
         qb.push(" AND (");
-        qb.push("to_tsvector('simple', COALESCE(full_name, '')) @@ websearch_to_tsquery('simple', ")
-            .push_bind(q.to_string())
-            .push(") OR full_name ILIKE ")
-            .push_bind(pat.clone());
+        qb.push(
+            "to_tsvector('simple', COALESCE(full_name, '')) @@ websearch_to_tsquery('simple', ",
+        )
+        .push_bind(q.to_string())
+        .push(") OR full_name ILIKE ")
+        .push_bind(pat.clone());
         let mut pushed = true;
         for path in paths {
             if path == "full_name" {
@@ -2121,8 +2148,13 @@ async fn validate_many_to_many_items(
         return Ok(());
     }
     if field_id == "classes" || field_id == "superclasses" {
+        // Classes may live in the per-table row_classes (legacy) OR globally in t_classes.
         let found: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM row_classes WHERE table_id = $1 AND id = ANY($2)",
+            r#"SELECT COUNT(*) FROM (
+                 SELECT id FROM row_classes WHERE table_id = $1 AND id = ANY($2)
+                 UNION
+                 SELECT id FROM "t_classes" WHERE id = ANY($2) AND when_deleted IS NULL
+               ) combined"#,
         )
         .bind(table_id)
         .bind(item_ids)

@@ -12,7 +12,7 @@ const CLASS_COLORS = [
 
 type Props = {
   tableId: string;
-  availableClasses: RowClass[];
+  availableItems: PickerItem[];
   selectedClassIds: string[];
   onConfirm: (selectedIds: string[], newClasses: RowClass[]) => void;
   onClose: () => void;
@@ -21,18 +21,12 @@ type Props = {
 
 export default function RowClassEditor({
   tableId,
-  availableClasses,
+  availableItems,
   selectedClassIds,
   onConfirm,
   onClose,
   anchor,
 }: Props) {
-  const items: PickerItem[] = availableClasses.map((cls) => ({
-    id: cls.id,
-    label: cls.name,
-    color: cls.color,
-  }));
-
   function handleConfirm(selectedIds: string[], newItems: PickerItem[]) {
     const newClasses: RowClass[] = newItems.map((item) => ({
       id: item.id,
@@ -45,7 +39,7 @@ export default function RowClassEditor({
 
   return (
     <ItemPicker
-      items={items}
+      items={availableItems}
       selectedIds={selectedClassIds}
       onConfirm={handleConfirm}
       onClose={onClose}

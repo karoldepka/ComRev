@@ -79,7 +79,10 @@ fn parse_secrets(text: &str, path: &str) -> Result<SecretsFile> {
         }
     }
 
-    Ok(SecretsFile { db_secrets, extra_env })
+    Ok(SecretsFile {
+        db_secrets,
+        extra_env,
+    })
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -103,7 +106,10 @@ pub fn load() -> Result<Option<Vec<(String, String)>>> {
         toml::from_str(&config_text).map_err(|e| anyhow::anyhow!("{config_path}: {e}"))?;
 
     if config.database.is_empty() {
-        tracing::warn!(path = config_path, "databases.toml found but contains no [[database]] entries — falling back to env vars");
+        tracing::warn!(
+            path = config_path,
+            "databases.toml found but contains no [[database]] entries — falling back to env vars"
+        );
         return Ok(None);
     }
 
@@ -126,7 +132,11 @@ pub fn load() -> Result<Option<Vec<(String, String)>>> {
     }
     if !secrets.extra_env.is_empty() {
         let keys: Vec<&str> = secrets.extra_env.keys().map(String::as_str).collect();
-        tracing::info!(count = secrets.extra_env.len(), ?keys, "db_config: extra_env vars applied");
+        tracing::info!(
+            count = secrets.extra_env.len(),
+            ?keys,
+            "db_config: extra_env vars applied"
+        );
     }
 
     let entries: Vec<(String, String)> = config
@@ -161,12 +171,18 @@ fn mask(s: &str) -> String {
 }
 
 fn log_entry(entry: &DbEntry, password: Option<&str>, url: &str) {
-    let host   = entry.host.as_deref().unwrap_or("localhost");
-    let port   = entry.port.map(|p| format!(":{p}")).unwrap_or_default();
+    let host = entry.host.as_deref().unwrap_or("localhost");
+    let port = entry.port.map(|p| format!(":{p}")).unwrap_or_default();
     let dbname = entry.dbname.as_deref().unwrap_or("-");
-    let user   = entry.username.as_deref().unwrap_or("<none>");
-    let pass   = password
-        .map(|p| if p.is_empty() { "<empty>".into() } else { mask(p) })
+    let user = entry.username.as_deref().unwrap_or("<none>");
+    let pass = password
+        .map(|p| {
+            if p.is_empty() {
+                "<empty>".into()
+            } else {
+                mask(p)
+            }
+        })
         .unwrap_or_else(|| "<none>".into());
 
     // Only replace non-empty passwords — str::replace("", x) corrupts every char boundary.
@@ -207,12 +223,16 @@ fn build_url(entry: &DbEntry, password: Option<&str>) -> Result<String> {
             format!("mongodb://{userinfo}{host}:{port}/{db}")
         }
         "surrealdb" => {
-            let scheme = if entry.tls.unwrap_or(false) { "wss" } else { "ws" };
+            let scheme = if entry.tls.unwrap_or(false) {
+                "wss"
+            } else {
+                "ws"
+            };
             // Credentials travel via SURREAL_USER/PASS env vars (set in load()); don't embed in URL.
             // Only append port if explicitly set — cloud instances use the default WSS port.
             match entry.port {
                 Some(p) => format!("{scheme}://{host}:{p}"),
-                None    => format!("{scheme}://{host}"),
+                None => format!("{scheme}://{host}"),
             }
         }
         "sqlite" => {
@@ -240,10 +260,18 @@ fn set_surreal_env(entry: &DbEntry, password: Option<&str>) {
             unsafe { std::env::set_var(key, val) }
         }
     };
-    if let Some(u) = &entry.username    { set("SURREAL_USER", u); }
-    if let Some(p) = password           { set("SURREAL_PASS", p); }
-    if let Some(ns) = &entry.namespace  { set("SURREAL_NS", ns); }
-    if let Some(db) = &entry.database   { set("SURREAL_DB", db); }
+    if let Some(u) = &entry.username {
+        set("SURREAL_USER", u);
+    }
+    if let Some(p) = password {
+        set("SURREAL_PASS", p);
+    }
+    if let Some(ns) = &entry.namespace {
+        set("SURREAL_NS", ns);
+    }
+    if let Some(db) = &entry.database {
+        set("SURREAL_DB", db);
+    }
 }
 
 /// Percent-encode characters that are not safe in the userinfo segment of a URL.
@@ -258,7 +286,7 @@ fn urlencoded(s: &str) -> String {
             '#' => vec!['%', '2', '3'],
             '?' => vec!['%', '3', 'F'],
             ' ' => vec!['%', '2', '0'],
-            _   => vec![c],
+            _ => vec![c],
         })
         .collect()
 }
@@ -285,7 +313,10 @@ mod tests {
     }
 
     fn entry_with_user(driver: &str, user: &str) -> DbEntry {
-        DbEntry { username: Some(user.into()), ..entry(driver) }
+        DbEntry {
+            username: Some(user.into()),
+            ..entry(driver)
+        }
     }
 
     // ── urlencoded ────────────────────────────────────────────────────────────
@@ -398,7 +429,10 @@ mod tests {
             ..entry_with_user("postgres", "u")
         };
         let url = build_url(&e, Some("p")).unwrap();
-        assert!(url.ends_with("?sslmode=require&channel_binding=require"), "{url}");
+        assert!(
+            url.ends_with("?sslmode=require&channel_binding=require"),
+            "{url}"
+        );
     }
 
     #[test]
@@ -409,7 +443,11 @@ mod tests {
 
     #[test]
     fn postgres_password_with_special_chars() {
-        let url = build_url(&entry_with_user("postgres", "pg.project"), Some("p@ss:word")).unwrap();
+        let url = build_url(
+            &entry_with_user("postgres", "pg.project"),
+            Some("p@ss:word"),
+        )
+        .unwrap();
         assert!(url.contains("pg.project:p%40ss%3Aword@"), "{url}");
     }
 
@@ -444,8 +482,14 @@ mod tests {
     fn surrealdb_no_creds_in_url() {
         // Credentials are set via env vars by set_surreal_env, NOT embedded in the URL.
         let url = build_url(&entry_with_user("surrealdb", "admin"), Some("secret")).unwrap();
-        assert!(!url.contains("admin"), "credentials must not appear in SurrealDB URL: {url}");
-        assert!(!url.contains("secret"), "credentials must not appear in SurrealDB URL: {url}");
+        assert!(
+            !url.contains("admin"),
+            "credentials must not appear in SurrealDB URL: {url}"
+        );
+        assert!(
+            !url.contains("secret"),
+            "credentials must not appear in SurrealDB URL: {url}"
+        );
     }
 
     #[test]
@@ -456,28 +500,45 @@ mod tests {
 
     #[test]
     fn surrealdb_wss_when_tls() {
-        let e = DbEntry { tls: Some(true), ..entry("surrealdb") };
+        let e = DbEntry {
+            tls: Some(true),
+            ..entry("surrealdb")
+        };
         let url = build_url(&e, None).unwrap();
         assert!(url.starts_with("wss://"), "{url}");
     }
 
     #[test]
     fn surrealdb_no_port_when_not_specified() {
-        let e = DbEntry { host: Some("cloud.surreal.cloud".into()), tls: Some(true), ..entry("surrealdb") };
+        let e = DbEntry {
+            host: Some("cloud.surreal.cloud".into()),
+            tls: Some(true),
+            ..entry("surrealdb")
+        };
         let url = build_url(&e, None).unwrap();
         assert_eq!(url, "wss://cloud.surreal.cloud");
     }
 
     #[test]
     fn surrealdb_local_with_explicit_port() {
-        let e = DbEntry { host: Some("localhost".into()), port: Some(8000), tls: Some(false), ..entry("surrealdb") };
+        let e = DbEntry {
+            host: Some("localhost".into()),
+            port: Some(8000),
+            tls: Some(false),
+            ..entry("surrealdb")
+        };
         let url = build_url(&e, None).unwrap();
         assert_eq!(url, "ws://localhost:8000");
     }
 
     #[test]
     fn surrealdb_host_and_explicit_port() {
-        let e = DbEntry { host: Some("surreal.example.com".into()), port: Some(443), tls: Some(true), ..entry("surrealdb") };
+        let e = DbEntry {
+            host: Some("surreal.example.com".into()),
+            port: Some(443),
+            tls: Some(true),
+            ..entry("surrealdb")
+        };
         let url = build_url(&e, None).unwrap();
         assert_eq!(url, "wss://surreal.example.com:443");
     }
@@ -492,7 +553,10 @@ mod tests {
 
     #[test]
     fn sqlite_explicit_path() {
-        let e = DbEntry { dbname: Some("/data/app.db".into()), ..entry("sqlite") };
+        let e = DbEntry {
+            dbname: Some("/data/app.db".into()),
+            ..entry("sqlite")
+        };
         let url = build_url(&e, None).unwrap();
         assert_eq!(url, "sqlite:///data/app.db");
     }

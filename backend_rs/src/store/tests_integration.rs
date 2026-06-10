@@ -273,6 +273,108 @@ async fn integration_create_and_read_row() {
 }
 
 #[tokio::test]
+async fn integration_create_row_stores_full_name_as_physical_column() {
+    let store = setup!();
+    let (table_id, row_id) = ("full_name_rows", "row_full_name");
+
+    let row = store
+        .create_row(table_id, row_id, Some("Physical Full Name"), None)
+        .await
+        .expect("create_row failed");
+    assert_eq!(row["full_name"], "Physical Full Name");
+    assert!(
+        row.get("title").is_none() || row["title"].is_null(),
+        "row creation should not mirror Full Name into the legacy title field"
+    );
+
+    let listed = fetch_row(&**store, table_id, row_id)
+        .await
+        .expect("row not found");
+    assert_eq!(listed["full_name"], "Physical Full Name");
+    assert!(
+        listed.get("title").is_none() || listed["title"].is_null(),
+        "listed rows should expose full_name, not legacy title"
+    );
+
+    let pool = store.direct_pool().await.expect("direct pool");
+    let (full_name, has_full_name_json, has_title_json): (String, bool, bool) =
+        sqlx::query_as(&format!(
+            r#"SELECT full_name, custom_vals ? 'full_name', custom_vals ? 'title'
+               FROM "t_{table_id}" WHERE id = $1"#
+        ))
+        .bind(row_id)
+        .fetch_one(&pool)
+        .await
+        .expect("physical full_name query");
+    assert_eq!(full_name, "Physical Full Name");
+    assert!(
+        !has_full_name_json,
+        "full_name must not be stored in custom_vals"
+    );
+    assert!(
+        !has_title_json,
+        "create_row should not store legacy title in custom_vals"
+    );
+}
+
+#[tokio::test]
+async fn integration_patch_full_name_updates_physical_column_and_search() {
+    let store = setup!();
+    let (table_id, row_id) = ("full_name_patch", "row_patch_full_name");
+
+    store
+        .create_row(table_id, row_id, Some("Initial Name"), None)
+        .await
+        .expect("create_row failed");
+    store
+        .patch_row_value(
+            table_id,
+            row_id,
+            "full_name",
+            serde_json::json!("Needle Alpha"),
+        )
+        .await
+        .expect("patch full_name failed");
+
+    let listed = fetch_row(&**store, table_id, row_id)
+        .await
+        .expect("row not found");
+    assert_eq!(listed["full_name"], "Needle Alpha");
+
+    let pool = store.direct_pool().await.expect("direct pool");
+    let (full_name, has_full_name_json): (String, bool) = sqlx::query_as(&format!(
+        r#"SELECT full_name, custom_vals ? 'full_name'
+           FROM "t_{table_id}" WHERE id = $1"#
+    ))
+    .bind(row_id)
+    .fetch_one(&pool)
+    .await
+    .expect("physical full_name query");
+    assert_eq!(full_name, "Needle Alpha");
+    assert!(
+        !has_full_name_json,
+        "patching full_name must not write custom_vals"
+    );
+
+    let search = store
+        .list_data_rows(
+            table_id,
+            &RowQuery {
+                page: 1,
+                per_page: 50,
+                q: Some("Needle".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("full_name search failed");
+    assert!(
+        search.data.iter().any(|row| row["id"] == row_id),
+        "q search should match the physical full_name column"
+    );
+}
+
+#[tokio::test]
 async fn integration_list_empty_dynamic_table_materializes_relation() {
     let store = setup!();
     let table_id = "9PUohQTPxgrtrpVp9Qcrn";
@@ -666,6 +768,70 @@ async fn integration_upsert_rows_batch_idempotent() {
         .await
         .unwrap();
     assert_eq!(page.total, 2, "expected exactly 2 rows after two upserts");
+}
+
+#[tokio::test]
+async fn integration_batch_upsert_full_name_is_builtin_not_custom_value() {
+    let store = setup!();
+    let (table_id, row_id) = ("batch_full_name", "bfn_001");
+
+    store
+        .upsert_rows_batch(
+            table_id,
+            &[serde_json::json!({
+                "id": row_id,
+                "full_name": "Batch Full Name",
+                "name": "Source Name",
+                "stars": 7
+            })],
+        )
+        .await
+        .expect("batch upsert failed");
+
+    let row = fetch_row(&**store, table_id, row_id)
+        .await
+        .expect("row not found");
+    assert_eq!(row["full_name"], "Batch Full Name");
+    assert_eq!(row["name"], "Source Name");
+
+    let pool = store.direct_pool().await.expect("direct pool");
+    let (full_name, has_full_name_json, has_name_json): (String, bool, bool) =
+        sqlx::query_as(&format!(
+            r#"SELECT full_name, custom_vals ? 'full_name', custom_vals ? 'name'
+               FROM "t_{table_id}" WHERE id = $1"#
+        ))
+        .bind(row_id)
+        .fetch_one(&pool)
+        .await
+        .expect("physical full_name query");
+    assert_eq!(full_name, "Batch Full Name");
+    assert!(
+        !has_full_name_json,
+        "full_name must be removed from custom_vals"
+    );
+    assert!(
+        has_name_json,
+        "ordinary source name should remain in custom_vals"
+    );
+
+    let columns = store
+        .list_custom_columns(table_id)
+        .await
+        .expect("list_custom_columns failed");
+    let full_name_columns: Vec<_> = columns
+        .iter()
+        .filter(|column| column.id == "full_name")
+        .collect();
+    assert_eq!(
+        full_name_columns.len(),
+        1,
+        "Full Name should appear once as a built-in column"
+    );
+    assert_eq!(full_name_columns[0].title.as_deref(), Some("Full Name"));
+    assert!(
+        !full_name_columns[0].read_only,
+        "Full Name should be directly editable"
+    );
 }
 
 #[tokio::test]
@@ -1273,7 +1439,7 @@ async fn integration_table_create_list_patch_delete() {
     );
 
     let patched = store
-        .patch_table(id, Some("Renamed Table"), None, Some("patcher"))
+        .patch_table(id, Some("Renamed Table"), None, None, Some("patcher"))
         .await
         .unwrap();
     assert_eq!(patched.title, "Renamed Table");
@@ -1297,7 +1463,9 @@ async fn integration_builtin_classes_table_is_listed() {
 
     let tables = store.list_tables().await.unwrap();
     assert!(
-        tables.iter().any(|t| t.id == "classes" && t.title == "Classes"),
+        tables
+            .iter()
+            .any(|t| t.id == "classes" && t.title == "Classes"),
         "builtin classes table should appear in the table registry"
     );
 
@@ -1312,7 +1480,10 @@ async fn integration_builtin_classes_table_is_listed() {
         )
         .await
         .unwrap();
-    assert_eq!(page.total, 0, "builtin classes table should be empty by default");
+    assert_eq!(
+        page.total, 0,
+        "builtin classes table should be empty by default"
+    );
 }
 
 #[tokio::test]
@@ -1348,7 +1519,10 @@ async fn integration_row_classes_are_table_scoped_and_sync_jsonb() {
     let (table_a, table_b, row_id) = ("classes_a", "classes_b", "shared_row");
 
     for (id, title) in [(table_a, "Classes A"), (table_b, "Classes B")] {
-        store.create_table(id, title, None, None, None).await.unwrap();
+        store
+            .create_table(id, title, None, None, None)
+            .await
+            .unwrap();
         store.create_row(id, row_id, None, None).await.unwrap();
     }
 
@@ -1488,7 +1662,10 @@ async fn integration_row_class_superclasses_support_many_to_many_inheritance() {
     let invalid = store
         .set_row_class_superclasses(table_id, "derived", &["other_base".to_owned()])
         .await;
-    assert!(invalid.is_err(), "a superclass from another table must not be assignable");
+    assert!(
+        invalid.is_err(),
+        "a superclass from another table must not be assignable"
+    );
 
     store.delete_row_class(table_id, "base").await.unwrap();
     assert!(
@@ -1498,6 +1675,150 @@ async fn integration_row_class_superclasses_support_many_to_many_inheritance() {
             .unwrap()
             .is_empty(),
         "derived class should lose deleted superclasses"
+    );
+}
+
+// ── Global class (t_classes) tests ───────────────────────────────────────────
+
+#[tokio::test]
+async fn integration_global_class_can_be_assigned_to_any_table() {
+    // Classes created via create_row_class("classes", ...) are stored in t_classes,
+    // not in per-table row_classes. They must be assignable to rows in any user table.
+    // Regression test for: validate_many_to_many_items only checked row_classes,
+    // so global classes were always rejected.
+    let store = setup!();
+
+    store
+        .create_row_class(
+            "classes",
+            "global_cls_1",
+            "Global Class One",
+            Some("#f97316"),
+        )
+        .await
+        .unwrap();
+
+    let (table_a, row_a) = ("global_cls_table_a", "row_ga");
+    let (table_b, row_b) = ("global_cls_table_b", "row_gb");
+    store
+        .create_table(table_a, "Table A", None, None, None)
+        .await
+        .unwrap();
+    store
+        .create_table(table_b, "Table B", None, None, None)
+        .await
+        .unwrap();
+    store.create_row(table_a, row_a, None, None).await.unwrap();
+    store.create_row(table_b, row_b, None, None).await.unwrap();
+
+    store
+        .set_many_to_many_assignments(table_a, row_a, "classes", &["global_cls_1".to_owned()])
+        .await
+        .expect("global class must be assignable to any table");
+    store
+        .set_many_to_many_assignments(table_b, row_b, "classes", &["global_cls_1".to_owned()])
+        .await
+        .expect("same global class must be assignable to a second independent table");
+
+    assert_eq!(
+        fetch_row(store.as_ref(), table_a, row_a).await.unwrap()["classes"],
+        serde_json::json!(["global_cls_1"]),
+        "JSONB classes column must reflect assignment in table_a"
+    );
+    assert_eq!(
+        fetch_row(store.as_ref(), table_b, row_b).await.unwrap()["classes"],
+        serde_json::json!(["global_cls_1"]),
+        "JSONB classes column must reflect assignment in table_b"
+    );
+}
+
+#[tokio::test]
+async fn integration_global_class_works_with_add_and_remove() {
+    // add_many_to_many_assignments and remove_many_to_many_assignments go through
+    // the same validate_many_to_many_items path; both must accept global classes.
+    let store = setup!();
+
+    store
+        .create_row_class(
+            "classes",
+            "global_add_cls",
+            "Add/Remove Class",
+            Some("#2563eb"),
+        )
+        .await
+        .unwrap();
+
+    let (table_id, row_id) = ("global_cls_add_remove", "row_ar");
+    store
+        .create_table(table_id, "Table AR", None, None, None)
+        .await
+        .unwrap();
+    store
+        .create_row(table_id, row_id, None, None)
+        .await
+        .unwrap();
+
+    store
+        .add_many_to_many_assignments(table_id, row_id, "classes", &["global_add_cls".to_owned()])
+        .await
+        .expect("add_many_to_many_assignments must accept global classes");
+
+    assert_eq!(
+        fetch_row(store.as_ref(), table_id, row_id).await.unwrap()["classes"],
+        serde_json::json!(["global_add_cls"])
+    );
+
+    store
+        .remove_many_to_many_assignments(
+            table_id,
+            row_id,
+            "classes",
+            &["global_add_cls".to_owned()],
+        )
+        .await
+        .expect("remove_many_to_many_assignments must work for global classes");
+
+    assert_eq!(
+        fetch_row(store.as_ref(), table_id, row_id).await.unwrap()["classes"],
+        serde_json::json!([])
+    );
+}
+
+#[tokio::test]
+async fn integration_soft_deleted_global_class_is_rejected() {
+    // A global class with when_deleted set must not be assignable —
+    // the UNION query in validate_many_to_many_items filters by when_deleted IS NULL.
+    let store = setup!();
+    let pool = store.direct_pool().await.expect("direct pool");
+
+    store
+        .create_row_class("classes", "global_del_cls", "To Be Deleted", None)
+        .await
+        .unwrap();
+
+    sqlx::query(r#"UPDATE "t_classes" SET when_deleted = NOW() WHERE id = $1"#)
+        .bind("global_del_cls")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (table_id, row_id) = ("global_cls_deleted", "row_del");
+    store
+        .create_table(table_id, "Deleted class test", None, None, None)
+        .await
+        .unwrap();
+    store
+        .create_row(table_id, row_id, None, None)
+        .await
+        .unwrap();
+
+    let result = store
+        .set_many_to_many_assignments(table_id, row_id, "classes", &["global_del_cls".to_owned()])
+        .await;
+
+    assert!(
+        result.is_err(),
+        "soft-deleted global class must be rejected by validation"
     );
 }
 
