@@ -595,7 +595,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
   const pendingFocusColRef = useRef<string | null>(null);
-  const perPage = 50;
+  const [perPage, setPerPage] = useState(50);
 
   // ── Bootstrap: load flags, hidden columns, hidden rows, remarks ───────────
   useEffect(() => {
@@ -2582,6 +2582,18 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           {' '}
           <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
         </span>
+        <label style={{ marginLeft: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+          Rows per page:
+          <select
+            value={perPage}
+            onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
+            style={{ fontSize: '0.82rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 4px', background: 'var(--surface)', color: 'var(--app-fg)', cursor: 'pointer' }}
+          >
+            {[25, 50, 100, 250, 500, 1000].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
         {hiddenRowIds.size > 0 && (
           <span style={{ marginLeft: '1rem', color: '#64748b', fontSize: '0.81rem' }}>
             {hiddenRowIds.size} row{hiddenRowIds.size !== 1 ? 's' : ''} hidden
