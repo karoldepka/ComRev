@@ -152,11 +152,15 @@ pub async fn patch_cell_value(
     Json(body): Json<PatchCellValueBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     tracing::info!(%table_id, %row_id, col_id = %body.col_id, "patch cell value requested");
+    let value_json = body.value.to_string();
     state
         .store
         .patch_row_value(&table_id, &row_id, &body.col_id, body.value)
         .await
         .map_err(|e| db_err("repo", e))?;
+    let _ = state.event_tx.send(
+        crate::sync_service::cell_value_event(&table_id, &row_id, &body.col_id, value_json),
+    );
     tracing::debug!(%table_id, %row_id, col_id = %body.col_id, "patch cell value completed");
     Ok(StatusCode::NO_CONTENT)
 }

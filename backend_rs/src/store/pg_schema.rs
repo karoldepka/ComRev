@@ -235,7 +235,7 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     "CREATE TRIGGER trg_tables_when_last_modified BEFORE UPDATE ON tables FOR EACH ROW EXECUTE FUNCTION set_when_last_modified();",
     r#"
     CREATE TABLE IF NOT EXISTS table_custom_columns (
-      table_id TEXT NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
+      table_id TEXT NOT NULL,
       column_id TEXT NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
       position_before TEXT,
       position_after TEXT,
@@ -556,5 +556,10 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     END $$;
     "#,
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS tagline TEXT;",
+    // FK from table_custom_columns.table_id → tables(id) prevented crash-recovery replay
+    // of custom_column.upsert ops when the parent tables row was already deleted.
+    // The upsert_custom_column code already ensures the tables row exists manually, so
+    // this FK added no safety beyond what the code already enforces.
+    "ALTER TABLE table_custom_columns DROP CONSTRAINT IF EXISTS table_custom_columns_table_id_fkey;",
 ];
 // Builtin column seeding has moved to seed::upload_to_structable, which uses the DataStore trait.

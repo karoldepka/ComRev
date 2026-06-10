@@ -1,4 +1,6 @@
 mod ai_fill;
+mod ai_fill_classes;
+mod ai_fill_classes_stream;
 mod custom_column;
 mod data_row;
 mod db_config;
@@ -203,6 +205,14 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/tables/:table_id/ai-fill",
             axum::routing::post(ai_fill::handler),
+        )
+        .route(
+            "/tables/:table_id/ai-fill-classes",
+            axum::routing::post(ai_fill_classes::handler),
+        )
+        .route(
+            "/tables/:table_id/ai-fill-classes-stream",
+            axum::routing::post(ai_fill_classes_stream::stream_handler),
         )
         .route("/NUKE__USER_DATA", delete(nuke_user_data_handler))
         .route("/NUKE__DB", delete(nuke_db))

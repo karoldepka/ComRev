@@ -13,6 +13,7 @@ import type { ColNode, ColType, RowData } from "@/lib/table-types";
 import { formatNumberWithSpaces, formatNumericStringWithSpaces } from "@/lib/formatting";
 import { AddColumnDialog } from "@/components/tree-table/AddColumnDialog";
 import { AiFillDialog } from "@/components/tree-table/AiFillDialog";
+import { AiFillClassesDialog } from "@/components/tree-table/AiFillClassesDialog";
 import { ColumnVisibilityPanel } from "@/components/tree-table/ColumnVisibilityPanel";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -51,6 +52,12 @@ function isHiddenByAncestor(node: ColNode, userHiddenIds: Set<string>): boolean 
   return userHiddenIds.has(node.id);
 }
 
+function agFilterForType(colType: ColType): string | false {
+  if (colType === 'number') return 'agNumberColumnFilter';
+  if (colType === 'boolean') return false;
+  return 'agTextColumnFilter';
+}
+
 function buildAgDefs(
   nodes: ColNode[],
   userHiddenIds: Set<string>,
@@ -67,6 +74,7 @@ function buildAgDefs(
         children: buildAgDefs(node.children, userHiddenIds, hidden, onHide),
       } as ColGroupDef;
     }
+    const filter = agFilterForType(node.colType);
     return {
       colId: node.id,
       field: node.id,
@@ -75,6 +83,8 @@ function buildAgDefs(
       minWidth: 110,
       headerComponent: LeafHeader,
       headerComponentParams: { colId: node.id, onHide },
+      filter: filter || undefined,
+      floatingFilter: filter !== false,
       cellRenderer: (params: { value: unknown }) =>
         renderCellValue(params.value, node.colType),
     } as ColDef;
@@ -137,6 +147,8 @@ export function AgGridTable({ initialColumns, initialRows, tableId }: Props) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
   const [showAiFill, setShowAiFill] = useState(false);
+  const [showAiFillClasses, setShowAiFillClasses] = useState(false);
+  const [quickFilter, setQuickFilter] = useState('');
 
   const hideColumn = useCallback((id: string) => {
     setUserHiddenIds((prev) => new Set([...prev, id]));
@@ -167,6 +179,8 @@ export function AgGridTable({ initialColumns, initialRows, tableId }: Props) {
         minWidth: 160,
         cellStyle: { fontWeight: 500 },
         headerClass: "ag-header-name",
+        filter: 'agTextColumnFilter',
+        floatingFilter: true,
       } as ColDef,
       ...buildAgDefs(columns, userHiddenIds, false, hideColumn),
     ],
@@ -183,6 +197,23 @@ export function AgGridTable({ initialColumns, initialRows, tableId }: Props) {
     <div className="flex flex-col gap-3">
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search all…"
+            value={quickFilter}
+            onChange={(e) => setQuickFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm border rounded-md pr-7 focus:outline-none focus:ring-1 focus:ring-orange-400 w-44"
+          />
+          {quickFilter && (
+            <button
+              onClick={() => setQuickFilter('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs leading-none"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <button
           onClick={() => setShowAddDialog(true)}
           className="px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50 font-medium"
@@ -190,12 +221,20 @@ export function AgGridTable({ initialColumns, initialRows, tableId }: Props) {
           + Add column
         </button>
         {tableId && (
-          <button
-            onClick={() => setShowAiFill(true)}
-            className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
-          >
-            ✦ AI Fill
-          </button>
+          <>
+            <button
+              onClick={() => setShowAiFill(true)}
+              className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+            >
+              ✦ AI Fill
+            </button>
+            <button
+              onClick={() => setShowAiFillClasses(true)}
+              className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+            >
+              ✦ AI Fill Classes
+            </button>
+          </>
         )}
         <div className="relative">
           {hiddenTotal > 0 && (
@@ -218,14 +257,15 @@ export function AgGridTable({ initialColumns, initialRows, tableId }: Props) {
       </div>
 
       {/* AG Grid */}
-      <div style={{ height: 320 }}>
+      <div className="w-full">
         <AgGridReact
           theme={themeQuartz}
           rowData={initialRows}
           columnDefs={columnDefs}
           defaultColDef={{ resizable: true, minWidth: 80 }}
+          quickFilterText={quickFilter}
           suppressColumnVirtualisation
-          domLayout="normal"
+          domLayout="autoHeight"
         />
       </div>
 
@@ -245,6 +285,12 @@ export function AgGridTable({ initialColumns, initialRows, tableId }: Props) {
           tableId={tableId}
           columns={columns}
           onClose={() => setShowAiFill(false)}
+        />
+      )}
+      {showAiFillClasses && tableId && (
+        <AiFillClassesDialog
+          tableId={tableId}
+          onClose={() => setShowAiFillClasses(false)}
         />
       )}
     </div>

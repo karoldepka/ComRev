@@ -18,6 +18,8 @@ type Props = {
   onRenameTable?: (id: string, title: string) => void;
   onNukeUserData?: () => Promise<void>;
   onNukeDb?: () => Promise<void>;
+  onToggleChat?: () => void;
+  chatOpen?: boolean;
 };
 
 const TABLE_IMPLS = [
@@ -27,7 +29,7 @@ const TABLE_IMPLS = [
 
 export default function TableToolbar({
   tableId, title, tables = [], onAddTable, onAddColumn, onOpenSearch, onShowAllTables, onRenameTable,
-  onNukeUserData, onNukeDb,
+  onNukeUserData, onNukeDb, onToggleChat, chatOpen,
 }: Props) {
   const path = usePathname();
   const current = tableId ? tables.find((t) => t.id === tableId) : undefined;
@@ -196,6 +198,17 @@ export default function TableToolbar({
           onClick={onOpenSearch}
         >
           <Search aria-hidden="true" size={15} strokeWidth={2} />
+        </button>
+      )}
+      {onToggleChat && (
+        <button
+          type="button"
+          className={['table-search-button', chatOpen ? 'table-chat-btn--active' : ''].filter(Boolean).join(' ')}
+          aria-label={chatOpen ? 'Close chat' : 'Open chat'}
+          title="Chat with AI"
+          onClick={onToggleChat}
+        >
+          💬
         </button>
       )}
     </div>

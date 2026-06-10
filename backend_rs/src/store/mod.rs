@@ -344,12 +344,14 @@ pub async fn open_all(
 ) -> Result<Arc<dyn DataStore>> {
     anyhow::ensure!(!entries.is_empty(), "DB_URLS must contain at least one URL");
     let mut stores = Vec::with_capacity(entries.len());
+    let mut names  = Vec::with_capacity(entries.len());
     for (db_id, url) in entries {
         let short = url.split('@').last().unwrap_or(url);
         match open(db_id, url).await {
             Ok(s) => {
                 tracing::info!(db_id, url = short, "store: connected");
                 stores.push(s);
+                names.push(db_id.to_string());
             }
             Err(e) => {
                 tracing::error!(db_id, url = short, error = %e, "store: connection failed, skipping");
@@ -366,7 +368,7 @@ pub async fn open_all(
         attempted = entries.len(),
         "store: open_all complete"
     );
-    Ok(Arc::new(multi_db::MultiStore::new(stores, event_tx)))
+    Ok(Arc::new(multi_db::MultiStore::new_named(stores, names, event_tx)))
 }
 
 #[cfg(test)]

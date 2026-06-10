@@ -16,6 +16,9 @@ import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
 import RowDeleteConfirmDialog from './RowDeleteConfirmDialog';
 import ColumnPropertiesDialog, { type ColumnPropertiesPayload } from './ColumnPropertiesDialog';
 import AiFillDialog from './AiFillDialog';
+import AiFillClassesDialog from './AiFillClassesDialog';
+import JobsIndicator from './JobsIndicator';
+import { useJobs } from '../hooks/useJobs';
 import CellContent from './CellContent';
 import RatingStars, { isRatingColumnType } from './RatingStars';
 import SyncIndicator from './SyncIndicator';
@@ -42,6 +45,9 @@ import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarge
 const ADD_COL_VIRTUAL_ID = '__add-col__';
 const ADD_COL_HEADER_KEY = `header:${ADD_COL_VIRTUAL_ID}:0`;
 const ADD_COL_VIRTUAL_COLUMN = { id: ADD_COL_VIRTUAL_ID, label: '+' };
+
+const ROW_NUM_COL_ID = '__row_num__';
+const ROW_NUM_COL_MIN_WIDTH = 40;
 
 const CLASSES_COL_ID = 'classes';
 const FULL_NAME_COL_ID = 'full_name';
@@ -378,6 +384,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   // ── Inline cell editing ────────────────────────────────────────────────────
   type EditingCell = { rowIndex: number; rowId: string; colId: string; value: string };
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+  const cellEditorRef = useRef<HTMLDivElement | null>(null);
 
   // ── Global search ──────────────────────────────────────────────────────────
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
@@ -442,6 +449,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     return () => sub.unsubscribe();
   }, [api]);
 
+  const [flashedCells, setFlashedCells] = useState<Set<string>>(new Set());
+  const flashCell = useCallback((rowId: string, colId: string) => {
+    const key = `${rowId}:${colId}`;
+    setFlashedCells((prev) => new Set([...prev, key]));
+    setTimeout(() => setFlashedCells((prev) => { const next = new Set(prev); next.delete(key); return next; }), 600);
+  }, []);
+
   useEffect(() => {
     if (!api) return;
     const sub = api.events$.subscribe((ev) => {
@@ -470,6 +484,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
             ? { ...row, [CLASSES_COL_ID]: assignment.item_ids }
             : row,
         ));
+        flashCell(assignment.row_id, CLASSES_COL_ID);
       }
       if ('many_to_many' in ev && ev.many_to_many.data.table_id === tableId && ev.many_to_many.data.field_id === PARENT_CHILD_FIELD_ID) {
         const assignment = ev.many_to_many.data;
@@ -478,10 +493,18 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
             ? { ...row, [PARENT_CHILD_FIELD_ID]: assignment.item_ids }
             : row,
         ));
+        flashCell(assignment.row_id, PARENT_CHILD_FIELD_ID);
+      }
+      if ('cell_value' in ev && ev.cell_value.table_id === tableId) {
+        const { row_id, col_id, value } = ev.cell_value;
+        setRows((prev) => prev.map((row) =>
+          String(row['id'] ?? '') === row_id ? { ...row, [col_id]: value } : row,
+        ));
+        flashCell(row_id, col_id);
       }
     });
     return () => sub.unsubscribe();
-  }, [api, tableId]);
+  }, [api, tableId, flashCell]);
 
   // Fetch queue summary outside the WASM callback to avoid RefCell reentrancy:
   // notify_queue_change() is called while borrow_mut() is held inside do_flush,
@@ -532,6 +555,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // ── Column state ───────────────────────────────────────────────────────────
+  const [showRowNumbers, setShowRowNumbers] = useState(true);
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
   const customColumnsRef = useRef(customColumns);
@@ -578,6 +602,8 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const [deletingRows, setDeletingRows] = useState<Set<string>>(new Set());
   const [propertiesCol, setPropertiesCol] = useState<ApiCustomColumn | null>(null);
   const [showAiFill, setShowAiFill] = useState(false);
+  const [showAiFillClasses, setShowAiFillClasses] = useState(false);
+  const { jobs, actions: jobActions } = useJobs();
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
   const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff__14d', dir: 'desc' });
@@ -917,8 +943,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     setCursorPos({ row: rowIndex, col: colIdx });
   }, [visibleLeafColumns, treeRows.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const rowNumColWidth = useMemo(() => {
+    const digits = String(Math.max(treeRows.length, 1)).length;
+    return Math.max(ROW_NUM_COL_MIN_WIDTH, digits * 8 + 10);
+  }, [treeRows.length]);
+
   const frozenLeftByColumn = useMemo(() => {
-    let left = 0;
+    let left = showRowNumbers ? rowNumColWidth : 0;
     const map = new Map<string, number>();
     for (const col of visibleLeafColumns) {
       if (!col.isFrozen) continue;
@@ -926,7 +957,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       left += columnWidths[col.id] ?? col.width ?? 120;
     }
     return map;
-  }, [visibleLeafColumns, columnWidths]);
+  }, [visibleLeafColumns, columnWidths, showRowNumbers]);
   const headerRows = useMemo(
     () => buildHeaderRows(columns, getColumnDepth(columns), hiddenSet),
     [columns, hiddenSet],
@@ -1448,16 +1479,18 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     if (!api) return;
     restoreEditCursor(rowIndex, colId);
     setRows((prev) => prev.map((row) => String(row['id'] ?? '') === rowId ? { ...row, [colId]: value } : row));
+    flashCell(rowId, colId);
     recordChange(`Edit cell [${colId}]`);
     api.upsertCellValue(rowId, colId, value, tableId)
       .catch((err: unknown) => toast.error(`Failed to queue cell edit: ${errMsg(err)}`));
-  }, [recordChange, api, tableId, restoreEditCursor]);
+  }, [recordChange, api, tableId, restoreEditCursor, flashCell]);
 
   const commitEdit = useCallback(() => {
     if (!editingCell) return;
     const { rowIndex, rowId, colId, value } = editingCell;
+    const committed = cellEditorRef.current?.textContent ?? value;
     setEditingCell(null);
-    saveCellValue(rowIndex, rowId, colId, value);
+    saveCellValue(rowIndex, rowId, colId, committed);
   }, [editingCell, saveCellValue]);
 
   const cancelEdit = useCallback(() => {
@@ -1490,10 +1523,11 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     }
     try {
       await api.setRowClasses(tableId, rowId, selectedIds);
+      flashCell(rowId, CLASSES_COL_ID);
     } catch (err) {
       toast.error(`Failed to save row classes: ${errMsg(err)}`);
     }
-  }, [api, tableId]);
+  }, [api, tableId, flashCell]);
 
   // Belt-and-suspenders: if selectedKeys was cleared in the same batch as setEditingCell(null)
   // (e.g. by the onClick→dblclick toggle race), restore it in a separate effect batch.
@@ -2087,6 +2121,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
         >
           <table className="tree-table">
             <colgroup>
+              {showRowNumbers && (
+                <col key={ROW_NUM_COL_ID} style={{ width: `${rowNumColWidth}px`, minWidth: `${rowNumColWidth}px` }} />
+              )}
               {visibleLeafColumns.map((col) => (
                 <col
                   key={col.id}
@@ -2102,6 +2139,18 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
             <thead>
               {headerRows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
+                  {showRowNumbers && rowIndex === 0 && (
+                    <th
+                      key={ROW_NUM_COL_ID}
+                      rowSpan={headerRows.length > 1 ? headerRows.length : undefined}
+                      className="sticky-col row-num-th"
+                      style={{ left: 0, width: rowNumColWidth, minWidth: rowNumColWidth }}
+                      title="Row number — click to hide"
+                      onClick={() => setShowRowNumbers(false)}
+                    >
+                      #
+                    </th>
+                  )}
                   {row.map(({ column, colSpan, rowSpan, depth }: HeaderCell) => {
                     const headerKey = `header:${column.id}:${depth}`;
                     const isHeaderSelected = selectedSet.has(headerKey);
@@ -2349,6 +2398,21 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                     data-tree-depth={treeRow.depth}
                     style={onRowClick ? { cursor: 'pointer' } : undefined}
                   >
+                    {showRowNumbers && (
+                      <td
+                        key={ROW_NUM_COL_ID}
+                        className="sticky-col row-num-td"
+                        style={{ left: 0 }}
+                        title="Click to select row"
+                        onClick={() => {
+                          const rowKeys = visibleLeafColumns.map((col) => `cell:${rowIndex}:${col.id}`);
+                          setSelectedKeys(rowKeys);
+                          wrapperRef.current?.focus();
+                        }}
+                      >
+                        {rowIndex + 1}
+                      </td>
+                    )}
                     {visibleLeafColumns.map((col: Column, colIdx: number) => {
                       const bodyKey = `cell:${rowIndex}:${col.id}`;
                       const noteKey = `${rowId}:${col.id}`;
@@ -2374,6 +2438,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                             col.isFrozen ? 'sticky-col' : '',
                             isClassesColumn ? 'classes-col-td' : '',
                             deletingCols.has(col.id) ? 'col-deleting-cell' : '',
+                            flashedCells.has(`${rowId}:${col.id}`) ? 'cell-flash' : '',
                           ].filter(Boolean).join(' ') || undefined}
                           style={{ ...(col.isFrozen ? { left: frozenLeftByColumn.get(col.id) ?? 0 } : undefined), ...flagStyle }}
                           onClick={(e) => { selectKey(bodyKey, e.metaKey || e.ctrlKey, e.shiftKey); onRowClick?.(rowId); }}
@@ -2469,14 +2534,32 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                 })}
                               </div>
                             ) : editingCell?.rowIndex === rowIndex && editingCell?.colId === col.id ? (
-                              <input
+                              <div
+                                key={`editor:${editingCell.rowId}:${editingCell.colId}`}
+                                ref={(el) => {
+                                  cellEditorRef.current = el;
+                                  if (!el) return;
+                                  // Size to match the TD so the editor occupies the whole cell.
+                                  const td = el.closest('td') as HTMLTableCellElement | null;
+                                  if (td) el.style.height = `${td.offsetHeight}px`;
+                                  el.textContent = editingCell.value;
+                                  el.focus();
+                                  // Move cursor to end.
+                                  const range = document.createRange();
+                                  const sel = window.getSelection();
+                                  if (sel) {
+                                    range.selectNodeContents(el);
+                                    range.collapse(false);
+                                    sel.removeAllRanges();
+                                    sel.addRange(range);
+                                  }
+                                }}
+                                contentEditable
+                                suppressContentEditableWarning
                                 className="cell-editor"
-                                autoFocus
-                                value={editingCell.value}
-                                onChange={(e) => setEditingCell((prev) => prev ? { ...prev, value: e.target.value } : null)}
                                 onBlur={commitEdit}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') { e.preventDefault(); commitEdit(); wrapperRef.current?.focus(); }
+                                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); wrapperRef.current?.focus(); }
                                   if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); wrapperRef.current?.focus(); }
                                 }}
                               />
@@ -2523,6 +2606,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                 className="add-row-tr"
                 onDoubleClick={() => { setAddRowRelation(null); setShowAddRowDialog(true); }}
               >
+                {showRowNumbers && (
+                  <td className="add-row-td sticky-col row-num-td" style={{ left: 0 }} aria-hidden="true" />
+                )}
                 {visibleLeafColumns.map((col, colIdx) => {
                   const addRowKey = `add-row:${col.id}`;
                   const isSelected = selectedSet.has(addRowKey);
@@ -2577,6 +2663,15 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
         >
           ✦ AI Fill
         </button>
+        <button
+          type="button"
+          className="ai-fill-trigger-button"
+          onClick={() => setShowAiFillClasses(true)}
+          title="Auto-assign Classes using local Ollama"
+        >
+          ✦ AI Fill Classes
+        </button>
+        <JobsIndicator jobs={jobs} actions={jobActions} />
         <span style={{ marginLeft: '1rem' }}>
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
           {' '}
@@ -2599,9 +2694,14 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
             {hiddenRowIds.size} row{hiddenRowIds.size !== 1 ? 's' : ''} hidden
           </span>
         )}
-        {hiddenColumns.length > 0 && (
+        {(!showRowNumbers || hiddenColumns.length > 0) && (
           <span className="hidden-columns-controls">
             Hidden:{' '}
+            {!showRowNumbers && (
+              <button key={ROW_NUM_COL_ID} type="button" className="show-column-button" onClick={() => setShowRowNumbers(true)}>
+                #
+              </button>
+            )}
             {hiddenColumns.map((id: string) => {
               const col = allLeafColumns.find((c: Column) => c.id === id);
               return (
@@ -2610,7 +2710,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                 </button>
               );
             })}
-            <button type="button" className="show-all-button" onClick={showAllColumns}>Show all</button>
+            {(hiddenColumns.length > 0 || !showRowNumbers) && (
+              <button type="button" className="show-all-button" onClick={() => { showAllColumns(); setShowRowNumbers(true); }}>Show all</button>
+            )}
           </span>
         )}
       </div>
@@ -2699,6 +2801,18 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           tableId={tableId}
           columns={customColumns}
           onClose={() => setShowAiFill(false)}
+        />
+      )}
+      {showAiFillClasses && (
+        <AiFillClassesDialog
+          tableId={tableId}
+          jobActions={jobActions}
+          onClose={() => setShowAiFillClasses(false)}
+          sort={(() => {
+            const sortColumn = customColumns.find((cc) => cc.id === sort.col);
+            const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
+            return sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`;
+          })()}
         />
       )}
       {classEditorState && (

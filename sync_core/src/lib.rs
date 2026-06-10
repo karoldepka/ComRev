@@ -1500,6 +1500,18 @@ impl serde::Serialize for ServerEvent {
                     }),
                 )?;
             }
+            Some(server_event::Payload::CellValue(v)) => {
+                map.serialize_entry(
+                    "cell_value",
+                    &serde_json::json!({
+                        "table_id": v.table_id,
+                        "row_id":   v.row_id,
+                        "col_id":   v.col_id,
+                        "value":    serde_json::from_str::<serde_json::Value>(&v.value_json)
+                                        .unwrap_or(serde_json::Value::Null),
+                    }),
+                )?;
+            }
             Some(server_event::Payload::StoreError(e)) => {
                 map.serialize_entry(
                     "store_error",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import type { ColumnVisibilityState } from "@tanstack/react-table";
+import type { ColumnFiltersState, ColumnVisibilityState } from "@tanstack/react-table";
 import type { ColNode, ColType, RowData } from "@/lib/table-types";
 
 // --- pure helpers ---
@@ -54,6 +54,7 @@ export function useTableState(initialColumns: ColNode[], initialRows: RowData[])
   const [columns, setColumns] = useState(initialColumns);
   const [rows] = useState(initialRows);
   const [userHiddenIds, setUserHiddenIds] = useState<Set<string>>(new Set());
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
   const columnVisibility = useMemo(
     () => computeVisibility(columns, userHiddenIds),
@@ -85,5 +86,5 @@ export function useTableState(initialColumns: ColNode[], initialRows: RowData[])
     });
   }, []);
 
-  return { columns, rows, columnVisibility, hiddenCounts, userHiddenIds, addColumn, hideColumn, showColumn };
+  return { columns, rows, columnVisibility, hiddenCounts, userHiddenIds, columnFilters, setColumnFilters, addColumn, hideColumn, showColumn };
 }

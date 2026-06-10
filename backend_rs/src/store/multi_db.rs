@@ -29,6 +29,7 @@ use crate::types::{PagedResponse, RowQuery};
 
 pub struct MultiStore {
     stores: Vec<Arc<dyn DataStore>>,
+    names: Vec<String>,
     event_tx: Option<crate::sync_service::EventTx>,
 }
 
@@ -38,7 +39,18 @@ impl MultiStore {
         event_tx: Option<crate::sync_service::EventTx>,
     ) -> Self {
         assert!(!stores.is_empty(), "MultiStore requires at least one store");
-        Self { stores, event_tx }
+        let names = (0..stores.len()).map(|i| i.to_string()).collect();
+        Self { stores, names, event_tx }
+    }
+
+    pub fn new_named(
+        stores: Vec<Arc<dyn DataStore>>,
+        names: Vec<String>,
+        event_tx: Option<crate::sync_service::EventTx>,
+    ) -> Self {
+        assert!(!stores.is_empty(), "MultiStore requires at least one store");
+        assert_eq!(stores.len(), names.len(), "stores and names must have the same length");
+        Self { stores, names, event_tx }
     }
 }
 
@@ -141,6 +153,7 @@ macro_rules! fan_out {
             $self.stores.iter().enumerate().map(|(store_idx, s)| {
                 let op_id = op_id.clone();
                 let payload = payload.clone();
+                let store_name = $self.names.get(store_idx).cloned().unwrap_or_else(|| store_idx.to_string());
                 async move {
                     let t0 = Instant::now();
                     s.begin_ops_log(&op_id, $op, payload, None).await;
@@ -148,10 +161,10 @@ macro_rules! fan_out {
                     let ms = t0.elapsed().as_millis();
                     match &result {
                         Ok(_) => {
-                            tracing::info!("store[{store_idx}] {} write OK in {ms}ms", stringify!($method));
+                            tracing::info!("store[{store_name}] {} write OK in {ms}ms", stringify!($method));
                             s.mark_op_applied(&op_id).await;
                         }
-                        Err(e) => tracing::warn!("store[{store_idx}] {} write FAILED in {ms}ms: {e}", stringify!($method)),
+                        Err(e) => tracing::warn!("store[{store_name}] {} write FAILED in {ms}ms: {e}", stringify!($method)),
                     }
                     result
                 }
@@ -190,40 +203,44 @@ impl MultiStore {
     where
         T: MergeKey + Send + 'static,
     {
+        let names = self.names.clone();
         let timeout = fan_read_timeout(None);
         let mut unordered: FuturesUnordered<_> = futs
             .into_iter()
-            .map(|(i, fut)| async move {
-                let t0 = Instant::now();
-                let result = tokio::time::timeout(timeout, fut)
-                    .await
-                    .unwrap_or_else(|_| {
-                        Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs()))
-                    });
-                let ms = t0.elapsed().as_millis();
-                match &result {
-                    Ok(_) => tracing::info!("store[{i}] {method} read OK in {ms}ms"),
-                    Err(e) => tracing::warn!("store[{i}] {method} read FAILED in {ms}ms: {e}"),
+            .map(|(i, fut)| {
+                let name = names.get(i).cloned().unwrap_or_else(|| i.to_string());
+                async move {
+                    let t0 = Instant::now();
+                    let result = tokio::time::timeout(timeout, fut)
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs()))
+                        });
+                    let ms = t0.elapsed().as_millis();
+                    match &result {
+                        Ok(_) => tracing::info!("store[{name}] {method} read OK in {ms}ms"),
+                        Err(e) => tracing::warn!("store[{name}] {method} read FAILED in {ms}ms: {e}"),
+                    }
+                    (i, name, result)
                 }
-                (i, result)
             })
             .collect();
 
-        let mut first: Option<(usize, Vec<T>)> = None;
-        while let Some((i, result)) = unordered.next().await {
+        let mut first: Option<(usize, String, Vec<T>)> = None;
+        while let Some((i, name, result)) = unordered.next().await {
             match result {
                 Ok(items) => {
-                    first = Some((i, items));
+                    first = Some((i, name, items));
                     break;
                 }
                 Err(e) => {
-                    let msg = format!("{method}: store[{i}] failed: {e}");
+                    let msg = format!("{method}: store[{name}] failed: {e}");
                     send_store_error(&self.event_tx, method, &msg);
                 }
             }
         }
 
-        let Some((first_idx, first_data)) = first else {
+        let Some((first_idx, first_name, first_data)) = first else {
             return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
         };
 
@@ -234,14 +251,14 @@ impl MultiStore {
         let event_tx = self.event_tx.clone();
         let first_keys: HashSet<String> = first_data.iter().map(MergeKey::merge_key).collect();
         tokio::spawn(async move {
-            while let Some((i, result)) = unordered.next().await {
+            while let Some((_, name, result)) = unordered.next().await {
                 match result {
                     Ok(items) => {
                         let keys: HashSet<String> = items.iter().map(MergeKey::merge_key).collect();
                         for key in &first_keys {
                             if !keys.contains(key) {
                                 let msg = format!(
-                                    "DATA DIVERGENCE [{method}]: key={key:?} missing from store[{i}] (vs store[{first_idx}])"
+                                    "DATA DIVERGENCE [{method}]: key={key:?} missing from store[{name}] (vs store[{first_name}])"
                                 );
                                 tracing::error!("{msg}");
                                 send_store_error(&event_tx, method, &msg);
@@ -249,13 +266,14 @@ impl MultiStore {
                         }
                     }
                     Err(e) => {
-                        let msg = format!("{method}: store[{i}] background check failed: {e}");
+                        let msg = format!("{method}: store[{name}] background check failed: {e}");
                         tracing::warn!("{msg}");
                         send_store_error(&event_tx, method, &msg);
                     }
                 }
             }
         });
+        let _ = first_idx; // used only for divergence labelling above
 
         Ok(first_data)
     }
@@ -268,39 +286,43 @@ impl MultiStore {
         timeout: Duration,
         futs: Vec<(usize, BoxFuture<'static, Result<PagedResponse>>)>,
     ) -> Result<PagedResponse> {
+        let names = self.names.clone();
         let mut unordered: FuturesUnordered<_> = futs
             .into_iter()
-            .map(|(i, fut)| async move {
-                let t0 = Instant::now();
-                let result = tokio::time::timeout(timeout, fut)
-                    .await
-                    .unwrap_or_else(|_| {
-                        Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs()))
-                    });
-                let ms = t0.elapsed().as_millis();
-                match &result {
-                    Ok(_) => tracing::info!("store[{i}] {method} read OK in {ms}ms"),
-                    Err(e) => tracing::warn!("store[{i}] {method} read FAILED in {ms}ms: {e}"),
+            .map(|(i, fut)| {
+                let name = names.get(i).cloned().unwrap_or_else(|| i.to_string());
+                async move {
+                    let t0 = Instant::now();
+                    let result = tokio::time::timeout(timeout, fut)
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(anyhow::anyhow!("timed out after {}s", timeout.as_secs()))
+                        });
+                    let ms = t0.elapsed().as_millis();
+                    match &result {
+                        Ok(_) => tracing::info!("store[{name}] {method} read OK in {ms}ms"),
+                        Err(e) => tracing::warn!("store[{name}] {method} read FAILED in {ms}ms: {e}"),
+                    }
+                    (name, result)
                 }
-                (i, result)
             })
             .collect();
 
-        let mut first: Option<(usize, PagedResponse)> = None;
-        while let Some((i, result)) = unordered.next().await {
+        let mut first: Option<(String, PagedResponse)> = None;
+        while let Some((name, result)) = unordered.next().await {
             match result {
                 Ok(page) => {
-                    first = Some((i, page));
+                    first = Some((name, page));
                     break;
                 }
                 Err(e) => {
-                    let msg = format!("{method}: store[{i}] failed: {e}");
+                    let msg = format!("{method}: store[{name}] failed: {e}");
                     send_store_error(&self.event_tx, method, &msg);
                 }
             }
         }
 
-        let Some((first_idx, first_data)) = first else {
+        let Some((first_name, first_data)) = first else {
             return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
         };
 
@@ -312,12 +334,12 @@ impl MultiStore {
         let first_total = first_data.total;
         let first_ids: HashSet<String> = first_data.data.iter().map(paged_item_id).collect();
         tokio::spawn(async move {
-            while let Some((i, result)) = unordered.next().await {
+            while let Some((name, result)) = unordered.next().await {
                 match result {
                     Ok(page) => {
                         if page.total != first_total {
                             let msg = format!(
-                                "DATA DIVERGENCE [{method}]: store[{i}] total={} vs store[{first_idx}] total={first_total}",
+                                "DATA DIVERGENCE [{method}]: store[{name}] total={} vs store[{first_name}] total={first_total}",
                                 page.total
                             );
                             tracing::error!("{msg}");
@@ -327,7 +349,7 @@ impl MultiStore {
                         for id in &first_ids {
                             if !ids.contains(id) {
                                 let msg = format!(
-                                    "DATA DIVERGENCE [{method}]: id={id:?} missing from store[{i}]"
+                                    "DATA DIVERGENCE [{method}]: id={id:?} missing from store[{name}] (vs store[{first_name}])"
                                 );
                                 tracing::error!("{msg}");
                                 send_store_error(&event_tx, method, &msg);
@@ -335,7 +357,7 @@ impl MultiStore {
                         }
                     }
                     Err(e) => {
-                        let msg = format!("{method}: store[{i}] background check failed: {e}");
+                        let msg = format!("{method}: store[{name}] background check failed: {e}");
                         tracing::warn!("{msg}");
                         send_store_error(&event_tx, method, &msg);
                     }
@@ -352,15 +374,18 @@ impl MultiStore {
 #[async_trait]
 impl DataStore for MultiStore {
     async fn ensure_schema(&self) -> Result<()> {
-        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
-            let t0 = Instant::now();
-            let result = s.ensure_schema().await;
-            let ms = t0.elapsed().as_millis();
-            match &result {
-                Ok(_) => tracing::info!("store[{i}] ensure_schema OK in {ms}ms"),
-                Err(e) => tracing::warn!("store[{i}] ensure_schema FAILED in {ms}ms: {e}"),
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| {
+            let name = self.names.get(i).cloned().unwrap_or_else(|| i.to_string());
+            async move {
+                let t0 = Instant::now();
+                let result = s.ensure_schema().await;
+                let ms = t0.elapsed().as_millis();
+                match &result {
+                    Ok(_) => tracing::info!("store[{name}] ensure_schema OK in {ms}ms"),
+                    Err(e) => tracing::warn!("store[{name}] ensure_schema FAILED in {ms}ms: {e}"),
+                }
+                result
             }
-            result
         }))
         .await;
         fan_write(results, "ensure_schema")
@@ -395,24 +420,30 @@ impl DataStore for MultiStore {
     }
 
     async fn nuke_user_data(&self) -> Result<()> {
-        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
-            let result = s.nuke_user_data().await;
-            if let Err(ref e) = result {
-                tracing::warn!("store[{i}] nuke_user_data FAILED: {e}");
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| {
+            let name = self.names.get(i).cloned().unwrap_or_else(|| i.to_string());
+            async move {
+                let result = s.nuke_user_data().await;
+                if let Err(ref e) = result {
+                    tracing::warn!("store[{name}] nuke_user_data FAILED: {e}");
+                }
+                result
             }
-            result
         }))
         .await;
         fan_write(results, "nuke_user_data")
     }
 
     async fn nuke_db(&self) -> Result<()> {
-        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
-            let result = s.nuke_db().await;
-            if let Err(ref e) = result {
-                tracing::warn!("store[{i}] nuke_db FAILED: {e}");
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| {
+            let name = self.names.get(i).cloned().unwrap_or_else(|| i.to_string());
+            async move {
+                let result = s.nuke_db().await;
+                if let Err(ref e) = result {
+                    tracing::warn!("store[{name}] nuke_db FAILED: {e}");
+                }
+                result
             }
-            result
         }))
         .await;
         fan_write(results, "nuke_db")
@@ -890,6 +921,7 @@ impl DataStore for MultiStore {
             let op_id = op_id.clone();
             let payload = payload.clone();
             let value = value.clone();
+            let name = self.names.get(i).cloned().unwrap_or_else(|| i.to_string());
             async move {
                 let t0 = Instant::now();
                 s.begin_ops_log(&op_id, "row.patch", payload, None).await;
@@ -897,11 +929,11 @@ impl DataStore for MultiStore {
                 let ms = t0.elapsed().as_millis();
                 match &result {
                     Ok(_) => {
-                        tracing::info!("store[{i}] patch_row_value write OK in {ms}ms");
+                        tracing::info!("store[{name}] patch_row_value write OK in {ms}ms");
                         s.mark_op_applied(&op_id).await;
                     }
                     Err(e) => {
-                        tracing::warn!("store[{i}] patch_row_value write FAILED in {ms}ms: {e}")
+                        tracing::warn!("store[{name}] patch_row_value write FAILED in {ms}ms: {e}")
                     }
                 }
                 result
@@ -944,18 +976,20 @@ impl DataStore for MultiStore {
     /// Returns pending ops from the store with the fewest applied ops — the most conservative
     /// view of what has been durably persisted. This is the source of truth for crash recovery.
     async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> {
-        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| async move {
+        let results = join_all(self.stores.iter().enumerate().map(|(i, s)| {
+            let name = self.names.get(i).cloned().unwrap_or_else(|| i.to_string());
+            async move {
             match s.pending_ops().await {
                 Ok(ops) => {
-                    tracing::info!("store[{i}] has {} pending op(s)", ops.len());
+                    tracing::info!("store[{name}] has {} pending op(s)", ops.len());
                     Some(ops)
                 }
                 Err(e) => {
-                    tracing::warn!("store[{i}] pending_ops failed: {e}");
+                    tracing::warn!("store[{name}] pending_ops failed: {e}");
                     None
                 }
             }
-        }))
+        }}))
         .await;
 
         // Use the result from the store that has the most pending ops (least applied = most conservative).

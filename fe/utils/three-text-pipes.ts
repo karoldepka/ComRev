@@ -7,6 +7,7 @@ import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
 import { GlitchPass } from 'three/examples/jsm/postprocessing/GlitchPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
 // ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────────
 export function makeRng(seed: number) {
@@ -92,6 +93,172 @@ export class PipelineManager {
   }
 }
 
+interface MeshDeformState {
+  mesh: THREE.Mesh;
+  geometry: THREE.BufferGeometry;
+  originalPosition: Float32Array;
+  originalNormal: Float32Array | null;
+}
+
+function collectDeformableMeshStates(root: THREE.Object3D | null): MeshDeformState[] {
+  const states: MeshDeformState[] = [];
+  if (!root) return states;
+
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const geometry = child.geometry;
+    if (!(geometry instanceof THREE.BufferGeometry)) return;
+    const positionAttr = geometry.attributes.position;
+    if (!positionAttr) return;
+    const originalPosition = new Float32Array(positionAttr.array.length);
+    originalPosition.set(positionAttr.array as Float32Array);
+    const normalAttr = geometry.attributes.normal;
+    const originalNormal = normalAttr ? new Float32Array(normalAttr.array.length) : null;
+    if (originalNormal) originalNormal.set(normalAttr.array as Float32Array);
+    states.push({ mesh: child, geometry, originalPosition, originalNormal });
+  });
+
+  return states;
+}
+
+function applyVertexDeformation(
+  state: MeshDeformState,
+  callback: (orig: THREE.Vector3, result: THREE.Vector3) => void,
+) {
+  const positionAttr = state.geometry.attributes.position;
+  const array = positionAttr.array as Float32Array;
+  const tempOrig = new THREE.Vector3();
+  const tempResult = new THREE.Vector3();
+
+  for (let i = 0; i < array.length; i += 3) {
+    tempOrig.set(
+      state.originalPosition[i],
+      state.originalPosition[i + 1],
+      state.originalPosition[i + 2],
+    );
+    callback(tempOrig, tempResult);
+    array[i] = tempResult.x;
+    array[i + 1] = tempResult.y;
+    array[i + 2] = tempResult.z;
+  }
+
+  positionAttr.needsUpdate = true;
+  if (state.originalNormal && state.geometry.attributes.normal) {
+    state.geometry.computeVertexNormals();
+    state.geometry.attributes.normal.needsUpdate = true;
+  }
+}
+
+// ── FishEyePipe ───────────────────────────────────────────────────────────────
+export interface FishEyePipeParams {
+  strength?: number; // 0–1.0
+  radius?: number;   // influence radius in world units
+}
+
+export class FishEyePipe implements EffectPipe {
+  readonly name = 'fishEye';
+  private states: MeshDeformState[] = [];
+  constructor(public params: FishEyePipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
+    this.states = collectDeformableMeshStates(mesh);
+  }
+
+  update(_ctx: PipeFrameContext) {
+    const strength = this.params.strength ?? 0.35;
+    const radius = Math.max(0.1, this.params.radius ?? 10);
+    const radiusSq = radius * radius;
+
+    for (const state of this.states) {
+      applyVertexDeformation(state, (orig, result) => {
+        const dx = orig.x;
+        const dy = orig.y;
+        const r2 = dx * dx + dy * dy;
+        if (r2 <= 0) {
+          result.copy(orig);
+          return;
+        }
+
+        const r = Math.sqrt(r2);
+        const factor = 1 + strength * Math.exp(-r2 / radiusSq);
+        const bulge = strength * 0.15 * (1 - Math.exp(-r / radius));
+
+        result.set(
+          dx * factor,
+          dy * factor,
+          orig.z + bulge,
+        );
+      });
+    }
+  }
+
+  dispose() {
+    this.states = [];
+  }
+}
+
+// ── BendPipe ──────────────────────────────────────────────────────────────────
+export type BendPipeAxis = 'x' | 'y' | 'z';
+
+export interface BendPipeParams {
+  strength?: number; // 0–1
+  axis?: BendPipeAxis;
+}
+
+export class BendPipe implements EffectPipe {
+  readonly name = 'bend';
+  private states: MeshDeformState[] = [];
+  constructor(public params: BendPipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
+    this.states = collectDeformableMeshStates(mesh);
+  }
+
+  update(_ctx: PipeFrameContext) {
+    const strength = this.params.strength ?? 0.18;
+    const axis = this.params.axis ?? 'x';
+    if (strength === 0) return;
+
+    const radius = Math.max(0.5, 1 / Math.max(0.001, strength));
+
+    for (const state of this.states) {
+      applyVertexDeformation(state, (orig, result) => {
+        const R = radius;
+        if (axis === 'x') {
+          const theta = orig.x / R;
+          result.set(
+            Math.sin(theta) * R,
+            orig.y,
+            R - Math.cos(theta) * R + orig.z,
+          );
+        } else if (axis === 'y') {
+          const theta = orig.y / R;
+          result.set(
+            orig.x,
+            Math.sin(theta) * R,
+            R - Math.cos(theta) * R + orig.z,
+          );
+        } else {
+          const theta = orig.z / R;
+          result.set(
+            R - Math.cos(theta) * R + orig.x,
+            orig.y,
+            Math.sin(theta) * R,
+          );
+        }
+      });
+    }
+  }
+
+  dispose() {
+    this.states = [];
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PIPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -143,7 +310,7 @@ export class DepthOfFieldPipe implements EffectPipe {
 
   addComposerPass(composer: EffectComposer, ctx: PipeSetupContext) {
     const { focus = 15, aperture = 0.00003, maxBlur = 0.01 } = this.params;
-    this.pass = new BokehPass(ctx.scene, ctx.camera, { focus, aperture, maxBlur });
+    this.pass = new BokehPass(ctx.scene, ctx.camera, { focus, aperture, maxblur: maxBlur });
     composer.addPass(this.pass);
   }
 
@@ -669,4 +836,154 @@ export class OutlinePipe implements EffectPipe {
     if (this.outlineGroup && this.scene) this.scene.remove(this.outlineGroup);
     this.outlineGroup = null;
   }
+}
+
+// ── RaysPipe (adds geometry rays around the mesh) ─────────────────────────────────
+export interface RaysPipeParams {
+  mode?: 'radial' | 'spaghetti' | 'chip';
+  count?: number;
+  thickness?: number;
+  innerMargin?: number;
+  outerMargin?: number;
+}
+
+export class RaysPipe implements EffectPipe {
+  readonly name = 'rays';
+  private group: THREE.Group | null = null;
+  private scene: THREE.Scene | null = null;
+  constructor(public params: RaysPipeParams = {}) {}
+
+  setup(ctx: PipeSetupContext) { this.scene = ctx.scene; }
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    if (!this.scene) return;
+    if (this.group) { this.scene.remove(this.group); this.group = null; }
+    if (!mesh) return;
+
+    const mode = this.params.mode ?? 'radial';
+    const rayCount = this.params.count ?? 24;
+    const thickness = this.params.thickness ?? 0.08;
+    const innerMargin = this.params.innerMargin ?? 2;
+    const outerMargin = this.params.outerMargin ?? 6;
+
+    const mainGroup = new THREE.Group();
+    const box = new THREE.Box3().setFromObject(mesh);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const depth = (mesh instanceof THREE.Mesh && (mesh.geometry as any).parameters?.height) ? (mesh as any).geometry.parameters.height * 0.5 : 0.5;
+
+    if (mode === 'radial') {
+      const halfDiag = Math.sqrt(size.x * size.x + size.y * size.y) / 2;
+      const innerRadius = halfDiag + innerMargin;
+      const outerRadius = halfDiag + innerMargin + outerMargin;
+      for (let i = 0; i < rayCount; i++) {
+        const angle = (i / rayCount) * Math.PI * 2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const length = outerRadius - innerRadius;
+        const rayGeo = new THREE.BoxGeometry(length, thickness, depth);
+        const rayMesh = new THREE.Mesh(rayGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
+        const midRadius = (innerRadius + outerRadius) / 2;
+        rayMesh.position.set(center.x + cos * midRadius, center.y + sin * midRadius, center.z);
+        rayMesh.rotation.z = angle;
+        mainGroup.add(rayMesh);
+      }
+    } else if (mode === 'spaghetti') {
+      const halfDiag = Math.sqrt(size.x * size.x + size.y * size.y) / 2;
+      const innerRadius = halfDiag + innerMargin;
+      const outerRadius = halfDiag + innerMargin + outerMargin;
+      const seed = (n: number) => Math.sin(n * 127.1 + 311.7) * 0.5 + 0.5;
+      for (let i = 0; i < rayCount; i++) {
+        const baseAngle = (i / rayCount) * Math.PI * 2;
+        const wobble = (seed(i) - 0.5) * 0.4;
+        const angle = baseAngle + wobble;
+        const lengthVariation = 0.5 + seed(i + 50);
+        const thisOuter = innerRadius + (outerRadius - innerRadius) * lengthVariation;
+        const length = thisOuter - innerRadius;
+        const points: THREE.Vector3[] = [];
+        const segments = 8;
+        for (let s = 0; s <= segments; s++) {
+          const t = s / segments;
+          const r = innerRadius + length * t;
+          const curveWobble = Math.sin(t * Math.PI * 2 + seed(i * 3) * 10) * 0.3;
+          const a = angle + curveWobble * (1 - t * 0.5);
+          points.push(new THREE.Vector3(center.x + Math.cos(a) * r, center.y + Math.sin(a) * r, center.z));
+        }
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tubeGeo = new THREE.TubeGeometry(curve, 16, thickness * 0.5, 4, false);
+        const rayMesh = new THREE.Mesh(tubeGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
+        mainGroup.add(rayMesh);
+      }
+    } else if (mode === 'chip') {
+      const halfW = size.x / 2 + innerMargin;
+      const halfH = size.y / 2 + innerMargin;
+      const outerHalfW = halfW + outerMargin;
+      const outerHalfH = halfH + outerMargin;
+      const perSide = Math.ceil(rayCount / 4);
+      for (let side = 0; side < 4; side++) {
+        for (let i = 0; i < perSide; i++) {
+          const t = (i + 0.5) / perSide;
+          let startX: number, startY: number, endX: number, endY: number;
+          if (side === 0) { startX = center.x + (t - 0.5) * size.x; startY = center.y + halfH; endX = startX; endY = center.y + outerHalfH; }
+          else if (side === 1) { startX = center.x + halfW; startY = center.y + (t - 0.5) * size.y; endX = center.x + outerHalfW; endY = startY; }
+          else if (side === 2) { startX = center.x + (t - 0.5) * size.x; startY = center.y - halfH; endX = startX; endY = center.y - outerHalfH; }
+          else { startX = center.x - halfW; startY = center.y + (t - 0.5) * size.y; endX = center.x - outerHalfW; endY = startY; }
+          const len = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
+          const rayGeo = new THREE.BoxGeometry(len, thickness, depth);
+          const rayMesh = new THREE.Mesh(rayGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
+          rayMesh.position.set((startX + endX) / 2, (startY + endY) / 2, center.z);
+          rayMesh.rotation.z = Math.atan2(endY - startY, endX - startX);
+          mainGroup.add(rayMesh);
+        }
+      }
+    }
+
+    this.group = mainGroup;
+    this.scene.add(this.group);
+  }
+
+  update(_ctx: PipeFrameContext) {}
+
+  dispose() {
+    if (this.group && this.scene) this.scene.remove(this.group);
+    this.group = null;
+  }
+}
+
+// ── RadialBlurPipe (post-process radial blur shader) ─────────────────────────
+const radialBlurShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    strength: { value: 0.5 },
+    center: { value: new THREE.Vector2(0.5, 0.5) },
+    samples: { value: 8 },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float strength; uniform vec2 center; uniform int samples; varying vec2 vUv; void main(){ vec2 dir = vUv - center; float dist = length(dir); vec4 acc = vec4(0.0); float total = 0.0; for(int i=0;i<32;i++){ if(i>=samples) break; float t = float(i)/float(samples-1); vec2 uv = vUv - dir * strength * t; acc += texture2D(tDiffuse, uv); total += 1.0; } gl_FragColor = acc/total; }`,
+};
+
+export interface RadialBlurPipeParams { strength?: number; samples?: number; center?: [number, number]; }
+
+export class RadialBlurPipe implements EffectPipe {
+  readonly name = 'radialBlur';
+  private pass: InstanceType<typeof ShaderPass> | null = null;
+  constructor(public params: RadialBlurPipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  addComposerPass(composer: EffectComposer, _ctx: PipeSetupContext) {
+    this.pass = new ShaderPass(radialBlurShader as any);
+    composer.addPass(this.pass);
+    this.update({} as any);
+  }
+
+  update(_ctx: PipeFrameContext) {
+    if (!this.pass) return;
+    this.pass.uniforms['strength'].value = this.params.strength ?? 0.15;
+    this.pass.uniforms['samples'].value = Math.max(1, Math.min(32, Math.floor(this.params.samples ?? 8)));
+    const c = this.params.center ?? [0.5, 0.5];
+    this.pass.uniforms['center'].value = new THREE.Vector2(c[0], c[1]);
+  }
+
+  dispose() { this.pass = null; }
 }

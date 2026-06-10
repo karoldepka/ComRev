@@ -3,8 +3,10 @@
 import {
   useReactTable,
   getCoreRowModel,
+  getFilteredRowModel,
   flexRender,
   type ColumnDef,
+  type FilterFn,
 } from "@tanstack/react-table";
 import { useState, useMemo } from "react";
 import type { ColNode, ColType, RowData } from "@/lib/table-types";
@@ -12,7 +14,24 @@ import { formatNumberWithSpaces, formatNumericStringWithSpaces } from "@/lib/for
 import { useTableState } from "./use-table-state";
 import { AddColumnDialog } from "@/components/tree-table/AddColumnDialog";
 import { AiFillDialog } from "@/components/tree-table/AiFillDialog";
+import { AiFillClassesDialog } from "@/components/tree-table/AiFillClassesDialog";
 import { ColumnVisibilityPanel } from "@/components/tree-table/ColumnVisibilityPanel";
+
+// --- filter functions ---
+
+const numberMinFilter: FilterFn<RowData> = (row, columnId, filterValue) => {
+  if (filterValue === '' || filterValue == null) return true;
+  const val = row.getValue(columnId);
+  const num = typeof val === 'number' ? val : parseFloat(String(val));
+  return isNaN(num) || num >= Number(filterValue);
+};
+numberMinFilter.autoRemove = (val: unknown) => val === '' || val == null;
+
+const booleanFilter: FilterFn<RowData> = (row, columnId, filterValue) => {
+  const val = row.getValue(columnId);
+  return Boolean(val) === (filterValue === 'true');
+};
+booleanFilter.autoRemove = (val: unknown) => !val;
 
 // --- column def builder ---
 
@@ -21,6 +40,7 @@ const NAME_COL: ColumnDef<RowData> = {
   header: "Project",
   accessorKey: "name",
   enableHiding: false,
+  filterFn: 'includesString',
 };
 
 function buildDefs(nodes: ColNode[]): ColumnDef<RowData>[] {
@@ -38,6 +58,9 @@ function buildDefs(nodes: ColNode[]): ColumnDef<RowData>[] {
       accessorFn: (row) => row[node.id],
       header: node.name,
       meta: { colType: node.colType },
+      filterFn: node.colType === 'number' ? numberMinFilter
+              : node.colType === 'boolean' ? booleanFilter
+              : 'includesString',
     };
   });
 }
@@ -85,21 +108,26 @@ interface Props {
 }
 
 export function TreeTable({ initialColumns, initialRows, tableId }: Props) {
-  const { columns, rows, columnVisibility, hiddenCounts, userHiddenIds, addColumn, hideColumn, showColumn } =
+  const { columns, rows, columnVisibility, hiddenCounts, userHiddenIds, columnFilters, setColumnFilters, addColumn, hideColumn, showColumn } =
     useTableState(initialColumns, initialRows);
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
   const [showAiFill, setShowAiFill] = useState(false);
+  const [showAiFillClasses, setShowAiFillClasses] = useState(false);
 
   const columnDefs = useMemo(() => [NAME_COL, ...buildDefs(columns)], [columns]);
 
   const table = useReactTable({
     data: rows,
     columns: columnDefs,
-    state: { columnVisibility },
+    state: { columnVisibility, columnFilters },
+    onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
   });
+
+  const hasFilters = columnFilters.length > 0;
 
   const headerGroups = table.getHeaderGroups();
   const totalDepth = headerGroups.length;
@@ -116,11 +144,27 @@ export function TreeTable({ initialColumns, initialRows, tableId }: Props) {
           + Add column
         </button>
         {tableId && (
+          <>
+            <button
+              onClick={() => setShowAiFill(true)}
+              className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+            >
+              ✦ AI Fill
+            </button>
+            <button
+              onClick={() => setShowAiFillClasses(true)}
+              className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+            >
+              ✦ AI Fill Classes
+            </button>
+          </>
+        )}
+        {hasFilters && (
           <button
-            onClick={() => setShowAiFill(true)}
-            className="px-3 py-1.5 text-sm border rounded-md font-medium bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100"
+            onClick={() => setColumnFilters([])}
+            className="px-3 py-1.5 text-sm border rounded-md text-red-600 border-red-200 hover:bg-red-50"
           >
-            ✦ AI Fill
+            Clear filters
           </button>
         )}
         <div className="relative">
@@ -189,6 +233,44 @@ export function TreeTable({ initialColumns, initialRows, tableId }: Props) {
                   })}
               </tr>
             ))}
+            {/* Filter row */}
+            <tr>
+              {table.getVisibleLeafColumns().map((col) => {
+                const isName = col.id === '__name__';
+                const colType = col.columnDef.meta?.colType;
+                const filterValue = (col.getFilterValue() ?? '') as string;
+                return (
+                  <th
+                    key={col.id}
+                    className={[
+                      'px-2 py-1.5 border-b-2 border-r border-orange-100 bg-orange-50/40',
+                      isName ? 'sticky left-0 z-20' : '',
+                    ].join(' ')}
+                    style={{ minWidth: isName ? 160 : 110 }}
+                  >
+                    {colType === 'boolean' ? (
+                      <select
+                        value={filterValue || 'all'}
+                        onChange={(e) => col.setFilterValue(e.target.value === 'all' ? undefined : e.target.value)}
+                        className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      >
+                        <option value="all">All</option>
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                      </select>
+                    ) : (
+                      <input
+                        type={colType === 'number' ? 'number' : 'text'}
+                        placeholder={colType === 'number' ? 'Min…' : 'Filter…'}
+                        value={filterValue}
+                        onChange={(e) => col.setFilterValue(e.target.value || undefined)}
+                        className="w-full text-xs border border-gray-200 rounded px-1.5 py-0.5 min-w-0 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      />
+                    )}
+                  </th>
+                );
+              })}
+            </tr>
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
@@ -237,6 +319,12 @@ export function TreeTable({ initialColumns, initialRows, tableId }: Props) {
           tableId={tableId}
           columns={columns}
           onClose={() => setShowAiFill(false)}
+        />
+      )}
+      {showAiFillClasses && tableId && (
+        <AiFillClassesDialog
+          tableId={tableId}
+          onClose={() => setShowAiFillClasses(false)}
         />
       )}
     </div>

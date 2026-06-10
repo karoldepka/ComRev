@@ -32,6 +32,11 @@ pub struct PgStore {
     /// Tables whose existing row JSON has already been scanned for missing
     /// nested column definitions in this process.
     nested_row_repairs: std::sync::RwLock<HashSet<String>>,
+    /// Table IDs for which ensure_user_table has already run in this process.
+    /// Avoids re-running ~10 DDL statements (all IF NOT EXISTS) on every write.
+    ensured_tables: std::sync::RwLock<HashSet<String>>,
+    /// "table_id\x00field_id" keys for which ensure_many_to_many_field has run.
+    ensured_m2m_fields: std::sync::RwLock<HashSet<String>>,
 }
 
 /// Infer display type from a JSON value.
@@ -148,6 +153,8 @@ impl PgStore {
             known_cols: Default::default(),
             known_nested_defs: Default::default(),
             nested_row_repairs: Default::default(),
+            ensured_tables: Default::default(),
+            ensured_m2m_fields: Default::default(),
         })
     }
 
@@ -195,12 +202,17 @@ impl PgStore {
             known_cols: Default::default(),
             known_nested_defs: Default::default(),
             nested_row_repairs: Default::default(),
+            ensured_tables: Default::default(),
+            ensured_m2m_fields: Default::default(),
         })
     }
 
     /// Create a physical PG table for a user table if it doesn't yet exist.
     /// Also adds a GIN index on `custom_vals` for fast JSONB lookups.
     pub async fn ensure_user_table(&self, table_id: &str) -> Result<()> {
+        if self.ensured_tables.read().unwrap().contains(table_id) {
+            return Ok(());
+        }
         let tname = user_table_ident(table_id);
         sqlx::query(&format!(
             r#"CREATE TABLE IF NOT EXISTS {tname} (
@@ -324,11 +336,16 @@ impl PgStore {
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table parent_child index({table_id}): {e}"))?;
 
+        self.ensured_tables.write().unwrap().insert(table_id.to_string());
         Ok(())
     }
 
     async fn ensure_many_to_many_field(&self, table_id: &str, field_id: &str) -> Result<()> {
         if field_id == "superclasses" {
+            return Ok(());
+        }
+        let cache_key = format!("{table_id}\x00{field_id}");
+        if self.ensured_m2m_fields.read().unwrap().contains(&cache_key) {
             return Ok(());
         }
         validate_field_id(field_id)?;
@@ -350,6 +367,7 @@ impl PgStore {
         .map_err(|e| {
             anyhow::anyhow!("ensure_many_to_many_field index({table_id}.{field_id}): {e}")
         })?;
+        self.ensured_m2m_fields.write().unwrap().insert(cache_key);
         Ok(())
     }
 
@@ -769,6 +787,8 @@ impl DataStore for PgStore {
         self.known_cols.write().unwrap().clear();
         self.known_nested_defs.write().unwrap().clear();
         self.nested_row_repairs.write().unwrap().clear();
+        self.ensured_tables.write().unwrap().clear();
+        self.ensured_m2m_fields.write().unwrap().clear();
 
         tracing::warn!(
             db_id,
@@ -794,6 +814,8 @@ impl DataStore for PgStore {
         self.known_cols.write().unwrap().clear();
         self.known_nested_defs.write().unwrap().clear();
         self.nested_row_repairs.write().unwrap().clear();
+        self.ensured_tables.write().unwrap().clear();
+        self.ensured_m2m_fields.write().unwrap().clear();
         tracing::warn!(db_id, "NUKE__DB: complete");
         Ok(())
     }

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import TableToolbar from './TableToolbar';
 import AddTableDialog, { type AddTablePayload } from './AddTableDialog';
 import TreeTable from './TreeTable';
+import ChatPanel from './ChatPanel';
 import { getSyncClient } from '../services/syncClient';
 import type { ApiTable } from '../types/table';
 
@@ -17,6 +18,7 @@ export default function TablePage({ tableId }: Props) {
   const [tables, setTables] = useState<ApiTable[]>([]);
   const [showAddTable, setShowAddTable] = useState(false);
   const [searchOpenRequest, setSearchOpenRequest] = useState(0);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     getSyncClient()
@@ -54,6 +56,11 @@ export default function TablePage({ tableId }: Props) {
     toast.success('Database nuked. Reload to start fresh.');
   }, []);
 
+  const currentTable = tables.find((t) => t.id === tableId);
+  const chatSystemPrompt = currentTable
+    ? `You are a helpful assistant for a table called "${currentTable.title ?? tableId}" in Structable, an open-source alternative to Airtable. Help the user understand, analyze, and work with their data.`
+    : undefined;
+
   return (
     <>
       <TableToolbar
@@ -65,6 +72,8 @@ export default function TablePage({ tableId }: Props) {
         onRenameTable={handleRenameTable}
         onNukeUserData={handleNukeUserData}
         onNukeDb={handleNukeDb}
+        onToggleChat={() => setChatOpen((v) => !v)}
+        chatOpen={chatOpen}
       />
       {showAddTable && (
         <AddTableDialog
@@ -72,11 +81,21 @@ export default function TablePage({ tableId }: Props) {
           onClose={() => setShowAddTable(false)}
         />
       )}
-      <TreeTable
-        tableId={tableId}
-        searchOpenRequest={searchOpenRequest}
-        onRowClick={tableId === 'tables' ? (id) => router.push(`/t/${id}`) : undefined}
-      />
+      <div className="table-chat-layout">
+        <div className="table-main">
+          <TreeTable
+            tableId={tableId}
+            searchOpenRequest={searchOpenRequest}
+            onRowClick={tableId === 'tables' ? (id) => router.push(`/t/${id}`) : undefined}
+          />
+        </div>
+        {chatOpen && (
+          <ChatPanel
+            onClose={() => setChatOpen(false)}
+            systemPrompt={chatSystemPrompt}
+          />
+        )}
+      </div>
     </>
   );
 }

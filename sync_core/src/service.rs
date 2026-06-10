@@ -310,6 +310,14 @@ pub fn row_class_event(kind: EventKind, data: RowClass) -> ServerEvent {
 pub fn many_to_many_event(kind: EventKind, data: ManyToManyValue) -> ServerEvent {
     ServerEvent { payload: Some(server_event::Payload::ManyToMany(ManyToManyEvent { kind: kind.into(), data: Some(data) })) }
 }
+pub fn cell_value_event(table_id: impl Into<String>, row_id: impl Into<String>, col_id: impl Into<String>, value_json: impl Into<String>) -> ServerEvent {
+    ServerEvent { payload: Some(server_event::Payload::CellValue(CellValueEvent {
+        table_id: table_id.into(),
+        row_id: row_id.into(),
+        col_id: col_id.into(),
+        value_json: value_json.into(),
+    }))}
+}
 pub fn store_error_event(method: impl Into<String>, message: impl Into<String>) -> ServerEvent {
     ServerEvent { payload: Some(server_event::Payload::StoreError(StoreErrorEvent { method: method.into(), message: message.into() })) }
 }

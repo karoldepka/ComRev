@@ -87,6 +87,7 @@ message ServerEvent {
     CustomColEvent   custom_col  = 14;
     RowClassEvent    row_class   = 15;
     ManyToManyEvent  many_to_many = 16;
+    CellValueEvent   cell_value  = 17;
     StoreErrorEvent  store_error = 20;
   }
 }
@@ -109,6 +110,7 @@ message HiddenColEvent { EventKind kind = 1; HiddenCol data = 3; }
 message CustomColEvent { EventKind kind = 1; CustomCol data = 4; }
 message RowClassEvent  { EventKind kind = 1; RowClass data = 2; }
 message ManyToManyEvent { EventKind kind = 1; ManyToManyValue data = 2; }
+message CellValueEvent  { string table_id = 1; string row_id = 2; string col_id = 3; string value_json = 4; }
 
 // ── Entity types ───────────────────────────────────────────────────────────────
 
