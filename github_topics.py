@@ -356,6 +356,8 @@ HARDCODED_REPOS_RAW = [
     "https://github.com/kittors/CliRelay",
     "https://github.com/router-for-me/CLIProxyAPI",
     "https://github.com/AlexAnys/ai-sub-auth",
+    
+    "https://github.com/andrewyng/aisuite",
 
 ]
 
