@@ -48,6 +48,8 @@ export interface EffectPipe {
   update?(ctx: PipeFrameContext): void;
   /** Called whenever the text mesh is rebuilt */
   onMeshChanged?(mesh: THREE.Mesh | THREE.Group | null, ctx: PipeSetupContext): void;
+  /** Restore mesh geometry to its pre-deformation state (before dispose) */
+  restoreGeometry?(): void;
   dispose(): void;
 }
 
@@ -87,6 +89,10 @@ export class PipelineManager {
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
     if (!this.setupCtx) return;
     for (const p of this.pipes) p.onMeshChanged?.(mesh, this.setupCtx);
+  }
+
+  restoreGeometry() {
+    for (const p of this.pipes) p.restoreGeometry?.();
   }
 
   dispose() {
@@ -152,6 +158,19 @@ function applyVertexDeformation(
   }
 }
 
+function restoreDeformStates(states: MeshDeformState[]) {
+  for (const state of states) {
+    const positionAttr = state.geometry.attributes.position;
+    const array = positionAttr.array as Float32Array;
+    array.set(state.originalPosition);
+    positionAttr.needsUpdate = true;
+    if (state.originalNormal && state.geometry.attributes.normal) {
+      (state.geometry.attributes.normal.array as Float32Array).set(state.originalNormal);
+      state.geometry.attributes.normal.needsUpdate = true;
+    }
+  }
+}
+
 // ── FishEyePipe ───────────────────────────────────────────────────────────────
 export interface FishEyePipeParams {
   strength?: number; // 0–1.0
@@ -195,6 +214,10 @@ export class FishEyePipe implements EffectPipe {
         );
       });
     }
+  }
+
+  restoreGeometry() {
+    restoreDeformStates(this.states);
   }
 
   dispose() {
@@ -255,6 +278,10 @@ export class BendPipe implements EffectPipe {
         }
       });
     }
+  }
+
+  restoreGeometry() {
+    restoreDeformStates(this.states);
   }
 
   dispose() {
@@ -986,6 +1013,7 @@ export class WavePipe implements EffectPipe {
     }
   }
 
+  restoreGeometry() { restoreDeformStates(this.states); }
   dispose() { this.states = []; }
 }
 
@@ -1024,6 +1052,7 @@ export class TwistPipe implements EffectPipe {
     }
   }
 
+  restoreGeometry() { restoreDeformStates(this.states); }
   dispose() { this.states = []; }
 }
 

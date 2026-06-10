@@ -71,6 +71,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   useEffect(() => {
     pipesRef.current = pipes;
     if (!sceneRef.current || !rendererRef.current || !cameraRef.current) return;
+    pipelineManagerRef.current?.restoreGeometry();
     pipelineManagerRef.current?.dispose();
     const pm = new PipelineManager(pipes);
     pm.setup({
