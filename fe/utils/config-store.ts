@@ -26,12 +26,21 @@ export type EffectType =
   | "wireframe"
   | "outline"
   | "rays"
-  | "radialBlur";
+  | "radialBlur"
+  | "wave"
+  | "twist"
+  | "pulse"
+  | "floatingRings"
+  | "vignette"
+  | "scanlines"
+  | "colorGrading"
+  | "pixelate";
 
 export interface EffectInstance {
   id: string;
   type: EffectType;
   enabled: boolean;
+  animate: boolean;
   params: Record<string, unknown>;
 }
 
@@ -45,12 +54,6 @@ export interface ThreeDConfig {
   equalizationMethod: "spacing" | "fontSize";
   targetWidth: number;
   lineSpacing: number;
-  rays: boolean;
-  rayMode: "radial" | "spaghetti" | "chip";
-  rayCount: number;
-  rayThickness: number;
-  rayInnerMargin: number;
-  rayOuterMargin: number;
   effectInstances: EffectInstance[];
   showAdvanced: boolean;
   synced?: boolean;

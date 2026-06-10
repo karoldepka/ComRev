@@ -39,6 +39,7 @@ export interface PipeFrameContext extends PipeSetupContext {
 // ── Base pipe interface ───────────────────────────────────────────────────────
 export interface EffectPipe {
   readonly name: string;
+  paused?: boolean;
   /** Called once after renderer/scene/camera are ready */
   setup(ctx: PipeSetupContext): void;
   /** Implement to register a post-processing pass into the shared EffectComposer */
@@ -78,7 +79,9 @@ export class PipelineManager {
   }
 
   update(ctx: PipeFrameContext) {
-    for (const p of this.pipes) p.update?.(ctx);
+    for (const p of this.pipes) {
+      if (!p.paused) p.update?.(ctx);
+    }
   }
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
@@ -951,6 +954,409 @@ export class RaysPipe implements EffectPipe {
     if (this.group && this.scene) this.scene.remove(this.group);
     this.group = null;
   }
+}
+
+// ── WavePipe (animated sinusoidal vertex deformation) ────────────────────────
+export interface WavePipeParams {
+  amplitude?: number; // displacement height (default 0.5)
+  frequency?: number; // waves per unit length (default 1.0)
+  speed?: number;     // animation speed in cycles/s (default 1.0)
+  axis?: 'x' | 'y';  // wave propagation axis (default 'x')
+}
+
+export class WavePipe implements EffectPipe {
+  readonly name = 'wave';
+  private states: MeshDeformState[] = [];
+  constructor(public params: WavePipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
+    this.states = collectDeformableMeshStates(mesh);
+  }
+
+  update(ctx: PipeFrameContext) {
+    const { amplitude = 0.5, frequency = 1.0, speed = 1.0, axis = 'x' } = this.params;
+    const phase = ctx.time * speed * Math.PI * 2;
+    for (const state of this.states) {
+      applyVertexDeformation(state, (orig, result) => {
+        const wave = Math.sin((axis === 'x' ? orig.x : orig.y) * frequency * Math.PI * 2 + phase) * amplitude;
+        result.set(orig.x, orig.y, orig.z + wave);
+      });
+    }
+  }
+
+  dispose() { this.states = []; }
+}
+
+// ── TwistPipe (twist geometry around an axis) ─────────────────────────────────
+export interface TwistPipeParams {
+  strength?: number;      // radians per unit (default 0.3)
+  axis?: 'x' | 'y' | 'z'; // twist axis (default 'y')
+}
+
+export class TwistPipe implements EffectPipe {
+  readonly name = 'twist';
+  private states: MeshDeformState[] = [];
+  constructor(public params: TwistPipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
+    this.states = collectDeformableMeshStates(mesh);
+  }
+
+  update(_ctx: PipeFrameContext) {
+    const { strength = 0.3, axis = 'y' } = this.params;
+    for (const state of this.states) {
+      applyVertexDeformation(state, (orig, result) => {
+        const t = axis === 'x' ? orig.x : axis === 'y' ? orig.y : orig.z;
+        const angle = t * strength;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        if (axis === 'x') {
+          result.set(orig.x, orig.y * cos - orig.z * sin, orig.y * sin + orig.z * cos);
+        } else if (axis === 'y') {
+          result.set(orig.x * cos - orig.z * sin, orig.y, orig.x * sin + orig.z * cos);
+        } else {
+          result.set(orig.x * cos - orig.y * sin, orig.x * sin + orig.y * cos, orig.z);
+        }
+      });
+    }
+  }
+
+  dispose() { this.states = []; }
+}
+
+// ── PulsePipe (animated scale pulsing) ────────────────────────────────────────
+export interface PulsePipeParams {
+  amplitude?: number; // scale pulsation depth 0–0.5 (default 0.12)
+  speed?: number;     // pulses per second (default 1.0)
+}
+
+export class PulsePipe implements EffectPipe {
+  readonly name = 'pulse';
+  private mesh: THREE.Mesh | THREE.Group | null = null;
+  private baseScale = new THREE.Vector3(1, 1, 1);
+  constructor(public params: PulsePipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    this.mesh = mesh;
+    if (mesh) this.baseScale.copy(mesh.scale);
+  }
+
+  update(ctx: PipeFrameContext) {
+    if (!this.mesh) return;
+    const { amplitude = 0.12, speed = 1.0 } = this.params;
+    const scale = 1 + Math.sin(ctx.time * speed * Math.PI * 2) * amplitude;
+    this.mesh.scale.set(this.baseScale.x * scale, this.baseScale.y * scale, this.baseScale.z * scale);
+  }
+
+  dispose() { this.mesh = null; }
+}
+
+// ── FloatingRingsPipe (torus rings orbiting the text) ─────────────────────────
+export interface FloatingRingsPipeParams {
+  count?: number;      // number of rings 1–6 (default 3)
+  radiusMult?: number; // orbit radius relative to mesh half-size (default 1.6)
+  speed?: number;      // rotation speed rev/s (default 0.25)
+  thickness?: number;  // torus tube radius relative to mesh (default 0.04)
+  color?: number;      // ring color (default 0xff8800)
+}
+
+export class FloatingRingsPipe implements EffectPipe {
+  readonly name = 'floatingRings';
+  private rings: THREE.Mesh[] = [];
+  private scene: THREE.Scene | null = null;
+  private meshRadius = 8;
+  constructor(public params: FloatingRingsPipeParams = {}) {}
+
+  setup(ctx: PipeSetupContext) {
+    this.scene = ctx.scene;
+    this.buildRings();
+  }
+
+  private buildRings() {
+    if (this.scene) for (const r of this.rings) { this.scene.remove(r); r.geometry.dispose(); (r.material as THREE.Material).dispose(); }
+    this.rings = [];
+    const { count = 3, radiusMult = 1.6, thickness = 0.04, color = 0xff8800 } = this.params;
+    const n = Math.min(6, Math.max(1, Math.round(count)));
+    const torusRadius = this.meshRadius * radiusMult;
+    const tubeRadius = this.meshRadius * thickness;
+    for (let i = 0; i < n; i++) {
+      const geo = new THREE.TorusGeometry(torusRadius, tubeRadius, 8, 48);
+      const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.8, roughness: 0.2 });
+      const mesh = new THREE.Mesh(geo, mat);
+      this.rings.push(mesh);
+      this.scene?.add(mesh);
+    }
+  }
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    if (!mesh) return;
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = box.getSize(new THREE.Vector3());
+    this.meshRadius = Math.max(size.x, size.y) / 2;
+    this.buildRings();
+  }
+
+  update(ctx: PipeFrameContext) {
+    const { count = 3, speed = 0.25 } = this.params;
+    const n = Math.min(6, Math.max(1, Math.round(count)));
+    if (n !== this.rings.length) { this.buildRings(); return; }
+    for (let i = 0; i < this.rings.length; i++) {
+      const offset = (i / this.rings.length) * Math.PI;
+      const t = ctx.time * speed * Math.PI * 2;
+      this.rings[i].rotation.x = t * 0.7 + offset;
+      this.rings[i].rotation.y = t * 0.4 + offset * 1.3;
+      this.rings[i].rotation.z = t * 0.2 + offset * 0.7;
+    }
+  }
+
+  dispose() {
+    if (this.scene) for (const r of this.rings) { this.scene.remove(r); r.geometry.dispose(); (r.material as THREE.Material).dispose(); }
+    this.rings = [];
+  }
+}
+
+// ── VignettePipe (post-process corner darkening) ──────────────────────────────
+const vignetteShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    offset:   { value: 0.5 },
+    darkness: { value: 1.0 },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float offset;
+    uniform float darkness;
+    varying vec2 vUv;
+    void main(){
+      vec4 color = texture2D(tDiffuse, vUv);
+      float dist = distance(vUv, vec2(0.5));
+      color.rgb *= smoothstep(0.8, offset * 0.799, dist * (darkness + offset));
+      gl_FragColor = color;
+    }
+  `,
+};
+
+export interface VignettePipeParams {
+  offset?:   number; // 0–1, how close to center the effect starts (default 0.5)
+  darkness?: number; // 0–5, strength of darkening (default 1.0)
+}
+
+export class VignettePipe implements EffectPipe {
+  readonly name = 'vignette';
+  private pass: InstanceType<typeof ShaderPass> | null = null;
+  constructor(public params: VignettePipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  addComposerPass(composer: EffectComposer, _ctx: PipeSetupContext) {
+    this.pass = new ShaderPass(vignetteShader as any);
+    composer.addPass(this.pass);
+    this.syncUniforms();
+  }
+
+  private syncUniforms() {
+    if (!this.pass) return;
+    this.pass.uniforms['offset'].value   = this.params.offset   ?? 0.5;
+    this.pass.uniforms['darkness'].value = this.params.darkness ?? 1.0;
+  }
+
+  update(_ctx: PipeFrameContext) { this.syncUniforms(); }
+  dispose() { this.pass = null; }
+}
+
+// ── ScanlinesPipe (post-process CRT scanlines) ────────────────────────────────
+const scanlinesShader = {
+  uniforms: {
+    tDiffuse:    { value: null as THREE.Texture | null },
+    count:       { value: 100.0 },
+    intensity:   { value: 0.3 },
+    scrollSpeed: { value: 0.0 },
+    time:        { value: 0.0 },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float count;
+    uniform float intensity;
+    uniform float scrollSpeed;
+    uniform float time;
+    varying vec2 vUv;
+    void main(){
+      vec4 color = texture2D(tDiffuse, vUv);
+      float y = vUv.y + time * scrollSpeed;
+      float line = sin(y * count * 3.14159265) * 0.5 + 0.5;
+      color.rgb -= line * intensity;
+      gl_FragColor = color;
+    }
+  `,
+};
+
+export interface ScanlinesPipeParams {
+  count?:       number; // number of scanlines (default 100)
+  intensity?:   number; // darkness 0–1 (default 0.3)
+  scrollSpeed?: number; // scroll speed, 0 = static (default 0)
+}
+
+export class ScanlinesPipe implements EffectPipe {
+  readonly name = 'scanlines';
+  private pass: InstanceType<typeof ShaderPass> | null = null;
+  constructor(public params: ScanlinesPipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  addComposerPass(composer: EffectComposer, _ctx: PipeSetupContext) {
+    this.pass = new ShaderPass(scanlinesShader as any);
+    composer.addPass(this.pass);
+    this.syncUniforms(0);
+  }
+
+  private syncUniforms(time: number) {
+    if (!this.pass) return;
+    this.pass.uniforms['count'].value       = this.params.count       ?? 100;
+    this.pass.uniforms['intensity'].value   = this.params.intensity   ?? 0.3;
+    this.pass.uniforms['scrollSpeed'].value = this.params.scrollSpeed ?? 0;
+    this.pass.uniforms['time'].value        = time;
+  }
+
+  update(ctx: PipeFrameContext) { this.syncUniforms(ctx.time); }
+  dispose() { this.pass = null; }
+}
+
+// ── ColorGradingPipe (post-process hue / saturation / contrast) ───────────────
+const colorGradingShader = {
+  uniforms: {
+    tDiffuse:   { value: null as THREE.Texture | null },
+    hueShift:   { value: 0.0 },
+    saturation: { value: 1.0 },
+    contrast:   { value: 1.0 },
+    brightness: { value: 0.0 },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float hueShift;
+    uniform float saturation;
+    uniform float contrast;
+    uniform float brightness;
+    varying vec2 vUv;
+
+    vec3 rgb2hsl(vec3 c){
+      float mx=max(max(c.r,c.g),c.b), mn=min(min(c.r,c.g),c.b);
+      float h=0.,s=0.,l=(mx+mn)/2.;
+      if(mx!=mn){ float d=mx-mn; s=l>0.5?d/(2.-mx-mn):d/(mx+mn);
+        if(mx==c.r) h=(c.g-c.b)/d+(c.g<c.b?6.:0.);
+        else if(mx==c.g) h=(c.b-c.r)/d+2.;
+        else h=(c.r-c.g)/d+4.; h/=6.; }
+      return vec3(h,s,l);
+    }
+    float hue2rgb(float p,float q,float t){
+      if(t<0.) t+=1.; if(t>1.) t-=1.;
+      if(t<1./6.) return p+(q-p)*6.*t;
+      if(t<1./2.) return q;
+      if(t<2./3.) return p+(q-p)*(2./3.-t)*6.;
+      return p;
+    }
+    vec3 hsl2rgb(vec3 c){
+      if(c.y==0.) return vec3(c.z);
+      float q=c.z<0.5?c.z*(1.+c.y):c.z+c.y-c.z*c.y, p=2.*c.z-q;
+      return vec3(hue2rgb(p,q,c.x+1./3.),hue2rgb(p,q,c.x),hue2rgb(p,q,c.x-1./3.));
+    }
+
+    void main(){
+      vec4 tex = texture2D(tDiffuse, vUv);
+      vec3 hsl = rgb2hsl(tex.rgb);
+      hsl.x = fract(hsl.x + hueShift);
+      hsl.y = clamp(hsl.y * saturation, 0.0, 1.0);
+      vec3 col = hsl2rgb(hsl);
+      col = (col - 0.5) * contrast + 0.5 + brightness;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), tex.a);
+    }
+  `,
+};
+
+export interface ColorGradingPipeParams {
+  hueShift?:   number; // 0–1, hue rotation (default 0)
+  saturation?: number; // 0–3, saturation multiplier (default 1)
+  contrast?:   number; // 0–3, contrast multiplier (default 1)
+  brightness?: number; // -0.5 to 0.5 offset (default 0)
+}
+
+export class ColorGradingPipe implements EffectPipe {
+  readonly name = 'colorGrading';
+  private pass: InstanceType<typeof ShaderPass> | null = null;
+  constructor(public params: ColorGradingPipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  addComposerPass(composer: EffectComposer, _ctx: PipeSetupContext) {
+    this.pass = new ShaderPass(colorGradingShader as any);
+    composer.addPass(this.pass);
+    this.syncUniforms();
+  }
+
+  private syncUniforms() {
+    if (!this.pass) return;
+    this.pass.uniforms['hueShift'].value   = this.params.hueShift   ?? 0;
+    this.pass.uniforms['saturation'].value = this.params.saturation ?? 1;
+    this.pass.uniforms['contrast'].value   = this.params.contrast   ?? 1;
+    this.pass.uniforms['brightness'].value = this.params.brightness ?? 0;
+  }
+
+  update(_ctx: PipeFrameContext) { this.syncUniforms(); }
+  dispose() { this.pass = null; }
+}
+
+// ── PixelatePipe (post-process pixelation) ────────────────────────────────────
+const pixelateShader = {
+  uniforms: {
+    tDiffuse:   { value: null as THREE.Texture | null },
+    resolution: { value: new THREE.Vector2(1, 1) },
+    pixelSize:  { value: 4.0 },
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    uniform float pixelSize;
+    varying vec2 vUv;
+    void main(){
+      vec2 dxy = pixelSize / resolution;
+      vec2 coord = dxy * floor(vUv / dxy);
+      gl_FragColor = texture2D(tDiffuse, coord);
+    }
+  `,
+};
+
+export interface PixelatePipeParams {
+  pixelSize?: number; // pixels per cell (default 4)
+}
+
+export class PixelatePipe implements EffectPipe {
+  readonly name = 'pixelate';
+  private pass: InstanceType<typeof ShaderPass> | null = null;
+  constructor(public params: PixelatePipeParams = {}) {}
+
+  setup(_ctx: PipeSetupContext) {}
+
+  addComposerPass(composer: EffectComposer, ctx: PipeSetupContext) {
+    this.pass = new ShaderPass(pixelateShader as any);
+    this.pass.uniforms['resolution'].value = new THREE.Vector2(ctx.width, ctx.height);
+    this.pass.uniforms['pixelSize'].value  = this.params.pixelSize ?? 4;
+    composer.addPass(this.pass);
+  }
+
+  update(_ctx: PipeFrameContext) {
+    if (!this.pass) return;
+    this.pass.uniforms['pixelSize'].value = this.params.pixelSize ?? 4;
+  }
+
+  dispose() { this.pass = null; }
 }
 
 // ── RadialBlurPipe (post-process radial blur shader) ─────────────────────────

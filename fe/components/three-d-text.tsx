@@ -147,12 +147,6 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
         equalizationMethod,
         targetWidth,
         lineSpacing,
-        rays,
-        rayMode,
-        rayCount,
-        rayInnerMargin,
-        rayOuterMargin,
-        rayThickness,
       });
 
       if (thisUpdateId !== updateIdRef.current) return;

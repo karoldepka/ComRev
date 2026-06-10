@@ -13,20 +13,28 @@ import {
     BendPipe,
     BloomPipe,
     ChromaticAberrationPipe,
+    ColorGradingPipe,
     DepthOfFieldPipe,
     EffectPipe,
     EnvMapPipe,
     EnvMapStyle,
     FilmGrainPipe,
     FishEyePipe,
+    FloatingRingsPipe,
     GlitchPipe,
     MetallicPreset,
     MetallicPresetPipe,
     NeonGlowPipe,
     OutlinePipe,
     ParticleDustPipe,
+    PixelatePipe,
+    PulsePipe,
     RadialBlurPipe,
     RaysPipe,
+    ScanlinesPipe,
+    TwistPipe,
+    VignettePipe,
+    WavePipe,
     WireframePipe,
 } from "@/utils/three-text-pipes";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -158,12 +166,21 @@ type EffectType =
   | "wireframe"
   | "outline"
   | "rays"
-  | "radialBlur";
+  | "radialBlur"
+  | "wave"
+  | "twist"
+  | "pulse"
+  | "floatingRings"
+  | "vignette"
+  | "scanlines"
+  | "colorGrading"
+  | "pixelate";
 
 interface EffectInstance {
   id: string;
   type: EffectType;
   enabled: boolean;
+  animate: boolean;
   params: Record<string, unknown>;
 }
 
@@ -187,6 +204,14 @@ const EFFECT_TYPES: {
   { type: "outline", label: "Outline", target: "geometry" },
   { type: "rays", label: "Rays", target: "geometry" },
   { type: "radialBlur", label: "Radial Blur", target: "post" },
+  { type: "wave", label: "Wave", target: "geometry" },
+  { type: "twist", label: "Twist", target: "geometry" },
+  { type: "pulse", label: "Pulse", target: "geometry" },
+  { type: "floatingRings", label: "Floating Rings", target: "geometry" },
+  { type: "vignette", label: "Vignette", target: "post" },
+  { type: "scanlines", label: "Scanlines", target: "post" },
+  { type: "colorGrading", label: "Color Grading", target: "post" },
+  { type: "pixelate", label: "Pixelate", target: "post" },
 ];
 
 function effectTypeLabel(type: EffectType) {
@@ -242,6 +267,22 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
         };
     case "radialBlur":
       return { strength: 0.12, samples: 8, center: [0.5, 0.5] };
+    case "wave":
+      return { amplitude: 0.5, frequency: 1.0, speed: 1.0, axis: "x" };
+    case "twist":
+      return { strength: 0.3, axis: "y" };
+    case "pulse":
+      return { amplitude: 0.12, speed: 1.0 };
+    case "floatingRings":
+      return { count: 3, radiusMult: 1.6, speed: 0.25, thickness: 0.04, color: 0xff8800 };
+    case "vignette":
+      return { offset: 0.5, darkness: 1.0 };
+    case "scanlines":
+      return { count: 100, intensity: 0.3, scrollSpeed: 0 };
+    case "colorGrading":
+      return { hueShift: 0, saturation: 1.0, contrast: 1.0, brightness: 0 };
+    case "pixelate":
+      return { pixelSize: 4 };
     default:
       return {};
   }
@@ -252,6 +293,7 @@ function createEffectInstance(type: EffectType): EffectInstance {
     id: createId(),
     type,
     enabled: true,
+    animate: true,
     params: createDefaultEffectParams(type),
   };
 }
@@ -288,6 +330,22 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new RaysPipe(effect.params as any);
     case "radialBlur":
       return new RadialBlurPipe(effect.params as any);
+    case "wave":
+      return new WavePipe(effect.params as any);
+    case "twist":
+      return new TwistPipe(effect.params as any);
+    case "pulse":
+      return new PulsePipe(effect.params as any);
+    case "floatingRings":
+      return new FloatingRingsPipe(effect.params as any);
+    case "vignette":
+      return new VignettePipe(effect.params as any);
+    case "scanlines":
+      return new ScanlinesPipe(effect.params as any);
+    case "colorGrading":
+      return new ColorGradingPipe(effect.params as any);
+    case "pixelate":
+      return new PixelatePipe(effect.params as any);
     default:
       return new FilmGrainPipe();
   }
@@ -739,6 +797,94 @@ function renderEffectControls(
           />
         </>
       );
+    case "wave":
+      return (
+        <>
+          <SliderRow label="Amplitude" min={0} max={3} step={0.05}
+            value={params.amplitude as number} onChange={(v) => onUpdate("amplitude", v)} colors={colors} />
+          <SliderRow label="Frequency" min={0.1} max={5} step={0.05}
+            value={params.frequency as number} onChange={(v) => onUpdate("frequency", v)} colors={colors} />
+          <SliderRow label="Speed" min={0} max={5} step={0.1}
+            value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Axis</Text>
+            <CycleButton value={(params.axis as string) ?? "x"} options={[]}
+              onPress={() => onUpdate("axis", params.axis === "x" ? "y" : "x")} colors={colors} />
+          </Row>
+        </>
+      );
+    case "twist":
+      return (
+        <>
+          <SliderRow label="Strength" min={-3} max={3} step={0.05}
+            value={params.strength as number} onChange={(v) => onUpdate("strength", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Axis</Text>
+            <CycleButton value={(params.axis as string) ?? "y"} options={[]}
+              onPress={() => onUpdate("axis", params.axis === "x" ? "y" : params.axis === "y" ? "z" : "x")} colors={colors} />
+          </Row>
+        </>
+      );
+    case "pulse":
+      return (
+        <>
+          <SliderRow label="Amplitude" min={0} max={0.5} step={0.01}
+            value={params.amplitude as number} onChange={(v) => onUpdate("amplitude", v)} colors={colors} />
+          <SliderRow label="Speed" min={0.1} max={5} step={0.1}
+            value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+        </>
+      );
+    case "floatingRings":
+      return (
+        <>
+          <SliderRow label="Count" min={1} max={6} step={1}
+            value={params.count as number} onChange={(v) => onUpdate("count", Math.round(v))} colors={colors} />
+          <SliderRow label="Radius" min={0.5} max={4} step={0.05}
+            value={params.radiusMult as number} onChange={(v) => onUpdate("radiusMult", v)} colors={colors} />
+          <SliderRow label="Speed" min={0} max={2} step={0.05}
+            value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+          <SliderRow label="Thickness" min={0.01} max={0.15} step={0.005}
+            value={params.thickness as number} onChange={(v) => onUpdate("thickness", v)} colors={colors} />
+        </>
+      );
+    case "vignette":
+      return (
+        <>
+          <SliderRow label="Offset" min={0} max={1} step={0.01}
+            value={params.offset as number} onChange={(v) => onUpdate("offset", v)} colors={colors} />
+          <SliderRow label="Darkness" min={0} max={5} step={0.1}
+            value={params.darkness as number} onChange={(v) => onUpdate("darkness", v)} colors={colors} />
+        </>
+      );
+    case "scanlines":
+      return (
+        <>
+          <SliderRow label="Count" min={10} max={400} step={5}
+            value={params.count as number} onChange={(v) => onUpdate("count", Math.round(v))} colors={colors} />
+          <SliderRow label="Intensity" min={0} max={1} step={0.01}
+            value={params.intensity as number} onChange={(v) => onUpdate("intensity", v)} colors={colors} />
+          <SliderRow label="Scroll" min={0} max={3} step={0.05}
+            value={params.scrollSpeed as number} onChange={(v) => onUpdate("scrollSpeed", v)} colors={colors} />
+        </>
+      );
+    case "colorGrading":
+      return (
+        <>
+          <SliderRow label="Hue Shift" min={0} max={1} step={0.01}
+            value={params.hueShift as number} onChange={(v) => onUpdate("hueShift", v)} colors={colors} />
+          <SliderRow label="Saturation" min={0} max={3} step={0.05}
+            value={params.saturation as number} onChange={(v) => onUpdate("saturation", v)} colors={colors} />
+          <SliderRow label="Contrast" min={0} max={3} step={0.05}
+            value={params.contrast as number} onChange={(v) => onUpdate("contrast", v)} colors={colors} />
+          <SliderRow label="Brightness" min={-0.5} max={0.5} step={0.01}
+            value={params.brightness as number} onChange={(v) => onUpdate("brightness", v)} colors={colors} />
+        </>
+      );
+    case "pixelate":
+      return (
+        <SliderRow label="Pixel Size" min={1} max={32} step={1}
+          value={params.pixelSize as number} onChange={(v) => onUpdate("pixelSize", Math.round(v))} colors={colors} />
+      );
     default:
       return null;
   }
@@ -759,15 +905,6 @@ export default function ThreeDTextScreen() {
   >("fontSize");
   const [targetWidth, setTargetWidth] = useState(20);
   const [lineSpacing, setLineSpacing] = useState(1.5);
-  const [rays, setRays] = useState(true);
-  const [rayMode, setRayMode] = useState<"radial" | "spaghetti" | "chip">(
-    "radial",
-  );
-  const [rayCount, setRayCount] = useState(24);
-  const [rayThickness, setRayThickness] = useState(0.08);
-  const [rayInnerMargin, setRayInnerMargin] = useState(2);
-  const [rayOuterMargin, setRayOuterMargin] = useState(6);
-
   const [effectInstances, setEffectInstances] = useState<EffectInstance[]>([]);
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
@@ -788,8 +925,6 @@ export default function ThreeDTextScreen() {
     effectInstancesRef.current = effectInstances;
   }, [effectInstances]);
 
-  const hasRaysEffect = effectInstances.some(i => i.enabled && i.type === 'rays');
-
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const draggingIdRef = useRef<string | null>(null);
   const dragStartY = useRef(0);
@@ -804,7 +939,11 @@ export default function ThreeDTextScreen() {
   const activePipes = useMemo<EffectPipe[]>(() => {
     return effectInstances
       .filter((instance) => instance.enabled)
-      .map((instance) => createPipeFromInstance(instance));
+      .map((instance) => {
+        const pipe = createPipeFromInstance(instance);
+        pipe.paused = !(instance.animate ?? true);
+        return pipe;
+      });
   }, [effectInstances]);
 
   const reorderEffectByIndex = (from: number, to: number) => {
@@ -929,6 +1068,16 @@ export default function ThreeDTextScreen() {
     );
   };
 
+  const toggleEffectAnimate = (id: string) => {
+    setEffectInstances((instances) =>
+      instances.map((instance) =>
+        instance.id === id
+          ? { ...instance, animate: !(instance.animate ?? true) }
+          : instance,
+      ),
+    );
+  };
+
   const moveEffect = (id: string, direction: -1 | 1) => {
     setEffectInstances((instances) => {
       const index = instances.findIndex((instance) => instance.id === id);
@@ -1025,12 +1174,6 @@ export default function ThreeDTextScreen() {
         setEqualizationMethod(latest.equalizationMethod);
         setTargetWidth(latest.targetWidth);
         setLineSpacing(latest.lineSpacing);
-        setRays(latest.rays);
-        setRayMode(latest.rayMode);
-        setRayCount(latest.rayCount);
-        setRayThickness(latest.rayThickness);
-        setRayInnerMargin(latest.rayInnerMargin);
-        setRayOuterMargin(latest.rayOuterMargin);
         setShowAdvanced(latest.showAdvanced);
 
         const savedEffects = (latest as any).effectInstances as
@@ -1041,6 +1184,7 @@ export default function ThreeDTextScreen() {
             savedEffects.map((item) => ({
               ...item,
               enabled: item.enabled ?? true,
+              animate: item.animate ?? true,
               params: item.params ?? {},
             })),
           );
@@ -1104,12 +1248,6 @@ export default function ThreeDTextScreen() {
     equalizationMethod,
     targetWidth,
     lineSpacing,
-    rays,
-    rayMode,
-    rayCount,
-    rayThickness,
-    rayInnerMargin,
-    rayOuterMargin,
     effectInstances,
     showAdvanced,
   });
@@ -1159,12 +1297,6 @@ export default function ThreeDTextScreen() {
             equalizationMethod={equalizationMethod}
             targetWidth={targetWidth}
             lineSpacing={lineSpacing}
-            rays={hasRaysEffect ? false : rays}
-            rayMode={rayMode}
-            rayCount={rayCount}
-            rayThickness={rayThickness}
-            rayInnerMargin={rayInnerMargin}
-            rayOuterMargin={rayOuterMargin}
             pipes={activePipes}
           />
         </View>
@@ -1241,73 +1373,6 @@ export default function ThreeDTextScreen() {
             onChange={setLineSpacing}
             colors={c}
           />
-          <Row>
-            <Text style={[styles.label, { color: c.text }]}>Rays</Text>
-            <Switch
-              value={rays}
-              onValueChange={setRays}
-              trackColor={{ false: "#767577", true: c.tint }}
-              thumbColor={rays ? c.tint : "#f4f3f4"}
-            />
-          </Row>
-          {rays && (
-            <>
-              <Row>
-                <Text style={[styles.label, { color: c.text }]}>Mode</Text>
-                <CycleButton
-                  value={rayMode}
-                  options={[]}
-                  onPress={() =>
-                    setRayMode((m) =>
-                      m === "radial"
-                        ? "spaghetti"
-                        : m === "spaghetti"
-                          ? "chip"
-                          : "radial",
-                    )
-                  }
-                  colors={c}
-                />
-              </Row>
-              <SliderRow
-                label="Count"
-                min={4}
-                max={64}
-                step={1}
-                value={rayCount}
-                onChange={(v) => setRayCount(Math.round(v))}
-                colors={c}
-              />
-              <SliderRow
-                label="Thickness"
-                min={0.01}
-                max={0.5}
-                step={0.01}
-                value={rayThickness}
-                onChange={setRayThickness}
-                colors={c}
-              />
-              <SliderRow
-                label="Inner Margin"
-                min={0}
-                max={10}
-                step={0.1}
-                value={rayInnerMargin}
-                onChange={setRayInnerMargin}
-                colors={c}
-              />
-              <SliderRow
-                label="Outer Margin"
-                min={1}
-                max={20}
-                step={0.1}
-                value={rayOuterMargin}
-                onChange={setRayOuterMargin}
-                colors={c}
-              />
-            </>
-          )}
-
           {/* ── Effects ── */}
           <Text style={[styles.groupLabel, { color: c.text }]}>
             Effects (composable pipes)
@@ -1509,6 +1574,14 @@ export default function ThreeDTextScreen() {
                     />
                   </View>
                   <Row>
+                    <TouchableOpacity
+                      style={styles.smallActionButton}
+                      onPress={() => toggleEffectAnimate(instance.id)}
+                    >
+                      <Text style={[styles.buttonText, { color: (instance.animate ?? true) ? c.tint : "#666" }]}>
+                        {(instance.animate ?? true) ? "▶" : "⏸"}
+                      </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.smallActionButton}
                       onPress={() => duplicateEffectInstance(instance.id)}
