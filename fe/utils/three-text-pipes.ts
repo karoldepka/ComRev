@@ -842,7 +842,8 @@ export class OutlinePipe implements EffectPipe {
 export interface RaysPipeParams {
   mode?: 'radial' | 'spaghetti' | 'chip';
   count?: number;
-  thickness?: number;
+  innerThickness?: number;
+  outerThickness?: number;
   innerMargin?: number;
   outerMargin?: number;
 }
@@ -862,7 +863,9 @@ export class RaysPipe implements EffectPipe {
 
     const mode = this.params.mode ?? 'radial';
     const rayCount = this.params.count ?? 24;
-    const thickness = this.params.thickness ?? 0.08;
+    const innerThickness = this.params.innerThickness ?? 0.06;
+    const outerThickness = this.params.outerThickness ?? 0.08;
+    const thickness = (innerThickness + outerThickness) / 2;
     const innerMargin = this.params.innerMargin ?? 2;
     const outerMargin = this.params.outerMargin ?? 6;
 
