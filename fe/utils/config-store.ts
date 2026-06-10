@@ -14,7 +14,9 @@ export type EffectType =
   | 'metallicPreset'
   | 'dust'
   | 'wireframe'
-  | 'outline';
+  | 'outline'
+  | 'rays'
+  | 'radialBlur';
 
 export interface EffectInstance {
   id: string;
@@ -51,6 +53,7 @@ const DB_NAME = "ComRevConfigDB";
 const DB_VERSION = 1;
 const STORE_CONFIGS = "configs";
 const STORE_PENDING = "pendingSync";
+const STORE_PRESETS = "presets";
 
 function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== 'undefined' && indexedDB !== null;
@@ -74,8 +77,18 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_PENDING)) {
         db.createObjectStore(STORE_PENDING, { keyPath: 'id' });
       }
+      if (!db.objectStoreNames.contains(STORE_PRESETS)) {
+        db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
+      }
     };
   });
+}
+
+export interface PresetRecord {
+  id: string;
+  name: string;
+  createdAt: string;
+  effects: EffectInstance[];
 }
 
 function requestPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -139,6 +152,18 @@ export async function getLatestConfig(): Promise<ThreeDConfig | null> {
   return configs
     .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
     .slice(0, 1)[0];
+}
+
+export async function savePreset(preset: PresetRecord): Promise<void> {
+  await withStore(STORE_PRESETS, 'readwrite', (store) => store.put(preset));
+}
+
+export async function getPresets(): Promise<PresetRecord[]> {
+  return await withStore(STORE_PRESETS, 'readonly', (store) => store.getAll());
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  await withStore(STORE_PRESETS, 'readwrite', (store) => store.delete(id));
 }
 
 export async function markConfigSynced(id: string, backendId?: string | null): Promise<void> {

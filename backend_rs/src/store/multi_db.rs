@@ -19,13 +19,45 @@ use futures::{
     StreamExt,
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use super::DataStore;
 use crate::types::{PagedResponse, RowQuery};
+
+/// Fields that are metadata/bookkeeping and should be skipped in cell comparisons.
+const CELL_META_FIELDS: &[&str] = &[
+    "id", "table_id", "when_created", "when_last_modified",
+    "who_created", "who_last_modified", "modify_count",
+];
+
+/// Return the names of fields whose values differ between two row JSON objects,
+/// ignoring metadata fields.
+fn differing_cells(a: &serde_json::Value, b: &serde_json::Value) -> Vec<String> {
+    let mut diffs = Vec::new();
+    if let (Some(a_obj), Some(b_obj)) = (a.as_object(), b.as_object()) {
+        let all_keys: HashSet<&String> = a_obj.keys().chain(b_obj.keys()).collect();
+        for key in all_keys {
+            if CELL_META_FIELDS.contains(&key.as_str()) {
+                continue;
+            }
+            if a_obj.get(key) != b_obj.get(key) {
+                diffs.push(key.clone());
+            }
+        }
+    }
+    diffs
+}
+
+/// Parse `when_last_modified` from a row JSON value.
+fn row_when_modified(row: &serde_json::Value) -> Option<chrono::DateTime<chrono::Utc>> {
+    row["when_last_modified"]
+        .as_str()?
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .ok()
+}
 
 pub struct MultiStore {
     stores: Vec<Arc<dyn DataStore>>,
@@ -255,14 +287,23 @@ impl MultiStore {
                 match result {
                     Ok(items) => {
                         let keys: HashSet<String> = items.iter().map(MergeKey::merge_key).collect();
-                        for key in &first_keys {
-                            if !keys.contains(key) {
-                                let msg = format!(
-                                    "DATA DIVERGENCE [{method}]: key={key:?} missing from store[{name}] (vs store[{first_name}])"
-                                );
-                                tracing::error!("{msg}");
-                                send_store_error(&event_tx, method, &msg);
-                            }
+                        let only_in_first: Vec<&String> = first_keys.difference(&keys).collect();
+                        let only_in_other: Vec<&String> = keys.difference(&first_keys).collect();
+                        if !only_in_first.is_empty() {
+                            let msg = format!(
+                                "DATA DIVERGENCE [{method}]: {} key(s) in store[{first_name}] but missing from store[{name}]: {:?}",
+                                only_in_first.len(), only_in_first,
+                            );
+                            tracing::error!("{msg}");
+                            send_store_error(&event_tx, method, &msg);
+                        }
+                        if !only_in_other.is_empty() {
+                            let msg = format!(
+                                "DATA DIVERGENCE [{method}]: {} key(s) in store[{name}] but missing from store[{first_name}]: {:?}",
+                                only_in_other.len(), only_in_other,
+                            );
+                            tracing::error!("{msg}");
+                            send_store_error(&event_tx, method, &msg);
                         }
                     }
                     Err(e) => {
@@ -280,11 +321,14 @@ impl MultiStore {
 
     /// Fan a paged read: return on first-success, broadcast store errors immediately,
     /// check divergence in a background task.
+    /// When `repair` is Some((stores, names_map, table_id)) rows that exist in one store
+    /// but are absent from another are automatically transplanted via `upsert_rows_batch`.
     async fn fan_first_paged(
         &self,
         method: &'static str,
         timeout: Duration,
         futs: Vec<(usize, BoxFuture<'static, Result<PagedResponse>>)>,
+        repair: Option<(Vec<Arc<dyn DataStore>>, Vec<String>, String)>,
     ) -> Result<PagedResponse> {
         let names = self.names.clone();
         let mut unordered: FuturesUnordered<_> = futs
@@ -303,16 +347,16 @@ impl MultiStore {
                         Ok(_) => tracing::info!("store[{name}] {method} read OK in {ms}ms"),
                         Err(e) => tracing::warn!("store[{name}] {method} read FAILED in {ms}ms: {e}"),
                     }
-                    (name, result)
+                    (i, name, result)
                 }
             })
             .collect();
 
-        let mut first: Option<(String, PagedResponse)> = None;
-        while let Some((name, result)) = unordered.next().await {
+        let mut first: Option<(usize, String, PagedResponse)> = None;
+        while let Some((i, name, result)) = unordered.next().await {
             match result {
                 Ok(page) => {
-                    first = Some((name, page));
+                    first = Some((i, name, page));
                     break;
                 }
                 Err(e) => {
@@ -322,7 +366,7 @@ impl MultiStore {
             }
         }
 
-        let Some((first_name, first_data)) = first else {
+        let Some((first_idx, first_name, first_data)) = first else {
             return Err(anyhow::anyhow!("ALL STORES FAILED to read {method}"));
         };
 
@@ -332,9 +376,16 @@ impl MultiStore {
 
         let event_tx = self.event_tx.clone();
         let first_total = first_data.total;
-        let first_ids: HashSet<String> = first_data.data.iter().map(paged_item_id).collect();
+        // Build id→row map so we can upsert missing rows into the other store.
+        let first_rows: std::collections::HashMap<String, serde_json::Value> = first_data
+            .data
+            .iter()
+            .map(|r| (paged_item_id(r), r.clone()))
+            .collect();
+        let first_ids: HashSet<String> = first_rows.keys().cloned().collect();
+
         tokio::spawn(async move {
-            while let Some((name, result)) = unordered.next().await {
+            while let Some((other_idx, name, result)) = unordered.next().await {
                 match result {
                     Ok(page) => {
                         if page.total != first_total {
@@ -345,14 +396,118 @@ impl MultiStore {
                             tracing::error!("{msg}");
                             send_store_error(&event_tx, method, &msg);
                         }
-                        let ids: HashSet<String> = page.data.iter().map(paged_item_id).collect();
-                        for id in &first_ids {
-                            if !ids.contains(id) {
-                                let msg = format!(
-                                    "DATA DIVERGENCE [{method}]: id={id:?} missing from store[{name}] (vs store[{first_name}])"
+                        let other_rows: HashMap<String, serde_json::Value> =
+                            page.data.iter().map(|r| (paged_item_id(r), r.clone())).collect();
+                        let other_ids: HashSet<String> = other_rows.keys().cloned().collect();
+
+                        let only_in_first: Vec<&String> = first_ids.difference(&other_ids).collect();
+                        let only_in_other: Vec<&String> = other_ids.difference(&first_ids).collect();
+                        let in_both: Vec<&String> = first_ids.intersection(&other_ids).collect();
+
+                        // ── Rows only in first store → transplant to other store ──────────
+                        if !only_in_first.is_empty() {
+                            let msg = format!(
+                                "DATA DIVERGENCE [{method}]: {} id(s) in store[{first_name}] but missing from store[{name}]: {:?}",
+                                only_in_first.len(), only_in_first,
+                            );
+                            tracing::error!("{msg}");
+                            send_store_error(&event_tx, method, &msg);
+
+                            if let Some((ref stores, ref store_names, ref table_id)) = repair {
+                                if let Some(sink) = stores.get(other_idx) {
+                                    let rows: Vec<serde_json::Value> = only_in_first
+                                        .iter()
+                                        .filter_map(|id| first_rows.get(*id).cloned())
+                                        .collect();
+                                    let sink_name = store_names.get(other_idx).map(String::as_str).unwrap_or("?");
+                                    tracing::info!("REPAIR [{method}]: transplanting {} row(s) store[{first_name}] → store[{sink_name}]", rows.len());
+                                    if let Err(e) = sink.reconcile_rows_batch(table_id, &rows).await {
+                                        tracing::error!("REPAIR [{method}]: reconcile into store[{sink_name}] failed: {e}");
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Rows only in other store → transplant to first store ──────────
+                        if !only_in_other.is_empty() {
+                            let msg = format!(
+                                "DATA DIVERGENCE [{method}]: {} id(s) in store[{name}] but missing from store[{first_name}]: {:?}",
+                                only_in_other.len(), only_in_other,
+                            );
+                            tracing::error!("{msg}");
+                            send_store_error(&event_tx, method, &msg);
+
+                            if let Some((ref stores, ref store_names, ref table_id)) = repair {
+                                if let Some(sink) = stores.get(first_idx) {
+                                    let rows: Vec<serde_json::Value> = only_in_other
+                                        .iter()
+                                        .filter_map(|id| other_rows.get(*id).cloned())
+                                        .collect();
+                                    let other_name = store_names.get(other_idx).map(String::as_str).unwrap_or("?");
+                                    let sink_name = store_names.get(first_idx).map(String::as_str).unwrap_or("?");
+                                    tracing::info!("REPAIR [{method}]: transplanting {} row(s) store[{other_name}] → store[{sink_name}]", rows.len());
+                                    if let Err(e) = sink.reconcile_rows_batch(table_id, &rows).await {
+                                        tracing::error!("REPAIR [{method}]: reconcile into store[{sink_name}] failed: {e}");
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Rows in both stores → cell-by-cell comparison ─────────────────
+                        // For each common row, compare every cell. Use the version from the
+                        // store whose row has the later `when_last_modified` timestamp.
+                        if let Some((ref stores, ref store_names, ref table_id)) = repair {
+                            let mut to_first: Vec<serde_json::Value> = Vec::new();
+                            let mut to_other: Vec<serde_json::Value> = Vec::new();
+
+                            for id in &in_both {
+                                let Some(row_a) = first_rows.get(*id) else { continue };
+                                let Some(row_b) = other_rows.get(*id) else { continue };
+
+                                let diffs = differing_cells(row_a, row_b);
+                                if diffs.is_empty() {
+                                    continue;
+                                }
+
+                                let ts_a = row_when_modified(row_a);
+                                let ts_b = row_when_modified(row_b);
+
+                                // Determine winner by timestamp; skip if we can't compare.
+                                let (winner, winner_name, loser_vec) = match (ts_a, ts_b) {
+                                    (Some(a), Some(b)) if a > b => (row_a, first_name.as_str(), &mut to_other),
+                                    (Some(a), Some(b)) if b > a => (row_b, name.as_str(),       &mut to_first),
+                                    _ => {
+                                        tracing::warn!(
+                                            "DATA DIVERGENCE [{method}]: row {id:?} differs in cells {diffs:?} but timestamps are equal or missing — skipping repair"
+                                        );
+                                        continue;
+                                    }
+                                };
+
+                                tracing::warn!(
+                                    "DATA DIVERGENCE [{method}]: row {id:?} differs in {} cell(s): {diffs:?} — store[{winner_name}] wins (newer when_last_modified)",
+                                    diffs.len(),
                                 );
-                                tracing::error!("{msg}");
-                                send_store_error(&event_tx, method, &msg);
+                                loser_vec.push(winner.clone());
+                            }
+
+                            if !to_other.is_empty() {
+                                if let Some(sink) = stores.get(other_idx) {
+                                    let sink_name = store_names.get(other_idx).map(String::as_str).unwrap_or("?");
+                                    tracing::info!("REPAIR [{method}]: reconciling {} cell-diverged row(s) store[{first_name}] → store[{sink_name}]", to_other.len());
+                                    if let Err(e) = sink.reconcile_rows_batch(table_id, &to_other).await {
+                                        tracing::error!("REPAIR [{method}]: reconcile into store[{sink_name}] failed: {e}");
+                                    }
+                                }
+                            }
+                            if !to_first.is_empty() {
+                                if let Some(sink) = stores.get(first_idx) {
+                                    let sink_name = store_names.get(first_idx).map(String::as_str).unwrap_or("?");
+                                    tracing::info!("REPAIR [{method}]: reconciling {} cell-diverged row(s) store[{name}] → store[{sink_name}]", to_first.len());
+                                    if let Err(e) = sink.reconcile_rows_batch(table_id, &to_first).await {
+                                        tracing::error!("REPAIR [{method}]: reconcile into store[{sink_name}] failed: {e}");
+                                    }
+                                }
                             }
                         }
                     }
@@ -883,7 +1038,8 @@ impl DataStore for MultiStore {
                 )
             })
             .collect();
-        self.fan_first_paged("list_data_rows", timeout, futs).await
+        let repair = Some((self.stores.clone(), self.names.clone(), table_id.to_string()));
+        self.fan_first_paged("list_data_rows", timeout, futs, repair).await
     }
     async fn create_row(
         &self,
@@ -949,6 +1105,15 @@ impl DataStore for MultiStore {
             "rows.batch_upsert",
             serde_json::json!({"table_id": table_id, "rows": rows}),
             upsert_rows_batch(table_id, rows)
+        )
+    }
+
+    async fn reconcile_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
+        fan_out!(
+            self,
+            "rows.batch_reconcile",
+            serde_json::json!({"table_id": table_id, "rows": rows}),
+            reconcile_rows_batch(table_id, rows)
         )
     }
 
@@ -1466,6 +1631,15 @@ mod tests {
             rows: &[serde_json::Value],
         ) -> Result<usize> {
             self.record("upsert_rows_batch");
+            self.fail()?;
+            Ok(rows.len())
+        }
+        async fn reconcile_rows_batch(
+            &self,
+            _table_id: &str,
+            rows: &[serde_json::Value],
+        ) -> Result<usize> {
+            self.record("reconcile_rows_batch");
             self.fail()?;
             Ok(rows.len())
         }

@@ -7,6 +7,8 @@ import {
   ChromaticAberrationPipe,
   DepthOfFieldPipe,
   EffectPipe,
+  RadialBlurPipe,
+  RaysPipe,
   EnvMapPipe,
   EnvMapStyle,
   FilmGrainPipe,
@@ -25,8 +27,10 @@ import {
   saveConfigOfflineFirst,
   syncPendingConfigs,
   ThreeDConfig,
+  savePreset,
 } from "@/utils/config-store";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
@@ -93,9 +97,7 @@ type EffectType =
   | 'metallicPreset'
   | 'dust'
   | 'wireframe'
-  | 'outline';
-  
-  // Add rays and radial blur
+  | 'outline'
   | 'rays'
   | 'radialBlur';
 
@@ -106,7 +108,7 @@ interface EffectInstance {
   params: Record<string, unknown>;
 }
 
-const EFFECT_TYPES: { type: EffectType; label: string }[] = [
+  const EFFECT_TYPES: { type: EffectType; label: string; target?: 'geometry'|'bitmap'|'post' }[] = [
   { type: 'bloom', label: 'Bloom' },
   { type: 'depthOfField', label: 'Depth of Field' },
   { type: 'chromatic', label: 'Chromatic' },
@@ -114,14 +116,14 @@ const EFFECT_TYPES: { type: EffectType; label: string }[] = [
   { type: 'glitch', label: 'Glitch' },
   { type: 'fishEye', label: 'Fish Eye' },
   { type: 'bend', label: 'Bend' },
-  { type: 'envMap', label: 'Env Map' },
+  { type: 'envMap', label: 'Env Map', target: 'geometry' },
   { type: 'neonGlow', label: 'Neon Glow' },
-  { type: 'metallicPreset', label: 'Metallic' },
-  { type: 'dust', label: 'Particle Dust' },
-  { type: 'wireframe', label: 'Wireframe' },
-  { type: 'outline', label: 'Outline' },
-  { type: 'rays', label: 'Rays (geometry)' },
-  { type: 'radialBlur', label: 'Radial Blur (post)' },
+  { type: 'metallicPreset', label: 'Metallic', target: 'geometry' },
+  { type: 'dust', label: 'Particle Dust', target: 'geometry' },
+  { type: 'wireframe', label: 'Wireframe', target: 'geometry' },
+  { type: 'outline', label: 'Outline', target: 'geometry' },
+  { type: 'rays', label: 'Rays', target: 'geometry' },
+  { type: 'radialBlur', label: 'Radial Blur', target: 'post' },
 ];
 
 function effectTypeLabel(type: EffectType) {
@@ -190,6 +192,10 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new WireframePipe(effect.params as any);
     case 'outline':
       return new OutlinePipe(effect.params as any);
+    case 'rays':
+      return new RaysPipe(effect.params as any);
+    case 'radialBlur':
+      return new RadialBlurPipe(effect.params as any);
     default:
       return new FilmGrainPipe();
   }
@@ -333,6 +339,26 @@ function renderEffectControls(
       return (
         <SliderRow label="Thickness" min={1.01} max={1.2} step={0.005} value={params.thickness as number} onChange={(v) => onUpdate('thickness', v)} colors={colors} />
       );
+    case 'rays':
+      return (
+        <>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Mode</Text>
+            <CycleButton value={(params.mode as string) ?? 'radial'} options={[]} onPress={() => onUpdate('mode', params.mode === 'radial' ? 'spaghetti' : params.mode === 'spaghetti' ? 'chip' : 'radial')} colors={colors} />
+          </Row>
+          <SliderRow label="Count" min={4} max={128} step={1} value={params.count as number} onChange={(v) => onUpdate('count', Math.round(v))} colors={colors} />
+          <SliderRow label="Thickness" min={0.01} max={0.5} step={0.01} value={params.thickness as number} onChange={(v) => onUpdate('thickness', v)} colors={colors} />
+          <SliderRow label="Inner Margin" min={0} max={20} step={0.1} value={params.innerMargin as number} onChange={(v) => onUpdate('innerMargin', v)} colors={colors} />
+          <SliderRow label="Outer Margin" min={0} max={40} step={0.1} value={params.outerMargin as number} onChange={(v) => onUpdate('outerMargin', v)} colors={colors} />
+        </>
+      );
+    case 'radialBlur':
+      return (
+        <>
+          <SliderRow label="Strength" min={0} max={1} step={0.01} value={params.strength as number} onChange={(v) => onUpdate('strength', v)} colors={colors} />
+          <SliderRow label="Samples" min={1} max={32} step={1} value={params.samples as number} onChange={(v) => onUpdate('samples', Math.round(v))} colors={colors} />
+        </>
+      );
     default:
       return null;
   }
@@ -359,6 +385,8 @@ export default function ThreeDTextScreen() {
   const [effectInstances, setEffectInstances] = useState<EffectInstance[]>([]);
   const [selectedEffectType, setSelectedEffectType] = useState<EffectType>('bloom');
   const [selectedEffectSearch, setSelectedEffectSearch] = useState('');
+  const [lastDeleted, setLastDeleted] = useState<{ item: EffectInstance; index: number } | null>(null);
+  const undoTimerRef = useRef<number | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
@@ -447,6 +475,26 @@ export default function ThreeDTextScreen() {
     setEffectInstances((instances) => [...instances, createEffectInstance(selectedEffectType)]);
   };
 
+  function generatePresetName(instances: EffectInstance[]) {
+    if (instances.length === 0) return 'No effects';
+    const counts: Record<string, number> = {};
+    instances.forEach(i => { const lbl = effectTypeLabel(i.type); counts[lbl] = (counts[lbl] || 0) + 1; });
+    const parts = Object.entries(counts).map(([label, n]) => (n > 1 ? `${n}x ${label}` : `${label}`));
+    return parts.join(', ');
+  }
+
+  const handleSavePreset = async () => {
+    try {
+      const name = generatePresetName(effectInstances.filter(i => i.enabled));
+      const preset = { id: `preset-${Date.now()}`, name, createdAt: new Date().toISOString(), effects: effectInstances };
+      await savePreset(preset as any);
+      setSaveStatus(`Saved preset: ${name}`);
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      setSaveStatus(`Save preset failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const draggingItem = effectInstances.find((instance) => instance.id === draggingId);
 
   const updateEffectParam = (id: string, key: string, value: unknown) => {
@@ -481,7 +529,46 @@ export default function ThreeDTextScreen() {
   };
 
   const removeEffectInstance = (id: string) => {
-    setEffectInstances((instances) => instances.filter((instance) => instance.id !== id));
+    const performDelete = () => {
+      setEffectInstances((instances) => {
+        const index = instances.findIndex(i => i.id === id);
+        if (index < 0) return instances;
+        const item = instances[index];
+        const next = instances.filter((instance) => instance.id !== id);
+        setLastDeleted({ item, index });
+        if (undoTimerRef.current) { clearTimeout(undoTimerRef.current); }
+        // clear after 6s
+        // @ts-ignore - window.setTimeout returns number
+        undoTimerRef.current = window.setTimeout(() => {
+          setLastDeleted(null);
+          undoTimerRef.current = null;
+        }, 6000) as any;
+        return next;
+      });
+    };
+
+    // confirmation dialog for delete
+    if (typeof Alert !== 'undefined' && Alert.alert) {
+      Alert.alert('Delete effect', 'Are you sure you want to delete this effect instance?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => performDelete() },
+      ]);
+    } else if (typeof window !== 'undefined' && window.confirm) {
+      if (window.confirm('Delete effect?')) performDelete();
+    } else {
+      performDelete();
+    }
+  };
+
+  const undoDelete = () => {
+    if (!lastDeleted) return;
+    setEffectInstances((instances) => {
+      const next = [...instances];
+      next.splice(lastDeleted.index, 0, lastDeleted.item);
+      return next;
+    });
+    setLastDeleted(null);
+    if (undoTimerRef.current) { clearTimeout(undoTimerRef.current); undoTimerRef.current = null; }
   };
 
   const duplicateEffectInstance = (id: string) => {
@@ -690,6 +777,12 @@ export default function ThreeDTextScreen() {
           {/* ── Effects ── */}
           <Text style={[styles.groupLabel, { color: c.text }]}>Effects (composable pipes)</Text>
 <View style={styles.effectListContainer}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 12 }}>
+              <Text style={[styles.label, { color: c.text }]}>Pipeline presets</Text>
+              <TouchableOpacity style={[styles.smallActionButton, { borderColor: c.tint }]} onPress={handleSavePreset}>
+                <Text style={[styles.buttonText, { color: c.tint }]}>Save preset</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.effectControlRow}>
               <Text style={[styles.label, { color: c.text, flex: 1 }]}>Add effect</Text>
               <View style={{ flex: 1 }}>
@@ -700,9 +793,8 @@ export default function ThreeDTextScreen() {
                   value={selectedEffectSearch}
                   onChangeText={setSelectedEffectSearch}
                 />
-                {selectedEffectSearch.length > 0 && (
-                  <View style={[styles.effectSearchList, { borderColor: c.tint }]}
-                  >
+                {selectedEffectSearch.length > 0 ? (
+                  <View style={[styles.effectSearchList, { borderColor: c.tint }]}>
                     {EFFECT_TYPES.filter(e =>
                       (e.label + ' ' + e.type).toLowerCase().includes(selectedEffectSearch.toLowerCase())
                     ).map((e) => (
@@ -716,12 +808,36 @@ export default function ThreeDTextScreen() {
                         }}
                       >
                         <Text style={{ color: c.text }}>{e.label}</Text>
+                        {e.target && <Text style={{ color: '#888', fontSize: 11 }}> {' ' + (e.target === 'geometry' ? 'G' : e.target === 'post' ? 'P' : 'B')}</Text>}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+                    {EFFECT_TYPES.map(e => (
+                      <TouchableOpacity
+                        key={e.type}
+                        style={[styles.effectPill, { borderColor: c.tint, backgroundColor: colorScheme === 'dark' ? '#222' : '#fff' }]}
+                        onPress={() => { setSelectedEffectType(e.type); addEffectInstance(); }}
+                      >
+                        <Text style={[styles.effectPillText, { color: c.text }]}>{e.label}</Text>
+                        {e.target && <View style={[styles.targetBadge, { backgroundColor: e.target === 'geometry' ? '#4caf50' : e.target === 'post' ? '#2196f3' : '#9c27b0' }]}><Text style={{ color: '#fff', fontSize: 10 }}>{e.target === 'geometry' ? 'G' : e.target === 'post' ? 'P' : 'B'}</Text></View>}
                       </TouchableOpacity>
                     ))}
                   </View>
                 )}
               </View>
             </View>
+
+            {/* Undo banner if recently deleted */}
+            {lastDeleted && (
+              <View style={{ marginHorizontal: 12, marginVertical: 6, padding: 8, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderColor: c.tint, backgroundColor: colorScheme === 'dark' ? '#161616' : '#fff' }}>
+                <Text style={{ color: c.text }}>Deleted {effectTypeLabel(lastDeleted.item.type)}</Text>
+                <TouchableOpacity onPress={undoDelete} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
+                  <Text style={{ color: c.tint }}>Undo</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {effectInstances.length === 0 && (
               <Text style={[styles.helpText, { color: c.text }]}>No effect instances yet. Add one to start building a pipeline.</Text>
@@ -866,6 +982,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  effectPill: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  effectPillText: { fontSize: 13, marginRight: 8 },
+  targetBadge: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   dragHandle: {
     borderWidth: 1,
     borderRadius: 6,

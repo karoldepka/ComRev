@@ -311,6 +311,11 @@ pub trait DataStore: Send + Sync {
     /// Upsert a batch of rows into any table. Each element is a JSON object; the row id is taken
     /// from the "id" field (falling back to "github_id" as a string). Everything becomes custom_values.
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize>;
+
+    /// Reconcile-upsert: like upsert_rows_batch but only overwrites a row if the incoming
+    /// `when_last_modified` is strictly newer than the stored one, and preserves the incoming
+    /// timestamp rather than bumping it to NOW().
+    async fn reconcile_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize>;
 }
 
 pub mod multi_db;

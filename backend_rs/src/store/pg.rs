@@ -1950,6 +1950,58 @@ impl DataStore for PgStore {
         Ok(count as usize)
     }
 
+    async fn reconcile_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        self.ensure_user_table(table_id).await?;
+        let tname = user_table_ident(table_id);
+
+        for row in rows {
+            if let Err(e) = self.auto_create_columns_from_row(table_id, row).await {
+                tracing::warn!(table_id, "reconcile auto_create_columns_from_row failed: {e}");
+            }
+        }
+
+        let json_array = serde_json::Value::Array(rows.to_vec());
+        // Only overwrite existing row if incoming when_last_modified is strictly newer.
+        // Preserves the incoming timestamp rather than bumping to NOW().
+        let count: i64 = sqlx::query_scalar(&format!(
+            "WITH incoming AS (
+               SELECT DISTINCT ON (row_id)
+                 COALESCE(r->>'id', r->>'github_id')        AS row_id,
+                 COALESCE(NULLIF(r->>'full_name', ''), NULLIF(r->>'title', ''), NULLIF(r->>'name', ''),
+                          COALESCE(r->>'id', r->>'github_id')) AS full_name,
+                 (r->>'when_last_modified')::timestamptz     AS when_last_modified,
+                 r - 'classes' - 'full_name'                 AS custom_vals
+               FROM jsonb_array_elements($1::jsonb) AS r
+               WHERE COALESCE(r->>'id', r->>'github_id') IS NOT NULL
+               ORDER BY row_id
+             ),
+             upserted AS (
+               INSERT INTO {tname} (id, full_name, custom_vals, when_created, when_last_modified)
+               SELECT row_id, full_name, custom_vals, NOW(), when_last_modified FROM incoming
+               ON CONFLICT (id) DO UPDATE SET
+                 full_name          = COALESCE(NULLIF(EXCLUDED.full_name, ''), {tname}.full_name),
+                 custom_vals        = {tname}.custom_vals || EXCLUDED.custom_vals,
+                 when_last_modified = EXCLUDED.when_last_modified,
+                 modify_count       = {tname}.modify_count + 1
+               WHERE EXCLUDED.when_last_modified IS NOT NULL
+                 AND (
+                   {tname}.when_last_modified IS NULL
+                   OR EXCLUDED.when_last_modified > {tname}.when_last_modified
+                 )
+               RETURNING 1
+             ) SELECT COUNT(*) FROM upserted",
+        ))
+        .bind(json_array)
+        .fetch_one(&self.pool)
+        .await?;
+
+        tracing::info!(table_id, upserted = count, "reconcile_rows_batch");
+        Ok(count as usize)
+    }
+
     // ── Ops log ───────────────────────────────────────────────────────────────
     async fn begin_ops_log(
         &self,
