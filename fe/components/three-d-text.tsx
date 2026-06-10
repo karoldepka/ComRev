@@ -12,12 +12,6 @@ interface ThreeDTextProps {
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
   lineSpacing?: number;
-  rays?: boolean;
-  rayMode?: 'radial' | 'spaghetti' | 'chip';
-  rayCount?: number;
-  rayInnerMargin?: number;
-  rayOuterMargin?: number;
-  rayThickness?: number;
   pipes?: EffectPipe[];
 }
 
@@ -27,12 +21,6 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   equalizationMethod = 'fontSize',
   targetWidth = 20,
   lineSpacing,
-  rays,
-  rayMode,
-  rayCount,
-  rayInnerMargin,
-  rayOuterMargin,
-  rayThickness,
   pipes = [],
 }) => {
   const animationIdRef = useRef<number | null>(null);
@@ -104,7 +92,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
       updateTextMesh(text);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing, rays, rayMode, rayCount, rayInnerMargin, rayOuterMargin, rayThickness]);
+  }, [text, equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
 
   useEffect(() => {
     return () => {

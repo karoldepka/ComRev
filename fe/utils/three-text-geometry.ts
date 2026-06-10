@@ -21,12 +21,6 @@ export interface TextGeometryOptions {
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
   lineSpacing?: number;
-  rays?: boolean;
-  rayMode?: 'radial' | 'spaghetti' | 'chip';
-  rayCount?: number;
-  rayInnerMargin?: number;
-  rayOuterMargin?: number;
-  rayThickness?: number;
 }
 
 const defaultOptions: Partial<TextGeometryOptions> = {
@@ -45,12 +39,6 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   equalizationMethod: 'fontSize',
   targetWidth: 20,
   lineSpacing: 1.5,
-  rays: false,
-  rayMode: 'radial',
-  rayCount: 24,
-  rayInnerMargin: 2,
-  rayOuterMargin: 6,
-  rayThickness: 0.08,
 };
 
 let fontCache: Font | null = null;
@@ -234,126 +222,6 @@ export async function createTextGeometry(
         lineGeometry.translate(0, yOffset, 0);
         const lineMesh = new THREE.Mesh(lineGeometry);
         mainGroup.add(lineMesh);
-      }
-    }
-
-    // Add rays if enabled
-    if (mergedOptions.rays) {
-      const box = new THREE.Box3().setFromObject(mainGroup);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const rayCount = mergedOptions.rayCount!;
-      const thickness = mergedOptions.rayThickness!;
-      const depth = mergedOptions.height! * 0.5;
-      const innerMargin = mergedOptions.rayInnerMargin!;
-      const outerMargin = mergedOptions.rayOuterMargin!;
-
-      if (mergedOptions.rayMode === 'radial') {
-        const halfDiag = Math.sqrt(size.x * size.x + size.y * size.y) / 2;
-        const innerRadius = halfDiag + innerMargin;
-        const outerRadius = halfDiag + innerMargin + outerMargin;
-
-        for (let i = 0; i < rayCount; i++) {
-          const angle = (i / rayCount) * Math.PI * 2;
-          const cos = Math.cos(angle);
-          const sin = Math.sin(angle);
-
-          const length = outerRadius - innerRadius;
-          const rayGeo = new THREE.BoxGeometry(length, thickness, depth);
-          const rayMesh = new THREE.Mesh(rayGeo);
-
-          const midRadius = (innerRadius + outerRadius) / 2;
-          rayMesh.position.set(
-            center.x + cos * midRadius,
-            center.y + sin * midRadius,
-            center.z
-          );
-          rayMesh.rotation.z = angle;
-          mainGroup.add(rayMesh);
-        }
-      } else if (mergedOptions.rayMode === 'spaghetti') {
-        const halfDiag = Math.sqrt(size.x * size.x + size.y * size.y) / 2;
-        const innerRadius = halfDiag + innerMargin;
-        const outerRadius = halfDiag + innerMargin + outerMargin;
-
-        const seed = (n: number) => Math.sin(n * 127.1 + 311.7) * 0.5 + 0.5;
-
-        for (let i = 0; i < rayCount; i++) {
-          const baseAngle = (i / rayCount) * Math.PI * 2;
-          const wobble = (seed(i) - 0.5) * 0.4;
-          const angle = baseAngle + wobble;
-
-          const lengthVariation = 0.5 + seed(i + 50);
-          const thisOuter = innerRadius + (outerRadius - innerRadius) * lengthVariation;
-          const length = thisOuter - innerRadius;
-
-          const points: THREE.Vector3[] = [];
-          const segments = 8;
-          for (let s = 0; s <= segments; s++) {
-            const t = s / segments;
-            const r = innerRadius + length * t;
-            const curveWobble = Math.sin(t * Math.PI * 2 + seed(i * 3) * 10) * 0.3;
-            const a = angle + curveWobble * (1 - t * 0.5);
-            points.push(new THREE.Vector3(
-              center.x + Math.cos(a) * r,
-              center.y + Math.sin(a) * r,
-              center.z
-            ));
-          }
-
-          const curve = new THREE.CatmullRomCurve3(points);
-          const tubeGeo = new THREE.TubeGeometry(curve, 16, thickness * 0.5, 4, false);
-          const rayMesh = new THREE.Mesh(tubeGeo);
-          mainGroup.add(rayMesh);
-        }
-      } else if (mergedOptions.rayMode === 'chip') {
-        const halfW = size.x / 2 + innerMargin;
-        const halfH = size.y / 2 + innerMargin;
-        const outerHalfW = halfW + outerMargin;
-        const outerHalfH = halfH + outerMargin;
-        const perSide = Math.ceil(rayCount / 4);
-
-        for (let side = 0; side < 4; side++) {
-          for (let i = 0; i < perSide; i++) {
-            const t = (i + 0.5) / perSide;
-
-            let startX: number, startY: number, endX: number, endY: number;
-
-            if (side === 0) { // top
-              startX = center.x + (t - 0.5) * size.x;
-              startY = center.y + halfH;
-              endX = startX;
-              endY = center.y + outerHalfH;
-            } else if (side === 1) { // right
-              startX = center.x + halfW;
-              startY = center.y + (t - 0.5) * size.y;
-              endX = center.x + outerHalfW;
-              endY = startY;
-            } else if (side === 2) { // bottom
-              startX = center.x + (t - 0.5) * size.x;
-              startY = center.y - halfH;
-              endX = startX;
-              endY = center.y - outerHalfH;
-            } else { // left
-              startX = center.x - halfW;
-              startY = center.y + (t - 0.5) * size.y;
-              endX = center.x - outerHalfW;
-              endY = startY;
-            }
-
-            const len = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
-            const rayGeo = new THREE.BoxGeometry(len, thickness, depth);
-            const rayMesh = new THREE.Mesh(rayGeo);
-
-            rayMesh.position.set(
-              (startX + endX) / 2,
-              (startY + endY) / 2,
-              center.z
-            );
-            rayMesh.rotation.z = Math.atan2(endY - startY, endX - startX);
-            mainGroup.add(rayMesh);
-          }
-        }
       }
     }
 
