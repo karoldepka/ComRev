@@ -1398,15 +1398,15 @@ export default function ThreeDTextScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.effectControlRow}>
-              <Text style={[styles.label, { color: c.text, flex: 1 }]}>
-                Add effect
-              </Text>
-              <View style={{ flex: 1 }}>
+            <View style={{ marginHorizontal: 12, marginVertical: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                <Text style={[styles.label, { color: c.text, marginRight: 8 }]}>
+                  Add effect
+                </Text>
                 <TextInput
                   style={[
                     styles.searchInput,
-                    { borderColor: c.tint, color: c.text },
+                    { borderColor: c.tint, color: c.text, flex: 1, marginBottom: 0 },
                   ]}
                   placeholder="Search effects..."
                   placeholderTextColor={
@@ -1415,6 +1415,8 @@ export default function ThreeDTextScreen() {
                   value={selectedEffectSearch}
                   onChangeText={setSelectedEffectSearch}
                 />
+              </View>
+              <View>
                 {selectedEffectSearch.length > 0 ? (
                   <View
                     style={[styles.effectSearchList, { borderColor: c.tint }]}

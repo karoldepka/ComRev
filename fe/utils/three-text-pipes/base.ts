@@ -47,6 +47,7 @@ export interface EffectPipe {
 export class PipelineManager {
   private composer: EffectComposer | null = null;
   private setupCtx: PipeSetupContext | null = null;
+  private frozenTimes = new Map<EffectPipe, number>();
 
   constructor(public readonly pipes: EffectPipe[]) {}
 
@@ -72,7 +73,14 @@ export class PipelineManager {
 
   update(ctx: PipeFrameContext) {
     for (const p of this.pipes) {
-      if (!p.paused) p.update?.(ctx);
+      if (p.paused) {
+        // Still apply effect each frame so geometry stays deformed; just freeze time.
+        const frozenTime = this.frozenTimes.get(p) ?? ctx.time;
+        p.update?.({ ...ctx, time: frozenTime, delta: 0 });
+      } else {
+        this.frozenTimes.set(p, ctx.time);
+        p.update?.(ctx);
+      }
     }
   }
 
@@ -89,6 +97,7 @@ export class PipelineManager {
     for (const p of this.pipes) p.dispose();
     this.composer?.dispose();
     this.composer = null;
+    this.frozenTimes.clear();
   }
 }
 
