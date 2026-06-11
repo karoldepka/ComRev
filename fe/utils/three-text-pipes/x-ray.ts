@@ -1,22 +1,21 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface XRayPipeParams { color?: number; opacity?: number; }
 
 export class XRayPipe implements EffectPipe {
   readonly name = 'xRay';
   private mesh: THREE.Mesh | THREE.Group | null = null;
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: XRayPipeParams = {}) {}
   setup(_ctx: PipeSetupContext) {}
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh;
-    this.applyMaterial(mesh);
-  }
-
-  private applyMaterial(mesh: THREE.Mesh | THREE.Group | null) {
     if (!mesh) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     const { color = 0x00ffff, opacity = 0.4 } = this.params;
     mesh.traverse(child => {
       if (child instanceof THREE.Mesh) {
@@ -29,5 +28,9 @@ export class XRayPipe implements EffectPipe {
   }
 
   update(_ctx: PipeFrameContext) {}
-  dispose() { this.mesh = null; }
+
+  dispose() {
+    restoreMeshMaterials(this.savedMaterials);
+    this.mesh = null;
+  }
 }

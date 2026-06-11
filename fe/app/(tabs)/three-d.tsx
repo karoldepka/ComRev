@@ -82,7 +82,7 @@ import { useThreeDStore } from "@/store/three-d-store";
 import { createEffectInstance, createId } from "@/utils/effect-defaults";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert, Modal, SafeAreaView,
+    Alert, Modal,
     ScrollView,
     StyleSheet,
     Switch,
@@ -92,6 +92,7 @@ import {
     useWindowDimensions,
     View
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
     runOnJS,
@@ -1711,9 +1712,9 @@ export default function ThreeDTextScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { t, i18n: i18nInstance } = useTranslation();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isSmallScreen = screenWidth < 600;
-  const canvasFlex = isSmallScreen ? 1 : 2;
+  const controlsHeight = isSmallScreen ? Math.round(screenHeight * 0.45) : Math.round(screenHeight * 0.38);
 
   const { effectInstances, setEffectInstances, resetToBasic: storeResetToBasic } = useThreeDStore();
   const [selectedEffectType, setSelectedEffectType] =
@@ -1740,6 +1741,7 @@ export default function ThreeDTextScreen() {
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controlsScrollRef = useRef<ScrollView>(null);
 
   const c = colors; // shorthand
 
@@ -1853,6 +1855,7 @@ export default function ThreeDTextScreen() {
       ...instances,
       createEffectInstance(t),
     ]);
+    setTimeout(() => controlsScrollRef.current?.scrollToEnd({ animated: true }), 50);
   };
 
   const handleApplyAiEffect = (code: string, description: string, targetId: string | null) => {
@@ -2260,9 +2263,9 @@ export default function ThreeDTextScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: c.background }]}>
+    <SafeAreaView edges={['bottom']} style={[styles.container, { backgroundColor: c.background }]}>
       <View style={styles.content}>
-        <View style={[styles.canvas, { flex: canvasFlex }]}>
+        <View style={[styles.canvas]}>
           <ThreeDText
             ref={threeDTextRef}
             text={mainTextParams.text as string ?? ''}
@@ -2288,7 +2291,8 @@ export default function ThreeDTextScreen() {
         </View>
 
         <ScrollView
-          style={styles.controls}
+          ref={controlsScrollRef}
+          style={[styles.controls, { height: controlsHeight }]}
           contentContainerStyle={{ paddingBottom: 32 }}
         >
           {/* ── Effects ── */}
@@ -2814,9 +2818,9 @@ export default function ThreeDTextScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, flexDirection: "column" },
-  canvas: { flex: 2, width: "100%" },
+  canvas: { flex: 1, width: "100%", minHeight: 0 },
   controls: {
-    flex: 1,
+    flexShrink: 0,
     borderTopWidth: 1,
     borderTopColor: "#ccc",
     alignSelf: "center",

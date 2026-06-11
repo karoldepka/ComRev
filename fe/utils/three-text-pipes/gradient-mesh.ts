@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface GradientMeshPipeParams { colorTop?: number; colorBottom?: number; animated?: boolean; speed?: number; }
 
@@ -7,14 +7,17 @@ export class GradientMeshPipe implements EffectPipe {
   readonly name = 'gradientMesh';
   private mesh: THREE.Mesh | THREE.Group | null = null;
   private materials: THREE.ShaderMaterial[] = [];
+  private savedMaterials: MaterialMap = new Map();
   private bbox = new THREE.Box3();
 
   constructor(public params: GradientMeshPipeParams = {}) {}
   setup(_ctx: PipeSetupContext) {}
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh; this.materials = [];
     if (!mesh) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     this.bbox.setFromObject(mesh);
     const colorTop    = new THREE.Color(this.params.colorTop    ?? 0xff6600);
     const colorBottom = new THREE.Color(this.params.colorBottom ?? 0x0066ff);
@@ -47,5 +50,8 @@ export class GradientMeshPipe implements EffectPipe {
     }
   }
 
-  dispose() { this.materials = []; this.mesh = null; }
+  dispose() {
+    restoreMeshMaterials(this.savedMaterials);
+    this.materials = []; this.mesh = null;
+  }
 }
