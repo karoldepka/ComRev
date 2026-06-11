@@ -44,7 +44,9 @@ export type EffectType =
   | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"
   | "orbitAnim" | "rock" | "jitter" | "sway" | "figureEight" | "pendulum"
   // ai-generated
-  | "customJs";
+  | "customJs"
+  // added effects
+  | "mainText" | "text3d" | "graphics";
 
 export interface EffectInstance {
   id: string;
@@ -59,11 +61,16 @@ export interface ThreeDConfig {
   name: string;
   savedAt: string;
   updatedAt: string;
-  text: string;
-  equalizeLineWidths: boolean;
-  equalizationMethod: "spacing" | "fontSize";
-  targetWidth: number;
-  lineSpacing: number;
+  /** @deprecated Kept for migration from old saves; canonical source is the mainText effect instance. */
+  text?: string;
+  /** @deprecated */
+  equalizeLineWidths?: boolean;
+  /** @deprecated */
+  equalizationMethod?: "spacing" | "fontSize";
+  /** @deprecated */
+  targetWidth?: number;
+  /** @deprecated */
+  lineSpacing?: number;
   effectInstances: EffectInstance[];
   showAdvanced: boolean;
   synced?: boolean;

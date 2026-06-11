@@ -46,8 +46,13 @@ import {
     OrbitAnimPipe, RockPipe, JitterPipe, SwayPipe, FigureEightPipe, PendulumPipe,
     // ai-generated
     CustomJsPipe,
+    MainTextPipe,
+    Text3dPipe,
+    GraphicsPipe,
 } from "@/utils/three-text-pipes";
 import { AiEffectChatModal } from "@/components/AiEffectChatModal";
+import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
+import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -202,6 +207,8 @@ function CycleButton({
 }
 
 type EffectType =
+  // primary text
+  | "mainText"
   // post-process
   | "bloom" | "depthOfField" | "chromatic" | "filmGrain" | "glitch"
   | "vignette" | "scanlines" | "colorGrading" | "pixelate" | "radialBlur"
@@ -234,7 +241,9 @@ type EffectType =
   | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"
   | "orbitAnim" | "rock" | "jitter" | "sway" | "figureEight" | "pendulum"
   // ai-generated
-  | "customJs";
+  | "customJs"
+  // added effects
+  | "text3d" | "graphics";
 
 interface EffectInstance {
   id: string;
@@ -248,7 +257,10 @@ const EFFECT_TYPES: {
   type: EffectType;
   label: string;
   target?: "geometry" | "bitmap" | "post";
+  primary?: boolean;
 }[] = [
+  // Primary text (always present, not user-addable)
+  { type: "mainText", label: "Primary Text", primary: true },
   // Post-process
   { type: "bloom",          label: "Bloom",           target: "post" },
   { type: "depthOfField",   label: "Depth of Field",  target: "post" },
@@ -380,6 +392,9 @@ const EFFECT_TYPES: {
   { type: "pendulum",       label: "Pendulum",        target: "geometry" },
   // AI-generated
   { type: "customJs",       label: "AI Custom",       target: "geometry" },
+  // Added effects
+  { type: "text3d",         label: "3D Text",          target: "geometry" },
+  { type: "graphics",       label: "Add Graphics",     target: "geometry" },
 ];
 
 function effectTypeLabel(type: EffectType) {
@@ -392,6 +407,26 @@ function createId() {
 
 function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
   switch (type) {
+    case "mainText":
+      return {
+        text: "Hi\nHello World\nThis is a very long line of text",
+        size: 2,
+        height: 0.8,
+        curveSegments: 12,
+        bevelEnabled: true,
+        bevelThickness: 0.15,
+        bevelSize: 0.08,
+        bevelOffset: 0,
+        bevelSegments: 5,
+        color: 0xff6600,
+        metalness: 0.95,
+        roughness: 0.15,
+        envMapIntensity: 1.5,
+        equalizeLineWidths: false,
+        equalizationMethod: "fontSize",
+        targetWidth: 20,
+        lineSpacing: 1.0,
+      };
     case "bloom":
       return { strength: 0.8, threshold: 0.2, radius: 0.5 };
     case "depthOfField":
@@ -557,6 +592,48 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
     case "figureEight":    return { width: 2, height: 1, speed: 0.5 };
     case "pendulum":       return { angle: 0.5, speed: 1.2 };
     case "customJs":       return { code: '', description: '' };
+    case "text3d":
+      return {
+        text: "Text 3D",
+        size: 2,
+        height: 0.8,
+        curveSegments: 12,
+        bevelEnabled: true,
+        bevelThickness: 0.15,
+        bevelSize: 0.08,
+        bevelOffset: 0,
+        bevelSegments: 5,
+        color: 0xff6600,
+        metalness: 0.95,
+        roughness: 0.15,
+        envMapIntensity: 1.5,
+        equalizeLineWidths: false,
+        equalizationMethod: "fontSize",
+        targetWidth: 20,
+        lineSpacing: 1.0,
+        posX: 0,
+        posY: 0,
+        posZ: 0,
+        rotX: 0,
+        rotY: 0,
+        rotZ: 0,
+      };
+    case "graphics":
+      return {
+        items: [],
+        layout: "row",
+        spacing: 4,
+        scale: 1,
+        extrudeDepth: 0.2,
+        colorOverride: false,
+        color: 0xff6600,
+        posX: 0,
+        posY: 0,
+        posZ: 0,
+        rotX: 0,
+        rotY: 0,
+        rotZ: 0,
+      };
     default:
       return {};
   }
@@ -720,19 +797,109 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
     case "figureEight":    return new FigureEightPipe(effect.params as any);
     case "pendulum":       return new PendulumPipe(effect.params as any);
     case "customJs":       return new CustomJsPipe(effect.params as any);
+    case "mainText":       return new MainTextPipe(effect.params as any);
+    case "text3d":         return new Text3dPipe(effect.params as any);
+    case "graphics":       return new GraphicsPipe(effect.params as any);
     default:
       return new FilmGrainPipe();
   }
 }
+
+const CURATED_COLORS = [
+  { label: 'Orange', value: 0xff6600 },
+  { label: 'Green', value: 0x00ff88 },
+  { label: 'Blue', value: 0x0088ff },
+  { label: 'Cyan', value: 0x00ffff },
+  { label: 'Magenta', value: 0xff00ff },
+  { label: 'Yellow', value: 0xffff00 },
+  { label: 'Purple', value: 0x8800ff },
+  { label: 'White', value: 0xffffff },
+];
 
 function renderEffectControls(
   effect: EffectInstance,
   colors: any,
   onUpdate: (key: string, value: unknown) => void,
   onEditCode?: (id: string, code: string, description: string) => void,
+  colorScheme?: 'light' | 'dark',
 ) {
   const params = effect.params as Record<string, unknown>;
+  const inputBg = colorScheme === 'dark' ? '#2a2a2a' : '#f5f5f5';
   switch (effect.type) {
+    case "mainText":
+      return (
+        <>
+          <TextInput
+            style={[
+              styles.textInput,
+              { color: colors.text, borderColor: colors.tint, backgroundColor: inputBg, marginVertical: 6 },
+            ]}
+            placeholder="Enter text..."
+            placeholderTextColor={colorScheme === 'dark' ? '#999' : '#ccc'}
+            value={params.text as string || ''}
+            onChangeText={(v) => onUpdate("text", v)}
+            multiline
+          />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Color</Text>
+            <CycleButton
+              value={CURATED_COLORS.find(c => c.value === params.color)?.label ?? 'Orange'}
+              options={[]}
+              onPress={() => {
+                const idx = CURATED_COLORS.findIndex(c => c.value === params.color);
+                onUpdate("color", CURATED_COLORS[(idx + 1) % CURATED_COLORS.length].value);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <SliderRow label="Size" min={0.5} max={6} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
+          <SliderRow label="Depth" min={0.05} max={3} step={0.05} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
+          <SliderRow label="Metalness" min={0} max={1} step={0.01} value={params.metalness as number ?? 0.95} onChange={(v) => onUpdate("metalness", v)} colors={colors} />
+          <SliderRow label="Roughness" min={0} max={1} step={0.01} value={params.roughness as number ?? 0.15} onChange={(v) => onUpdate("roughness", v)} colors={colors} />
+          <SliderRow label="Env Map Intensity" min={0} max={4} step={0.05} value={params.envMapIntensity as number ?? 1.5} onChange={(v) => onUpdate("envMapIntensity", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Bevel</Text>
+            <Switch
+              value={Boolean(params.bevelEnabled ?? true)}
+              onValueChange={(v) => onUpdate("bevelEnabled", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.bevelEnabled ?? true) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {(params.bevelEnabled ?? true) && (
+            <>
+              <SliderRow label="Bevel Thickness" min={0} max={0.5} step={0.01} value={params.bevelThickness as number ?? 0.15} onChange={(v) => onUpdate("bevelThickness", v)} colors={colors} />
+              <SliderRow label="Bevel Size" min={0} max={0.3} step={0.01} value={params.bevelSize as number ?? 0.08} onChange={(v) => onUpdate("bevelSize", v)} colors={colors} />
+              <SliderRow label="Bevel Segments" min={1} max={12} step={1} value={params.bevelSegments as number ?? 5} onChange={(v) => onUpdate("bevelSegments", Math.round(v))} colors={colors} />
+            </>
+          )}
+          <SliderRow label="Curve Segments" min={2} max={24} step={1} value={params.curveSegments as number ?? 12} onChange={(v) => onUpdate("curveSegments", Math.round(v))} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Equalize Widths</Text>
+            <Switch
+              value={Boolean(params.equalizeLineWidths)}
+              onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {params.equalizeLineWidths && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>Method: {params.equalizationMethod as string ?? 'fontSize'}</Text>
+                <CycleButton
+                  value="Switch"
+                  options={[]}
+                  onPress={() => onUpdate("equalizationMethod", params.equalizationMethod === 'spacing' ? 'fontSize' : 'spacing')}
+                  colors={colors}
+                />
+              </Row>
+              <SliderRow label="Target Width" min={5} max={40} step={0.1} value={params.targetWidth as number ?? 20} onChange={(v) => onUpdate("targetWidth", v)} colors={colors} />
+            </>
+          )}
+          <SliderRow label="Line Gap" min={-1} max={6} step={0.05} value={params.lineSpacing as number ?? 1.0} onChange={(v) => onUpdate("lineSpacing", v)} colors={colors} />
+        </>
+      );
     case "bloom":
       return (
         <>
@@ -1376,6 +1543,196 @@ function renderEffectControls(
           </TouchableOpacity>
         </View>
       );
+    case "text3d":
+      return (
+        <>
+          <TextInput
+            style={[
+              styles.textInput,
+              { color: colors.text, borderColor: colors.tint, backgroundColor: inputBg, marginVertical: 6 },
+            ]}
+            placeholder="Enter text..."
+            placeholderTextColor={colorScheme === 'dark' ? '#999' : '#ccc'}
+            value={params.text as string || ''}
+            onChangeText={(v) => onUpdate("text", v)}
+            multiline
+          />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Color</Text>
+            <CycleButton
+              value={
+                CURATED_COLORS.find(c => c.value === params.color)?.label ?? 'Orange'
+              }
+              options={[]}
+              onPress={() => {
+                const currentIdx = CURATED_COLORS.findIndex(c => c.value === params.color);
+                const nextIdx = (currentIdx + 1) % CURATED_COLORS.length;
+                onUpdate("color", CURATED_COLORS[nextIdx].value);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <SliderRow label="Size" min={0.5} max={5} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
+          <SliderRow label="Height" min={0.1} max={3} step={0.1} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Equalize Line Widths</Text>
+            <Switch
+              value={Boolean(params.equalizeLineWidths)}
+              onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {params.equalizeLineWidths && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>Method: {params.equalizationMethod as string ?? 'fontSize'}</Text>
+                <CycleButton
+                  value="Switch"
+                  options={[]}
+                  onPress={() => onUpdate("equalizationMethod", params.equalizationMethod === 'spacing' ? 'fontSize' : 'spacing')}
+                  colors={colors}
+                />
+              </Row>
+              <SliderRow label="Target Width" min={5} max={40} step={0.1} value={params.targetWidth as number ?? 20} onChange={(v) => onUpdate("targetWidth", v)} colors={colors} />
+            </>
+          )}
+          <SliderRow label="Line Gap" min={-1} max={6} step={0.05} value={params.lineSpacing as number ?? 1.0} onChange={(v) => onUpdate("lineSpacing", v)} colors={colors} />
+          <SliderRow label="Position X" min={-20} max={20} step={0.1} value={params.posX as number ?? 0} onChange={(v) => onUpdate("posX", v)} colors={colors} />
+          <SliderRow label="Position Y" min={-20} max={20} step={0.1} value={params.posY as number ?? 0} onChange={(v) => onUpdate("posY", v)} colors={colors} />
+          <SliderRow label="Position Z" min={-20} max={20} step={0.1} value={params.posZ as number ?? 0} onChange={(v) => onUpdate("posZ", v)} colors={colors} />
+          <SliderRow label="Rotation X" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotX as number ?? 0} onChange={(v) => onUpdate("rotX", v)} colors={colors} />
+          <SliderRow label="Rotation Y" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotY as number ?? 0} onChange={(v) => onUpdate("rotY", v)} colors={colors} />
+          <SliderRow label="Rotation Z" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotZ as number ?? 0} onChange={(v) => onUpdate("rotZ", v)} colors={colors} />
+        </>
+      );
+    case "graphics":
+      return (
+        <>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Layout</Text>
+            <CycleButton
+              value={params.layout as string ?? 'row'}
+              options={[]}
+              onPress={() => {
+                const layouts = ['row', 'grid', 'pile'];
+                const currentIdx = layouts.indexOf(params.layout as string ?? 'row');
+                const nextIdx = (currentIdx + 1) % layouts.length;
+                onUpdate("layout", layouts[nextIdx]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <SliderRow label="Spacing" min={0.5} max={15} step={0.1} value={params.spacing as number ?? 4} onChange={(v) => onUpdate("spacing", v)} colors={colors} />
+          <SliderRow label="Scale" min={0.1} max={5} step={0.05} value={params.scale as number ?? 1} onChange={(v) => onUpdate("scale", v)} colors={colors} />
+          <SliderRow label="Extrude Depth" min={0} max={2} step={0.05} value={params.extrudeDepth as number ?? 0.2} onChange={(v) => onUpdate("extrudeDepth", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Color Override (SVG)</Text>
+            <Switch
+              value={Boolean(params.colorOverride)}
+              onValueChange={(v) => onUpdate("colorOverride", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={params.colorOverride ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {params.colorOverride && (
+            <Row>
+              <Text style={[styles.label, { color: colors.text }]}>Override Color</Text>
+              <CycleButton
+                value={
+                  CURATED_COLORS.find(c => c.value === params.color)?.label ?? 'Orange'
+                }
+                options={[]}
+                onPress={() => {
+                  const currentIdx = CURATED_COLORS.findIndex(c => c.value === params.color);
+                  const nextIdx = (currentIdx + 1) % CURATED_COLORS.length;
+                  onUpdate("color", CURATED_COLORS[nextIdx].value);
+                }}
+                colors={colors}
+              />
+            </Row>
+          )}
+          <SliderRow label="Position X" min={-20} max={20} step={0.1} value={params.posX as number ?? 0} onChange={(v) => onUpdate("posX", v)} colors={colors} />
+          <SliderRow label="Position Y" min={-20} max={20} step={0.1} value={params.posY as number ?? 0} onChange={(v) => onUpdate("posY", v)} colors={colors} />
+          <SliderRow label="Position Z" min={-20} max={20} step={0.1} value={params.posZ as number ?? 0} onChange={(v) => onUpdate("posZ", v)} colors={colors} />
+          <SliderRow label="Rotation X" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotX as number ?? 0} onChange={(v) => onUpdate("rotX", v)} colors={colors} />
+          <SliderRow label="Rotation Y" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotY as number ?? 0} onChange={(v) => onUpdate("rotY", v)} colors={colors} />
+          <SliderRow label="Rotation Z" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotZ as number ?? 0} onChange={(v) => onUpdate("rotZ", v)} colors={colors} />
+
+          <TouchableOpacity
+            style={[styles.smallActionButton, { borderColor: colors.tint, marginVertical: 8, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8 }]}
+            onPress={() => {
+              if (typeof document !== 'undefined') {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.accept = 'image/*,.svg';
+                input.onchange = async (e: any) => {
+                  const files = e.target.files;
+                  if (!files) return;
+                  const newItems = [...(params.items as any[] || [])];
+                  for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const reader = new FileReader();
+                    if (file.name.toLowerCase().endsWith('.svg')) {
+                      reader.readAsText(file);
+                      await new Promise((resolve) => {
+                        reader.onload = () => {
+                          newItems.push({
+                            id: Math.random().toString(36).substring(2),
+                            name: file.name,
+                            type: 'svg',
+                            content: reader.result as string,
+                          });
+                          resolve(null);
+                        };
+                      });
+                    } else {
+                      reader.readAsDataURL(file);
+                      await new Promise((resolve) => {
+                        reader.onload = () => {
+                          newItems.push({
+                            id: Math.random().toString(36).substring(2),
+                            name: file.name,
+                            type: 'image',
+                            content: reader.result as string,
+                          });
+                          resolve(null);
+                        };
+                      });
+                    }
+                  }
+                  onUpdate('items', newItems);
+                };
+                input.click();
+              }
+            }}
+          >
+            <Text style={[styles.buttonText, { color: colors.tint }]}>Select Graphic Files</Text>
+          </TouchableOpacity>
+
+          {params.items && (params.items as any[]).length > 0 && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ color: colors.text, fontWeight: 'bold', fontSize: 13, marginBottom: 4 }}>Uploaded Files:</Text>
+              {(params.items as any[]).map((item, idx) => (
+                <View key={item.id || idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 2 }}>
+                  <Text style={{ color: colors.text, fontSize: 12, opacity: 0.8, flex: 1 }} numberOfLines={1}>
+                    {item.name} ({item.type.toUpperCase()})
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const newItems = (params.items as any[]).filter(x => x.id !== item.id);
+                      onUpdate('items', newItems);
+                    }}
+                  >
+                    <Text style={{ color: '#ff4444', fontSize: 12, marginLeft: 8 }}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      );
     default:
       return null;
   }
@@ -1385,18 +1742,11 @@ function renderEffectControls(
 export default function ThreeDTextScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+  const { t, i18n: i18nInstance } = useTranslation();
 
-  // ── Text & base geometry ────────────────────────────────────────────────────
-  const [text, setText] = useState(
-    "Hi\nHello World\nThis is a very long line of text",
-  );
-  const [equalizeLineWidths, setEqualizeLineWidths] = useState(false);
-  const [equalizationMethod, setEqualizationMethod] = useState<
-    "spacing" | "fontSize"
-  >("fontSize");
-  const [targetWidth, setTargetWidth] = useState(20);
-  const [lineSpacing, setLineSpacing] = useState(1.5);
-  const [effectInstances, setEffectInstances] = useState<EffectInstance[]>([]);
+  const [effectInstances, setEffectInstances] = useState<EffectInstance[]>(() => [
+    createEffectInstance("mainText"),
+  ]);
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
   const [selectedEffectSearch, setSelectedEffectSearch] = useState("");
@@ -1443,6 +1793,21 @@ export default function ThreeDTextScreen() {
         return pipe;
       });
   }, [effectInstances]);
+
+  const mainTextParams = useMemo(() => {
+    const inst = effectInstances.find(i => i.type === 'mainText');
+    return (inst?.params ?? {}) as Record<string, unknown>;
+  }, [effectInstances]);
+
+  const updateMainTextParam = (key: string, value: unknown) => {
+    setEffectInstances(instances => {
+      const idx = instances.findIndex(i => i.type === 'mainText');
+      if (idx < 0) return instances;
+      const copy = [...instances];
+      copy[idx] = { ...copy[idx], params: { ...copy[idx].params, [key]: value } };
+      return copy;
+    });
+  };
 
   const reorderEffectByIndex = (from: number, to: number) => {
     if (from === to) return;
@@ -1690,28 +2055,33 @@ export default function ThreeDTextScreen() {
           return;
         }
 
-        setText(latest.text);
-        setEqualizeLineWidths(latest.equalizeLineWidths);
-        setEqualizationMethod(latest.equalizationMethod);
-        setTargetWidth(latest.targetWidth);
-        setLineSpacing(latest.lineSpacing);
         setShowAdvanced(latest.showAdvanced);
 
         const savedEffects = (latest as any).effectInstances as
           | EffectInstance[]
           | undefined;
-        if (Array.isArray(savedEffects)) {
-          setEffectInstances(
-            savedEffects.map((item) => ({
+
+        let instances: EffectInstance[] = Array.isArray(savedEffects)
+          ? savedEffects.map((item) => ({
               ...item,
               enabled: item.enabled ?? true,
               animate: item.animate ?? true,
               params: item.params ?? {},
-            })),
-          );
-        } else {
-          setEffectInstances([]);
+            }))
+          : [];
+
+        // Migration: if no mainText effect in saved config, create one from old top-level fields
+        if (!instances.find(i => i.type === 'mainText')) {
+          const mainInst = createEffectInstance('mainText');
+          if (latest.text) mainInst.params = { ...mainInst.params, text: latest.text };
+          if (latest.equalizeLineWidths !== undefined) mainInst.params = { ...mainInst.params, equalizeLineWidths: latest.equalizeLineWidths };
+          if (latest.equalizationMethod) mainInst.params = { ...mainInst.params, equalizationMethod: latest.equalizationMethod };
+          if (latest.targetWidth) mainInst.params = { ...mainInst.params, targetWidth: latest.targetWidth };
+          if (latest.lineSpacing) mainInst.params = { ...mainInst.params, lineSpacing: latest.lineSpacing };
+          instances = [mainInst, ...instances];
         }
+
+        setEffectInstances(instances);
 
         setSaveStatus("Restored last saved configuration.");
       } catch (error) {
@@ -1759,19 +2129,23 @@ export default function ThreeDTextScreen() {
     }
   };
 
-  const buildCurrentConfig = (): ThreeDConfig => ({
-    id: `config-${Date.now()}`,
-    name: `3D render configuration ${new Date().toISOString()}`,
-    savedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    text,
-    equalizeLineWidths,
-    equalizationMethod,
-    targetWidth,
-    lineSpacing,
-    effectInstances,
-    showAdvanced,
-  });
+  const buildCurrentConfig = (): ThreeDConfig => {
+    const p = mainTextParams;
+    return {
+      id: `config-${Date.now()}`,
+      name: `3D render configuration ${new Date().toISOString()}`,
+      savedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      // Mirror mainText params for backward compat / easy querying
+      text: p.text as string ?? '',
+      equalizeLineWidths: p.equalizeLineWidths as boolean ?? false,
+      equalizationMethod: (p.equalizationMethod as 'spacing' | 'fontSize') ?? 'fontSize',
+      targetWidth: p.targetWidth as number ?? 20,
+      lineSpacing: p.lineSpacing as number ?? 1.5,
+      effectInstances,
+      showAdvanced,
+    };
+  };
 
   const handleSaveConfig = async () => {
     setSaveStatus("Saving configuration...");
@@ -1814,11 +2188,23 @@ export default function ThreeDTextScreen() {
         <View style={styles.canvas}>
           <ThreeDText
             ref={threeDTextRef}
-            text={text}
-            equalizeLineWidths={equalizeLineWidths}
-            equalizationMethod={equalizationMethod}
-            targetWidth={targetWidth}
-            lineSpacing={lineSpacing}
+            text={mainTextParams.text as string ?? ''}
+            size={mainTextParams.size as number | undefined}
+            height={mainTextParams.height as number | undefined}
+            curveSegments={mainTextParams.curveSegments as number | undefined}
+            bevelEnabled={mainTextParams.bevelEnabled as boolean | undefined}
+            bevelThickness={mainTextParams.bevelThickness as number | undefined}
+            bevelSize={mainTextParams.bevelSize as number | undefined}
+            bevelOffset={mainTextParams.bevelOffset as number | undefined}
+            bevelSegments={mainTextParams.bevelSegments as number | undefined}
+            color={mainTextParams.color as number | undefined}
+            metalness={mainTextParams.metalness as number | undefined}
+            roughness={mainTextParams.roughness as number | undefined}
+            envMapIntensity={mainTextParams.envMapIntensity as number | undefined}
+            equalizeLineWidths={mainTextParams.equalizeLineWidths as boolean | undefined}
+            equalizationMethod={mainTextParams.equalizationMethod as 'spacing' | 'fontSize' | undefined}
+            targetWidth={mainTextParams.targetWidth as number | undefined}
+            lineSpacing={mainTextParams.lineSpacing as number | undefined}
             pipes={activePipes}
           />
         </View>
@@ -1827,7 +2213,7 @@ export default function ThreeDTextScreen() {
           style={styles.controls}
           contentContainerStyle={{ paddingBottom: 32 }}
         >
-          {/* ── Text input ── */}
+          {/* ── Quick text shortcut ── */}
           <TextInput
             style={[
               styles.textInput,
@@ -1839,65 +2225,15 @@ export default function ThreeDTextScreen() {
             ]}
             placeholder="Enter multi-line text for 3D rendering"
             placeholderTextColor={colorScheme === "dark" ? "#999" : "#ccc"}
-            value={text}
-            onChangeText={setText}
+            value={mainTextParams.text as string ?? ''}
+            onChangeText={(v) => updateMainTextParam('text', v)}
             multiline
             numberOfLines={3}
           />
 
-          {/* ── Base geometry ── */}
-          <Text style={[styles.groupLabel, { color: c.text }]}>Geometry</Text>
-          <Row>
-            <Text style={[styles.label, { color: c.text }]}>
-              Equalize Line Widths
-            </Text>
-            <Switch
-              value={equalizeLineWidths}
-              onValueChange={setEqualizeLineWidths}
-              trackColor={{ false: "#767577", true: c.tint }}
-              thumbColor={equalizeLineWidths ? c.tint : "#f4f3f4"}
-            />
-          </Row>
-          {equalizeLineWidths && (
-            <>
-              <Row>
-                <Text style={[styles.label, { color: c.text }]}>
-                  Method: {equalizationMethod}
-                </Text>
-                <CycleButton
-                  value="Switch"
-                  options={[]}
-                  onPress={() =>
-                    setEqualizationMethod((m) =>
-                      m === "spacing" ? "fontSize" : "spacing",
-                    )
-                  }
-                  colors={c}
-                />
-              </Row>
-              <SliderRow
-                label="Target Width"
-                min={5}
-                max={40}
-                step={0.1}
-                value={targetWidth}
-                onChange={setTargetWidth}
-                colors={c}
-              />
-            </>
-          )}
-          <SliderRow
-            label="Line Spacing"
-            min={0.5}
-            max={4}
-            step={0.01}
-            value={lineSpacing}
-            onChange={setLineSpacing}
-            colors={c}
-          />
           {/* ── Effects ── */}
           <Text style={[styles.groupLabel, { color: c.text }]}>
-            Effects (composable pipes)
+            {t('effects')}
           </Text>
           <View style={styles.effectListContainer}>
             <View
@@ -1909,21 +2245,21 @@ export default function ThreeDTextScreen() {
               }}
             >
               <Text style={[styles.label, { color: c.text }]}>
-                Pipeline presets
+                {t('pipelinePresets')}
               </Text>
               <TouchableOpacity
                 style={[styles.smallActionButton, { borderColor: c.tint }]}
                 onPress={handleSavePreset}
               >
                 <Text style={[styles.buttonText, { color: c.tint }]}>
-                  Save preset
+                  {t('savePreset')}
                 </Text>
               </TouchableOpacity>
             </View>
             <View style={{ marginHorizontal: 12, marginVertical: 8 }}>
               <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 8 }}>
                 <Text style={[styles.label, { color: c.text }]}>
-                  Add effect
+                  {t('addEffect')}
                 </Text>
                 <TextInput
                   style={[
@@ -1950,6 +2286,7 @@ export default function ThreeDTextScreen() {
                     style={[styles.effectSearchList, { borderColor: c.tint }]}
                   >
                     {EFFECT_TYPES.filter((e) =>
+                      !e.primary &&
                       (e.label + " " + e.type)
                         .toLowerCase()
                         .includes(selectedEffectSearch.toLowerCase()),
@@ -1985,7 +2322,7 @@ export default function ThreeDTextScreen() {
                       marginTop: 8,
                     }}
                   >
-                    {EFFECT_TYPES.map((e) => (
+                    {EFFECT_TYPES.filter(e => !e.primary).map((e) => (
                       <TouchableOpacity
                         key={e.type}
                         style={[
@@ -2050,20 +2387,20 @@ export default function ThreeDTextScreen() {
                 }}
               >
                 <Text style={{ color: c.text }}>
-                  Deleted {effectTypeLabel(lastDeleted.item.type)}
+                  {t('deleted', { name: effectTypeLabel(lastDeleted.item.type) })}
                 </Text>
                 <TouchableOpacity
                   onPress={undoDelete}
                   style={{ paddingHorizontal: 10, paddingVertical: 6 }}
                 >
-                  <Text style={{ color: c.tint }}>Undo</Text>
+                  <Text style={{ color: c.tint }}>{t('undo')}</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {effectInstances.length === 0 && (
-              <Text style={[styles.helpText, { color: c.text }]}>
-                No effect instances yet. Add one to start building a pipeline.
+            {effectInstances.filter(i => i.type !== 'mainText').length === 0 && (
+              <Text style={[styles.label, { color: c.text, opacity: 0.5, marginHorizontal: 12, marginVertical: 8 }]}>
+                {t('noAdditionalEffects')}
               </Text>
             )}
 
@@ -2088,6 +2425,7 @@ export default function ThreeDTextScreen() {
                 ]}
               >
                 <View style={styles.effectCardHeader}>
+                  {instance.type !== 'mainText' && (
                   <GestureDetector gesture={createDragGesture(instance.id)}>
                     <View style={styles.dragHandle}>
                       <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -2095,6 +2433,7 @@ export default function ThreeDTextScreen() {
                       </Text>
                     </View>
                   </GestureDetector>
+                  )}
                   <View style={{ flex: 1 }}>
                     <SectionHeader
                       title={`${index + 1}. ${effectTypeLabel(instance.type)}`}
@@ -2103,6 +2442,7 @@ export default function ThreeDTextScreen() {
                       colors={c}
                     />
                   </View>
+                  {instance.type !== 'mainText' && (
                   <Row>
                     <TouchableOpacity
                       style={styles.smallActionButton}
@@ -2145,12 +2485,14 @@ export default function ThreeDTextScreen() {
                       </Text>
                     </TouchableOpacity>
                   </Row>
+                  )}
                 </View>
                 {instance.enabled &&
                   renderEffectControls(
                     instance, c,
                     (key, value) => updateEffectParam(instance.id, key, value),
                     (id, code, desc) => setAiChatTarget({ id, code, description: desc }),
+                    colorScheme ?? 'light',
                   )}
               </View>
             ))}
@@ -2176,7 +2518,7 @@ export default function ThreeDTextScreen() {
                     >{`Dragging: ${effectTypeLabel(draggingItem.type)}`}</Text>
                   </View>
                 </View>
-                {renderEffectControls(draggingItem, c, () => undefined)}
+                {renderEffectControls(draggingItem, c, () => undefined, undefined, colorScheme ?? 'light')}
               </Animated.View>
             )}
           </View>
@@ -2186,16 +2528,42 @@ export default function ThreeDTextScreen() {
             onPress={() => setShowAdvanced((v) => !v)}
           >
             <Text style={[styles.buttonText, { color: "#888" }]}>
-              {showAdvanced ? "▲ Hide Advanced" : "▼ Show Advanced (seeds)"}
+              {showAdvanced ? `▲ ${t('hideAdvanced')}` : `▼ ${t('showAdvanced')}`}
             </Text>
           </TouchableOpacity>
+
+          {/* Language picker */}
+          <View style={[styles.controlRow, { marginTop: 8 }]}>
+            <Text style={[styles.label, { color: c.text }]}>{t('language')}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {SUPPORTED_LANGUAGES.map(lang => (
+                <TouchableOpacity
+                  key={lang.code}
+                  onPress={() => i18nInstance.changeLanguage(lang.code)}
+                  style={[
+                    styles.smallActionButton,
+                    {
+                      borderColor: i18nInstance.language === lang.code ? c.tint : '#555',
+                      backgroundColor: i18nInstance.language === lang.code
+                        ? (colorScheme === 'dark' ? '#2a1800' : '#fff4ec')
+                        : 'transparent',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.buttonText, { color: i18nInstance.language === lang.code ? c.tint : c.text }]}>
+                    {lang.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           {/* Export button */}
           <TouchableOpacity
             style={[styles.advancedToggle, { borderColor: c.tint, marginTop: 4 }]}
             onPress={() => setShowExportModal(true)}
           >
-            <Text style={[styles.buttonText, { color: c.tint }]}>Export / Download</Text>
+            <Text style={[styles.buttonText, { color: c.tint }]}>{t('export')}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>

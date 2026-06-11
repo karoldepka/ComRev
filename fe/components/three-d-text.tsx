@@ -16,7 +16,19 @@ export interface ThreeDTextHandle {
 }
 
 interface ThreeDTextProps {
-  text: string;
+  text?: string;
+  size?: number;
+  height?: number;
+  curveSegments?: number;
+  bevelEnabled?: boolean;
+  bevelThickness?: number;
+  bevelSize?: number;
+  bevelOffset?: number;
+  bevelSegments?: number;
+  color?: number;
+  metalness?: number;
+  roughness?: number;
+  envMapIntensity?: number;
   equalizeLineWidths?: boolean;
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
@@ -25,7 +37,19 @@ interface ThreeDTextProps {
 }
 
 export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(function ThreeDText({
-  text,
+  text = '',
+  size,
+  height,
+  curveSegments,
+  bevelEnabled,
+  bevelThickness,
+  bevelSize,
+  bevelOffset,
+  bevelSegments,
+  color,
+  metalness,
+  roughness,
+  envMapIntensity,
   equalizeLineWidths = false,
   equalizationMethod = 'fontSize',
   targetWidth = 20,
@@ -59,10 +83,16 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
     getScene: () => sceneRef.current,
   }));
 
-  // Drag rotation state
+  // Interaction state
   const isDraggingRef = useRef(false);
   const lastMousePosition = useRef({ x: 0, y: 0 });
   const rotationRef = useRef({ x: 0, y: 0 });
+  // Object selection / 3D drag
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const selectedObjectRef = useRef<THREE.Object3D | null>(null);
+  const dragModeRef = useRef<'rotate' | 'translate'>('rotate');
+  const dragPlaneRef = useRef(new THREE.Plane());
+  const dragOffsetRef = useRef(new THREE.Vector3());
 
   // Attach wheel listener via DOM (onWheel prop not supported on RN View)
   useEffect(() => {
@@ -112,7 +142,9 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
       updateTextMesh(text);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
+  }, [text, size, height, curveSegments, bevelEnabled, bevelThickness, bevelSize, bevelOffset,
+      bevelSegments, color, metalness, roughness, envMapIntensity,
+      equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
 
   useEffect(() => {
     return () => {
@@ -142,13 +174,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
       }
       meshRef.current = null;
     }
-    const toRemove: THREE.Object3D[] = [];
-    scene.traverse((child) => {
-      if (child !== scene && child !== cameraRef.current && !(child instanceof THREE.Light)) {
-        toRemove.push(child);
-      }
-    });
-    toRemove.forEach(m => scene.remove(m));
   };
 
   const updateTextMesh = async (textContent: string) => {
@@ -162,7 +187,19 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
     try {
       const { geometry, material } = await createTextGeometry({
         text: textContent,
+        size,
+        height,
+        curveSegments,
+        bevelEnabled,
+        bevelThickness,
+        bevelSize,
+        bevelOffset,
+        bevelSegments,
+        color: color !== undefined ? new THREE.Color(color) : undefined,
+        metalness,
+        roughness,
         envMap,
+        envMapIntensity,
         equalizeLineWidths,
         equalizationMethod,
         targetWidth,
@@ -193,19 +230,85 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
 
   const handlePointerDown = (event: any) => {
     isDraggingRef.current = true;
-    lastMousePosition.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+    const px = event.nativeEvent.pageX;
+    const py = event.nativeEvent.pageY;
+    lastMousePosition.current = { x: px, y: py };
+
+    const el = containerRef.current as HTMLElement | null;
+    if (!el || !cameraRef.current || !sceneRef.current) {
+      dragModeRef.current = 'rotate';
+      return;
+    }
+
+    const rect = el.getBoundingClientRect();
+    const ndx = ((px - rect.left) / rect.width) * 2 - 1;
+    const ndy = -((py - rect.top) / rect.height) * 2 + 1;
+
+    raycasterRef.current.setFromCamera({ x: ndx, y: ndy }, cameraRef.current);
+
+    const meshes: THREE.Object3D[] = [];
+    sceneRef.current.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) meshes.push(obj);
+    });
+
+    const hits = raycasterRef.current.intersectObjects(meshes);
+    if (hits.length > 0) {
+      // Walk up to top-level scene child
+      let hit: THREE.Object3D = hits[0].object;
+      while (hit.parent && hit.parent !== sceneRef.current) hit = hit.parent;
+
+      // Primary text mesh → just rotate the scene; other objects → translate them
+      const isPrimaryMesh = hit === meshRef.current || isAncestor(meshRef.current, hits[0].object);
+      if (isPrimaryMesh) {
+        dragModeRef.current = 'rotate';
+        selectedObjectRef.current = null;
+      } else {
+        dragModeRef.current = 'translate';
+        selectedObjectRef.current = hit;
+        const cameraDir = new THREE.Vector3();
+        cameraRef.current.getWorldDirection(cameraDir);
+        dragPlaneRef.current.setFromNormalAndCoplanarPoint(cameraDir, hits[0].point);
+        const intersection = new THREE.Vector3();
+        raycasterRef.current.ray.intersectPlane(dragPlaneRef.current, intersection);
+        dragOffsetRef.current.copy(hit.position).sub(intersection);
+      }
+    } else {
+      dragModeRef.current = 'rotate';
+      selectedObjectRef.current = null;
+    }
   };
 
   const handlePointerMove = (event: any) => {
     if (!isDraggingRef.current) return;
-    const deltaX = event.nativeEvent.pageX - lastMousePosition.current.x;
-    const deltaY = event.nativeEvent.pageY - lastMousePosition.current.y;
-    rotationRef.current.y += deltaX * 0.01;
-    rotationRef.current.x += deltaY * 0.01;
-    lastMousePosition.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+    const px = event.nativeEvent.pageX;
+    const py = event.nativeEvent.pageY;
+    const deltaX = px - lastMousePosition.current.x;
+    const deltaY = py - lastMousePosition.current.y;
+
+    if (dragModeRef.current === 'translate' && selectedObjectRef.current && cameraRef.current) {
+      const el = containerRef.current as HTMLElement | null;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const ndx = ((px - rect.left) / rect.width) * 2 - 1;
+        const ndy = -((py - rect.top) / rect.height) * 2 + 1;
+        raycasterRef.current.setFromCamera({ x: ndx, y: ndy }, cameraRef.current);
+        const intersection = new THREE.Vector3();
+        if (raycasterRef.current.ray.intersectPlane(dragPlaneRef.current, intersection)) {
+          selectedObjectRef.current.position.copy(intersection.add(dragOffsetRef.current));
+        }
+      }
+    } else {
+      rotationRef.current.y += deltaX * 0.01;
+      rotationRef.current.x += deltaY * 0.01;
+    }
+    lastMousePosition.current = { x: px, y: py };
   };
 
-  const handlePointerUp = () => { isDraggingRef.current = false; };
+  const handlePointerUp = () => {
+    isDraggingRef.current = false;
+    selectedObjectRef.current = null;
+    dragModeRef.current = 'rotate';
+  };
 
   const onContextCreate = async (gl: any) => {
     glRef.current = gl;
@@ -256,6 +359,20 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
         meshRef.current.rotation.x = rotationRef.current.x;
         meshRef.current.rotation.y = rotationRef.current.y;
       }
+
+      // Highlight selected non-primary object with a subtle emissive pulse
+      const sel = selectedObjectRef.current;
+      scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          const isSelected = sel && isAncestor(sel, obj);
+          mats.forEach((mat: any) => {
+            if (mat.emissive && !isAncestor(meshRef.current, obj)) {
+              mat.emissive.setScalar(isSelected ? 0.25 : 0);
+            }
+          });
+        }
+      });
 
       const now = performance.now();
       const time = (now - startTimeRef.current) / 1000;
@@ -309,6 +426,16 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
     </View>
   );
 });
+
+function isAncestor(ancestor: THREE.Object3D | null, child: THREE.Object3D): boolean {
+  if (!ancestor) return false;
+  let node: THREE.Object3D | null = child;
+  while (node) {
+    if (node === ancestor) return true;
+    node = node.parent;
+  }
+  return false;
+}
 
 function createDefaultEnvMap(): THREE.Texture | null {
   try {

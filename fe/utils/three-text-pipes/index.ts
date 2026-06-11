@@ -138,3 +138,9 @@ export * from './jitter';
 export * from './sway';
 export * from './figure-eight';
 export * from './pendulum';
+
+// ── Added pipes ──
+export * from './main-text';
+export * from './text-3d';
+export * from './graphics';
+

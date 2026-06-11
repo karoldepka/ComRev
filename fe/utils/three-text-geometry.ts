@@ -38,7 +38,7 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   equalizeLineWidths: false,
   equalizationMethod: 'fontSize',
   targetWidth: 20,
-  lineSpacing: 1.5,
+  lineSpacing: 1.0,
 };
 
 let fontCache: Font | null = null;
@@ -127,7 +127,7 @@ export async function createTextGeometry(
 
     // Create the main group for all lines
     const mainGroup = new THREE.Group();
-    const lineGeometries: { geometry: TextGeometry; height: number }[] = [];
+    const lineGeometries: { geometry: TextGeometry | THREE.Group; minY: number; maxY: number }[] = [];
 
     // Second pass: create geometries with equalization
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -149,16 +149,17 @@ export async function createTextGeometry(
 
         lineGeometry.computeBoundingBox();
         const lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
-        const lineHeight = (lineGeometry.boundingBox!.max.y - lineGeometry.boundingBox!.min.y) * mergedOptions.lineSpacing!;
+        // Store actual geometry extents (X-translate doesn't affect Y)
+        const minY = lineGeometry.boundingBox?.min.y ?? 0;
+        const maxY = lineGeometry.boundingBox?.max.y ?? mergedOptions.size!;
         lineGeometry.translate(-lineWidth / 2, 0, 0);
-        lineGeometries.push({ geometry: lineGeometry, height: lineHeight });
+        lineGeometries.push({ geometry: lineGeometry, minY, maxY });
       } else {
         // Spacing mode: create per-character geometries with extra gaps
         const naturalWidth = lineWidths[lineIndex];
         const extraSpace = (mergedOptions.targetWidth! - naturalWidth) / Math.max(1, line.length - 1);
         const lineGroup = new THREE.Group();
         let cursorX = 0;
-        let maxCharHeight = 0;
 
         for (let charIndex = 0; charIndex < line.length; charIndex++) {
           const char = line[charIndex];
@@ -187,39 +188,41 @@ export async function createTextGeometry(
 
           charGeometry.computeBoundingBox();
           const charWidth = charGeometry.boundingBox!.max.x - charGeometry.boundingBox!.min.x;
-          const charHeight = charGeometry.boundingBox!.max.y - charGeometry.boundingBox!.min.y;
-          maxCharHeight = Math.max(maxCharHeight, charHeight);
-
           charGeometry.translate(cursorX, 0, 0);
           const charMesh = new THREE.Mesh(charGeometry);
           lineGroup.add(charMesh);
-
           cursorX += charWidth + extraSpace;
         }
 
-        // Center the line group horizontally
-        const box = new THREE.Box3().setFromObject(lineGroup);
+        // Compute actual bbox of the assembled line
+        const box = lineGroup.children.length > 0
+          ? new THREE.Box3().setFromObject(lineGroup)
+          : new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, mergedOptions.size!, 0));
         const centerX = (box.max.x + box.min.x) / 2;
         lineGroup.position.x = -centerX;
-
-        const lineHeight = maxCharHeight * mergedOptions.lineSpacing!;
-        lineGeometries.push({ geometry: lineGroup as any, height: lineHeight });
+        lineGeometries.push({ geometry: lineGroup, minY: box.min.y, maxY: box.max.y });
       }
     }
 
-    // Position lines vertically using actual heights
-    const totalHeight = lineGeometries.reduce((sum: number, l) => sum + l.height, 0);
-    let yPos = totalHeight / 2;
+    // Stack lines so the visual gap between bottom of line[i] and top of line[i+1] = lineSpacing
+    const origins = new Array<number>(lineGeometries.length).fill(0);
+    for (let i = 1; i < lineGeometries.length; i++) {
+      origins[i] = origins[i - 1] + lineGeometries[i - 1].minY - mergedOptions.lineSpacing! - lineGeometries[i].maxY;
+    }
+    const totalTop = lineGeometries.length > 0 ? origins[0] + lineGeometries[0].maxY : 0;
+    const totalBottom = lineGeometries.length > 0
+      ? origins[lineGeometries.length - 1] + lineGeometries[lineGeometries.length - 1].minY
+      : 0;
+    const centerY = (totalTop + totalBottom) / 2;
 
-    for (const { geometry: lineGeometry, height } of lineGeometries) {
-      yPos -= height;
-      const yOffset = yPos + height / 2;
-
+    for (let i = 0; i < lineGeometries.length; i++) {
+      const yOrigin = origins[i] - centerY;
+      const { geometry: lineGeometry } = lineGeometries[i];
       if (lineGeometry instanceof THREE.Group) {
-        lineGeometry.position.y = yOffset;
+        lineGeometry.position.y = yOrigin;
         mainGroup.add(lineGeometry);
       } else {
-        lineGeometry.translate(0, yOffset, 0);
+        lineGeometry.translate(0, yOrigin, 0);
         const lineMesh = new THREE.Mesh(lineGeometry);
         mainGroup.add(lineMesh);
       }
@@ -243,7 +246,7 @@ export async function createTextGeometry(
     // Fallback: create simple extruded text using basic shapes
     const mainGroup = new THREE.Group();
     const baseLetterSpacing = mergedOptions.size! * 0.8;
-    const lineSpacing = mergedOptions.size! * 1.5;
+    const lineSpacing = mergedOptions.size! + mergedOptions.lineSpacing!;
 
     // Calculate line widths for equalization
     const lineWidths: number[] = [];
@@ -264,7 +267,6 @@ export async function createTextGeometry(
 
     // Calculate equalization factors
     if (mergedOptions.equalizeLineWidths!) {
-      const maxWidth = Math.max(...lineWidths);
       const targetWidth = mergedOptions.targetWidth!;
 
       for (let i = 0; i < lineWidths.length; i++) {
