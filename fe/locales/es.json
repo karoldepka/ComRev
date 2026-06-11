@@ -29,6 +29,7 @@
   "bevel": "Bisel",
   "bevelThickness": "Grosor del bisel",
   "bevelSize": "Tamaño del bisel",
+  "bevelOffset": "Desplazamiento del bisel",
   "bevelSegments": "Segmentos del bisel",
   "curveSegments": "Segmentos de curva",
   "equalizeWidths": "Igualar anchos",

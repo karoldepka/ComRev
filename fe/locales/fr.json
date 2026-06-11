@@ -29,6 +29,7 @@
   "bevel": "Biseau",
   "bevelThickness": "Épaisseur biseau",
   "bevelSize": "Taille biseau",
+  "bevelOffset": "Décalage biseau",
   "bevelSegments": "Segments biseau",
   "curveSegments": "Segments courbe",
   "equalizeWidths": "Égaliser les largeurs",

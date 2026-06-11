@@ -73,11 +73,13 @@ import {
     ColorBurnPipe,
     DepthLinesPipe,
 } from "@/utils/three-text-pipes";
-import { AVAILABLE_FONTS } from "@/utils/three-text-geometry";
+import { AVAILABLE_FONTS, registerCustomFontUrl } from "@/utils/three-text-geometry";
 import { AiEffectChatModal } from "@/components/AiEffectChatModal";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid/non-secure";
+import { useThreeDStore } from "@/store/three-d-store";
+import { createEffectInstance, createId } from "@/utils/effect-defaults";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     Alert, Modal, SafeAreaView,
@@ -449,11 +451,8 @@ function effectTypeLabel(type: EffectType, t: (k: string) => string) {
   return t(`eff_${type}`);
 }
 
-function createId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
+// Stub kept only to satisfy the switch default below; the real implementation is in utils/effect-defaults.ts
+function createDefaultEffectParams_local(type: EffectType): Record<string, unknown> {
   switch (type) {
     case "mainText":
       return {
@@ -704,16 +703,6 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
   }
 }
 
-function createEffectInstance(type: EffectType): EffectInstance {
-  return {
-    id: createId(),
-    type,
-    enabled: true,
-    animate: true,
-    seed: Math.floor(Math.random() * 1000000),
-    params: createDefaultEffectParams(type),
-  };
-}
 
 function createPipeFromInstance(effect: EffectInstance): EffectPipe {
   switch (effect.type) {
@@ -927,6 +916,7 @@ function hexToNum(s: string): number {
 }
 
 function ColorPickerRow({ label, value, onChange, colors }: { label: string; value: number; onChange: (v: number) => void; colors: any }) {
+  const _colorScheme = useColorScheme();
   const [showModal, setShowModal] = React.useState(false);
   const [recentColors, setRecentColors] = React.useState<number[]>(() => loadRecentColors());
   const [draftHex, setDraftHex] = React.useState(numToHex(value));
@@ -996,12 +986,175 @@ function ColorPickerRow({ label, value, onChange, colors }: { label: string; val
                 onPress={() => { applyColor(hexToNum(draftHex)); setShowModal(false); }}
                 style={{ flex: 1, padding: 10, backgroundColor: colors.tint, borderRadius: 8, alignItems: 'center' }}
               >
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Apply</Text>
+                <Text style={{ color: _colorScheme === 'dark' ? '#000' : '#fff', fontWeight: '600' }}>Apply</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+    </>
+  );
+}
+
+function FontPickerRow({ params, onUpdate, colors }: { params: Record<string, unknown>; onUpdate: (key: string, value: unknown) => void; colors: any }) {
+  const { t } = useTranslation();
+  const _colorScheme = useColorScheme();
+  const [showUrlInput, setShowUrlInput] = React.useState(false);
+  const [draftUrl, setDraftUrl] = React.useState('');
+  const builtInFonts = AVAILABLE_FONTS.filter(f => !f.isCustom);
+  const currentFont = AVAILABLE_FONTS.find(f => f.id === params.fontFamily);
+
+  const cycleFont = () => {
+    const all = AVAILABLE_FONTS.filter(f => !f.isCustom);
+    const idx = all.findIndex(f => f.id === (params.fontFamily ?? 'helvetiker'));
+    onUpdate("fontFamily", all[(idx + 1) % all.length].id);
+  };
+
+  const applyCustomUrl = () => {
+    const url = draftUrl.trim();
+    if (!url) return;
+    const id = registerCustomFontUrl('Custom font', url);
+    onUpdate("fontFamily", id);
+    setShowUrlInput(false);
+    setDraftUrl('');
+  };
+
+  return (
+    <>
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>{t('font')}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <CycleButton value={currentFont?.label ?? 'Helvetiker'} options={[]} onPress={cycleFont} colors={colors} />
+          <TouchableOpacity
+            onPress={() => setShowUrlInput(v => !v)}
+            style={[styles.smallActionButton, { borderColor: colors.tint, paddingHorizontal: 6, paddingVertical: 2 }]}
+          >
+            <Text style={{ color: colors.tint, fontSize: 11 }}>URL</Text>
+          </TouchableOpacity>
+        </View>
+      </Row>
+      {showUrlInput && (
+        <View style={{ paddingHorizontal: 4, paddingBottom: 4, gap: 6 }}>
+          <Text style={{ color: colors.text, fontSize: 11, opacity: 0.7 }}>
+            Paste a URL to any typeface.json file (e.g. from facetype.js or Three.js CDN):
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <TextInput
+              style={{ flex: 1, borderWidth: 1, borderColor: '#555', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, color: colors.text, fontSize: 12 }}
+              value={draftUrl}
+              onChangeText={setDraftUrl}
+              placeholder="https://…/font.typeface.json"
+              placeholderTextColor="#888"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onSubmitEditing={applyCustomUrl}
+              returnKeyType="go"
+            />
+            <TouchableOpacity
+              onPress={applyCustomUrl}
+              style={{ backgroundColor: colors.tint, borderRadius: 6, paddingHorizontal: 10, justifyContent: 'center' }}
+            >
+              <Text style={{ color: _colorScheme === 'dark' ? '#000' : '#fff', fontSize: 12, fontWeight: '600' }}>Load</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: colors.text, fontSize: 10, opacity: 0.5 }}>
+            Built-in: {builtInFonts.map(f => f.label).join(' · ')}
+          </Text>
+        </View>
+      )}
+    </>
+  );
+}
+
+function renderText3dControls({
+  params,
+  colors,
+  t,
+  onUpdate,
+  colorScheme,
+  includeTransform,
+}: {
+  params: Record<string, unknown>;
+  colors: any;
+  t: (key: string, options?: any) => string;
+  onUpdate: (key: string, value: unknown) => void;
+  colorScheme?: 'light' | 'dark';
+  includeTransform?: boolean;
+}) {
+  const inputBg = colorScheme === 'dark' ? '#2a2a2a' : '#f5f5f5';
+
+  return (
+    <>
+      <TextInput
+        style={[
+          styles.textInput,
+          { color: colors.text, borderColor: colors.tint, backgroundColor: inputBg, marginVertical: 6 },
+        ]}
+        placeholder="Enter text..."
+        placeholderTextColor={colorScheme === 'dark' ? '#999' : '#ccc'}
+        value={params.text as string || ''}
+        onChangeText={(v) => onUpdate("text", v)}
+        multiline
+      />
+      <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
+      <FontPickerRow params={params} onUpdate={onUpdate} colors={colors} />
+      <SliderRow label={t('size')} min={0.5} max={6} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
+      <SliderRow label={t('depth')} min={0.05} max={3} step={0.05} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
+      <SliderRow label={t('metalness')} min={0} max={1} step={0.01} value={params.metalness as number ?? 0.95} onChange={(v) => onUpdate("metalness", v)} colors={colors} />
+      <SliderRow label={t('roughness')} min={0} max={1} step={0.01} value={params.roughness as number ?? 0.15} onChange={(v) => onUpdate("roughness", v)} colors={colors} />
+      <SliderRow label={t('envMapIntensity')} min={0} max={4} step={0.05} value={params.envMapIntensity as number ?? 1.5} onChange={(v) => onUpdate("envMapIntensity", v)} colors={colors} />
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>{t('bevel')}</Text>
+        <Switch
+          value={Boolean(params.bevelEnabled ?? true)}
+          onValueChange={(v) => onUpdate("bevelEnabled", v)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={(params.bevelEnabled ?? true) ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
+      {(params.bevelEnabled ?? true) && (
+        <>
+          <SliderRow label={t('bevelThickness')} min={0} max={0.5} step={0.01} value={params.bevelThickness as number ?? 0.15} onChange={(v) => onUpdate("bevelThickness", v)} colors={colors} />
+          <SliderRow label={t('bevelSize')} min={0} max={0.3} step={0.01} value={params.bevelSize as number ?? 0.08} onChange={(v) => onUpdate("bevelSize", v)} colors={colors} />
+          <SliderRow label={t('bevelOffset')} min={-0.2} max={0.2} step={0.01} value={params.bevelOffset as number ?? 0} onChange={(v) => onUpdate("bevelOffset", v)} colors={colors} />
+          <SliderRow label={t('bevelSegments')} min={1} max={12} step={1} value={params.bevelSegments as number ?? 5} onChange={(v) => onUpdate("bevelSegments", Math.round(v))} colors={colors} />
+        </>
+      )}
+      <SliderRow label={t('curveSegments')} min={2} max={128} step={1} value={params.curveSegments as number ?? 48} onChange={(v) => onUpdate("curveSegments", Math.round(v))} colors={colors} />
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>{t('equalizeWidths')}</Text>
+        <Switch
+          value={Boolean(params.equalizeLineWidths)}
+          onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
+      {params.equalizeLineWidths && (
+        <>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{t('method', { method: params.equalizationMethod as string ?? 'fontSize' })}</Text>
+            <CycleButton
+              value="Switch"
+              options={[]}
+              onPress={() => onUpdate("equalizationMethod", params.equalizationMethod === 'spacing' ? 'fontSize' : 'spacing')}
+              colors={colors}
+            />
+          </Row>
+          <SliderRow label={t('targetWidth')} min={5} max={40} step={0.1} value={params.targetWidth as number ?? 20} onChange={(v) => onUpdate("targetWidth", v)} colors={colors} />
+        </>
+      )}
+      <SliderRow label={t('lineGap')} min={-1} max={6} step={0.05} value={params.lineSpacing as number ?? 1.0} onChange={(v) => onUpdate("lineSpacing", v)} colors={colors} />
+      {includeTransform && (
+        <>
+          <SliderRow label={t('positionX')} min={-20} max={20} step={0.1} value={params.posX as number ?? 0} onChange={(v) => onUpdate("posX", v)} colors={colors} />
+          <SliderRow label={t('positionY')} min={-20} max={20} step={0.1} value={params.posY as number ?? 0} onChange={(v) => onUpdate("posY", v)} colors={colors} />
+          <SliderRow label={t('positionZ')} min={-20} max={20} step={0.1} value={params.posZ as number ?? 0} onChange={(v) => onUpdate("posZ", v)} colors={colors} />
+          <SliderRow label={t('rotationX')} min={-Math.PI} max={Math.PI} step={0.05} value={params.rotX as number ?? 0} onChange={(v) => onUpdate("rotX", v)} colors={colors} />
+          <SliderRow label={t('rotationY')} min={-Math.PI} max={Math.PI} step={0.05} value={params.rotY as number ?? 0} onChange={(v) => onUpdate("rotY", v)} colors={colors} />
+          <SliderRow label={t('rotationZ')} min={-Math.PI} max={Math.PI} step={0.05} value={params.rotZ as number ?? 0} onChange={(v) => onUpdate("rotZ", v)} colors={colors} />
+        </>
+      )}
     </>
   );
 }
@@ -1015,85 +1168,11 @@ function renderEffectControls(
   colorScheme?: 'light' | 'dark',
 ) {
   const params = effect.params as Record<string, unknown>;
-  const inputBg = colorScheme === 'dark' ? '#2a2a2a' : '#f5f5f5';
   // shorthand: t(`p_${k}`) for param labels
   const p = (k: string) => t(`p_${k}`);
   switch (effect.type) {
     case "mainText":
-      return (
-        <>
-          <TextInput
-            style={[
-              styles.textInput,
-              { color: colors.text, borderColor: colors.tint, backgroundColor: inputBg, marginVertical: 6 },
-            ]}
-            placeholder="Enter text..."
-            placeholderTextColor={colorScheme === 'dark' ? '#999' : '#ccc'}
-            value={params.text as string || ''}
-            onChangeText={(v) => onUpdate("text", v)}
-            multiline
-          />
-          <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{t('font')}</Text>
-            <CycleButton
-              value={AVAILABLE_FONTS.find(f => f.id === params.fontFamily)?.label ?? 'Helvetiker'}
-              options={[]}
-              onPress={() => {
-                const idx = AVAILABLE_FONTS.findIndex(f => f.id === (params.fontFamily ?? 'helvetiker'));
-                onUpdate("fontFamily", AVAILABLE_FONTS[(idx + 1) % AVAILABLE_FONTS.length].id);
-              }}
-              colors={colors}
-            />
-          </Row>
-          <SliderRow label={t('size')} min={0.5} max={6} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
-          <SliderRow label={t('depth')} min={0.05} max={3} step={0.05} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
-          <SliderRow label={t('metalness')} min={0} max={1} step={0.01} value={params.metalness as number ?? 0.95} onChange={(v) => onUpdate("metalness", v)} colors={colors} />
-          <SliderRow label={t('roughness')} min={0} max={1} step={0.01} value={params.roughness as number ?? 0.15} onChange={(v) => onUpdate("roughness", v)} colors={colors} />
-          <SliderRow label={t('envMapIntensity')} min={0} max={4} step={0.05} value={params.envMapIntensity as number ?? 1.5} onChange={(v) => onUpdate("envMapIntensity", v)} colors={colors} />
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{t('bevel')}</Text>
-            <Switch
-              value={Boolean(params.bevelEnabled ?? true)}
-              onValueChange={(v) => onUpdate("bevelEnabled", v)}
-              trackColor={{ false: "#767577", true: colors.tint }}
-              thumbColor={(params.bevelEnabled ?? true) ? colors.tint : "#f4f3f4"}
-            />
-          </Row>
-          {(params.bevelEnabled ?? true) && (
-            <>
-              <SliderRow label={t('bevelThickness')} min={0} max={0.5} step={0.01} value={params.bevelThickness as number ?? 0.15} onChange={(v) => onUpdate("bevelThickness", v)} colors={colors} />
-              <SliderRow label={t('bevelSize')} min={0} max={0.3} step={0.01} value={params.bevelSize as number ?? 0.08} onChange={(v) => onUpdate("bevelSize", v)} colors={colors} />
-              <SliderRow label={t('bevelSegments')} min={1} max={12} step={1} value={params.bevelSegments as number ?? 5} onChange={(v) => onUpdate("bevelSegments", Math.round(v))} colors={colors} />
-            </>
-          )}
-          <SliderRow label={t('curveSegments')} min={2} max={128} step={1} value={params.curveSegments as number ?? 48} onChange={(v) => onUpdate("curveSegments", Math.round(v))} colors={colors} />
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{t('equalizeWidths')}</Text>
-            <Switch
-              value={Boolean(params.equalizeLineWidths)}
-              onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
-              trackColor={{ false: "#767577", true: colors.tint }}
-              thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
-            />
-          </Row>
-          {params.equalizeLineWidths && (
-            <>
-              <Row>
-                <Text style={[styles.label, { color: colors.text }]}>{t('method', { method: params.equalizationMethod as string ?? 'fontSize' })}</Text>
-                <CycleButton
-                  value="Switch"
-                  options={[]}
-                  onPress={() => onUpdate("equalizationMethod", params.equalizationMethod === 'spacing' ? 'fontSize' : 'spacing')}
-                  colors={colors}
-                />
-              </Row>
-              <SliderRow label={t('targetWidth')} min={5} max={40} step={0.1} value={params.targetWidth as number ?? 20} onChange={(v) => onUpdate("targetWidth", v)} colors={colors} />
-            </>
-          )}
-          <SliderRow label={t('lineGap')} min={-1} max={6} step={0.05} value={params.lineSpacing as number ?? 1.0} onChange={(v) => onUpdate("lineSpacing", v)} colors={colors} />
-        </>
-      );
+      return renderText3dControls({ params, colors, t, onUpdate, colorScheme });
     case "bloom":
       return (
         <>
@@ -1174,7 +1253,7 @@ function renderEffectControls(
                     {params.customImageDataUrl ? p('changeImage') : p('chooseImage')}
                   </Text>
                 </TouchableOpacity>
-                {params.customImageDataUrl && (
+                {Boolean(params.customImageDataUrl) && (
                   <img src={params.customImageDataUrl as string} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 } as any} />
                 )}
               </View>
@@ -1508,66 +1587,7 @@ function renderEffectControls(
         </View>
       );
     case "text3d":
-      return (
-        <>
-          <TextInput
-            style={[
-              styles.textInput,
-              { color: colors.text, borderColor: colors.tint, backgroundColor: inputBg, marginVertical: 6 },
-            ]}
-            placeholder="Enter text..."
-            placeholderTextColor={colorScheme === 'dark' ? '#999' : '#ccc'}
-            value={params.text as string || ''}
-            onChangeText={(v) => onUpdate("text", v)}
-            multiline
-          />
-          <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{t('font')}</Text>
-            <CycleButton
-              value={AVAILABLE_FONTS.find(f => f.id === params.fontFamily)?.label ?? 'Helvetiker'}
-              options={[]}
-              onPress={() => {
-                const idx = AVAILABLE_FONTS.findIndex(f => f.id === (params.fontFamily ?? 'helvetiker'));
-                onUpdate("fontFamily", AVAILABLE_FONTS[(idx + 1) % AVAILABLE_FONTS.length].id);
-              }}
-              colors={colors}
-            />
-          </Row>
-          <SliderRow label="Size" min={0.5} max={5} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
-          <SliderRow label="Height" min={0.1} max={3} step={0.1} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>Equalize Line Widths</Text>
-            <Switch
-              value={Boolean(params.equalizeLineWidths)}
-              onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
-              trackColor={{ false: "#767577", true: colors.tint }}
-              thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
-            />
-          </Row>
-          {params.equalizeLineWidths && (
-            <>
-              <Row>
-                <Text style={[styles.label, { color: colors.text }]}>Method: {params.equalizationMethod as string ?? 'fontSize'}</Text>
-                <CycleButton
-                  value="Switch"
-                  options={[]}
-                  onPress={() => onUpdate("equalizationMethod", params.equalizationMethod === 'spacing' ? 'fontSize' : 'spacing')}
-                  colors={colors}
-                />
-              </Row>
-              <SliderRow label="Target Width" min={5} max={40} step={0.1} value={params.targetWidth as number ?? 20} onChange={(v) => onUpdate("targetWidth", v)} colors={colors} />
-            </>
-          )}
-          <SliderRow label="Line Gap" min={-1} max={6} step={0.05} value={params.lineSpacing as number ?? 1.0} onChange={(v) => onUpdate("lineSpacing", v)} colors={colors} />
-          <SliderRow label="Position X" min={-20} max={20} step={0.1} value={params.posX as number ?? 0} onChange={(v) => onUpdate("posX", v)} colors={colors} />
-          <SliderRow label="Position Y" min={-20} max={20} step={0.1} value={params.posY as number ?? 0} onChange={(v) => onUpdate("posY", v)} colors={colors} />
-          <SliderRow label="Position Z" min={-20} max={20} step={0.1} value={params.posZ as number ?? 0} onChange={(v) => onUpdate("posZ", v)} colors={colors} />
-          <SliderRow label="Rotation X" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotX as number ?? 0} onChange={(v) => onUpdate("rotX", v)} colors={colors} />
-          <SliderRow label="Rotation Y" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotY as number ?? 0} onChange={(v) => onUpdate("rotY", v)} colors={colors} />
-          <SliderRow label="Rotation Z" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotZ as number ?? 0} onChange={(v) => onUpdate("rotZ", v)} colors={colors} />
-        </>
-      );
+      return renderText3dControls({ params, colors, t, onUpdate, colorScheme, includeTransform: true });
     case "graphics":
       return (
         <>
@@ -1695,9 +1715,7 @@ export default function ThreeDTextScreen() {
   const isSmallScreen = screenWidth < 600;
   const canvasFlex = isSmallScreen ? 1 : 2;
 
-  const [effectInstances, setEffectInstances] = useState<EffectInstance[]>(() => [
-    createEffectInstance("mainText"),
-  ]);
+  const { effectInstances, setEffectInstances, resetToBasic: storeResetToBasic } = useThreeDStore();
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
   const [selectedEffectSearch, setSelectedEffectSearch] = useState("");
@@ -1717,6 +1735,8 @@ export default function ThreeDTextScreen() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPresetPicker, setShowPresetPicker] = useState(false);
   const [presets, setPresets] = useState<PresetRecord[]>([]);
+  const [showSavePresetModal, setShowSavePresetModal] = useState(false);
+  const [draftPresetName, setDraftPresetName] = useState("");
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1768,16 +1788,6 @@ export default function ThreeDTextScreen() {
     const inst = effectInstances.find(i => i.type === 'mainText');
     return (inst?.params ?? {}) as Record<string, unknown>;
   }, [effectInstances]);
-
-  const updateMainTextParam = (key: string, value: unknown) => {
-    setEffectInstances(instances => {
-      const idx = instances.findIndex(i => i.type === 'mainText');
-      if (idx < 0) return instances;
-      const copy = [...instances];
-      copy[idx] = { ...copy[idx], params: { ...copy[idx].params, [key]: value } };
-      return copy;
-    });
-  };
 
   const reorderEffectByIndex = (from: number, to: number) => {
     if (from === to) return;
@@ -1881,9 +1891,22 @@ export default function ThreeDTextScreen() {
     return parts.join(", ");
   }
 
-  const handleSavePreset = async () => {
+  const handleSavePreset = () => {
+    const base = generatePresetName(effectInstances.filter((i) => i.enabled));
+    const existingNames = new Set(presets.map((p) => p.name));
+    let name = base;
+    let ordinal = 2;
+    while (existingNames.has(name)) {
+      name = `${base} ${ordinal++}`;
+    }
+    setDraftPresetName(name);
+    setShowSavePresetModal(true);
+  };
+
+  const confirmSavePreset = async () => {
+    const name = draftPresetName.trim() || generatePresetName(effectInstances.filter((i) => i.enabled));
+    setShowSavePresetModal(false);
     try {
-      const name = generatePresetName(effectInstances.filter((i) => i.enabled));
       const now = new Date().toISOString();
       const preset: PresetRecord = {
         id: nanoid(),
@@ -1927,13 +1950,8 @@ export default function ThreeDTextScreen() {
 
   const handleResetToBasic = () => {
     const performReset = () => {
-      setEffectInstances((instances) => {
-        const mainTextInst = instances.find((i) => i.type === 'mainText');
-        if (mainTextInst) {
-          return [mainTextInst];
-        }
-        return [createEffectInstance('mainText')];
-      });
+      storeResetToBasic();
+      threeDTextRef.current?.resetCamera?.();
     };
 
     if (typeof window !== "undefined" && window.confirm) {
@@ -2273,24 +2291,6 @@ export default function ThreeDTextScreen() {
           style={styles.controls}
           contentContainerStyle={{ paddingBottom: 32 }}
         >
-          {/* ── Quick text shortcut ── */}
-          <TextInput
-            style={[
-              styles.textInput,
-              {
-                color: c.text,
-                borderColor: c.tint,
-                backgroundColor: colorScheme === "dark" ? "#2a2a2a" : "#f5f5f5",
-              },
-            ]}
-            placeholder="Enter multi-line text for 3D rendering"
-            placeholderTextColor={colorScheme === "dark" ? "#999" : "#ccc"}
-            value={mainTextParams.text as string ?? ''}
-            onChangeText={(v) => updateMainTextParam('text', v)}
-            multiline
-            numberOfLines={3}
-          />
-
           {/* ── Effects ── */}
           <Text style={[styles.groupLabel, { color: c.text }]}>
             {t('effects')}
@@ -2687,6 +2687,48 @@ export default function ThreeDTextScreen() {
       />
 
       {/* Preset picker modal */}
+      {/* Save preset name modal */}
+      <Modal
+        visible={showSavePresetModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSavePresetModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <View style={{ backgroundColor: colorScheme === 'dark' ? '#1e1e1e' : '#fff', borderRadius: 14, padding: 20, gap: 14 }}>
+            <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>{t('savePreset')}</Text>
+            <TextInput
+              style={{
+                borderWidth: 1, borderColor: c.tint, borderRadius: 8,
+                paddingHorizontal: 12, paddingVertical: 8,
+                color: c.text, fontSize: 14,
+                backgroundColor: colorScheme === 'dark' ? '#111' : '#fafafa',
+              }}
+              value={draftPresetName}
+              onChangeText={setDraftPresetName}
+              autoFocus
+              selectTextOnFocus
+              onSubmitEditing={confirmSavePreset}
+              returnKeyType="done"
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => setShowSavePresetModal(false)}
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#555', alignItems: 'center' }}
+              >
+                <Text style={{ color: c.text, fontSize: 14 }}>{t('cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmSavePreset}
+                style={{ flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: c.tint, alignItems: 'center' }}
+              >
+                <Text style={{ color: colorScheme === 'dark' ? '#000' : '#fff', fontSize: 14, fontWeight: '600' }}>{t('savePreset')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={showPresetPicker}
         transparent
@@ -2694,29 +2736,74 @@ export default function ThreeDTextScreen() {
         onRequestClose={() => setShowPresetPicker(false)}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '70%' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: '#333' }}>
+          <View style={{ backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '80%' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: colorScheme === 'dark' ? '#2a2a2a' : '#eee' }}>
               <Text style={{ color: c.text, fontWeight: '600', fontSize: 16 }}>{t('loadPreset')}</Text>
               <TouchableOpacity onPress={() => setShowPresetPicker(false)}>
                 <Text style={{ color: c.tint, fontSize: 18 }}>✕</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ padding: 8 }}>
-              {presets.map((preset) => (
-                <View key={preset.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 8, borderBottomWidth: 1, borderColor: colorScheme === 'dark' ? '#2a2a2a' : '#eee' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: c.text, fontWeight: '500' }}>{preset.name}</Text>
-                    <Text style={{ color: '#888', fontSize: 11 }}>{new Date(preset.when_last_modified).toLocaleString()}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => handleLoadPreset(preset)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: c.tint, borderRadius: 6, marginRight: 8 }}>
-                    <Text style={{ color: c.tint, fontSize: 13 }}>{t('load')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeletePreset(preset.id)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#e55', borderRadius: 6 }}>
-                    <Text style={{ color: '#e55', fontSize: 13 }}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
+            {presets.length === 0 ? (
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <Text style={{ color: '#888', fontSize: 14 }}>No presets saved yet.</Text>
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 10 }}>
+                {presets.map((preset) => {
+                  const chips = preset.effects.filter(e => e.enabled && e.type !== 'mainText');
+                  return (
+                    <TouchableOpacity
+                      key={preset.id}
+                      onPress={() => handleLoadPreset(preset)}
+                      style={{
+                        width: '47%', minWidth: 140,
+                        backgroundColor: colorScheme === 'dark' ? '#252525' : '#f5f5f5',
+                        borderRadius: 10, borderWidth: 1, borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
+                        padding: 10, gap: 6,
+                      }}
+                    >
+                      {/* Effect type preview — colour-coded pills */}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, minHeight: 42 }}>
+                        {chips.slice(0, 9).map((e, i) => (
+                          <View key={i} style={{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: c.tint + '33' }}>
+                            <Text style={{ color: c.tint, fontSize: 9, fontWeight: '600' }}>
+                              {effectTypeLabel(e.type, t)}
+                            </Text>
+                          </View>
+                        ))}
+                        {chips.length > 9 && (
+                          <View style={{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }}>
+                            <Text style={{ color: '#888', fontSize: 9 }}>+{chips.length - 9}</Text>
+                          </View>
+                        )}
+                        {chips.length === 0 && (
+                          <Text style={{ color: '#888', fontSize: 10, fontStyle: 'italic' }}>No effects</Text>
+                        )}
+                      </View>
+
+                      {/* Name */}
+                      <Text style={{ color: c.text, fontWeight: '600', fontSize: 12 }} numberOfLines={2}>
+                        {preset.name}
+                      </Text>
+                      <Text style={{ color: '#888', fontSize: 10 }}>
+                        {new Date(preset.when_last_modified).toLocaleDateString()}
+                      </Text>
+
+                      {/* Load indicator */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                        <Text style={{ color: c.tint, fontSize: 11, fontWeight: '600' }}>{t('load')} →</Text>
+                        <TouchableOpacity
+                          onPress={(e) => { e.stopPropagation?.(); handleDeletePreset(preset.id); }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={{ color: '#e55', fontSize: 12 }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>

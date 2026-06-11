@@ -24,7 +24,16 @@ export interface TextGeometryOptions {
   lineSpacing?: number;
 }
 
-export const AVAILABLE_FONTS: { id: string; label: string; urls: string[] }[] = [
+export interface FontDef {
+  id: string;
+  label: string;
+  /** One or more fallback URLs for the typeface.json file. */
+  urls: string[];
+  /** If true, the font URL is user-supplied and may differ from `id`. */
+  isCustom?: boolean;
+}
+
+export const AVAILABLE_FONTS: FontDef[] = [
   {
     id: 'helvetiker',
     label: 'Helvetiker (sans)',
@@ -78,6 +87,15 @@ export const AVAILABLE_FONTS: { id: string; label: string; urls: string[] }[] = 
     label: 'Droid Sans',
     urls: [
       'https://threejs.org/examples/fonts/droid/droid_sans_regular.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/droid/droid_sans_regular.typeface.json',
+    ],
+  },
+  {
+    id: 'droid_sans_bold',
+    label: 'Droid Sans Bold',
+    urls: [
+      'https://threejs.org/examples/fonts/droid/droid_sans_bold.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/droid/droid_sans_bold.typeface.json',
     ],
   },
   {
@@ -85,9 +103,31 @@ export const AVAILABLE_FONTS: { id: string; label: string; urls: string[] }[] = 
     label: 'Droid Serif',
     urls: [
       'https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/droid/droid_serif_regular.typeface.json',
+    ],
+  },
+  {
+    id: 'droid_serif_bold',
+    label: 'Droid Serif Bold',
+    urls: [
+      'https://threejs.org/examples/fonts/droid/droid_serif_bold.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/droid/droid_serif_bold.typeface.json',
     ],
   },
 ];
+
+/**
+ * Register a custom typeface.json URL as a named font entry.
+ * Returns the font id that can be passed to createTextGeometry.
+ */
+export function registerCustomFontUrl(label: string, url: string): string {
+  const id = 'custom_' + url.replace(/[^a-z0-9]/gi, '_').slice(-40);
+  const existing = AVAILABLE_FONTS.find(f => f.id === id);
+  if (!existing) {
+    AVAILABLE_FONTS.push({ id, label, urls: [url], isCustom: true });
+  }
+  return id;
+}
 
 const defaultOptions: Partial<TextGeometryOptions> = {
   size: 2,

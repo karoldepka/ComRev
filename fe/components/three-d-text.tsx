@@ -13,6 +13,8 @@ export interface ThreeDTextHandle {
   getMesh(): THREE.Mesh | THREE.Group | null;
   /** Returns the scene, for use in 3D model exporters. */
   getScene(): THREE.Scene | null;
+  /** Resets the camera to its default position and clears any orbit rotation. */
+  resetCamera(): void;
 }
 
 interface ThreeDTextProps {
@@ -31,406 +33,497 @@ interface ThreeDTextProps {
   roughness?: number;
   envMapIntensity?: number;
   equalizeLineWidths?: boolean;
-  equalizationMethod?: 'spacing' | 'fontSize';
+  equalizationMethod?: "spacing" | "fontSize";
   targetWidth?: number;
   lineSpacing?: number;
   pipes?: EffectPipe[];
 }
 
-export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(function ThreeDText({
-  text = '',
-  fontFamily,
-  size,
-  height,
-  curveSegments,
-  bevelEnabled,
-  bevelThickness,
-  bevelSize,
-  bevelOffset,
-  bevelSegments,
-  color,
-  metalness,
-  roughness,
-  envMapIntensity,
-  equalizeLineWidths = false,
-  equalizationMethod = 'fontSize',
-  targetWidth = 20,
-  lineSpacing,
-  pipes = [],
-}, ref) {
-  const animationIdRef = useRef<number | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<Renderer | null>(null);
-  const meshRef = useRef<THREE.Mesh | THREE.Group | null>(null);
-  const envMapRef = useRef<THREE.Texture | null>(null);
-  const currentTextRef = useRef<string>(text);
-  const updateIdRef = useRef(0);
-  const pipelineManagerRef = useRef<PipelineManager | null>(null);
-  const pipesRef = useRef<EffectPipe[]>(pipes);
-  const glRef = useRef<any>(null);
-  const widthRef = useRef(0);
-  const heightRef = useRef(0);
-  const startTimeRef = useRef(0);
-  const lastFrameTimeRef = useRef(0);
-  const containerRef = useRef<any>(null);
+export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
+  function ThreeDText(
+    {
+      text = "",
+      fontFamily,
+      size,
+      height,
+      curveSegments,
+      bevelEnabled,
+      bevelThickness,
+      bevelSize,
+      bevelOffset,
+      bevelSegments,
+      color,
+      metalness,
+      roughness,
+      envMapIntensity,
+      equalizeLineWidths = false,
+      equalizationMethod = "fontSize",
+      targetWidth = 20,
+      lineSpacing,
+      pipes = [],
+    },
+    ref,
+  ) {
+    const animationIdRef = useRef<number | null>(null);
+    const sceneRef = useRef<THREE.Scene | null>(null);
+    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+    const rendererRef = useRef<Renderer | null>(null);
+    const meshRef = useRef<THREE.Mesh | THREE.Group | null>(null);
+    const envMapRef = useRef<THREE.Texture | null>(null);
+    const currentTextRef = useRef<string>(text);
+    const updateIdRef = useRef(0);
+    const pipelineManagerRef = useRef<PipelineManager | null>(null);
+    const pipesRef = useRef<EffectPipe[]>(pipes);
+    const glRef = useRef<any>(null);
+    const widthRef = useRef(0);
+    const heightRef = useRef(0);
+    const startTimeRef = useRef(0);
+    const lastFrameTimeRef = useRef(0);
+    const containerRef = useRef<any>(null);
 
-  const capturePendingRef = useRef<((data: string | null) => void) | null>(null);
+    const capturePendingRef = useRef<((data: string | null) => void) | null>(
+      null,
+    );
 
-  useImperativeHandle(ref, () => ({
-    captureFrame: () => new Promise<string | null>((resolve) => {
-      capturePendingRef.current = resolve;
-    }),
-    getMesh: () => meshRef.current,
-    getScene: () => sceneRef.current,
-  }));
-
-  // Interaction state
-  const isDraggingRef = useRef(false);
-  const lastMousePosition = useRef({ x: 0, y: 0 });
-  const rotationRef = useRef({ x: 0, y: 0 });
-  // Object selection / 3D drag
-  const raycasterRef = useRef(new THREE.Raycaster());
-  const selectedObjectRef = useRef<THREE.Object3D | null>(null);
-  const dragModeRef = useRef<'rotate' | 'translate'>('rotate');
-  const dragPlaneRef = useRef(new THREE.Plane());
-  const dragOffsetRef = useRef(new THREE.Vector3());
-
-  // Attach wheel listener via DOM (onWheel prop not supported on RN View)
-  useEffect(() => {
-    const el = containerRef.current as HTMLElement | null;
-    if (!el?.addEventListener) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (!cameraRef.current) return;
-      const rect = el.getBoundingClientRect();
-      const ndx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ndy = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      const worldPoint = new THREE.Vector3(ndx, ndy, 0.5).unproject(cameraRef.current);
-      const dir = worldPoint.sub(cameraRef.current.position).normalize();
-      const zoomSpeed = 1.0;
-      const zoomDelta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
-      const newPos = cameraRef.current.position.clone().addScaledVector(dir, zoomDelta);
-      const dist = newPos.length();
-      if (dist > 2 && dist < 80) cameraRef.current.position.copy(newPos);
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
-
-  // Rebuild PipelineManager when the pipes array reference changes
-  useEffect(() => {
-    pipesRef.current = pipes;
-    if (!sceneRef.current || !rendererRef.current || !cameraRef.current) return;
-    pipelineManagerRef.current?.restoreGeometry();
-    pipelineManagerRef.current?.dispose();
-    const pm = new PipelineManager(pipes);
-    pm.setup({
-      scene: sceneRef.current,
-      camera: cameraRef.current,
-      renderer: rendererRef.current,
-      gl: glRef.current,
-      width: widthRef.current,
-      height: heightRef.current,
-    });
-    pm.onMeshChanged(meshRef.current);
-    pipelineManagerRef.current = pm;
-  }, [pipes]);
-
-  // Update text / geometry props
-  useEffect(() => {
-    currentTextRef.current = text;
-    if (sceneRef.current && envMapRef.current) {
-      updateTextMesh(text);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, fontFamily, size, height, curveSegments, bevelEnabled, bevelThickness, bevelSize, bevelOffset,
-      bevelSegments, color, metalness, roughness, envMapIntensity,
-      equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
-
-  useEffect(() => {
-    return () => {
-      if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
-      pipelineManagerRef.current?.dispose();
-    };
-  }, []);
-
-  const removeMeshFromScene = (scene: THREE.Scene) => {
-    if (meshRef.current) {
-      scene.remove(meshRef.current);
-      if (meshRef.current instanceof THREE.Mesh) {
-        meshRef.current.geometry?.dispose();
-        if (Array.isArray(meshRef.current.material)) {
-          meshRef.current.material.forEach((m: any) => m.dispose());
-        } else {
-          meshRef.current.material?.dispose();
+    useImperativeHandle(ref, () => ({
+      captureFrame: () =>
+        new Promise<string | null>((resolve) => {
+          capturePendingRef.current = resolve;
+        }),
+      getMesh: () => meshRef.current,
+      getScene: () => sceneRef.current,
+      resetCamera: () => {
+        if (cameraRef.current) {
+          cameraRef.current.position.set(0, 0, 15);
+          cameraRef.current.lookAt(0, 0, 0);
         }
-      } else if (meshRef.current instanceof THREE.Group) {
-        meshRef.current.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.geometry?.dispose();
-            if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose());
-            else child.material?.dispose();
-          }
-        });
-      }
-      meshRef.current = null;
-    }
-  };
+        rotationRef.current = { x: 0, y: 0 };
+      },
+    }));
 
-  const updateTextMesh = async (textContent: string) => {
-    if (!sceneRef.current || !envMapRef.current) return;
-    const scene = sceneRef.current;
-    const envMap = envMapRef.current;
-    const thisUpdateId = ++updateIdRef.current;
+    // Interaction state
+    const isDraggingRef = useRef(false);
+    const lastMousePosition = useRef({ x: 0, y: 0 });
+    const rotationRef = useRef({ x: 0, y: 0 });
+    // Object selection / 3D drag
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const selectedObjectRef = useRef<THREE.Object3D | null>(null);
+    const dragModeRef = useRef<"rotate" | "translate">("rotate");
+    const dragPlaneRef = useRef(new THREE.Plane());
+    const dragOffsetRef = useRef(new THREE.Vector3());
 
-    removeMeshFromScene(scene);
-
-    try {
-      const { geometry, material } = await createTextGeometry({
-        text: textContent,
-        fontFamily,
-        size,
-        height,
-        curveSegments,
-        bevelEnabled,
-        bevelThickness,
-        bevelSize,
-        bevelOffset,
-        bevelSegments,
-        color: color !== undefined ? new THREE.Color(color) : undefined,
-        metalness,
-        roughness,
-        envMap,
-        envMapIntensity,
-        equalizeLineWidths,
-        equalizationMethod,
-        targetWidth,
-        lineSpacing,
-      });
-
-      if (thisUpdateId !== updateIdRef.current) return;
-
-      let mesh: THREE.Mesh | THREE.Group;
-      if (geometry instanceof THREE.Group) {
-        mesh = geometry;
-        mesh.traverse((child) => {
-          if (child instanceof THREE.Mesh) { child.material = material; child.castShadow = true; child.receiveShadow = true; }
-        });
-      } else {
-        mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-      }
-      removeMeshFromScene(scene);
-      scene.add(mesh);
-      meshRef.current = mesh;
-      pipelineManagerRef.current?.onMeshChanged(mesh);
-    } catch (error) {
-      console.error("Failed to create text geometry:", error);
-    }
-  };
-
-  const handlePointerDown = (event: any) => {
-    isDraggingRef.current = true;
-    const px = event.nativeEvent.pageX;
-    const py = event.nativeEvent.pageY;
-    lastMousePosition.current = { x: px, y: py };
-
-    const el = containerRef.current as HTMLElement | null;
-    if (!el || !cameraRef.current || !sceneRef.current) {
-      dragModeRef.current = 'rotate';
-      return;
-    }
-
-    const rect = el.getBoundingClientRect();
-    const ndx = ((px - rect.left) / rect.width) * 2 - 1;
-    const ndy = -((py - rect.top) / rect.height) * 2 + 1;
-
-    raycasterRef.current.setFromCamera({ x: ndx, y: ndy }, cameraRef.current);
-
-    const meshes: THREE.Object3D[] = [];
-    sceneRef.current.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) meshes.push(obj);
-    });
-
-    const hits = raycasterRef.current.intersectObjects(meshes);
-    if (hits.length > 0) {
-      // Walk up to top-level scene child
-      let hit: THREE.Object3D = hits[0].object;
-      while (hit.parent && hit.parent !== sceneRef.current) hit = hit.parent;
-
-      // Primary text mesh → just rotate the scene; other objects → translate them
-      const isPrimaryMesh = hit === meshRef.current || isAncestor(meshRef.current, hits[0].object);
-      if (isPrimaryMesh) {
-        dragModeRef.current = 'rotate';
-        selectedObjectRef.current = null;
-      } else {
-        dragModeRef.current = 'translate';
-        selectedObjectRef.current = hit;
-        const cameraDir = new THREE.Vector3();
-        cameraRef.current.getWorldDirection(cameraDir);
-        dragPlaneRef.current.setFromNormalAndCoplanarPoint(cameraDir, hits[0].point);
-        const intersection = new THREE.Vector3();
-        raycasterRef.current.ray.intersectPlane(dragPlaneRef.current, intersection);
-        dragOffsetRef.current.copy(hit.position).sub(intersection);
-      }
-    } else {
-      dragModeRef.current = 'rotate';
-      selectedObjectRef.current = null;
-    }
-  };
-
-  const handlePointerMove = (event: any) => {
-    if (!isDraggingRef.current) return;
-    const px = event.nativeEvent.pageX;
-    const py = event.nativeEvent.pageY;
-    const deltaX = px - lastMousePosition.current.x;
-    const deltaY = py - lastMousePosition.current.y;
-
-    if (dragModeRef.current === 'translate' && selectedObjectRef.current && cameraRef.current) {
+    // Attach wheel listener via DOM (onWheel prop not supported on RN View)
+    useEffect(() => {
       const el = containerRef.current as HTMLElement | null;
-      if (el) {
+      if (!el?.addEventListener) return;
+      const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        if (!cameraRef.current) return;
         const rect = el.getBoundingClientRect();
-        const ndx = ((px - rect.left) / rect.width) * 2 - 1;
-        const ndy = -((py - rect.top) / rect.height) * 2 + 1;
-        raycasterRef.current.setFromCamera({ x: ndx, y: ndy }, cameraRef.current);
-        const intersection = new THREE.Vector3();
-        if (raycasterRef.current.ray.intersectPlane(dragPlaneRef.current, intersection)) {
-          selectedObjectRef.current.position.copy(intersection.add(dragOffsetRef.current));
-        }
+        const ndx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const ndy = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const worldPoint = new THREE.Vector3(ndx, ndy, 0.5).unproject(
+          cameraRef.current,
+        );
+        const dir = worldPoint.sub(cameraRef.current.position).normalize();
+        const zoomSpeed = 1.0;
+        const zoomDelta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
+        const newPos = cameraRef.current.position
+          .clone()
+          .addScaledVector(dir, zoomDelta);
+        const dist = newPos.length();
+        if (dist > 2 && dist < 80) cameraRef.current.position.copy(newPos);
+      };
+      el.addEventListener("wheel", onWheel, { passive: false });
+      return () => el.removeEventListener("wheel", onWheel);
+    }, []);
+
+    // Rebuild PipelineManager when the pipes array reference changes
+    useEffect(() => {
+      pipesRef.current = pipes;
+      if (!sceneRef.current || !rendererRef.current || !cameraRef.current)
+        return;
+      pipelineManagerRef.current?.restoreGeometry();
+      pipelineManagerRef.current?.dispose();
+      const pm = new PipelineManager(pipes);
+      pm.setup({
+        scene: sceneRef.current,
+        camera: cameraRef.current,
+        renderer: rendererRef.current,
+        gl: glRef.current,
+        width: widthRef.current,
+        height: heightRef.current,
+      });
+      pm.onMeshChanged(meshRef.current);
+      pipelineManagerRef.current = pm;
+    }, [pipes]);
+
+    // Update text / geometry props
+    useEffect(() => {
+      currentTextRef.current = text;
+      if (sceneRef.current && envMapRef.current) {
+        updateTextMesh(text);
       }
-    } else {
-      rotationRef.current.y += deltaX * 0.01;
-      rotationRef.current.x += deltaY * 0.01;
-    }
-    lastMousePosition.current = { x: px, y: py };
-  };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+      text,
+      fontFamily,
+      size,
+      height,
+      curveSegments,
+      bevelEnabled,
+      bevelThickness,
+      bevelSize,
+      bevelOffset,
+      bevelSegments,
+      color,
+      metalness,
+      roughness,
+      envMapIntensity,
+      equalizeLineWidths,
+      equalizationMethod,
+      targetWidth,
+      lineSpacing,
+    ]);
 
-  const handlePointerUp = () => {
-    isDraggingRef.current = false;
-    selectedObjectRef.current = null;
-    dragModeRef.current = 'rotate';
-  };
+    useEffect(() => {
+      return () => {
+        if (animationIdRef.current)
+          cancelAnimationFrame(animationIdRef.current);
+        pipelineManagerRef.current?.dispose();
+      };
+    }, []);
 
-  const onContextCreate = async (gl: any) => {
-    glRef.current = gl;
-    widthRef.current = gl.drawingBufferWidth;
-    heightRef.current = gl.drawingBufferHeight;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a1a);
-    sceneRef.current = scene;
-
-    const camera = new THREE.PerspectiveCamera(75, gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 1000);
-    camera.position.z = 15;
-    cameraRef.current = camera;
-
-    const renderer = new Renderer({ gl });
-    const webglRenderer = renderer as any;
-    webglRenderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
-    webglRenderer.setPixelRatio(1);
-    webglRenderer.autoClear = true;
-    webglRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-    webglRenderer.toneMappingExposure = 1;
-    rendererRef.current = renderer;
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight.position.set(10, 10, 10); dirLight.castShadow = true;
-    scene.add(dirLight);
-    const p1 = new THREE.PointLight(0xff00ff, 1.0); p1.position.set(-8, 5, 8); scene.add(p1);
-    const p2 = new THREE.PointLight(0x00ffff, 0.8); p2.position.set(8, -5, 8); scene.add(p2);
-
-    const envMap = createDefaultEnvMap();
-    envMapRef.current = envMap;
-    if (envMap) scene.environment = envMap;
-
-    const pm = new PipelineManager(pipesRef.current);
-    pm.setup({ scene, camera, renderer, gl, width: gl.drawingBufferWidth, height: gl.drawingBufferHeight });
-    pipelineManagerRef.current = pm;
-
-    await updateTextMesh(currentTextRef.current);
-
-    const t0 = performance.now();
-    startTimeRef.current = t0;
-    lastFrameTimeRef.current = t0;
-
-    const animate = () => {
-      animationIdRef.current = requestAnimationFrame(animate);
+    const removeMeshFromScene = (scene: THREE.Scene) => {
       if (meshRef.current) {
-        meshRef.current.rotation.x = rotationRef.current.x;
-        meshRef.current.rotation.y = rotationRef.current.y;
-      }
-
-      // Highlight selected non-primary object with a subtle emissive pulse
-      const sel = selectedObjectRef.current;
-      scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh && obj.material) {
-          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-          const isSelected = sel && isAncestor(sel, obj);
-          mats.forEach((mat: any) => {
-            if (mat.emissive && !isAncestor(meshRef.current, obj)) {
-              mat.emissive.setScalar(isSelected ? 0.25 : 0);
+        scene.remove(meshRef.current);
+        if (meshRef.current instanceof THREE.Mesh) {
+          meshRef.current.geometry?.dispose();
+          if (Array.isArray(meshRef.current.material)) {
+            meshRef.current.material.forEach((m: any) => m.dispose());
+          } else {
+            meshRef.current.material?.dispose();
+          }
+        } else if (meshRef.current instanceof THREE.Group) {
+          meshRef.current.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry?.dispose();
+              if (Array.isArray(child.material))
+                child.material.forEach((m: any) => m.dispose());
+              else child.material?.dispose();
             }
           });
         }
+        meshRef.current = null;
+      }
+    };
+
+    const updateTextMesh = async (textContent: string) => {
+      if (!sceneRef.current || !envMapRef.current) return;
+      const scene = sceneRef.current;
+      const envMap = envMapRef.current;
+      const thisUpdateId = ++updateIdRef.current;
+
+      removeMeshFromScene(scene);
+
+      try {
+        const { geometry, material } = await createTextGeometry({
+          text: textContent,
+          fontFamily,
+          size,
+          height,
+          curveSegments,
+          bevelEnabled,
+          bevelThickness,
+          bevelSize,
+          bevelOffset,
+          bevelSegments,
+          color: color !== undefined ? new THREE.Color(color) : undefined,
+          metalness,
+          roughness,
+          envMap,
+          envMapIntensity,
+          equalizeLineWidths,
+          equalizationMethod,
+          targetWidth,
+          lineSpacing,
+        });
+
+        if (thisUpdateId !== updateIdRef.current) return;
+
+        let mesh: THREE.Mesh | THREE.Group;
+        if (geometry instanceof THREE.Group) {
+          mesh = geometry;
+          mesh.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material = material;
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+        } else {
+          mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+        }
+        removeMeshFromScene(scene);
+        scene.add(mesh);
+        meshRef.current = mesh;
+        pipelineManagerRef.current?.onMeshChanged(mesh);
+      } catch (error) {
+        console.error("Failed to create text geometry:", error);
+      }
+    };
+
+    const handlePointerDown = (event: any) => {
+      isDraggingRef.current = true;
+      const px = event.nativeEvent.pageX;
+      const py = event.nativeEvent.pageY;
+      lastMousePosition.current = { x: px, y: py };
+
+      const el = containerRef.current as HTMLElement | null;
+      if (!el || !cameraRef.current || !sceneRef.current) {
+        dragModeRef.current = "rotate";
+        return;
+      }
+
+      const rect = el.getBoundingClientRect();
+      const ndx = ((px - rect.left) / rect.width) * 2 - 1;
+      const ndy = -((py - rect.top) / rect.height) * 2 + 1;
+
+      raycasterRef.current.setFromCamera(
+        new THREE.Vector2(ndx, ndy),
+        cameraRef.current,
+      );
+
+      const meshes: THREE.Object3D[] = [];
+      sceneRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) meshes.push(obj);
       });
 
-      const now = performance.now();
-      const time = (now - startTimeRef.current) / 1000;
-      const delta = (now - lastFrameTimeRef.current) / 1000;
-      lastFrameTimeRef.current = now;
+      const hits = raycasterRef.current.intersectObjects(meshes);
+      if (hits.length > 0) {
+        // Walk up to top-level scene child
+        let hit: THREE.Object3D = hits[0].object;
+        while (hit.parent && hit.parent !== sceneRef.current) hit = hit.parent;
 
-      const frameCtx = {
+        // Primary text mesh → just rotate the scene; other objects → translate them
+        const isPrimaryMesh =
+          hit === meshRef.current ||
+          isAncestor(meshRef.current, hits[0].object);
+        if (isPrimaryMesh) {
+          dragModeRef.current = "rotate";
+          selectedObjectRef.current = null;
+        } else {
+          dragModeRef.current = "translate";
+          selectedObjectRef.current = hit;
+          const cameraDir = new THREE.Vector3();
+          cameraRef.current.getWorldDirection(cameraDir);
+          dragPlaneRef.current.setFromNormalAndCoplanarPoint(
+            cameraDir,
+            hits[0].point,
+          );
+          const intersection = new THREE.Vector3();
+          raycasterRef.current.ray.intersectPlane(
+            dragPlaneRef.current,
+            intersection,
+          );
+          dragOffsetRef.current.copy(hit.position).sub(intersection);
+        }
+      } else {
+        dragModeRef.current = "rotate";
+        selectedObjectRef.current = null;
+      }
+    };
+
+    const handlePointerMove = (event: any) => {
+      if (!isDraggingRef.current) return;
+      const px = event.nativeEvent.pageX;
+      const py = event.nativeEvent.pageY;
+      const deltaX = px - lastMousePosition.current.x;
+      const deltaY = py - lastMousePosition.current.y;
+
+      if (
+        dragModeRef.current === "translate" &&
+        selectedObjectRef.current &&
+        cameraRef.current
+      ) {
+        const el = containerRef.current as HTMLElement | null;
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          const ndx = ((px - rect.left) / rect.width) * 2 - 1;
+          const ndy = -((py - rect.top) / rect.height) * 2 + 1;
+          raycasterRef.current.setFromCamera(
+            new THREE.Vector2(ndx, ndy),
+            cameraRef.current,
+          );
+          const intersection = new THREE.Vector3();
+          if (
+            raycasterRef.current.ray.intersectPlane(
+              dragPlaneRef.current,
+              intersection,
+            )
+          ) {
+            selectedObjectRef.current.position.copy(
+              intersection.add(dragOffsetRef.current),
+            );
+          }
+        }
+      } else {
+        rotationRef.current.y += deltaX * 0.01;
+        rotationRef.current.x += deltaY * 0.01;
+      }
+      lastMousePosition.current = { x: px, y: py };
+    };
+
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+      selectedObjectRef.current = null;
+      dragModeRef.current = "rotate";
+    };
+
+    const onContextCreate = async (gl: any) => {
+      glRef.current = gl;
+      widthRef.current = gl.drawingBufferWidth;
+      heightRef.current = gl.drawingBufferHeight;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1a1a);
+      sceneRef.current = scene;
+
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        gl.drawingBufferWidth / gl.drawingBufferHeight,
+        0.1,
+        1000,
+      );
+      camera.position.z = 15;
+      cameraRef.current = camera;
+
+      const renderer = new Renderer({ gl, antialias: true });
+      const webglRenderer = renderer as any;
+      webglRenderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
+      webglRenderer.autoClear = true;
+      webglRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      webglRenderer.toneMappingExposure = 1;
+      rendererRef.current = renderer;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+      dirLight.position.set(10, 10, 10);
+      dirLight.castShadow = true;
+      scene.add(dirLight);
+      const p1 = new THREE.PointLight(0xff00ff, 1.0);
+      p1.position.set(-8, 5, 8);
+      scene.add(p1);
+      const p2 = new THREE.PointLight(0x00ffff, 0.8);
+      p2.position.set(8, -5, 8);
+      scene.add(p2);
+
+      const envMap = createDefaultEnvMap();
+      envMapRef.current = envMap;
+      if (envMap) scene.environment = envMap;
+
+      const pm = new PipelineManager(pipesRef.current);
+      pm.setup({
         scene,
         camera,
-        renderer: webglRenderer,
+        renderer,
         gl,
         width: gl.drawingBufferWidth,
         height: gl.drawingBufferHeight,
-        mesh: meshRef.current,
-        time,
-        delta,
+      });
+      pipelineManagerRef.current = pm;
+
+      await updateTextMesh(currentTextRef.current);
+
+      const t0 = performance.now();
+      startTimeRef.current = t0;
+      lastFrameTimeRef.current = t0;
+
+      const animate = () => {
+        animationIdRef.current = requestAnimationFrame(animate);
+        if (meshRef.current) {
+          meshRef.current.rotation.x = rotationRef.current.x;
+          meshRef.current.rotation.y = rotationRef.current.y;
+        }
+
+        // Highlight selected non-primary object with a subtle emissive pulse
+        const sel = selectedObjectRef.current;
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.material) {
+            const mats = Array.isArray(obj.material)
+              ? obj.material
+              : [obj.material];
+            const isSelected = sel && isAncestor(sel, obj);
+            mats.forEach((mat: any) => {
+              if (mat.emissive && !isAncestor(meshRef.current, obj)) {
+                mat.emissive.setScalar(isSelected ? 0.25 : 0);
+              }
+            });
+          }
+        });
+
+        const now = performance.now();
+        const time = (now - startTimeRef.current) / 1000;
+        const delta = (now - lastFrameTimeRef.current) / 1000;
+        lastFrameTimeRef.current = now;
+
+        const frameCtx = {
+          scene,
+          camera,
+          renderer: webglRenderer,
+          gl,
+          width: gl.drawingBufferWidth,
+          height: gl.drawingBufferHeight,
+          mesh: meshRef.current,
+          time,
+          delta,
+        };
+
+        pipelineManagerRef.current?.update(frameCtx);
+        gl.clear(
+          gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT,
+        );
+        if (pipelineManagerRef.current) {
+          pipelineManagerRef.current.render(frameCtx);
+        } else {
+          webglRenderer.render(scene, camera);
+        }
+        if (capturePendingRef.current) {
+          try {
+            const canvas = (gl as any).canvas as HTMLCanvasElement | undefined;
+            const dataUrl = canvas?.toDataURL?.("image/png") ?? null;
+            capturePendingRef.current(dataUrl);
+          } catch {
+            capturePendingRef.current(null);
+          }
+          capturePendingRef.current = null;
+        }
+        gl.endFrameEXP();
       };
 
-      pipelineManagerRef.current?.update(frameCtx);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-      if (pipelineManagerRef.current) {
-        pipelineManagerRef.current.render(frameCtx);
-      } else {
-        webglRenderer.render(scene, camera);
-      }
-      if (capturePendingRef.current) {
-        try {
-          const canvas = (gl as any).canvas as HTMLCanvasElement | undefined;
-          const dataUrl = canvas?.toDataURL?.('image/png') ?? null;
-          capturePendingRef.current(dataUrl);
-        } catch {
-          capturePendingRef.current(null);
-        }
-        capturePendingRef.current = null;
-      }
-      gl.endFrameEXP();
+      animate();
     };
 
-    animate();
-  };
+    return (
+      <View
+        ref={containerRef}
+        style={{ flex: 1 }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        <GLView style={{ flex: 1 }} onContextCreate={onContextCreate} />
+      </View>
+    );
+  },
+);
 
-  return (
-    <View
-      ref={containerRef}
-      style={{ flex: 1 }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-    >
-      <GLView style={{ flex: 1 }} onContextCreate={onContextCreate} />
-    </View>
-  );
-});
-
-function isAncestor(ancestor: THREE.Object3D | null, child: THREE.Object3D): boolean {
+function isAncestor(
+  ancestor: THREE.Object3D | null,
+  child: THREE.Object3D,
+): boolean {
   if (!ancestor) return false;
   let node: THREE.Object3D | null = child;
   while (node) {
@@ -443,17 +536,26 @@ function isAncestor(ancestor: THREE.Object3D | null, child: THREE.Object3D): boo
 function createDefaultEnvMap(): THREE.Texture | null {
   try {
     const canvas = document.createElement("canvas");
-    canvas.width = 512; canvas.height = 512;
+    canvas.width = 512;
+    canvas.height = 512;
     const ctx = canvas.getContext("2d")!;
-    const cx = 256, cy = 256;
+    const cx = 256,
+      cy = 256;
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 256);
     g.addColorStop(0, "#ffffff");
     g.addColorStop(0.3, "#00ff88");
     g.addColorStop(0.6, "#0088ff");
     g.addColorStop(1, "#1a1a1a");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
-    ctx.globalAlpha = 0.3; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
-    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(cx, cy, (i + 1) * 100, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, (i + 1) * 100, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     const tex = new THREE.CanvasTexture(canvas);
     tex.mapping = THREE.EquirectangularReflectionMapping;
     return tex;

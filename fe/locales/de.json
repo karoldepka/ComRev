@@ -29,6 +29,7 @@
   "bevel": "Fase",
   "bevelThickness": "Fasendicke",
   "bevelSize": "Fasengröße",
+  "bevelOffset": "Fasenversatz",
   "bevelSegments": "Fasensegmente",
   "curveSegments": "Kurvensegmente",
   "equalizeWidths": "Breiten angleichen",

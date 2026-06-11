@@ -29,6 +29,7 @@
   "bevel": "Bisell",
   "bevelThickness": "Gruix bisell",
   "bevelSize": "Mida bisell",
+  "bevelOffset": "Desplaçament bisell",
   "bevelSegments": "Segments bisell",
   "curveSegments": "Segments corba",
   "equalizeWidths": "Equalitzar amplades",

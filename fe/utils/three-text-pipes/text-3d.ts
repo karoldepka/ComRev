@@ -4,6 +4,7 @@ import { createTextGeometry } from '../three-text-geometry';
 
 export interface Text3dPipeParams {
   text?: string;
+  fontFamily?: string;
   size?: number;
   height?: number;
   curveSegments?: number;
@@ -66,6 +67,7 @@ export class Text3dPipe implements EffectPipe {
 
     const {
       text = 'Text 3D',
+      fontFamily,
       size = 2,
       height = 0.8,
       curveSegments = 12,
@@ -94,6 +96,7 @@ export class Text3dPipe implements EffectPipe {
       const envMap = this.scene.environment;
       const { geometry, material } = await createTextGeometry({
         text,
+        fontFamily,
         size,
         height,
         curveSegments,

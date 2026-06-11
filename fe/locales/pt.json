@@ -29,6 +29,7 @@
   "bevel": "Chanfro",
   "bevelThickness": "Espessura do chanfro",
   "bevelSize": "Tamanho do chanfro",
+  "bevelOffset": "Deslocamento do chanfro",
   "bevelSegments": "Segmentos do chanfro",
   "curveSegments": "Segmentos da curva",
   "equalizeWidths": "Equalizar larguras",

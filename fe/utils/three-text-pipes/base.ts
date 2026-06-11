@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 
 // ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────────
 export function makeRng(seed: number) {
@@ -56,12 +57,21 @@ export class PipelineManager {
   setup(ctx: PipeSetupContext) {
     this.setupCtx = ctx;
     const ppPipes = this.pipes.filter(p => p.addComposerPass);
-    if (ppPipes.length > 0) {
-      this.composer = new EffectComposer(ctx.renderer);
-      this.composer.addPass(new RenderPass(ctx.scene, ctx.camera));
-      for (const p of ppPipes) p.addComposerPass!(this.composer, ctx);
-      this.composer.addPass(new OutputPass());
+    const hasExplicitSmaa = ppPipes.some(p => p.name === 'antialiasing');
+
+    // Always use EffectComposer with an 8× multisampled render target (hardware MSAA).
+    // This is equivalent to WebGLRenderer({ antialias: true, samples: 8 }) and gives
+    // the strongest anti-aliasing available in the post-processing pipeline.
+    const msaaTarget = new THREE.WebGLRenderTarget(ctx.width, ctx.height, { samples: 8 });
+    this.composer = new EffectComposer(ctx.renderer, msaaTarget);
+    this.composer.addPass(new RenderPass(ctx.scene, ctx.camera));
+    for (const p of ppPipes) p.addComposerPass!(this.composer, ctx);
+    // Add SMAA on top for edge smoothing unless the user already added one.
+    if (!hasExplicitSmaa) {
+      this.composer.addPass(new SMAAPass());
     }
+    this.composer.addPass(new OutputPass());
+
     for (const p of this.pipes) p.setup(ctx);
   }
 

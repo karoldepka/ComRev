@@ -29,6 +29,7 @@
   "bevel": "Faza",
   "bevelThickness": "Grubość fazy",
   "bevelSize": "Rozmiar fazy",
+  "bevelOffset": "Przesunięcie fazy",
   "bevelSegments": "Segmenty fazy",
   "curveSegments": "Segmenty krzywej",
   "equalizeWidths": "Wyrównaj szerokości",

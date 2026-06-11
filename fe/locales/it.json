@@ -29,6 +29,7 @@
   "bevel": "Smusso",
   "bevelThickness": "Spessore smusso",
   "bevelSize": "Dimensione smusso",
+  "bevelOffset": "Offset smusso",
   "bevelSegments": "Segmenti smusso",
   "curveSegments": "Segmenti curva",
   "equalizeWidths": "Equalizza larghezze",

@@ -29,6 +29,7 @@
   "bevel": "斜面",
   "bevelThickness": "斜面厚度",
   "bevelSize": "斜面大小",
+  "bevelOffset": "斜面偏移",
   "bevelSegments": "斜面段数",
   "curveSegments": "曲线段数",
   "equalizeWidths": "均衡行宽",

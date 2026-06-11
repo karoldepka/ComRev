@@ -12,15 +12,33 @@ export interface EnvMapPipeParams {
 
 export class EnvMapPipe implements EffectPipe {
   readonly name = 'envMap';
+  /** PMREM-processed env texture — used for scene.environment and mat.envMap. */
   private texture: THREE.Texture | null = null;
+  /**
+   * Raw image texture for the matcap shader uniform.
+   * We do NOT use mat.map because TextGeometry has three separate UV spaces
+   * (front cap, side walls, bevel) that create sharp seams.  Instead we sample
+   * based on the view-space surface normal inside an onBeforeCompile patch so
+   * the image maps smoothly onto front-facing surfaces with no UV discontinuity.
+   */
+  private mapTexture: THREE.Texture | null = null;
+  /** Per-material uniform objects so we can update values without recompiling. */
+  private matUniforms = new WeakMap<THREE.MeshStandardMaterial, {
+    tCustomEnv: { value: THREE.Texture | null };
+    tCustomEnvIntensity: { value: number };
+  }>();
+
   private sceneRef: THREE.Scene | null = null;
   private meshRef: THREE.Mesh | THREE.Group | null = null;
+  private rendererRef: any = null;
   private lastStyle = '';
   private lastSeed = -1;
   private lastCustomUrl = '';
   private loadingCustom = false;
 
   constructor(public params: EnvMapPipeParams = {}) {}
+
+  // ── Procedural env-map builder ──────────────────────────────────────────────
 
   private buildTexture(style: Exclude<EnvMapStyle, 'custom'>, seed: number): THREE.Texture {
     const size = 512;
@@ -85,6 +103,8 @@ export class EnvMapPipe implements EffectPipe {
     return tex;
   }
 
+  // ── Custom image loader ─────────────────────────────────────────────────────
+
   private loadCustomTexture(dataUrl: string) {
     if (this.loadingCustom) return;
     this.loadingCustom = true;
@@ -94,11 +114,34 @@ export class EnvMapPipe implements EffectPipe {
       (tex) => {
         this.loadingCustom = false;
         this.lastCustomUrl = dataUrl;
-        tex.mapping = THREE.EquirectangularReflectionMapping;
-        const old = this.texture;
-        this.texture = tex;
-        old?.dispose();
-        if (this.sceneRef) this.sceneRef.environment = tex;
+
+        // Clone before PMREM consumes/disposes the original: we need the raw
+        // image as the matcap uniform texture (sRGB, for correct display colours).
+        const mapTex = tex.clone();
+        mapTex.colorSpace = THREE.SRGBColorSpace;
+        mapTex.needsUpdate = true;
+
+        // PMREM-process the original for correct PBR envMap reflections.
+        let envTex: THREE.Texture;
+        if (this.rendererRef) {
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          const pmrem = new THREE.PMREMGenerator(this.rendererRef);
+          pmrem.compileEquirectangularShader();
+          envTex = pmrem.fromEquirectangular(tex).texture;
+          pmrem.dispose();
+          tex.dispose();
+        } else {
+          tex.colorSpace = THREE.LinearSRGBColorSpace;
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          envTex = tex;
+        }
+
+        this.texture?.dispose();
+        this.mapTexture?.dispose();
+        this.texture = envTex;
+        this.mapTexture = mapTex;
+
+        if (this.sceneRef) this.sceneRef.environment = envTex;
         if (this.meshRef) this.applyToMesh(this.meshRef, this.params.intensity ?? 1.5);
       },
       undefined,
@@ -109,21 +152,81 @@ export class EnvMapPipe implements EffectPipe {
     );
   }
 
+  // ── Matcap shader patch ─────────────────────────────────────────────────────
+
+  /**
+   * Injects a matcap-style sampler into MeshStandardMaterial's fragment shader.
+   * Uses the THREE.js matcap UV formula (same as MeshMatcapMaterial) so the
+   * image centre appears on front-facing surfaces and transitions smoothly to
+   * the edges on angled faces — zero UV-seam artifacts at letter bevels.
+   *
+   * The uniform tCustomEnvIntensity acts as an on/off + blend knob so we can
+   * update the value every frame without triggering a shader recompile.
+   */
+  private ensurePatched(mat: THREE.MeshStandardMaterial) {
+    if (this.matUniforms.has(mat)) return;
+
+    const u = {
+      tCustomEnv: { value: null as THREE.Texture | null },
+      tCustomEnvIntensity: { value: 0 },
+    };
+    this.matUniforms.set(mat, u);
+
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, u);
+      shader.fragmentShader =
+        'uniform sampler2D tCustomEnv;\nuniform float tCustomEnvIntensity;\n'
+        + shader.fragmentShader;
+      // Inject after normals are resolved; normal is in view-space at this point.
+      // vViewPosition is declared by the standard MeshStandardMaterial vertex shader.
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <normal_fragment_maps>',
+        '#include <normal_fragment_maps>\n'
+        + 'if (tCustomEnvIntensity > 0.001) {\n'
+        // Same matcap UV formula as THREE.js MeshMatcapMaterial:
+        + '  vec3 _cvd = normalize(vViewPosition);\n'
+        + '  vec3 _cvx = normalize(vec3(_cvd.z, 0.0, -_cvd.x));\n'
+        + '  vec3 _cvy = cross(_cvd, _cvx);\n'
+        + '  vec2 _muv = vec2(dot(_cvx, normal), dot(_cvy, normal)) * 0.495 + 0.5;\n'
+        + '  vec4 _ccs = texture2D(tCustomEnv, _muv);\n'
+        + '  diffuseColor.rgb = mix(diffuseColor.rgb, _ccs.rgb, clamp(tCustomEnvIntensity, 0.0, 1.0));\n'
+        + '}',
+      );
+    };
+    // customProgramCacheKey ensures the patched variant is cached separately.
+    mat.customProgramCacheKey = () => 'envpipe_matcap';
+    mat.needsUpdate = true;
+  }
+
+  // ── Mesh helpers ────────────────────────────────────────────────────────────
+
   private applyToMesh(mesh: THREE.Mesh | THREE.Group, intensity: number) {
+    const isCustom = this.mapTexture != null;
+    // intensity slider goes 0→3; we want full image at the default 1.5
+    const mixFactor = isCustom ? Math.min(intensity / 1.5, 1.0) : 0;
+
     mesh.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = child.material as THREE.MeshStandardMaterial;
-        if (mat?.isMeshStandardMaterial) {
-          mat.envMap = this.texture;
-          mat.envMapIntensity = intensity;
-          mat.needsUpdate = true;
-        }
+        if (!mat?.isMeshStandardMaterial) return;
+
+        this.ensurePatched(mat);
+        const u = this.matUniforms.get(mat)!;
+        u.tCustomEnv.value = isCustom ? this.mapTexture : null;
+        u.tCustomEnvIntensity.value = mixFactor;
+
+        mat.envMap = this.texture;
+        mat.envMapIntensity = intensity;
+        mat.needsUpdate = true;
       }
     });
   }
 
+  // ── EffectPipe interface ────────────────────────────────────────────────────
+
   setup(ctx: PipeSetupContext) {
     this.sceneRef = ctx.scene;
+    this.rendererRef = ctx.renderer;
     const { style = 'gradient', seed = 42, customImageDataUrl } = this.params;
     if (style === 'custom') {
       this.lastStyle = '';
@@ -146,23 +249,45 @@ export class EnvMapPipe implements EffectPipe {
   update(ctx: PipeFrameContext) {
     const { style = 'gradient', seed = 42, intensity = 1.5, customImageDataUrl } = this.params;
     this.meshRef = ctx.mesh;
+    if (ctx.renderer && !this.rendererRef) this.rendererRef = ctx.renderer;
 
     if (style === 'custom') {
-      // Invalidate procedural cache so switching back to a procedural style always rebuilds
+      // Invalidate procedural cache so switching back always rebuilds the texture.
       this.lastStyle = '';
       this.lastSeed = -1;
+
       if (customImageDataUrl && customImageDataUrl !== this.lastCustomUrl && !this.loadingCustom) {
         this.loadCustomTexture(customImageDataUrl);
       }
-      if (ctx.mesh && this.texture) {
+
+      // Keep envMapIntensity and matcap mix factor in sync each frame.
+      if (ctx.mesh) {
+        const mixFactor = this.mapTexture ? Math.min(intensity / 1.5, 1.0) : 0;
         ctx.mesh.traverse(child => {
           if (child instanceof THREE.Mesh) {
             const mat = child.material as THREE.MeshStandardMaterial;
-            if (mat?.isMeshStandardMaterial && mat.envMapIntensity !== intensity) mat.envMapIntensity = intensity;
+            if (!mat?.isMeshStandardMaterial) return;
+            const u = this.matUniforms.get(mat);
+            if (u) u.tCustomEnvIntensity.value = mixFactor;
+            if (mat.envMapIntensity !== intensity) mat.envMapIntensity = intensity;
           }
         });
       }
     } else {
+      // Switching away from custom: zero out the matcap on all mesh materials.
+      if (this.mapTexture) {
+        this.mapTexture.dispose();
+        this.mapTexture = null;
+        ctx.mesh?.traverse(child => {
+          if (child instanceof THREE.Mesh) {
+            const mat = child.material as THREE.MeshStandardMaterial;
+            if (!mat?.isMeshStandardMaterial) return;
+            const u = this.matUniforms.get(mat);
+            if (u) { u.tCustomEnv.value = null; u.tCustomEnvIntensity.value = 0; }
+          }
+        });
+      }
+
       this.lastCustomUrl = '';
       if (style !== this.lastStyle || seed !== this.lastSeed) {
         this.texture?.dispose();
@@ -182,5 +307,10 @@ export class EnvMapPipe implements EffectPipe {
     }
   }
 
-  dispose() { this.texture?.dispose(); this.texture = null; }
+  dispose() {
+    this.texture?.dispose();
+    this.texture = null;
+    this.mapTexture?.dispose();
+    this.mapTexture = null;
+  }
 }

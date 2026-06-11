@@ -32,6 +32,7 @@
   "bevel": "Bevel",
   "bevelThickness": "Bevel Thickness",
   "bevelSize": "Bevel Size",
+  "bevelOffset": "Bevel Offset",
   "bevelSegments": "Bevel Segments",
   "curveSegments": "Curve Segments",
   "equalizeWidths": "Equalize Widths",

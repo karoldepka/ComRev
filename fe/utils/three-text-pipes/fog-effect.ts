@@ -6,7 +6,7 @@ export interface FogEffectPipeParams { color?: number; near?: number; far?: numb
 export class FogEffectPipe implements EffectPipe {
   readonly name = 'fogEffect';
   private scene: THREE.Scene | null = null;
-  private prevFog: THREE.FogBase | null = null;
+  private prevFog: THREE.Fog | THREE.FogExp2 | null = null;
 
   constructor(public params: FogEffectPipeParams = {}) {}
 
