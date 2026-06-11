@@ -12,29 +12,39 @@ export type MetallicPreset =
   | "obsidian";
 
 export type EffectType =
-  | "bloom"
-  | "depthOfField"
-  | "chromatic"
-  | "filmGrain"
-  | "glitch"
-  | "fishEye"
-  | "bend"
-  | "envMap"
-  | "neonGlow"
-  | "metallicPreset"
-  | "dust"
-  | "wireframe"
-  | "outline"
-  | "rays"
-  | "radialBlur"
-  | "wave"
-  | "twist"
-  | "pulse"
-  | "floatingRings"
-  | "vignette"
-  | "scanlines"
-  | "colorGrading"
-  | "pixelate";
+  // post-process
+  | "bloom" | "depthOfField" | "chromatic" | "filmGrain" | "glitch"
+  | "vignette" | "scanlines" | "colorGrading" | "pixelate" | "radialBlur"
+  | "circularBlur" | "sepia" | "invert" | "sobelEdge" | "thermal"
+  | "nightVision" | "duotone" | "posterize" | "colorOverlay" | "halftone"
+  | "sharpen" | "animChromatic" | "blur" | "lensDistort" | "mosaic"
+  | "noisePost" | "crtCurvature" | "vhsTracking" | "glowEdge" | "acid"
+  | "kaleidoscopePost" | "oldFilm" | "zoomBlur" | "crosshatch" | "glitchBlock"
+  | "speedLines" | "rgbShift" | "frostedGlass" | "waterRipple" | "pixelShift"
+  | "retroTv" | "antialiasing"
+  // vertex deform
+  | "fishEye" | "bend" | "wave" | "twist" | "inflate" | "taper" | "shear"
+  | "spherify" | "ripple" | "melt" | "pinch" | "voxelize" | "crumple"
+  | "noiseWobble" | "spiralDeform" | "bulge" | "squish" | "zap" | "explode"
+  | "fold" | "spikes" | "cylindrize"
+  // material
+  | "envMap" | "neonGlow" | "metallicPreset" | "xRay" | "toonShading"
+  | "hologram" | "gradientMesh" | "rainbowMesh" | "iridescent"
+  | "emissivePulse" | "dissolveAnim" | "glass" | "matcap"
+  // lighting
+  | "spotlight" | "strobe" | "flicker" | "colorCycleLight" | "disco"
+  | "ambientPulse" | "rimLight" | "dramaticLight" | "lightningFlash" | "rainbowLights"
+  // scene objects
+  | "dust" | "wireframe" | "outline" | "echoCopies" | "rays"
+  | "floatingRings" | "starField3d" | "snow" | "rain" | "confetti"
+  | "sparkle" | "aura" | "gridFloor" | "orbiter" | "portalRing"
+  | "cometTrail" | "floatingCubes" | "mirrorPlane"
+  // animation
+  | "pulse" | "spin" | "bounce" | "levitation" | "swing" | "tremble"
+  | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"
+  | "orbitAnim" | "rock" | "jitter" | "sway" | "figureEight" | "pendulum"
+  // ai-generated
+  | "customJs";
 
 export interface EffectInstance {
   id: string;

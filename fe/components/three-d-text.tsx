@@ -2,9 +2,18 @@ import { createTextGeometry } from "@/utils/three-text-geometry";
 import { EffectPipe, PipelineManager } from "@/utils/three-text-pipes";
 import { GLView } from "expo-gl";
 import { Renderer } from "expo-three";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useImperativeHandle, useRef } from "react";
 import { View } from "react-native";
 import * as THREE from "three";
+
+export interface ThreeDTextHandle {
+  /** Captures the current rendered frame and returns a PNG data URL. */
+  captureFrame(): Promise<string | null>;
+  /** Returns the current text mesh, for use in 3D model exporters. */
+  getMesh(): THREE.Mesh | THREE.Group | null;
+  /** Returns the scene, for use in 3D model exporters. */
+  getScene(): THREE.Scene | null;
+}
 
 interface ThreeDTextProps {
   text: string;
@@ -15,14 +24,14 @@ interface ThreeDTextProps {
   pipes?: EffectPipe[];
 }
 
-export const ThreeDText: React.FC<ThreeDTextProps> = ({
+export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(function ThreeDText({
   text,
   equalizeLineWidths = false,
   equalizationMethod = 'fontSize',
   targetWidth = 20,
   lineSpacing,
   pipes = [],
-}) => {
+}, ref) {
   const animationIdRef = useRef<number | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -39,6 +48,16 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
   const startTimeRef = useRef(0);
   const lastFrameTimeRef = useRef(0);
   const containerRef = useRef<any>(null);
+
+  const capturePendingRef = useRef<((data: string | null) => void) | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    captureFrame: () => new Promise<string | null>((resolve) => {
+      capturePendingRef.current = resolve;
+    }),
+    getMesh: () => meshRef.current,
+    getScene: () => sceneRef.current,
+  }));
 
   // Drag rotation state
   const isDraggingRef = useRef(false);
@@ -262,6 +281,16 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
       } else {
         webglRenderer.render(scene, camera);
       }
+      if (capturePendingRef.current) {
+        try {
+          const canvas = (gl as any).canvas as HTMLCanvasElement | undefined;
+          const dataUrl = canvas?.toDataURL?.('image/png') ?? null;
+          capturePendingRef.current(dataUrl);
+        } catch {
+          capturePendingRef.current(null);
+        }
+        capturePendingRef.current = null;
+      }
       gl.endFrameEXP();
     };
 
@@ -279,7 +308,7 @@ export const ThreeDText: React.FC<ThreeDTextProps> = ({
       <GLView style={{ flex: 1 }} onContextCreate={onContextCreate} />
     </View>
   );
-};
+});
 
 function createDefaultEnvMap(): THREE.Texture | null {
   try {

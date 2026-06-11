@@ -1,4 +1,5 @@
-import { ThreeDText } from "@/components/three-d-text";
+import { ThreeDText, ThreeDTextHandle } from "@/components/three-d-text";
+import { ExportModal } from "@/components/ExportModal";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
@@ -10,36 +11,47 @@ import {
     ThreeDConfig,
 } from "@/utils/config-store";
 import {
-    BendPipe,
-    BloomPipe,
-    ChromaticAberrationPipe,
-    ColorGradingPipe,
-    DepthOfFieldPipe,
+    // base
     EffectPipe,
-    EnvMapPipe,
-    EnvMapStyle,
-    FilmGrainPipe,
-    FishEyePipe,
-    FloatingRingsPipe,
-    GlitchPipe,
-    MetallicPreset,
-    MetallicPresetPipe,
-    NeonGlowPipe,
-    OutlinePipe,
-    ParticleDustPipe,
-    PixelatePipe,
-    PulsePipe,
-    RadialBlurPipe,
-    RaysPipe,
-    ScanlinesPipe,
-    TwistPipe,
-    VignettePipe,
-    WavePipe,
-    WireframePipe,
+    // vertex deform
+    BendPipe, FishEyePipe, WavePipe, TwistPipe, InflatePipe, TaperPipe, ShearPipe,
+    SpherifyPipe, RipplePipe, MeltPipe, PinchPipe, VoxelizePipe, CrumplePipe,
+    NoiseWobblePipe, SpiralDeformPipe, BulgePipe, SquishPipe, ZapPipe, ExplodePipe,
+    FoldPipe, SpikesPipe, CylindrizePipe,
+    // post-process
+    BloomPipe, DepthOfFieldPipe, FilmGrainPipe, GlitchPipe,
+    ChromaticAberrationPipe, VignettePipe, ScanlinesPipe, ColorGradingPipe, PixelatePipe,
+    RadialBlurPipe, CircularBlurPipe, SepiaPipe, InvertPipe, SobelEdgePipe, ThermalPipe,
+    NightVisionPipe, DuotonePipe, PosterizePipe, ColorOverlayPipe, HalftonePipe,
+    SharpenPipe, AnimChromaticPipe, BlurPipe, LensDistortPipe, MosaicPipe, NoisePostPipe,
+    CrtCurvaturePipe, VhsTrackingPipe, GlowEdgePipe, AcidPipe, KaleidoscopePostPipe,
+    OldFilmPipe, ZoomBlurPipe, CrosshatchPipe, GlitchBlockPipe, SpeedLinesPipe,
+    RgbShiftPipe, FrostedGlassPipe, WaterRipplePipe, PixelShiftPipe, RetroTvPipe,
+    AntialiasingPipe,
+    // material
+    EnvMapPipe, EnvMapStyle, NeonGlowPipe, MetallicPreset, MetallicPresetPipe,
+    XRayPipe, ToonShadingPipe, HologramPipe, GradientMeshPipe, RainbowMeshPipe,
+    IridescentPipe, EmissivePulsePipe, DissolveAnimPipe, GlassPipe, MatcapPipe,
+    // lighting
+    SpotlightPipe, StrobePipe, FlickerPipe, ColorCycleLightPipe, DiscoPipe,
+    AmbientPulsePipe, RimLightPipe, DramaticLightPipe, LightningFlashPipe, RainbowLightsPipe,
+    // scene objects
+    ParticleDustPipe, WireframePipe, OutlinePipe, EchoCopiesPipe, RaysPipe,
+    FloatingRingsPipe, StarField3dPipe, SnowPipe, RainPipe, ConfettiPipe, SparklePipe,
+    AuraPipe, GridFloorPipe, OrbiterPipe, PortalRingPipe, CometTrailPipe,
+    FloatingCubesPipe, MirrorPlanePipe,
+    // animation
+    PulsePipe, SpinPipe, BouncePipe, LevitationPipe, SwingPipe, TremplePipe,
+    BreathePipe, WigglePipe, FloatDriftPipe, FlipCoinPipe, GrowPipe, ShrinkPipe,
+    OrbitAnimPipe, RockPipe, JitterPipe, SwayPipe, FigureEightPipe, PendulumPipe,
+    // ai-generated
+    CustomJsPipe,
 } from "@/utils/three-text-pipes";
+import { AiEffectChatModal } from "@/components/AiEffectChatModal";
+import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert, SafeAreaView,
+    Alert, Modal, SafeAreaView,
     ScrollView,
     StyleSheet,
     Switch,
@@ -69,6 +81,7 @@ function SliderRow({
   value,
   onChange,
   colors,
+  rightWidget,
 }: {
   label: string;
   min: number;
@@ -77,6 +90,7 @@ function SliderRow({
   value: number;
   onChange: (v: number) => void;
   colors: any;
+  rightWidget?: React.ReactNode;
 }) {
   return (
     <View style={styles.sliderRow}>
@@ -92,7 +106,43 @@ function SliderRow({
         onChange={(e: any) => onChange(parseFloat(e.target.value))}
         style={{ flex: 1, marginLeft: 12 }}
       />
+      {rightWidget}
     </View>
+  );
+}
+
+/**
+ * Two sliders with a padlock button on the second one.
+ * When locked, editing either value mirrors it to the other.
+ * Reusable for any pair of linked numeric params.
+ */
+function LinkedSliderPair({
+  label1, label2,
+  min, max, step,
+  value1, value2,
+  onChange1, onChange2,
+  locked, onLockToggle,
+  colors,
+}: {
+  label1: string; label2: string;
+  min: number; max: number; step: number;
+  value1: number; value2: number;
+  onChange1: (v: number) => void; onChange2: (v: number) => void;
+  locked: boolean; onLockToggle: () => void;
+  colors: any;
+}) {
+  const handle1 = (v: number) => { onChange1(v); if (locked) onChange2(v); };
+  const handle2 = (v: number) => { onChange2(v); if (locked) onChange1(v); };
+  const lockBtn = (
+    <TouchableOpacity onPress={onLockToggle} style={styles.smallActionButton}>
+      <Text style={[styles.buttonText, { color: colors.tint }]}>{locked ? '🔒' : '🔓'}</Text>
+    </TouchableOpacity>
+  );
+  return (
+    <>
+      <SliderRow label={label1} min={min} max={max} step={step} value={value1} onChange={handle1} colors={colors} />
+      <SliderRow label={label2} min={min} max={max} step={step} value={value2} onChange={handle2} colors={colors} rightWidget={lockBtn} />
+    </>
   );
 }
 function SectionHeader({
@@ -152,29 +202,39 @@ function CycleButton({
 }
 
 type EffectType =
-  | "bloom"
-  | "depthOfField"
-  | "chromatic"
-  | "filmGrain"
-  | "glitch"
-  | "fishEye"
-  | "bend"
-  | "envMap"
-  | "neonGlow"
-  | "metallicPreset"
-  | "dust"
-  | "wireframe"
-  | "outline"
-  | "rays"
-  | "radialBlur"
-  | "wave"
-  | "twist"
-  | "pulse"
-  | "floatingRings"
-  | "vignette"
-  | "scanlines"
-  | "colorGrading"
-  | "pixelate";
+  // post-process
+  | "bloom" | "depthOfField" | "chromatic" | "filmGrain" | "glitch"
+  | "vignette" | "scanlines" | "colorGrading" | "pixelate" | "radialBlur"
+  | "circularBlur" | "sepia" | "invert" | "sobelEdge" | "thermal"
+  | "nightVision" | "duotone" | "posterize" | "colorOverlay" | "halftone"
+  | "sharpen" | "animChromatic" | "blur" | "lensDistort" | "mosaic"
+  | "noisePost" | "crtCurvature" | "vhsTracking" | "glowEdge" | "acid"
+  | "kaleidoscopePost" | "oldFilm" | "zoomBlur" | "crosshatch" | "glitchBlock"
+  | "speedLines" | "rgbShift" | "frostedGlass" | "waterRipple" | "pixelShift"
+  | "retroTv" | "antialiasing"
+  // vertex deform
+  | "fishEye" | "bend" | "wave" | "twist" | "inflate" | "taper" | "shear"
+  | "spherify" | "ripple" | "melt" | "pinch" | "voxelize" | "crumple"
+  | "noiseWobble" | "spiralDeform" | "bulge" | "squish" | "zap" | "explode"
+  | "fold" | "spikes" | "cylindrize"
+  // material
+  | "envMap" | "neonGlow" | "metallicPreset" | "xRay" | "toonShading"
+  | "hologram" | "gradientMesh" | "rainbowMesh" | "iridescent"
+  | "emissivePulse" | "dissolveAnim" | "glass" | "matcap"
+  // lighting
+  | "spotlight" | "strobe" | "flicker" | "colorCycleLight" | "disco"
+  | "ambientPulse" | "rimLight" | "dramaticLight" | "lightningFlash" | "rainbowLights"
+  // scene objects
+  | "dust" | "wireframe" | "outline" | "echoCopies" | "rays"
+  | "floatingRings" | "starField3d" | "snow" | "rain" | "confetti"
+  | "sparkle" | "aura" | "gridFloor" | "orbiter" | "portalRing"
+  | "cometTrail" | "floatingCubes" | "mirrorPlane"
+  // animation
+  | "pulse" | "spin" | "bounce" | "levitation" | "swing" | "tremble"
+  | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"
+  | "orbitAnim" | "rock" | "jitter" | "sway" | "figureEight" | "pendulum"
+  // ai-generated
+  | "customJs";
 
 interface EffectInstance {
   id: string;
@@ -189,29 +249,137 @@ const EFFECT_TYPES: {
   label: string;
   target?: "geometry" | "bitmap" | "post";
 }[] = [
-  { type: "bloom", label: "Bloom" },
-  { type: "depthOfField", label: "Depth of Field" },
-  { type: "chromatic", label: "Chromatic" },
-  { type: "filmGrain", label: "Film Grain" },
-  { type: "glitch", label: "Glitch" },
-  { type: "fishEye", label: "Fish Eye" },
-  { type: "bend", label: "Bend" },
-  { type: "envMap", label: "Env Map", target: "geometry" },
-  { type: "neonGlow", label: "Neon Glow" },
-  { type: "metallicPreset", label: "Metallic", target: "geometry" },
-  { type: "dust", label: "Particle Dust", target: "geometry" },
-  { type: "wireframe", label: "Wireframe", target: "geometry" },
-  { type: "outline", label: "Outline", target: "geometry" },
-  { type: "rays", label: "Rays", target: "geometry" },
-  { type: "radialBlur", label: "Radial Blur", target: "post" },
-  { type: "wave", label: "Wave", target: "geometry" },
-  { type: "twist", label: "Twist", target: "geometry" },
-  { type: "pulse", label: "Pulse", target: "geometry" },
-  { type: "floatingRings", label: "Floating Rings", target: "geometry" },
-  { type: "vignette", label: "Vignette", target: "post" },
-  { type: "scanlines", label: "Scanlines", target: "post" },
-  { type: "colorGrading", label: "Color Grading", target: "post" },
-  { type: "pixelate", label: "Pixelate", target: "post" },
+  // Post-process
+  { type: "bloom",          label: "Bloom",           target: "post" },
+  { type: "depthOfField",   label: "Depth of Field",  target: "post" },
+  { type: "chromatic",      label: "Chromatic",       target: "post" },
+  { type: "filmGrain",      label: "Film Grain",      target: "post" },
+  { type: "glitch",         label: "Glitch",          target: "post" },
+  { type: "vignette",       label: "Vignette",        target: "post" },
+  { type: "scanlines",      label: "Scanlines",       target: "post" },
+  { type: "colorGrading",   label: "Color Grading",   target: "post" },
+  { type: "pixelate",       label: "Pixelate",        target: "post" },
+  { type: "radialBlur",     label: "Radial Blur",     target: "post" },
+  { type: "circularBlur",   label: "Circular Blur",   target: "post" },
+  { type: "sepia",          label: "Sepia",           target: "post" },
+  { type: "invert",         label: "Invert",          target: "post" },
+  { type: "sobelEdge",      label: "Sobel Edge",      target: "post" },
+  { type: "thermal",        label: "Thermal",         target: "post" },
+  { type: "nightVision",    label: "Night Vision",    target: "post" },
+  { type: "duotone",        label: "Duotone",         target: "post" },
+  { type: "posterize",      label: "Posterize",       target: "post" },
+  { type: "colorOverlay",   label: "Color Overlay",   target: "post" },
+  { type: "halftone",       label: "Halftone",        target: "post" },
+  { type: "sharpen",        label: "Sharpen",         target: "post" },
+  { type: "animChromatic",  label: "Anim Chromatic",  target: "post" },
+  { type: "blur",           label: "Blur",            target: "post" },
+  { type: "lensDistort",    label: "Lens Distort",    target: "post" },
+  { type: "mosaic",         label: "Mosaic",          target: "post" },
+  { type: "noisePost",      label: "Noise",           target: "post" },
+  { type: "crtCurvature",   label: "CRT Curvature",   target: "post" },
+  { type: "vhsTracking",    label: "VHS Tracking",    target: "post" },
+  { type: "glowEdge",       label: "Glow Edge",       target: "post" },
+  { type: "acid",           label: "Acid",            target: "post" },
+  { type: "kaleidoscopePost",label:"Kaleidoscope",    target: "post" },
+  { type: "oldFilm",        label: "Old Film",        target: "post" },
+  { type: "zoomBlur",       label: "Zoom Blur",       target: "post" },
+  { type: "crosshatch",     label: "Crosshatch",      target: "post" },
+  { type: "glitchBlock",    label: "Glitch Block",    target: "post" },
+  { type: "speedLines",     label: "Speed Lines",     target: "post" },
+  { type: "rgbShift",       label: "RGB Shift",       target: "post" },
+  { type: "frostedGlass",   label: "Frosted Glass",   target: "post" },
+  { type: "waterRipple",    label: "Water Ripple",    target: "post" },
+  { type: "pixelShift",     label: "Pixel Shift",     target: "post" },
+  { type: "retroTv",        label: "Retro TV",        target: "post" },
+  { type: "antialiasing",   label: "Antialiasing",    target: "post" },
+  // Vertex deform
+  { type: "fishEye",        label: "Fish Eye",        target: "geometry" },
+  { type: "bend",           label: "Bend",            target: "geometry" },
+  { type: "wave",           label: "Wave",            target: "geometry" },
+  { type: "twist",          label: "Twist",           target: "geometry" },
+  { type: "inflate",        label: "Inflate",         target: "geometry" },
+  { type: "taper",          label: "Taper",           target: "geometry" },
+  { type: "shear",          label: "Shear",           target: "geometry" },
+  { type: "spherify",       label: "Spherify",        target: "geometry" },
+  { type: "ripple",         label: "Ripple",          target: "geometry" },
+  { type: "melt",           label: "Melt",            target: "geometry" },
+  { type: "pinch",          label: "Pinch",           target: "geometry" },
+  { type: "voxelize",       label: "Voxelize",        target: "geometry" },
+  { type: "crumple",        label: "Crumple",         target: "geometry" },
+  { type: "noiseWobble",    label: "Noise Wobble",    target: "geometry" },
+  { type: "spiralDeform",   label: "Spiral Deform",   target: "geometry" },
+  { type: "bulge",          label: "Bulge",           target: "geometry" },
+  { type: "squish",         label: "Squish",          target: "geometry" },
+  { type: "zap",            label: "Zap",             target: "geometry" },
+  { type: "explode",        label: "Explode",         target: "geometry" },
+  { type: "fold",           label: "Fold",            target: "geometry" },
+  { type: "spikes",         label: "Spikes",          target: "geometry" },
+  { type: "cylindrize",     label: "Cylindrize",      target: "geometry" },
+  // Material
+  { type: "envMap",         label: "Env Map",         target: "geometry" },
+  { type: "neonGlow",       label: "Neon Glow",       target: "geometry" },
+  { type: "metallicPreset", label: "Metallic",        target: "geometry" },
+  { type: "xRay",           label: "X-Ray",           target: "geometry" },
+  { type: "toonShading",    label: "Toon Shading",    target: "geometry" },
+  { type: "hologram",       label: "Hologram",        target: "geometry" },
+  { type: "gradientMesh",   label: "Gradient Mesh",   target: "geometry" },
+  { type: "rainbowMesh",    label: "Rainbow Mesh",    target: "geometry" },
+  { type: "iridescent",     label: "Iridescent",      target: "geometry" },
+  { type: "emissivePulse",  label: "Emissive Pulse",  target: "geometry" },
+  { type: "dissolveAnim",   label: "Dissolve",        target: "geometry" },
+  { type: "glass",          label: "Glass",           target: "geometry" },
+  { type: "matcap",         label: "Matcap",          target: "geometry" },
+  // Lighting
+  { type: "spotlight",      label: "Spotlight" },
+  { type: "strobe",         label: "Strobe" },
+  { type: "flicker",        label: "Flicker" },
+  { type: "colorCycleLight",label: "Color Cycle Light" },
+  { type: "disco",          label: "Disco" },
+  { type: "ambientPulse",   label: "Ambient Pulse" },
+  { type: "rimLight",       label: "Rim Light" },
+  { type: "dramaticLight",  label: "Dramatic Light" },
+  { type: "lightningFlash", label: "Lightning Flash" },
+  { type: "rainbowLights",  label: "Rainbow Lights" },
+  // Scene objects
+  { type: "dust",           label: "Particle Dust",   target: "geometry" },
+  { type: "wireframe",      label: "Wireframe",       target: "geometry" },
+  { type: "outline",        label: "Outline",         target: "geometry" },
+  { type: "echoCopies",     label: "Echo Copies",     target: "geometry" },
+  { type: "rays",           label: "Rays",            target: "geometry" },
+  { type: "floatingRings",  label: "Floating Rings",  target: "geometry" },
+  { type: "starField3d",    label: "Star Field 3D",   target: "geometry" },
+  { type: "snow",           label: "Snow",            target: "geometry" },
+  { type: "rain",           label: "Rain",            target: "geometry" },
+  { type: "confetti",       label: "Confetti",        target: "geometry" },
+  { type: "sparkle",        label: "Sparkle",         target: "geometry" },
+  { type: "aura",           label: "Aura",            target: "geometry" },
+  { type: "gridFloor",      label: "Grid Floor",      target: "geometry" },
+  { type: "orbiter",        label: "Orbiter",         target: "geometry" },
+  { type: "portalRing",     label: "Portal Ring",     target: "geometry" },
+  { type: "cometTrail",     label: "Comet Trail",     target: "geometry" },
+  { type: "floatingCubes",  label: "Floating Cubes",  target: "geometry" },
+  { type: "mirrorPlane",    label: "Mirror Plane",    target: "geometry" },
+  // Animation
+  { type: "pulse",          label: "Pulse",           target: "geometry" },
+  { type: "spin",           label: "Spin",            target: "geometry" },
+  { type: "bounce",         label: "Bounce",          target: "geometry" },
+  { type: "levitation",     label: "Levitation",      target: "geometry" },
+  { type: "swing",          label: "Swing",           target: "geometry" },
+  { type: "tremble",        label: "Tremble",         target: "geometry" },
+  { type: "breathe",        label: "Breathe",         target: "geometry" },
+  { type: "wiggle",         label: "Wiggle",          target: "geometry" },
+  { type: "floatDrift",     label: "Float Drift",     target: "geometry" },
+  { type: "flipCoin",       label: "Flip Coin",       target: "geometry" },
+  { type: "grow",           label: "Grow",            target: "geometry" },
+  { type: "shrink",         label: "Shrink",          target: "geometry" },
+  { type: "orbitAnim",      label: "Orbit",           target: "geometry" },
+  { type: "rock",           label: "Rock",            target: "geometry" },
+  { type: "jitter",         label: "Jitter",          target: "geometry" },
+  { type: "sway",           label: "Sway",            target: "geometry" },
+  { type: "figureEight",    label: "Figure Eight",    target: "geometry" },
+  { type: "pendulum",       label: "Pendulum",        target: "geometry" },
+  // AI-generated
+  { type: "customJs",       label: "AI Custom",       target: "geometry" },
 ];
 
 function effectTypeLabel(type: EffectType) {
@@ -264,6 +432,7 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
           lockThickness: true,
           innerMargin: 2,
           outerMargin: 6,
+          heartRotation: 0,
         };
     case "radialBlur":
       return { strength: 0.12, samples: 8, center: [0.5, 0.5] };
@@ -281,8 +450,113 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
       return { count: 100, intensity: 0.3, scrollSpeed: 0 };
     case "colorGrading":
       return { hueShift: 0, saturation: 1.0, contrast: 1.0, brightness: 0 };
-    case "pixelate":
-      return { pixelSize: 4 };
+    case "pixelate":        return { pixelSize: 4 };
+    case "circularBlur":   return { radius: 0.01, samples: 16 };
+    case "sepia":          return { amount: 1 };
+    case "invert":         return { amount: 1 };
+    case "sobelEdge":      return { strength: 1 };
+    case "thermal":        return { intensity: 1 };
+    case "nightVision":    return { intensity: 0.8, noise: 0.2 };
+    case "duotone":        return { colorA: 0xff6600, colorB: 0x0066ff };
+    case "posterize":      return { levels: 4 };
+    case "colorOverlay":   return { color: 0xff6600, opacity: 0.4 };
+    case "halftone":       return { dotSize: 4 };
+    case "sharpen":        return { amount: 1 };
+    case "animChromatic":  return { amount: 0.01, speed: 1 };
+    case "blur":           return { radius: 1 };
+    case "lensDistort":    return { k: 0.3 };
+    case "mosaic":         return { size: 0.05 };
+    case "noisePost":      return { amount: 0.15, animated: true };
+    case "crtCurvature":   return { bend: 4 };
+    case "vhsTracking":    return { strength: 0.04, speed: 1 };
+    case "glowEdge":       return { radius: 3, intensity: 1.5, color: 0xff6600 };
+    case "acid":           return { strength: 0.08, speed: 1 };
+    case "kaleidoscopePost": return { segments: 6 };
+    case "oldFilm":        return { scratchIntensity: 0.3, vignetteAmount: 0.5, grainAmount: 0.08 };
+    case "zoomBlur":       return { strength: 0.04, samples: 10 };
+    case "crosshatch":     return { density: 8, lineWidth: 0.5 };
+    case "glitchBlock":    return { intensity: 0.1, frequency: 1 };
+    case "speedLines":     return { intensity: 0.5, lineCount: 48 };
+    case "rgbShift":       return { amount: 0.005, angle: 0 };
+    case "frostedGlass":   return { blur: 2 };
+    case "waterRipple":    return { strength: 0.02, speed: 1, frequency: 10 };
+    case "pixelShift":     return { amount: 3, speed: 1 };
+    case "retroTv":        return { scanlineIntensity: 0.2, curvature: 5, noise: 0.05 };
+    case "antialiasing":   return {};
+    // vertex deform
+    case "inflate":        return { strength: 0.5 };
+    case "taper":          return { strength: 0.5, axis: "y" };
+    case "shear":          return { strength: 0.3, axis: "x" };
+    case "spherify":       return { strength: 0.5 };
+    case "ripple":         return { amplitude: 0.3, frequency: 2, speed: 1.5 };
+    case "melt":           return { strength: 0.5, speed: 0 };
+    case "pinch":          return { strength: 0.5 };
+    case "voxelize":       return { gridSize: 0.2 };
+    case "crumple":        return { strength: 0.3, seed: 42 };
+    case "noiseWobble":    return { amplitude: 0.3, frequency: 2, speed: 1 };
+    case "spiralDeform":   return { twist: 0.3, flare: 0.2 };
+    case "bulge":          return { strength: 0.5 };
+    case "squish":         return { strength: 0.5, axis: "y" };
+    case "zap":            return { strength: 1.5, density: 0.1 };
+    case "explode":        return { strength: 0.5, pulse: false };
+    case "fold":           return { strength: 0.5, axis: "y" };
+    case "spikes":         return { strength: 2, density: 0.05, seed: 42 };
+    case "cylindrize":     return { strength: 0.5, radius: 10 };
+    // material
+    case "xRay":           return { color: 0x00ffff, opacity: 0.4 };
+    case "toonShading":    return { color: 0x44cc88, steps: 4 };
+    case "hologram":       return { color: 0x00ffff, scanSpeed: 1 };
+    case "gradientMesh":   return { colorTop: 0xff6600, colorBottom: 0x0066ff, animated: false };
+    case "rainbowMesh":    return { speed: 0.3, saturation: 1 };
+    case "iridescent":     return { speed: 1 };
+    case "emissivePulse":  return { color: 0xff6600, minIntensity: 0, maxIntensity: 1.5, speed: 1.5 };
+    case "dissolveAnim":   return { speed: 0.5, color: 0xff6600 };
+    case "glass":          return { color: 0xaaddff, roughness: 0.05, transmission: 0.9 };
+    case "matcap":         return { colorA: 0xff6600, colorB: 0xffffff, shininess: 0.5 };
+    // lighting
+    case "spotlight":      return { color: 0xffffff, intensity: 3, angle: 0.4, penumbra: 0.3 };
+    case "strobe":         return { color: 0xffffff, frequency: 4, intensity: 5 };
+    case "flicker":        return { color: 0xffa020, baseIntensity: 2, flickerAmount: 1.5 };
+    case "colorCycleLight":return { speed: 0.5, intensity: 2, saturation: 1 };
+    case "disco":          return { lightCount: 6, speed: 2, intensity: 2 };
+    case "ambientPulse":   return { color: 0xffffff, minIntensity: 0.1, maxIntensity: 2, speed: 1 };
+    case "rimLight":       return { color: 0x4488ff, intensity: 2 };
+    case "dramaticLight":  return { keyColor: 0xfff4e0, fillColor: 0x203060 };
+    case "lightningFlash": return { color: 0xaaccff, intensity: 8, frequency: 2 };
+    case "rainbowLights":  return { count: 7, speed: 0.5, intensity: 1.5 };
+    // scene objects
+    case "echoCopies":     return { count: 4, offsetX: 0.3, offsetY: 0, offsetZ: -0.5, rotateY: 0, opacity: 0.4, color: 0xff6600, fade: true };
+    case "starField3d":    return { count: 800, speed: 0.05, spread: 30 };
+    case "snow":           return { count: 400, speed: 0.5, spread: 20 };
+    case "rain":           return { count: 300, speed: 1, spread: 20 };
+    case "confetti":       return { count: 60, speed: 1, spread: 15 };
+    case "sparkle":        return { count: 200, color: 0xffffaa, spread: 8 };
+    case "aura":           return { color: 0xff6600, opacity: 0.15, layers: 3, speed: 1 };
+    case "gridFloor":      return { color: 0x444444, opacity: 0.4, size: 40, divisions: 40 };
+    case "orbiter":        return { count: 4, color: 0xff6600, orbitRadius: 4, speed: 1, size: 0.3 };
+    case "portalRing":     return { color: 0x00ffff, radius: 5, speed: 0.5 };
+    case "cometTrail":     return { color: 0xffffff, speed: 1.2, count: 3 };
+    case "floatingCubes":  return { count: 12, color: 0xff6600, spread: 10, speed: 0.5 };
+    case "mirrorPlane":    return { opacity: 0.3, axis: "y", offset: 0 };
+    // animation
+    case "spin":           return { speedX: 0, speedY: 1, speedZ: 0 };
+    case "bounce":         return { height: 1.5, speed: 2 };
+    case "levitation":     return { amplitude: 0.5, speed: 0.8 };
+    case "swing":          return { angle: 0.4, speed: 1, axis: "z" };
+    case "tremble":        return { intensity: 0.05, speed: 20 };
+    case "breathe":        return { depth: 0.08, speed: 0.4 };
+    case "wiggle":         return { amount: 0.15, speed: 5 };
+    case "floatDrift":     return { amplitude: 0.3, speed: 0.3 };
+    case "flipCoin":       return { axis: "y", speed: 2 };
+    case "grow":           return { targetScale: 1, speed: 1 };
+    case "shrink":         return { targetScale: 0.5, speed: 1 };
+    case "orbitAnim":      return { radius: 3, speed: 0.5, axis: "y" };
+    case "rock":           return { angle: 0.2, speed: 1 };
+    case "jitter":         return { intensity: 0.1, frequency: 12 };
+    case "sway":           return { amplitude: 0.2, speed: 0.7 };
+    case "figureEight":    return { width: 2, height: 1, speed: 0.5 };
+    case "pendulum":       return { angle: 0.5, speed: 1.2 };
+    case "customJs":       return { code: '', description: '' };
     default:
       return {};
   }
@@ -344,8 +618,108 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new ScanlinesPipe(effect.params as any);
     case "colorGrading":
       return new ColorGradingPipe(effect.params as any);
-    case "pixelate":
-      return new PixelatePipe(effect.params as any);
+    case "pixelate":        return new PixelatePipe(effect.params as any);
+    case "circularBlur":   return new CircularBlurPipe(effect.params as any);
+    case "sepia":          return new SepiaPipe(effect.params as any);
+    case "invert":         return new InvertPipe(effect.params as any);
+    case "sobelEdge":      return new SobelEdgePipe(effect.params as any);
+    case "thermal":        return new ThermalPipe(effect.params as any);
+    case "nightVision":    return new NightVisionPipe(effect.params as any);
+    case "duotone":        return new DuotonePipe(effect.params as any);
+    case "posterize":      return new PosterizePipe(effect.params as any);
+    case "colorOverlay":   return new ColorOverlayPipe(effect.params as any);
+    case "halftone":       return new HalftonePipe(effect.params as any);
+    case "sharpen":        return new SharpenPipe(effect.params as any);
+    case "animChromatic":  return new AnimChromaticPipe(effect.params as any);
+    case "blur":           return new BlurPipe(effect.params as any);
+    case "lensDistort":    return new LensDistortPipe(effect.params as any);
+    case "mosaic":         return new MosaicPipe(effect.params as any);
+    case "noisePost":      return new NoisePostPipe(effect.params as any);
+    case "crtCurvature":   return new CrtCurvaturePipe(effect.params as any);
+    case "vhsTracking":    return new VhsTrackingPipe(effect.params as any);
+    case "glowEdge":       return new GlowEdgePipe(effect.params as any);
+    case "acid":           return new AcidPipe(effect.params as any);
+    case "kaleidoscopePost": return new KaleidoscopePostPipe(effect.params as any);
+    case "oldFilm":        return new OldFilmPipe(effect.params as any);
+    case "zoomBlur":       return new ZoomBlurPipe(effect.params as any);
+    case "crosshatch":     return new CrosshatchPipe(effect.params as any);
+    case "glitchBlock":    return new GlitchBlockPipe(effect.params as any);
+    case "speedLines":     return new SpeedLinesPipe(effect.params as any);
+    case "rgbShift":       return new RgbShiftPipe(effect.params as any);
+    case "frostedGlass":   return new FrostedGlassPipe(effect.params as any);
+    case "waterRipple":    return new WaterRipplePipe(effect.params as any);
+    case "pixelShift":     return new PixelShiftPipe(effect.params as any);
+    case "retroTv":        return new RetroTvPipe(effect.params as any);
+    case "antialiasing":   return new AntialiasingPipe(effect.params as any);
+    case "inflate":        return new InflatePipe(effect.params as any);
+    case "taper":          return new TaperPipe(effect.params as any);
+    case "shear":          return new ShearPipe(effect.params as any);
+    case "spherify":       return new SpherifyPipe(effect.params as any);
+    case "ripple":         return new RipplePipe(effect.params as any);
+    case "melt":           return new MeltPipe(effect.params as any);
+    case "pinch":          return new PinchPipe(effect.params as any);
+    case "voxelize":       return new VoxelizePipe(effect.params as any);
+    case "crumple":        return new CrumplePipe(effect.params as any);
+    case "noiseWobble":    return new NoiseWobblePipe(effect.params as any);
+    case "spiralDeform":   return new SpiralDeformPipe(effect.params as any);
+    case "bulge":          return new BulgePipe(effect.params as any);
+    case "squish":         return new SquishPipe(effect.params as any);
+    case "zap":            return new ZapPipe(effect.params as any);
+    case "explode":        return new ExplodePipe(effect.params as any);
+    case "fold":           return new FoldPipe(effect.params as any);
+    case "spikes":         return new SpikesPipe(effect.params as any);
+    case "cylindrize":     return new CylindrizePipe(effect.params as any);
+    case "xRay":           return new XRayPipe(effect.params as any);
+    case "toonShading":    return new ToonShadingPipe(effect.params as any);
+    case "hologram":       return new HologramPipe(effect.params as any);
+    case "gradientMesh":   return new GradientMeshPipe(effect.params as any);
+    case "rainbowMesh":    return new RainbowMeshPipe(effect.params as any);
+    case "iridescent":     return new IridescentPipe(effect.params as any);
+    case "emissivePulse":  return new EmissivePulsePipe(effect.params as any);
+    case "dissolveAnim":   return new DissolveAnimPipe(effect.params as any);
+    case "glass":          return new GlassPipe(effect.params as any);
+    case "matcap":         return new MatcapPipe(effect.params as any);
+    case "spotlight":      return new SpotlightPipe(effect.params as any);
+    case "strobe":         return new StrobePipe(effect.params as any);
+    case "flicker":        return new FlickerPipe(effect.params as any);
+    case "colorCycleLight":return new ColorCycleLightPipe(effect.params as any);
+    case "disco":          return new DiscoPipe(effect.params as any);
+    case "ambientPulse":   return new AmbientPulsePipe(effect.params as any);
+    case "rimLight":       return new RimLightPipe(effect.params as any);
+    case "dramaticLight":  return new DramaticLightPipe(effect.params as any);
+    case "lightningFlash": return new LightningFlashPipe(effect.params as any);
+    case "rainbowLights":  return new RainbowLightsPipe(effect.params as any);
+    case "echoCopies":     return new EchoCopiesPipe(effect.params as any);
+    case "starField3d":    return new StarField3dPipe(effect.params as any);
+    case "snow":           return new SnowPipe(effect.params as any);
+    case "rain":           return new RainPipe(effect.params as any);
+    case "confetti":       return new ConfettiPipe(effect.params as any);
+    case "sparkle":        return new SparklePipe(effect.params as any);
+    case "aura":           return new AuraPipe(effect.params as any);
+    case "gridFloor":      return new GridFloorPipe(effect.params as any);
+    case "orbiter":        return new OrbiterPipe(effect.params as any);
+    case "portalRing":     return new PortalRingPipe(effect.params as any);
+    case "cometTrail":     return new CometTrailPipe(effect.params as any);
+    case "floatingCubes":  return new FloatingCubesPipe(effect.params as any);
+    case "mirrorPlane":    return new MirrorPlanePipe(effect.params as any);
+    case "spin":           return new SpinPipe(effect.params as any);
+    case "bounce":         return new BouncePipe(effect.params as any);
+    case "levitation":     return new LevitationPipe(effect.params as any);
+    case "swing":          return new SwingPipe(effect.params as any);
+    case "tremble":        return new TremplePipe(effect.params as any);
+    case "breathe":        return new BreathePipe(effect.params as any);
+    case "wiggle":         return new WigglePipe(effect.params as any);
+    case "floatDrift":     return new FloatDriftPipe(effect.params as any);
+    case "flipCoin":       return new FlipCoinPipe(effect.params as any);
+    case "grow":           return new GrowPipe(effect.params as any);
+    case "shrink":         return new ShrinkPipe(effect.params as any);
+    case "orbitAnim":      return new OrbitAnimPipe(effect.params as any);
+    case "rock":           return new RockPipe(effect.params as any);
+    case "jitter":         return new JitterPipe(effect.params as any);
+    case "sway":           return new SwayPipe(effect.params as any);
+    case "figureEight":    return new FigureEightPipe(effect.params as any);
+    case "pendulum":       return new PendulumPipe(effect.params as any);
+    case "customJs":       return new CustomJsPipe(effect.params as any);
     default:
       return new FilmGrainPipe();
   }
@@ -355,6 +729,7 @@ function renderEffectControls(
   effect: EffectInstance,
   colors: any,
   onUpdate: (key: string, value: unknown) => void,
+  onEditCode?: (id: string, code: string, description: string) => void,
 ) {
   const params = effect.params as Record<string, unknown>;
   switch (effect.type) {
@@ -684,22 +1059,22 @@ function renderEffectControls(
           colors={colors}
         />
       );
-    case "rays":
+    case "rays": {
+      const raysMode = (params.mode as string) ?? "radial";
       return (
         <>
           <Row>
             <Text style={[styles.label, { color: colors.text }]}>Mode</Text>
             <CycleButton
-              value={(params.mode as string) ?? "radial"}
+              value={raysMode}
               options={[]}
               onPress={() =>
                 onUpdate(
                   "mode",
-                  params.mode === "radial"
-                    ? "spaghetti"
-                    : params.mode === "spaghetti"
-                      ? "chip"
-                      : "radial",
+                  raysMode === "radial" ? "spaghetti"
+                    : raysMode === "spaghetti" ? "chip"
+                    : raysMode === "chip" ? "heart"
+                    : "radial",
                 )
               }
               colors={colors}
@@ -714,46 +1089,33 @@ function renderEffectControls(
             onChange={(v) => onUpdate("count", Math.round(v))}
             colors={colors}
           />
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>Inner</Text>
-            <Row style={{ alignItems: 'center' }}>
-              <SliderRow
-                label=""
-                min={0.01}
-                max={0.5}
-                step={0.01}
-                value={params.innerThickness as number}
-                onChange={(v) => {
-                  if (params.lockThickness) { onUpdate('innerThickness', v); onUpdate('outerThickness', v); }
-                  else onUpdate('innerThickness', v);
-                }}
-                colors={colors}
-              />
-            </Row>
-          </Row>
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>Outer</Text>
-            <Row style={{ alignItems: 'center' }}>
-              <SliderRow
-                label=""
-                min={0.01}
-                max={0.5}
-                step={0.01}
-                value={params.outerThickness as number}
-                onChange={(v) => {
-                  if (params.lockThickness) { onUpdate('outerThickness', v); onUpdate('innerThickness', v); }
-                  else onUpdate('outerThickness', v);
-                }}
-                colors={colors}
-              />
-              <TouchableOpacity
-                style={[styles.smallActionButton, { marginLeft: 8 }]}
-                onPress={() => onUpdate('lockThickness', !Boolean(params.lockThickness))}
-              >
-                <Text style={[styles.buttonText, { color: colors.tint }]}>{params.lockThickness ? '🔒' : '🔓'}</Text>
-              </TouchableOpacity>
-            </Row>
-          </Row>
+          {raysMode !== "spaghetti" && (
+            <LinkedSliderPair
+              label1="Inner Thickness"
+              label2="Outer Thickness"
+              min={0.01}
+              max={0.5}
+              step={0.01}
+              value1={params.innerThickness as number}
+              value2={params.outerThickness as number}
+              onChange1={(v) => onUpdate("innerThickness", v)}
+              onChange2={(v) => onUpdate("outerThickness", v)}
+              locked={Boolean(params.lockThickness)}
+              onLockToggle={() => onUpdate("lockThickness", !Boolean(params.lockThickness))}
+              colors={colors}
+            />
+          )}
+          {raysMode === "spaghetti" && (
+            <SliderRow
+              label="Thickness"
+              min={0.01}
+              max={0.5}
+              step={0.01}
+              value={((params.innerThickness as number) + (params.outerThickness as number)) / 2}
+              onChange={(v) => { onUpdate("innerThickness", v); onUpdate("outerThickness", v); }}
+              colors={colors}
+            />
+          )}
           <SliderRow
             label="Inner Margin"
             min={0}
@@ -772,8 +1134,20 @@ function renderEffectControls(
             onChange={(v) => onUpdate("outerMargin", v)}
             colors={colors}
           />
+          {raysMode === "heart" && (
+            <SliderRow
+              label="Heart Rotation"
+              min={0}
+              max={180}
+              step={1}
+              value={(params.heartRotation as number) ?? 0}
+              onChange={(v) => onUpdate("heartRotation", v)}
+              colors={colors}
+            />
+          )}
         </>
       );
+    }
     case "radialBlur":
       return (
         <>
@@ -885,6 +1259,123 @@ function renderEffectControls(
         <SliderRow label="Pixel Size" min={1} max={32} step={1}
           value={params.pixelSize as number} onChange={(v) => onUpdate("pixelSize", Math.round(v))} colors={colors} />
       );
+    // ── New effects: strength-based slider controls ────────────────────────────
+    case "circularBlur":   return <SliderRow label="Radius"    min={0} max={0.05} step={0.001} value={params.radius as number}    onChange={v=>onUpdate("radius",v)}    colors={colors} />;
+    case "sepia":          return <SliderRow label="Amount"    min={0} max={1}    step={0.01}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "invert":         return <SliderRow label="Amount"    min={0} max={1}    step={0.01}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "sobelEdge":      return <SliderRow label="Strength"  min={0} max={5}    step={0.1}   value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
+    case "thermal":        return <SliderRow label="Intensity" min={0} max={1}    step={0.01}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "nightVision":    return <SliderRow label="Intensity" min={0} max={2}    step={0.05}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "posterize":      return <SliderRow label="Levels"    min={2} max={16}   step={1}     value={params.levels as number}    onChange={v=>onUpdate("levels",Math.round(v))} colors={colors} />;
+    case "colorOverlay":   return <SliderRow label="Opacity"   min={0} max={1}    step={0.01}  value={params.opacity as number}   onChange={v=>onUpdate("opacity",v)}   colors={colors} />;
+    case "halftone":       return <SliderRow label="Dot Size"  min={1} max={16}   step={0.5}   value={params.dotSize as number}   onChange={v=>onUpdate("dotSize",v)}   colors={colors} />;
+    case "sharpen":        return <SliderRow label="Amount"    min={0} max={3}    step={0.05}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "animChromatic":  return <SliderRow label="Amount"    min={0} max={0.05} step={0.001} value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "blur":           return <SliderRow label="Radius"    min={0} max={5}    step={0.1}   value={params.radius as number}    onChange={v=>onUpdate("radius",v)}    colors={colors} />;
+    case "lensDistort":    return <SliderRow label="K"         min={-1} max={1}   step={0.01}  value={params.k as number}         onChange={v=>onUpdate("k",v)}         colors={colors} />;
+    case "mosaic":         return <SliderRow label="Size"      min={0.01} max={0.3} step={0.005} value={params.size as number}   onChange={v=>onUpdate("size",v)}       colors={colors} />;
+    case "noisePost":      return <SliderRow label="Amount"    min={0} max={0.5}  step={0.01}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "crtCurvature":   return <SliderRow label="Bend"      min={1} max={20}   step={0.5}   value={params.bend as number}      onChange={v=>onUpdate("bend",v)}      colors={colors} />;
+    case "vhsTracking":    return <SliderRow label="Strength"  min={0} max={0.2}  step={0.002} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
+    case "glowEdge":       return <SliderRow label="Intensity" min={0} max={5}    step={0.1}   value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "acid":           return <SliderRow label="Strength"  min={0} max={0.3}  step={0.005} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
+    case "kaleidoscopePost":return <SliderRow label="Segments" min={2} max={16}   step={1}     value={params.segments as number}  onChange={v=>onUpdate("segments",Math.round(v))} colors={colors} />;
+    case "oldFilm":        return <SliderRow label="Grain"     min={0} max={0.3}  step={0.005} value={params.grainAmount as number} onChange={v=>onUpdate("grainAmount",v)} colors={colors} />;
+    case "zoomBlur":       return <SliderRow label="Strength"  min={0} max={0.2}  step={0.002} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
+    case "crosshatch":     return <SliderRow label="Density"   min={4} max={24}   step={1}     value={params.density as number}   onChange={v=>onUpdate("density",v)}   colors={colors} />;
+    case "glitchBlock":    return <SliderRow label="Intensity" min={0} max={1}    step={0.01}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "speedLines":     return <SliderRow label="Intensity" min={0} max={2}    step={0.05}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "rgbShift":       return <SliderRow label="Amount"    min={0} max={0.03} step={0.001} value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "frostedGlass":   return <SliderRow label="Blur"      min={0} max={10}   step={0.2}   value={params.blur as number}      onChange={v=>onUpdate("blur",v)}      colors={colors} />;
+    case "waterRipple":    return <SliderRow label="Strength"  min={0} max={0.1}  step={0.002} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
+    case "pixelShift":     return <SliderRow label="Amount"    min={0} max={20}   step={0.5}   value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
+    case "retroTv":        return <SliderRow label="Noise"     min={0} max={0.3}  step={0.005} value={params.noise as number}     onChange={v=>onUpdate("noise",v)}     colors={colors} />;
+    case "antialiasing":   return null;
+    // vertex deform
+    case "inflate":  case "spherify": case "pinch": case "bulge": case "squish":
+    case "melt": case "fold": case "cylindrize":
+      return <SliderRow label="Strength" min={0} max={2} step={0.05} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
+    case "taper": case "shear": case "explode":
+      return <SliderRow label="Strength" min={0} max={2} step={0.05} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
+    case "voxelize": return <SliderRow label="Grid Size" min={0.05} max={1} step={0.05} value={params.gridSize as number} onChange={v=>onUpdate("gridSize",v)} colors={colors} />;
+    case "crumple": case "spikes":
+      return <SliderRow label="Strength" min={0} max={3} step={0.05} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
+    case "ripple": case "noiseWobble":
+      return <SliderRow label="Amplitude" min={0} max={2} step={0.05} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
+    case "zap": return <SliderRow label="Strength" min={0} max={5} step={0.1} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
+    case "spiralDeform": return <SliderRow label="Twist" min={0} max={2} step={0.05} value={params.twist as number} onChange={v=>onUpdate("twist",v)} colors={colors} />;
+    // material
+    case "xRay": return <SliderRow label="Opacity" min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />;
+    case "toonShading": return <SliderRow label="Steps" min={2} max={8} step={1} value={params.steps as number} onChange={v=>onUpdate("steps",Math.round(v))} colors={colors} />;
+    case "hologram": return <SliderRow label="Scan Speed" min={0} max={3} step={0.1} value={params.scanSpeed as number} onChange={v=>onUpdate("scanSpeed",v)} colors={colors} />;
+    case "gradientMesh": return <SliderRow label="Animated" min={0} max={1} step={1} value={params.animated ? 1 : 0} onChange={v=>onUpdate("animated",v===1)} colors={colors} />;
+    case "rainbowMesh": return <SliderRow label="Speed" min={0} max={2} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "iridescent": return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "emissivePulse": return <SliderRow label="Max Intensity" min={0} max={3} step={0.1} value={params.maxIntensity as number} onChange={v=>onUpdate("maxIntensity",v)} colors={colors} />;
+    case "dissolveAnim": return <SliderRow label="Speed" min={0} max={2} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "glass": return <SliderRow label="Transmission" min={0} max={1} step={0.01} value={params.transmission as number} onChange={v=>onUpdate("transmission",v)} colors={colors} />;
+    case "matcap": return null;
+    // lighting
+    case "spotlight": return <SliderRow label="Intensity" min={0} max={10} step={0.1} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "strobe": return <SliderRow label="Frequency" min={0.5} max={20} step={0.5} value={params.frequency as number} onChange={v=>onUpdate("frequency",v)} colors={colors} />;
+    case "flicker": return <SliderRow label="Flicker Amount" min={0} max={3} step={0.1} value={params.flickerAmount as number} onChange={v=>onUpdate("flickerAmount",v)} colors={colors} />;
+    case "colorCycleLight": return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "disco": return <SliderRow label="Speed" min={0} max={5} step={0.1} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "ambientPulse": return <SliderRow label="Max Intensity" min={0} max={5} step={0.1} value={params.maxIntensity as number} onChange={v=>onUpdate("maxIntensity",v)} colors={colors} />;
+    case "rimLight": return <SliderRow label="Intensity" min={0} max={5} step={0.1} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "dramaticLight": return null;
+    case "lightningFlash": return <SliderRow label="Frequency" min={0.5} max={10} step={0.5} value={params.frequency as number} onChange={v=>onUpdate("frequency",v)} colors={colors} />;
+    case "rainbowLights": return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    // scene objects
+    case "echoCopies": return <SliderRow label="Count" min={1} max={12} step={1} value={params.count as number} onChange={v=>onUpdate("count",Math.round(v))} colors={colors} />;
+    case "starField3d": return <SliderRow label="Speed" min={0} max={0.5} step={0.005} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "snow": case "rain": case "confetti":
+      return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "sparkle": return <SliderRow label="Count" min={50} max={500} step={10} value={params.count as number} onChange={v=>onUpdate("count",Math.round(v))} colors={colors} />;
+    case "aura": return <SliderRow label="Layers" min={1} max={6} step={1} value={params.layers as number} onChange={v=>onUpdate("layers",Math.round(v))} colors={colors} />;
+    case "gridFloor": return <SliderRow label="Opacity" min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />;
+    case "orbiter": return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "portalRing": return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "cometTrail": return <SliderRow label="Speed" min={0} max={5} step={0.1} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "floatingCubes": return <SliderRow label="Count" min={4} max={30} step={1} value={params.count as number} onChange={v=>onUpdate("count",Math.round(v))} colors={colors} />;
+    case "mirrorPlane": return <SliderRow label="Opacity" min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />;
+    // animation
+    case "spin": return <SliderRow label="Speed Y" min={-5} max={5} step={0.1} value={params.speedY as number} onChange={v=>onUpdate("speedY",v)} colors={colors} />;
+    case "bounce": return <SliderRow label="Height" min={0} max={5} step={0.1} value={params.height as number} onChange={v=>onUpdate("height",v)} colors={colors} />;
+    case "levitation": return <SliderRow label="Amplitude" min={0} max={3} step={0.05} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
+    case "swing": return <SliderRow label="Angle" min={0} max={1} step={0.01} value={params.angle as number} onChange={v=>onUpdate("angle",v)} colors={colors} />;
+    case "tremble": return <SliderRow label="Intensity" min={0} max={0.5} step={0.005} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "breathe": return <SliderRow label="Depth" min={0} max={0.3} step={0.005} value={params.depth as number} onChange={v=>onUpdate("depth",v)} colors={colors} />;
+    case "wiggle": return <SliderRow label="Amount" min={0} max={1} step={0.01} value={params.amount as number} onChange={v=>onUpdate("amount",v)} colors={colors} />;
+    case "floatDrift": return <SliderRow label="Amplitude" min={0} max={2} step={0.05} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
+    case "flipCoin": return <SliderRow label="Speed" min={0} max={5} step={0.1} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "grow": return <SliderRow label="Speed" min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
+    case "shrink": return <SliderRow label="Target Scale" min={0} max={1} step={0.01} value={params.targetScale as number} onChange={v=>onUpdate("targetScale",v)} colors={colors} />;
+    case "orbitAnim": return <SliderRow label="Radius" min={0} max={10} step={0.1} value={params.radius as number} onChange={v=>onUpdate("radius",v)} colors={colors} />;
+    case "rock": return <SliderRow label="Angle" min={0} max={1} step={0.01} value={params.angle as number} onChange={v=>onUpdate("angle",v)} colors={colors} />;
+    case "jitter": return <SliderRow label="Intensity" min={0} max={1} step={0.01} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
+    case "sway": return <SliderRow label="Amplitude" min={0} max={1} step={0.01} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
+    case "figureEight": return <SliderRow label="Width" min={0} max={5} step={0.1} value={params.width as number} onChange={v=>onUpdate("width",v)} colors={colors} />;
+    case "pendulum": return <SliderRow label="Angle" min={0} max={1.5} step={0.01} value={params.angle as number} onChange={v=>onUpdate("angle",v)} colors={colors} />;
+    case "customJs":
+      return (
+        <View style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
+          {params.description ? (
+            <Text style={{ color: colors.text, fontSize: 12, marginBottom: 4 }} numberOfLines={2}>
+              {params.description as string}
+            </Text>
+          ) : null}
+          <Text style={{ color: colors.text, fontSize: 11, fontFamily: 'monospace', opacity: 0.6, marginBottom: 6 }} numberOfLines={1}>
+            {params.code ? String(params.code).slice(0, 60) + '…' : 'No code yet — tap Refine to generate'}
+          </Text>
+          <TouchableOpacity
+            onPress={() => onEditCode?.(effect.id, String(params.code ?? ''), String(params.description ?? ''))}
+            style={{ paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderRadius: 6, borderColor: colors.tint, alignSelf: 'flex-start' }}
+          >
+            <Text style={{ color: colors.tint, fontSize: 12, fontWeight: '600' }}>Refine with AI</Text>
+          </TouchableOpacity>
+        </View>
+      );
     default:
       return null;
   }
@@ -917,6 +1408,13 @@ export default function ThreeDTextScreen() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [aiChatTarget, setAiChatTarget] = useState<{
+    id: string | null;
+    code: string;
+    description: string;
+  } | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const threeDTextRef = useRef<ThreeDTextHandle>(null);
 
   const c = colors; // shorthand
 
@@ -1010,6 +1508,29 @@ export default function ThreeDTextScreen() {
       ...instances,
       createEffectInstance(t),
     ]);
+  };
+
+  const handleApplyAiEffect = (code: string, description: string, targetId: string | null) => {
+    if (targetId) {
+      setEffectInstances((instances) =>
+        instances.map((inst) =>
+          inst.id === targetId
+            ? { ...inst, params: { ...inst.params, code, description } }
+            : inst,
+        ),
+      );
+    } else {
+      setEffectInstances((instances) => [
+        ...instances,
+        {
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+          type: 'customJs',
+          enabled: true,
+          animate: true,
+          params: { code, description },
+        },
+      ]);
+    }
   };
 
   function generatePresetName(instances: EffectInstance[]) {
@@ -1292,6 +1813,7 @@ export default function ThreeDTextScreen() {
       <View style={styles.content}>
         <View style={styles.canvas}>
           <ThreeDText
+            ref={threeDTextRef}
             text={text}
             equalizeLineWidths={equalizeLineWidths}
             equalizationMethod={equalizationMethod}
@@ -1399,8 +1921,8 @@ export default function ThreeDTextScreen() {
               </TouchableOpacity>
             </View>
             <View style={{ marginHorizontal: 12, marginVertical: 8 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-                <Text style={[styles.label, { color: c.text, marginRight: 8 }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 8 }}>
+                <Text style={[styles.label, { color: c.text }]}>
                   Add effect
                 </Text>
                 <TextInput
@@ -1415,6 +1937,12 @@ export default function ThreeDTextScreen() {
                   value={selectedEffectSearch}
                   onChangeText={setSelectedEffectSearch}
                 />
+                <TouchableOpacity
+                  onPress={() => setAiChatTarget({ id: null, code: '', description: '' })}
+                  style={[styles.smallActionButton, { borderColor: c.tint, paddingHorizontal: 10 }]}
+                >
+                  <Text style={{ color: c.tint, fontSize: 13, fontWeight: '600' }}>AI</Text>
+                </TouchableOpacity>
               </View>
               <View>
                 {selectedEffectSearch.length > 0 ? (
@@ -1619,8 +2147,10 @@ export default function ThreeDTextScreen() {
                   </Row>
                 </View>
                 {instance.enabled &&
-                  renderEffectControls(instance, c, (key, value) =>
-                    updateEffectParam(instance.id, key, value),
+                  renderEffectControls(
+                    instance, c,
+                    (key, value) => updateEffectParam(instance.id, key, value),
+                    (id, code, desc) => setAiChatTarget({ id, code, description: desc }),
                   )}
               </View>
             ))}
@@ -1659,8 +2189,34 @@ export default function ThreeDTextScreen() {
               {showAdvanced ? "▲ Hide Advanced" : "▼ Show Advanced (seeds)"}
             </Text>
           </TouchableOpacity>
+
+          {/* Export button */}
+          <TouchableOpacity
+            style={[styles.advancedToggle, { borderColor: c.tint, marginTop: 4 }]}
+            onPress={() => setShowExportModal(true)}
+          >
+            <Text style={[styles.buttonText, { color: c.tint }]}>Export / Download</Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
+
+      {/* Modals */}
+      {aiChatTarget !== null && (
+        <AiEffectChatModal
+          visible
+          onClose={() => setAiChatTarget(null)}
+          onApplyEffect={(code, desc) => handleApplyAiEffect(code, desc, aiChatTarget.id)}
+          initialCode={aiChatTarget.code || undefined}
+          initialDescription={aiChatTarget.description || undefined}
+        />
+      )}
+      <ExportModal
+        visible={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        captureFrame={() => threeDTextRef.current?.captureFrame() ?? Promise.resolve(null)}
+        getMesh={() => threeDTextRef.current?.getMesh() ?? null}
+        getScene={() => threeDTextRef.current?.getScene() ?? null}
+      />
     </SafeAreaView>
   );
 }
