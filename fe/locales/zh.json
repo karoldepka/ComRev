@@ -233,5 +233,7 @@
   "p_steps": "步骤",
   "p_threshold": "阈值",
   "p_refineWithAi": "AI优化",
-  "p_dragging": "拖动"
+  "p_dragging": "拖动",
+  "resetToBasic": "重置为基本设置",
+  "resetConfirm": "您确定要删除除 3D 文本之外的所有效果吗？"
 }

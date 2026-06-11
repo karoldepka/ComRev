@@ -17,6 +17,7 @@ export interface ThreeDTextHandle {
 
 interface ThreeDTextProps {
   text?: string;
+  fontFamily?: string;
   size?: number;
   height?: number;
   curveSegments?: number;
@@ -38,6 +39,7 @@ interface ThreeDTextProps {
 
 export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(function ThreeDText({
   text = '',
+  fontFamily,
   size,
   height,
   curveSegments,
@@ -142,7 +144,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
       updateTextMesh(text);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, size, height, curveSegments, bevelEnabled, bevelThickness, bevelSize, bevelOffset,
+  }, [text, fontFamily, size, height, curveSegments, bevelEnabled, bevelThickness, bevelSize, bevelOffset,
       bevelSegments, color, metalness, roughness, envMapIntensity,
       equalizeLineWidths, equalizationMethod, targetWidth, lineSpacing]);
 
@@ -187,6 +189,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(fu
     try {
       const { geometry, material } = await createTextGeometry({
         text: textContent,
+        fontFamily,
         size,
         height,
         curveSegments,

@@ -233,5 +233,7 @@
   "p_steps": "Kroki",
   "p_threshold": "Próg",
   "p_refineWithAi": "Dopracuj z AI",
-  "p_dragging": "Przeciąganie"
+  "p_dragging": "Przeciąganie",
+  "resetToBasic": "Resetuj do podstawowych",
+  "resetConfirm": "Czy na pewno chcesz usunąć wszystkie efekty poza tekstem 3D?"
 }

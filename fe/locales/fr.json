@@ -233,5 +233,7 @@
   "p_steps": "Étapes",
   "p_threshold": "Seuil",
   "p_refineWithAi": "Affiner avec IA",
-  "p_dragging": "Glisser"
+  "p_dragging": "Glisser",
+  "resetToBasic": "Réinitialiser aux paramètres de base",
+  "resetConfirm": "Êtes-vous sûr de vouloir supprimer tous les effets sauf le texte 3D ?"
 }

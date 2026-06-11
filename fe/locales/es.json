@@ -233,5 +233,7 @@
   "p_steps": "Pasos",
   "p_threshold": "Umbral",
   "p_refineWithAi": "Refinar con IA",
-  "p_dragging": "Arrastrando"
+  "p_dragging": "Arrastrando",
+  "resetToBasic": "Restablecer a la configuración básica",
+  "resetConfirm": "¿Está seguro de que desea eliminar todos los efectos excepto el texto 3D?"
 }

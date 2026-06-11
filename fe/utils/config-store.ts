@@ -3,7 +3,8 @@ export type EnvMapStyle =
   | "studio"
   | "starfield"
   | "sunset"
-  | "neon";
+  | "neon"
+  | "custom";
 export type MetallicPreset =
   | "gold"
   | "chrome"
@@ -339,6 +340,13 @@ export async function deletePresetFromBackend(
     const text = await response.text();
     throw new Error(`Delete preset failed: ${response.status} ${text}`);
   }
+}
+
+// Cross-tab preset handoff (module-level, survives navigation)
+let _pendingPreset: PresetRecord | null = null;
+export function setPendingPresetToLoad(p: PresetRecord | null) { _pendingPreset = p; }
+export function consumePendingPresetToLoad(): PresetRecord | null {
+  const p = _pendingPreset; _pendingPreset = null; return p;
 }
 
 export async function savePresetOfflineFirst(

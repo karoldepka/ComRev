@@ -2,6 +2,7 @@ import { EffectPipe, PipeSetupContext } from './base';
 
 export interface MainTextPipeParams {
   text?: string;
+  fontFamily?: string;
   size?: number;
   height?: number;
   curveSegments?: number;

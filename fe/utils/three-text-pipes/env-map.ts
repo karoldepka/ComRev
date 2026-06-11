@@ -1,24 +1,28 @@
 import * as THREE from 'three';
 import { EffectPipe, PipeSetupContext, PipeFrameContext, makeRng } from './base';
 
-export type EnvMapStyle = 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon';
+export type EnvMapStyle = 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon' | 'custom';
 
 export interface EnvMapPipeParams {
   style?: EnvMapStyle;
   seed?: number;
   intensity?: number;
+  customImageDataUrl?: string;
 }
 
 export class EnvMapPipe implements EffectPipe {
   readonly name = 'envMap';
   private texture: THREE.Texture | null = null;
   private sceneRef: THREE.Scene | null = null;
+  private meshRef: THREE.Mesh | THREE.Group | null = null;
   private lastStyle = '';
   private lastSeed = -1;
+  private lastCustomUrl = '';
+  private loadingCustom = false;
 
   constructor(public params: EnvMapPipeParams = {}) {}
 
-  private buildTexture(style: EnvMapStyle, seed: number): THREE.Texture {
+  private buildTexture(style: Exclude<EnvMapStyle, 'custom'>, seed: number): THREE.Texture {
     const size = 512;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
@@ -81,40 +85,100 @@ export class EnvMapPipe implements EffectPipe {
     return tex;
   }
 
-  setup(ctx: PipeSetupContext) {
-    this.sceneRef = ctx.scene;
-    const { style = 'gradient', seed = 42 } = this.params;
-    this.texture = this.buildTexture(style, seed);
-    this.lastStyle = style; this.lastSeed = seed;
-    ctx.scene.environment = this.texture;
+  private loadCustomTexture(dataUrl: string) {
+    if (this.loadingCustom) return;
+    this.loadingCustom = true;
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      dataUrl,
+      (tex) => {
+        this.loadingCustom = false;
+        this.lastCustomUrl = dataUrl;
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        const old = this.texture;
+        this.texture = tex;
+        old?.dispose();
+        if (this.sceneRef) this.sceneRef.environment = tex;
+        if (this.meshRef) this.applyToMesh(this.meshRef, this.params.intensity ?? 1.5);
+      },
+      undefined,
+      (err) => {
+        this.loadingCustom = false;
+        console.error('EnvMapPipe: failed to load custom image', err);
+      },
+    );
   }
 
-  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    if (!mesh || !this.texture) return;
-    const intensity = this.params.intensity ?? 1.5;
+  private applyToMesh(mesh: THREE.Mesh | THREE.Group, intensity: number) {
     mesh.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = child.material as THREE.MeshStandardMaterial;
-        if (mat?.isMeshStandardMaterial) { mat.envMap = this.texture; mat.envMapIntensity = intensity; mat.needsUpdate = true; }
+        if (mat?.isMeshStandardMaterial) {
+          mat.envMap = this.texture;
+          mat.envMapIntensity = intensity;
+          mat.needsUpdate = true;
+        }
       }
     });
   }
 
-  update(ctx: PipeFrameContext) {
-    const { style = 'gradient', seed = 42, intensity = 1.5 } = this.params;
-    if (style !== this.lastStyle || seed !== this.lastSeed) {
-      this.texture?.dispose();
+  setup(ctx: PipeSetupContext) {
+    this.sceneRef = ctx.scene;
+    const { style = 'gradient', seed = 42, customImageDataUrl } = this.params;
+    if (style === 'custom') {
+      this.lastStyle = '';
+      this.lastSeed = -1;
+      if (customImageDataUrl) this.loadCustomTexture(customImageDataUrl);
+    } else {
       this.texture = this.buildTexture(style, seed);
-      this.lastStyle = style; this.lastSeed = seed;
-      if (this.sceneRef) this.sceneRef.environment = this.texture;
-      if (ctx.mesh) this.onMeshChanged(ctx.mesh, ctx);
-    } else if (ctx.mesh) {
-      ctx.mesh.traverse(child => {
-        if (child instanceof THREE.Mesh) {
-          const mat = child.material as THREE.MeshStandardMaterial;
-          if (mat?.isMeshStandardMaterial && mat.envMapIntensity !== intensity) mat.envMapIntensity = intensity;
-        }
-      });
+      this.lastStyle = style;
+      this.lastSeed = seed;
+      ctx.scene.environment = this.texture;
+    }
+  }
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    this.meshRef = mesh;
+    if (!mesh || !this.texture) return;
+    this.applyToMesh(mesh, this.params.intensity ?? 1.5);
+  }
+
+  update(ctx: PipeFrameContext) {
+    const { style = 'gradient', seed = 42, intensity = 1.5, customImageDataUrl } = this.params;
+    this.meshRef = ctx.mesh;
+
+    if (style === 'custom') {
+      // Invalidate procedural cache so switching back to a procedural style always rebuilds
+      this.lastStyle = '';
+      this.lastSeed = -1;
+      if (customImageDataUrl && customImageDataUrl !== this.lastCustomUrl && !this.loadingCustom) {
+        this.loadCustomTexture(customImageDataUrl);
+      }
+      if (ctx.mesh && this.texture) {
+        ctx.mesh.traverse(child => {
+          if (child instanceof THREE.Mesh) {
+            const mat = child.material as THREE.MeshStandardMaterial;
+            if (mat?.isMeshStandardMaterial && mat.envMapIntensity !== intensity) mat.envMapIntensity = intensity;
+          }
+        });
+      }
+    } else {
+      this.lastCustomUrl = '';
+      if (style !== this.lastStyle || seed !== this.lastSeed) {
+        this.texture?.dispose();
+        this.texture = this.buildTexture(style, seed);
+        this.lastStyle = style;
+        this.lastSeed = seed;
+        if (this.sceneRef) this.sceneRef.environment = this.texture;
+        if (ctx.mesh) this.applyToMesh(ctx.mesh, intensity);
+      } else if (ctx.mesh) {
+        ctx.mesh.traverse(child => {
+          if (child instanceof THREE.Mesh) {
+            const mat = child.material as THREE.MeshStandardMaterial;
+            if (mat?.isMeshStandardMaterial && mat.envMapIntensity !== intensity) mat.envMapIntensity = intensity;
+          }
+        });
+      }
     }
   }
 

@@ -233,5 +233,7 @@
   "p_steps": "Passos",
   "p_threshold": "Llindar",
   "p_refineWithAi": "Refinar amb IA",
-  "p_dragging": "Arrossegar"
+  "p_dragging": "Arrossegar",
+  "resetToBasic": "Restableix a la configuració bàsica",
+  "resetConfirm": "Esteu segur que voleu suprimir tots els efectes excepte el text 3D?"
 }

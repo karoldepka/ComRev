@@ -3,6 +3,7 @@ import { ExportModal } from "@/components/ExportModal";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
+    consumePendingPresetToLoad,
     deletePreset,
     deletePresetFromBackend,
     getLatestConfig,
@@ -16,6 +17,7 @@ import {
     syncPendingConfigs,
     ThreeDConfig,
 } from "@/utils/config-store";
+import { useFocusEffect } from "expo-router";
 import {
     // base
     EffectPipe,
@@ -71,6 +73,7 @@ import {
     ColorBurnPipe,
     DepthLinesPipe,
 } from "@/utils/three-text-pipes";
+import { AVAILABLE_FONTS } from "@/utils/three-text-geometry";
 import { AiEffectChatModal } from "@/components/AiEffectChatModal";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import { useTranslation } from "react-i18next";
@@ -455,6 +458,7 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
     case "mainText":
       return {
         text: "Hi\nHello World\nThis is a very long line of text",
+        fontFamily: "helvetiker",
         size: 2,
         height: 0.8,
         curveSegments: 48,
@@ -487,7 +491,7 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
     case "bend":
       return { strength: 0.18, axis: "x" };
     case "envMap":
-      return { style: "gradient", intensity: 1.5, seed: 42 };
+      return { style: "gradient", intensity: 1.5, seed: 42, customImageDataUrl: undefined };
     case "neonGlow":
       return {
         colorIdx: 0,
@@ -640,6 +644,7 @@ function createDefaultEffectParams(type: EffectType): Record<string, unknown> {
     case "text3d":
       return {
         text: "Text 3D",
+        fontFamily: "helvetiker",
         size: 2,
         height: 0.8,
         curveSegments: 48,
@@ -922,46 +927,82 @@ function hexToNum(s: string): number {
 }
 
 function ColorPickerRow({ label, value, onChange, colors }: { label: string; value: number; onChange: (v: number) => void; colors: any }) {
+  const [showModal, setShowModal] = React.useState(false);
   const [recentColors, setRecentColors] = React.useState<number[]>(() => loadRecentColors());
+  const [draftHex, setDraftHex] = React.useState(numToHex(value));
 
-  const openPicker = () => {
-    if (typeof document === 'undefined') return;
-    const input = document.createElement('input');
-    input.type = 'color';
-    input.value = numToHex(value);
-    input.style.position = 'fixed';
-    input.style.opacity = '0';
-    input.style.pointerEvents = 'none';
-    document.body.appendChild(input);
-    input.addEventListener('change', (e: any) => {
-      const num = hexToNum(e.target.value);
-      onChange(num);
-      saveRecentColor(num);
-      setRecentColors(loadRecentColors());
-    });
-    input.click();
-    setTimeout(() => document.body.removeChild(input), 1000);
+  React.useEffect(() => { setDraftHex(numToHex(value)); }, [value]);
+
+  const applyColor = (num: number) => {
+    onChange(num);
+    saveRecentColor(num);
+    setRecentColors(loadRecentColors());
   };
 
   return (
-    <View style={{ paddingVertical: 3 }}>
-      <View style={[styles.controlRow, { paddingVertical: 0 }]}>
+    <>
+      <View style={[styles.controlRow, { paddingVertical: 2 }]}>
         <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-        <TouchableOpacity onPress={openPicker} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <TouchableOpacity onPress={() => { setDraftHex(numToHex(value)); setShowModal(true); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ width: 28, height: 20, borderRadius: 3, backgroundColor: numToHex(value), borderWidth: 1, borderColor: '#888' }} />
           <Text style={{ color: colors.tint, fontSize: 12 }}>Pick</Text>
         </TouchableOpacity>
       </View>
-      {recentColors.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingHorizontal: 12, paddingBottom: 4 }}>
-          {recentColors.map((c) => (
-            <TouchableOpacity key={c} onPress={() => { onChange(c); }} >
-              <View style={{ width: 18, height: 18, borderRadius: 3, backgroundColor: numToHex(c), borderWidth: 1, borderColor: c === value ? colors.tint : '#555' }} />
-            </TouchableOpacity>
-          ))}
+      <Modal visible={showModal} transparent animationType="fade" onRequestClose={() => setShowModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: colors.background ?? '#1a1a1a', borderRadius: 12, padding: 20, width: 280, gap: 12 }}>
+            <Text style={{ color: colors.text, fontWeight: '600', fontSize: 15, marginBottom: 4 }}>{label}</Text>
+            {/* Native color input */}
+            <View style={{ alignItems: 'center' }}>
+              {typeof document !== 'undefined' && (
+                <input
+                  type="color"
+                  value={draftHex}
+                  onChange={(e: any) => setDraftHex(e.target.value)}
+                  style={{ width: 80, height: 80, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                />
+              )}
+            </View>
+            {/* Recent colors */}
+            {recentColors.length > 0 && (
+              <View>
+                <Text style={{ color: colors.text, fontSize: 11, opacity: 0.6, marginBottom: 6 }}>Recent</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {recentColors.map((c) => (
+                    <TouchableOpacity key={c} onPress={() => { setDraftHex(numToHex(c)); }}>
+                      <View style={{ width: 24, height: 24, borderRadius: 4, backgroundColor: numToHex(c), borderWidth: 2, borderColor: numToHex(c) === draftHex ? colors.tint : 'transparent' }} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+            {/* Hex input */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: colors.text, fontSize: 12 }}>Hex:</Text>
+              <TextInput
+                style={{ flex: 1, borderWidth: 1, borderColor: '#555', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, color: colors.text, fontSize: 13, fontFamily: 'monospace' }}
+                value={draftHex}
+                onChangeText={(v) => { if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setDraftHex(v); }}
+                maxLength={7}
+                autoCapitalize="none"
+              />
+            </View>
+            {/* Buttons */}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <TouchableOpacity onPress={() => setShowModal(false)} style={{ flex: 1, padding: 10, borderWidth: 1, borderColor: '#555', borderRadius: 8, alignItems: 'center' }}>
+                <Text style={{ color: colors.text }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { applyColor(hexToNum(draftHex)); setShowModal(false); }}
+                style={{ flex: 1, padding: 10, backgroundColor: colors.tint, borderRadius: 8, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
-      )}
-    </View>
+      </Modal>
+    </>
   );
 }
 
@@ -993,6 +1034,18 @@ function renderEffectControls(
             multiline
           />
           <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{t('font')}</Text>
+            <CycleButton
+              value={AVAILABLE_FONTS.find(f => f.id === params.fontFamily)?.label ?? 'Helvetiker'}
+              options={[]}
+              onPress={() => {
+                const idx = AVAILABLE_FONTS.findIndex(f => f.id === (params.fontFamily ?? 'helvetiker'));
+                onUpdate("fontFamily", AVAILABLE_FONTS[(idx + 1) % AVAILABLE_FONTS.length].id);
+              }}
+              colors={colors}
+            />
+          </Row>
           <SliderRow label={t('size')} min={0.5} max={6} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
           <SliderRow label={t('depth')} min={0.05} max={3} step={0.05} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
           <SliderRow label={t('metalness')} min={0} max={1} step={0.01} value={params.metalness as number ?? 0.95} onChange={(v) => onUpdate("metalness", v)} colors={colors} />
@@ -1093,10 +1146,44 @@ function renderEffectControls(
           <Row>
             <Text style={[styles.label, { color: colors.text }]}>{p('style')}</Text>
             <CycleButton value={(params.style as string) ?? "gradient"} options={[]}
-              onPress={() => { const stylesList: EnvMapStyle[] = ["gradient","studio","starfield","sunset","neon"]; const idx = stylesList.indexOf(params.style as EnvMapStyle); onUpdate("style", stylesList[(idx + 1) % stylesList.length]); }} colors={colors} />
+              onPress={() => { const stylesList: EnvMapStyle[] = ["gradient","studio","starfield","sunset","neon","custom"]; const idx = stylesList.indexOf(params.style as EnvMapStyle); onUpdate("style", stylesList[(idx + 1) % stylesList.length]); }} colors={colors} />
           </Row>
+          {params.style === 'custom' && (
+            <Row>
+              <Text style={[styles.label, { color: colors.text }]}>{p('customImage')}</Text>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <TouchableOpacity
+                  style={[styles.smallActionButton, { borderColor: colors.tint, paddingHorizontal: 10, paddingVertical: 4 }]}
+                  onPress={() => {
+                    if (typeof document !== 'undefined') {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*';
+                      input.onchange = (e: any) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onload = () => onUpdate("customImageDataUrl", reader.result as string);
+                      };
+                      input.click();
+                    }
+                  }}
+                >
+                  <Text style={[styles.buttonText, { color: colors.tint }]}>
+                    {params.customImageDataUrl ? p('changeImage') : p('chooseImage')}
+                  </Text>
+                </TouchableOpacity>
+                {params.customImageDataUrl && (
+                  <img src={params.customImageDataUrl as string} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 } as any} />
+                )}
+              </View>
+            </Row>
+          )}
           <SliderRow label={p('intensity')} min={0} max={3} step={0.05} value={params.intensity as number} onChange={(v) => onUpdate("intensity", v)} colors={colors} />
-          <SliderRow label={p('seed')} min={0} max={999} step={1} value={params.seed as number} onChange={(v) => onUpdate("seed", Math.round(v))} colors={colors} />
+          {params.style !== 'custom' && (
+            <SliderRow label={p('seed')} min={0} max={999} step={1} value={params.seed as number} onChange={(v) => onUpdate("seed", Math.round(v))} colors={colors} />
+          )}
         </>
       );
     case "neonGlow":
@@ -1435,6 +1522,18 @@ function renderEffectControls(
             multiline
           />
           <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{t('font')}</Text>
+            <CycleButton
+              value={AVAILABLE_FONTS.find(f => f.id === params.fontFamily)?.label ?? 'Helvetiker'}
+              options={[]}
+              onPress={() => {
+                const idx = AVAILABLE_FONTS.findIndex(f => f.id === (params.fontFamily ?? 'helvetiker'));
+                onUpdate("fontFamily", AVAILABLE_FONTS[(idx + 1) % AVAILABLE_FONTS.length].id);
+              }}
+              colors={colors}
+            />
+          </Row>
           <SliderRow label="Size" min={0.5} max={5} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
           <SliderRow label="Height" min={0.1} max={3} step={0.1} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
           <Row>
@@ -1624,6 +1723,21 @@ export default function ThreeDTextScreen() {
 
   const c = colors; // shorthand
 
+  // Load preset passed from the presets gallery screen
+  useFocusEffect(React.useCallback(() => {
+    const pending = consumePendingPresetToLoad();
+    if (pending) {
+      setEffectInstances(pending.effects.map((item) => ({
+        ...item,
+        enabled: item.enabled ?? true,
+        animate: item.animate ?? true,
+        params: item.params ?? {},
+      })));
+      setSaveStatus(`Loaded: ${pending.name}`);
+      setTimeout(() => setSaveStatus(null), 3000);
+    }
+  }, []));
+
   const effectInstancesRef = useRef(effectInstances);
   useEffect(() => {
     effectInstancesRef.current = effectInstances;
@@ -1811,6 +1925,33 @@ export default function ThreeDTextScreen() {
     }
   };
 
+  const handleResetToBasic = () => {
+    const performReset = () => {
+      setEffectInstances((instances) => {
+        const mainTextInst = instances.find((i) => i.type === 'mainText');
+        if (mainTextInst) {
+          return [mainTextInst];
+        }
+        return [createEffectInstance('mainText')];
+      });
+    };
+
+    if (typeof window !== "undefined" && window.confirm) {
+      if (window.confirm(t('resetConfirm', 'Are you sure you want to delete all effects except 3D text?'))) {
+        performReset();
+      }
+    } else {
+      Alert.alert(
+        t('resetToBasic', 'Reset to basic settings'),
+        t('resetConfirm', 'Are you sure you want to delete all effects except 3D text?'),
+        [
+          { text: t('cancel', 'Cancel'), style: "cancel" },
+          { text: t('delete', 'Delete'), style: "destructive", onPress: performReset },
+        ],
+      );
+    }
+  };
+
   const draggingItem = effectInstances.find(
     (instance) => instance.id === draggingId,
   );
@@ -1880,21 +2021,22 @@ export default function ThreeDTextScreen() {
     };
 
     // confirmation dialog for delete
-    if (typeof Alert !== "undefined" && Alert.alert) {
+    const effectName = effectTypeLabel(
+      effectInstances.find((i) => i.id === id)?.type ?? 'mainText',
+      t,
+    );
+    const confirmMsg = t('deleteEffectConfirm', { name: effectName });
+    if (typeof window !== "undefined" && window.confirm) {
+      if (window.confirm(confirmMsg)) performDelete();
+    } else if (typeof Alert !== "undefined" && Alert.alert) {
       Alert.alert(
-        "Delete effect",
-        "Are you sure you want to delete this effect instance?",
+        t('deleteEffect', 'Delete effect'),
+        confirmMsg,
         [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => performDelete(),
-          },
+          { text: t('cancel', 'Cancel'), style: "cancel" },
+          { text: t('delete', 'Delete'), style: "destructive", onPress: performDelete },
         ],
       );
-    } else if (typeof window !== "undefined" && window.confirm) {
-      if (window.confirm("Delete effect?")) performDelete();
     } else {
       performDelete();
     }
@@ -2114,6 +2256,7 @@ export default function ThreeDTextScreen() {
             bevelSize={mainTextParams.bevelSize as number | undefined}
             bevelOffset={mainTextParams.bevelOffset as number | undefined}
             bevelSegments={mainTextParams.bevelSegments as number | undefined}
+            fontFamily={mainTextParams.fontFamily as string | undefined}
             color={mainTextParams.color as number | undefined}
             metalness={mainTextParams.metalness as number | undefined}
             roughness={mainTextParams.roughness as number | undefined}
@@ -2164,7 +2307,15 @@ export default function ThreeDTextScreen() {
               <Text style={[styles.label, { color: c.text }]}>
                 {t('pipelinePresets')}
               </Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flex: 1 }}>
+                <TouchableOpacity
+                  style={[styles.smallActionButton, { borderColor: c.tint }]}
+                  onPress={handleResetToBasic}
+                >
+                  <Text style={[styles.buttonText, { color: c.tint }]}>
+                    {t('resetToBasic')}
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.smallActionButton, { borderColor: c.tint }]}
                   onPress={handleSavePreset}
@@ -2471,27 +2622,40 @@ export default function ThreeDTextScreen() {
           {/* Language picker */}
           <View style={[styles.controlRow, { marginTop: 8 }]}>
             <Text style={[styles.label, { color: c.text }]}>{t('language')}</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {SUPPORTED_LANGUAGES.map(lang => (
-                <TouchableOpacity
-                  key={lang.code}
-                  onPress={() => i18nInstance.changeLanguage(lang.code)}
-                  style={[
-                    styles.smallActionButton,
-                    {
-                      borderColor: i18nInstance.language === lang.code ? c.tint : '#555',
-                      backgroundColor: i18nInstance.language === lang.code
-                        ? (colorScheme === 'dark' ? '#2a1800' : '#fff4ec')
-                        : 'transparent',
-                    },
-                  ]}
-                >
-                  <Text style={[styles.buttonText, { color: i18nInstance.language === lang.code ? c.tint : c.text }]}>
-                    {lang.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {typeof document !== 'undefined' ? (
+              <select
+                value={i18nInstance.language}
+                onChange={(e: any) => i18nInstance.changeLanguage(e.target.value)}
+                style={{
+                  background: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
+                  color: c.text as string,
+                  border: `1px solid ${c.tint}`,
+                  borderRadius: '5px',
+                  padding: '4px 8px',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                } as any}
+              >
+                {SUPPORTED_LANGUAGES.map(lang => (
+                  <option key={lang.code} value={lang.code}>{lang.label}</option>
+                ))}
+              </select>
+            ) : (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {SUPPORTED_LANGUAGES.map(lang => (
+                  <TouchableOpacity
+                    key={lang.code}
+                    onPress={() => i18nInstance.changeLanguage(lang.code)}
+                    style={[styles.smallActionButton, { borderColor: i18nInstance.language === lang.code ? c.tint : '#555' }]}
+                  >
+                    <Text style={[styles.buttonText, { color: i18nInstance.language === lang.code ? c.tint : c.text }]}>
+                      {lang.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Export button */}

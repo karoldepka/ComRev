@@ -233,5 +233,7 @@
   "p_steps": "Schritte",
   "p_threshold": "Schwellenwert",
   "p_refineWithAi": "Mit KI verfeinern",
-  "p_dragging": "Ziehen"
+  "p_dragging": "Ziehen",
+  "resetToBasic": "Auf Grundeinstellungen zurücksetzen",
+  "resetConfirm": "Sind Sie sicher, dass Sie alle Effekte außer dem 3D-Text löschen möchten?"
 }

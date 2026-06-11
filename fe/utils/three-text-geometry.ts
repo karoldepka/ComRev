@@ -4,6 +4,7 @@ import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 
 export interface TextGeometryOptions {
   text: string;
+  fontFamily?: string;
   size?: number;
   height?: number;
   curveSegments?: number;
@@ -23,6 +24,71 @@ export interface TextGeometryOptions {
   lineSpacing?: number;
 }
 
+export const AVAILABLE_FONTS: { id: string; label: string; urls: string[] }[] = [
+  {
+    id: 'helvetiker',
+    label: 'Helvetiker (sans)',
+    urls: [
+      'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/helvetiker_regular.typeface.json',
+    ],
+  },
+  {
+    id: 'helvetiker_bold',
+    label: 'Helvetiker Bold',
+    urls: [
+      'https://threejs.org/examples/fonts/helvetiker_bold.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/helvetiker_bold.typeface.json',
+    ],
+  },
+  {
+    id: 'optimer',
+    label: 'Optimer (humanist)',
+    urls: [
+      'https://threejs.org/examples/fonts/optimer_regular.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/optimer_regular.typeface.json',
+    ],
+  },
+  {
+    id: 'optimer_bold',
+    label: 'Optimer Bold',
+    urls: [
+      'https://threejs.org/examples/fonts/optimer_bold.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/optimer_bold.typeface.json',
+    ],
+  },
+  {
+    id: 'gentilis',
+    label: 'Gentilis (serif)',
+    urls: [
+      'https://threejs.org/examples/fonts/gentilis_regular.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/gentilis_regular.typeface.json',
+    ],
+  },
+  {
+    id: 'gentilis_bold',
+    label: 'Gentilis Bold',
+    urls: [
+      'https://threejs.org/examples/fonts/gentilis_bold.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/gentilis_bold.typeface.json',
+    ],
+  },
+  {
+    id: 'droid_sans',
+    label: 'Droid Sans',
+    urls: [
+      'https://threejs.org/examples/fonts/droid/droid_sans_regular.typeface.json',
+    ],
+  },
+  {
+    id: 'droid_serif',
+    label: 'Droid Serif',
+    urls: [
+      'https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json',
+    ],
+  },
+];
+
 const defaultOptions: Partial<TextGeometryOptions> = {
   size: 2,
   height: 0.8,
@@ -41,43 +107,32 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   lineSpacing: 1.0,
 };
 
-let fontCache: Font | null = null;
+const fontCache = new Map<string, Font>();
 
-async function loadFont(): Promise<Font> {
-  if (fontCache) {
-    return fontCache;
-  }
+async function loadFont(fontId = 'helvetiker'): Promise<Font> {
+  if (fontCache.has(fontId)) return fontCache.get(fontId)!;
+
+  const def = AVAILABLE_FONTS.find(f => f.id === fontId) ?? AVAILABLE_FONTS[0];
+  const urls = def.urls;
 
   return new Promise((resolve, reject) => {
-    // Try multiple CDN URLs
-    const urls = [
-      "https://threejs.org/examples/fonts/helvetiker_regular.typeface.json",
-      "https://unpkg.com/three@latest/examples/fonts/helvetiker_regular.typeface.json",
-    ];
-
     const tryLoad = async (index: number) => {
       if (index >= urls.length) {
-        reject(new Error("All font URLs failed to load"));
+        reject(new Error(`All URLs failed for font "${fontId}"`));
         return;
       }
-
       try {
-        console.log(`Trying font URL: ${urls[index]}`);
         const response = await fetch(urls[index]);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         const font = new Font(data);
-        fontCache = font;
-        console.log("Font loaded successfully");
+        fontCache.set(fontId, font);
         resolve(font);
       } catch (error) {
-        console.error(`Failed to load from ${urls[index]}:`, error);
+        console.error(`Font "${fontId}" failed from ${urls[index]}:`, error);
         tryLoad(index + 1);
       }
     };
-
     tryLoad(0);
   });
 }
@@ -92,7 +147,7 @@ export async function createTextGeometry(
   const lines = mergedOptions.text!.split('\n');
 
   try {
-    const font = await loadFont();
+    const font = await loadFont(mergedOptions.fontFamily ?? 'helvetiker');
 
     // Calculate line widths and equalization factors
     const lineWidths: number[] = [];
