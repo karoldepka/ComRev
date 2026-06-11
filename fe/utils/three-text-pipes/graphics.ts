@@ -23,6 +23,7 @@ export interface GraphicsPipeParams {
   rotX?: number;
   rotY?: number;
   rotZ?: number;
+  effectInstanceId?: string;
 }
 
 export class GraphicsPipe implements EffectPipe {
@@ -31,14 +32,19 @@ export class GraphicsPipe implements EffectPipe {
   private scene: THREE.Scene | null = null;
   private meshes: THREE.Object3D[] = [];
   private lastParamsJSON = '';
+  private rebuilding = false;
+  private dirtyAfterRebuild = false;
 
   constructor(public params: GraphicsPipeParams = {}) {}
 
   setup(ctx: PipeSetupContext) {
     this.scene = ctx.scene;
     this.group = new THREE.Group();
+    if (this.params.effectInstanceId) {
+      this.group.userData.effectInstanceId = this.params.effectInstanceId;
+    }
     this.scene.add(this.group);
-    this.rebuildGraphics();
+    this.startRebuild();
   }
 
   private async createMeshForItem(item: GraphicItem): Promise<THREE.Object3D> {
@@ -136,12 +142,25 @@ export class GraphicsPipe implements EffectPipe {
     }
   }
 
-  async rebuildGraphics() {
-    if (!this.group || !this.scene) return;
-
+  markDirty() {
     const paramsJSON = JSON.stringify(this.params);
     if (paramsJSON === this.lastParamsJSON) return;
     this.lastParamsJSON = paramsJSON;
+    if (this.rebuilding) { this.dirtyAfterRebuild = true; return; }
+    this.startRebuild();
+  }
+
+  private startRebuild() {
+    this.rebuilding = true;
+    this.dirtyAfterRebuild = false;
+    this.rebuildGraphics().finally(() => {
+      this.rebuilding = false;
+      if (this.dirtyAfterRebuild) this.startRebuild();
+    });
+  }
+
+  private async rebuildGraphics() {
+    if (!this.group || !this.scene) return;
 
     // Clear old meshes
     for (const mesh of this.meshes) {
@@ -171,11 +190,12 @@ export class GraphicsPipe implements EffectPipe {
 
     if (items.length === 0) return;
 
-    // Create meshes
+    // Create meshes (await per item — guard against disposal after each)
     const loadedMeshes: THREE.Object3D[] = [];
     for (const item of items) {
       try {
         const mesh = await this.createMeshForItem(item);
+        if (!this.group) return; // disposed while awaiting
         mesh.scale.setScalar(scale);
         this.group.add(mesh);
         loadedMeshes.push(mesh);
@@ -183,6 +203,8 @@ export class GraphicsPipe implements EffectPipe {
         console.error('Failed to load graphic item:', item.name, err);
       }
     }
+
+    if (!this.group) return; // disposed while awaiting
 
     this.meshes = loadedMeshes;
 
@@ -208,7 +230,7 @@ export class GraphicsPipe implements EffectPipe {
     } else {
       // pile / stack
       loadedMeshes.forEach((mesh, idx) => {
-        mesh.position.set(0, 0, idx * 0.2); // offset slightly in Z
+        mesh.position.set(0, 0, idx * 0.2);
       });
     }
 
@@ -216,8 +238,8 @@ export class GraphicsPipe implements EffectPipe {
     this.group.rotation.set(rotX, rotY, rotZ);
   }
 
-  update(ctx: PipeFrameContext) {
-    this.rebuildGraphics();
+  update(_ctx: PipeFrameContext) {
+    this.markDirty();
   }
 
   dispose() {

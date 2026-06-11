@@ -1,18 +1,21 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface ToonShadingPipeParams { color?: number; steps?: number; }
 
 export class ToonShadingPipe implements EffectPipe {
   readonly name = 'toonShading';
   private mesh: THREE.Mesh | THREE.Group | null = null;
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: ToonShadingPipeParams = {}) {}
   setup(_ctx: PipeSetupContext) {}
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh;
     if (!mesh) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     const { color = 0x44cc88, steps = 4 } = this.params;
     const colors = new Uint8Array(steps * 3);
     for (let i = 0; i < steps; i++) {
@@ -32,5 +35,9 @@ export class ToonShadingPipe implements EffectPipe {
   }
 
   update(_ctx: PipeFrameContext) {}
-  dispose() { this.mesh = null; }
+
+  dispose() {
+    restoreMeshMaterials(this.savedMaterials);
+    this.mesh = null;
+  }
 }

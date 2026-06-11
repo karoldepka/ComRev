@@ -35,6 +35,10 @@ export class EnvMapPipe implements EffectPipe {
   private lastSeed = -1;
   private lastCustomUrl = '';
   private loadingCustom = false;
+  /** Scene environment saved at setup so we can restore it on dispose. */
+  private savedSceneEnv: THREE.Texture | null = null;
+  /** Per-material envMap + intensity saved before this pipe overrides them. */
+  private savedMatEnv = new Map<THREE.MeshStandardMaterial, { envMap: THREE.Texture | null; envMapIntensity: number }>();
 
   constructor(public params: EnvMapPipeParams = {}) {}
 
@@ -210,6 +214,11 @@ export class EnvMapPipe implements EffectPipe {
         const mat = child.material as THREE.MeshStandardMaterial;
         if (!mat?.isMeshStandardMaterial) return;
 
+        // Save original env before first override so dispose() can restore it.
+        if (!this.savedMatEnv.has(mat)) {
+          this.savedMatEnv.set(mat, { envMap: mat.envMap, envMapIntensity: mat.envMapIntensity });
+        }
+
         this.ensurePatched(mat);
         const u = this.matUniforms.get(mat)!;
         u.tCustomEnv.value = isCustom ? this.mapTexture : null;
@@ -227,6 +236,7 @@ export class EnvMapPipe implements EffectPipe {
   setup(ctx: PipeSetupContext) {
     this.sceneRef = ctx.scene;
     this.rendererRef = ctx.renderer;
+    this.savedSceneEnv = ctx.scene.environment as THREE.Texture | null;
     const { style = 'gradient', seed = 42, customImageDataUrl } = this.params;
     if (style === 'custom') {
       this.lastStyle = '';
@@ -308,6 +318,22 @@ export class EnvMapPipe implements EffectPipe {
   }
 
   dispose() {
+    // Restore scene environment to what it was before this pipe was applied.
+    if (this.sceneRef) {
+      this.sceneRef.environment = this.savedSceneEnv;
+    }
+
+    // Restore per-material envMap and envMapIntensity.
+    this.savedMatEnv.forEach((saved, mat) => {
+      mat.envMap = saved.envMap;
+      mat.envMapIntensity = saved.envMapIntensity;
+      // Zero out the matcap uniform so it no longer contributes.
+      const u = this.matUniforms.get(mat);
+      if (u) { u.tCustomEnv.value = null; u.tCustomEnvIntensity.value = 0; }
+      mat.needsUpdate = true;
+    });
+    this.savedMatEnv.clear();
+
     this.texture?.dispose();
     this.texture = null;
     this.mapTexture?.dispose();

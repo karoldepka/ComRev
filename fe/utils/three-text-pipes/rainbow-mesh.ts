@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface RainbowMeshPipeParams { speed?: number; saturation?: number; }
 
@@ -7,13 +7,16 @@ export class RainbowMeshPipe implements EffectPipe {
   readonly name = 'rainbowMesh';
   private mesh: THREE.Mesh | THREE.Group | null = null;
   private materials: THREE.ShaderMaterial[] = [];
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: RainbowMeshPipeParams = {}) {}
   setup(_ctx: PipeSetupContext) {}
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh; this.materials = [];
     if (!mesh) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     const bbox = new THREE.Box3().setFromObject(mesh);
     const minX = bbox.min.x, maxX = bbox.max.x;
     mesh.traverse(child => {
@@ -44,5 +47,8 @@ export class RainbowMeshPipe implements EffectPipe {
     }
   }
 
-  dispose() { this.materials = []; this.mesh = null; }
+  dispose() {
+    restoreMeshMaterials(this.savedMaterials);
+    this.materials = []; this.mesh = null;
+  }
 }

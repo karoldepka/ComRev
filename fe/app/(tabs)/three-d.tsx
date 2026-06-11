@@ -1,103 +1,209 @@
-import { ThreeDText, ThreeDTextHandle } from "@/components/three-d-text";
+import { AiEffectChatModal } from "@/components/AiEffectChatModal";
 import { ExportModal } from "@/components/ExportModal";
+import { ImagePickerModal } from "@/components/ImagePickerModal";
+import { ThreeDText, ThreeDTextHandle } from "@/components/three-d-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import {
-    consumePendingPresetToLoad,
-    deletePreset,
-    deletePresetFromBackend,
-    getLatestConfig,
-    getPendingSyncCount,
-    getPresets,
-    loadPresetsFromBackend,
-    PresetRecord,
-    saveConfigOfflineFirst,
-    savePreset,
-    savePresetOfflineFirst,
-    syncPendingConfigs,
-    ThreeDConfig,
-} from "@/utils/config-store";
-import { useFocusEffect } from "expo-router";
-import {
-    // base
-    EffectPipe,
-    // vertex deform
-    BendPipe, FishEyePipe, WavePipe, TwistPipe, InflatePipe, TaperPipe, ShearPipe,
-    SpherifyPipe, RipplePipe, MeltPipe, PinchPipe, VoxelizePipe, CrumplePipe,
-    NoiseWobblePipe, SpiralDeformPipe, BulgePipe, SquishPipe, ZapPipe, ExplodePipe,
-    FoldPipe, SpikesPipe, CylindrizePipe,
-    // post-process
-    BloomPipe, DepthOfFieldPipe, FilmGrainPipe, GlitchPipe,
-    ChromaticAberrationPipe, VignettePipe, ScanlinesPipe, ColorGradingPipe, PixelatePipe,
-    RadialBlurPipe, CircularBlurPipe, SepiaPipe, InvertPipe, SobelEdgePipe, ThermalPipe,
-    NightVisionPipe, DuotonePipe, PosterizePipe, ColorOverlayPipe, HalftonePipe,
-    SharpenPipe, AnimChromaticPipe, BlurPipe, LensDistortPipe, MosaicPipe, NoisePostPipe,
-    CrtCurvaturePipe, VhsTrackingPipe, GlowEdgePipe, AcidPipe, KaleidoscopePostPipe,
-    OldFilmPipe, ZoomBlurPipe, CrosshatchPipe, GlitchBlockPipe, SpeedLinesPipe,
-    RgbShiftPipe, FrostedGlassPipe, WaterRipplePipe, PixelShiftPipe, RetroTvPipe,
-    AntialiasingPipe,
-    // material
-    EnvMapPipe, EnvMapStyle, NeonGlowPipe, MetallicPreset, MetallicPresetPipe,
-    XRayPipe, ToonShadingPipe, HologramPipe, GradientMeshPipe, RainbowMeshPipe,
-    IridescentPipe, EmissivePulsePipe, DissolveAnimPipe, GlassPipe, MatcapPipe,
-    // lighting
-    SpotlightPipe, StrobePipe, FlickerPipe, ColorCycleLightPipe, DiscoPipe,
-    AmbientPulsePipe, RimLightPipe, DramaticLightPipe, LightningFlashPipe, RainbowLightsPipe,
-    // scene objects
-    ParticleDustPipe, WireframePipe, OutlinePipe, EchoCopiesPipe, RaysPipe,
-    FloatingRingsPipe, StarField3dPipe, SnowPipe, RainPipe, ConfettiPipe, SparklePipe,
-    AuraPipe, GridFloorPipe, OrbiterPipe, PortalRingPipe, CometTrailPipe,
-    FloatingCubesPipe, MirrorPlanePipe,
-    // animation
-    PulsePipe, SpinPipe, BouncePipe, LevitationPipe, SwingPipe, TremplePipe,
-    BreathePipe, WigglePipe, FloatDriftPipe, FlipCoinPipe, GrowPipe, ShrinkPipe,
-    OrbitAnimPipe, RockPipe, JitterPipe, SwayPipe, FigureEightPipe, PendulumPipe,
-    // ai-generated
-    CustomJsPipe,
-    MainTextPipe,
-    Text3dPipe,
-    GraphicsPipe,
-    FlatShadePipe,
-    ShadowFloorPipe,
-    BackgroundPlanePipe,
-    FogEffectPipe,
-    EmbossPipe,
-    ThresholdPipe,
-    MirrorHPipe,
-    MirrorVPipe,
-    SketchPipe,
-    SunsetLightPipe,
-    StudioLightPipe,
-    MoonLightPipe,
-    ChromeEdgePipe,
-    ColorBurnPipe,
-    DepthLinesPipe,
-} from "@/utils/three-text-pipes";
-import { AVAILABLE_FONTS, registerCustomFontUrl } from "@/utils/three-text-geometry";
-import { AiEffectChatModal } from "@/components/AiEffectChatModal";
-import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
-import { useTranslation } from "react-i18next";
-import { nanoid } from "nanoid/non-secure";
 import { useThreeDStore } from "@/store/three-d-store";
-import { createEffectInstance, createId } from "@/utils/effect-defaults";
-import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert, Modal, SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    useWindowDimensions,
-    View
+  consumePendingPresetToLoad,
+  deletePreset,
+  deletePresetFromBackend,
+  getLatestConfig,
+  getPendingSyncCount,
+  getPresets,
+  loadPresetsFromBackend,
+  PresetRecord,
+  saveConfigOfflineFirst,
+  savePreset,
+  savePresetOfflineFirst,
+  syncPendingConfigs,
+  ThreeDConfig,
+} from "@/utils/config-store";
+import { createEffectInstance, createId } from "@/utils/effect-defaults";
+import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
+import {
+  AVAILABLE_FONTS,
+  registerCustomFontUrl,
+} from "@/utils/three-text-geometry";
+import {
+  AcidPipe,
+  AmbientPulsePipe,
+  AnimChromaticPipe,
+  AntialiasingPipe,
+  AuraPipe,
+  BackgroundPlanePipe,
+  // vertex deform
+  BendPipe,
+  // post-process
+  BloomPipe,
+  BlurPipe,
+  BouncePipe,
+  BreathePipe,
+  BulgePipe,
+  ChromaticAberrationPipe,
+  ChromeEdgePipe,
+  CircularBlurPipe,
+  ColorBurnPipe,
+  ColorCycleLightPipe,
+  ColorGradingPipe,
+  ColorOverlayPipe,
+  CometTrailPipe,
+  ConfettiPipe,
+  CrosshatchPipe,
+  CrtCurvaturePipe,
+  CrumplePipe,
+  // ai-generated
+  CustomJsPipe,
+  CylindrizePipe,
+  DepthLinesPipe,
+  DepthOfFieldPipe,
+  DiscoPipe,
+  DissolveAnimPipe,
+  DramaticLightPipe,
+  DuotonePipe,
+  EchoCopiesPipe,
+  // base
+  EffectPipe,
+  EmbossPipe,
+  EmissivePulsePipe,
+  // material
+  EnvMapPipe,
+  EnvMapStyle,
+  ExplodePipe,
+  FigureEightPipe,
+  FilmGrainPipe,
+  FishEyePipe,
+  FlatShadePipe,
+  FlickerPipe,
+  FlipCoinPipe,
+  FloatDriftPipe,
+  FloatingCubesPipe,
+  FloatingRingsPipe,
+  FogEffectPipe,
+  FoldPipe,
+  FrostedGlassPipe,
+  GlassPipe,
+  GlitchBlockPipe,
+  GlitchPipe,
+  GlowEdgePipe,
+  GradientMeshPipe,
+  GraphicsPipe,
+  GridFloorPipe,
+  GrowPipe,
+  HalftonePipe,
+  HologramPipe,
+  InflatePipe,
+  InvertPipe,
+  IridescentPipe,
+  JitterPipe,
+  KaleidoscopePostPipe,
+  LensDistortPipe,
+  LevitationPipe,
+  LightningFlashPipe,
+  MainTextPipe,
+  MatcapPipe,
+  MeltPipe,
+  MetallicPreset,
+  MetallicPresetPipe,
+  MirrorHPipe,
+  MirrorPlanePipe,
+  MirrorVPipe,
+  MoonLightPipe,
+  MosaicPipe,
+  NeonGlowPipe,
+  NightVisionPipe,
+  NoisePostPipe,
+  NoiseWobblePipe,
+  OldFilmPipe,
+  OrbitAnimPipe,
+  OrbiterPipe,
+  OutlinePipe,
+  // scene objects
+  ParticleDustPipe,
+  PendulumPipe,
+  PinchPipe,
+  PixelatePipe,
+  PixelShiftPipe,
+  PortalRingPipe,
+  PosterizePipe,
+  // animation
+  PulsePipe,
+  RadialBlurPipe,
+  RainbowLightsPipe,
+  RainbowMeshPipe,
+  RainPipe,
+  RaysPipe,
+  RetroTvPipe,
+  RgbShiftPipe,
+  RimLightPipe,
+  RipplePipe,
+  RockPipe,
+  ScanlinesPipe,
+  SepiaPipe,
+  ShadowFloorPipe,
+  SharpenPipe,
+  ShearPipe,
+  ShrinkPipe,
+  SketchPipe,
+  SnowPipe,
+  SobelEdgePipe,
+  SparklePipe,
+  SpeedLinesPipe,
+  SpherifyPipe,
+  SpikesPipe,
+  SpinPipe,
+  SpiralDeformPipe,
+  // lighting
+  SpotlightPipe,
+  SquishPipe,
+  StarField3dPipe,
+  StrobePipe,
+  StudioLightPipe,
+  SunsetLightPipe,
+  SwayPipe,
+  SwingPipe,
+  TaperPipe,
+  Text3dPipe,
+  ThermalPipe,
+  ThresholdPipe,
+  ToonShadingPipe,
+  TremplePipe,
+  TwistPipe,
+  VhsTrackingPipe,
+  VignettePipe,
+  VoxelizePipe,
+  WaterRipplePipe,
+  WavePipe,
+  WigglePipe,
+  WireframePipe,
+  XRayPipe,
+  ZapPipe,
+  ZoomBlurPipe,
+} from "@/utils/three-text-pipes";
+import { useFocusEffect } from "expo-router";
+import { nanoid } from "nanoid/non-secure";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-    runOnJS,
-    useAnimatedStyle,
-    useSharedValue,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
 } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const API_BASE = "http://localhost:8000";
 
@@ -149,31 +255,68 @@ function SliderRow({
  * Reusable for any pair of linked numeric params.
  */
 function LinkedSliderPair({
-  label1, label2,
-  min, max, step,
-  value1, value2,
-  onChange1, onChange2,
-  locked, onLockToggle,
+  label1,
+  label2,
+  min,
+  max,
+  step,
+  value1,
+  value2,
+  onChange1,
+  onChange2,
+  locked,
+  onLockToggle,
   colors,
 }: {
-  label1: string; label2: string;
-  min: number; max: number; step: number;
-  value1: number; value2: number;
-  onChange1: (v: number) => void; onChange2: (v: number) => void;
-  locked: boolean; onLockToggle: () => void;
+  label1: string;
+  label2: string;
+  min: number;
+  max: number;
+  step: number;
+  value1: number;
+  value2: number;
+  onChange1: (v: number) => void;
+  onChange2: (v: number) => void;
+  locked: boolean;
+  onLockToggle: () => void;
   colors: any;
 }) {
-  const handle1 = (v: number) => { onChange1(v); if (locked) onChange2(v); };
-  const handle2 = (v: number) => { onChange2(v); if (locked) onChange1(v); };
+  const handle1 = (v: number) => {
+    onChange1(v);
+    if (locked) onChange2(v);
+  };
+  const handle2 = (v: number) => {
+    onChange2(v);
+    if (locked) onChange1(v);
+  };
   const lockBtn = (
     <TouchableOpacity onPress={onLockToggle} style={styles.smallActionButton}>
-      <Text style={[styles.buttonText, { color: colors.tint }]}>{locked ? '🔒' : '🔓'}</Text>
+      <Text style={[styles.buttonText, { color: colors.tint }]}>
+        {locked ? "🔒" : "🔓"}
+      </Text>
     </TouchableOpacity>
   );
   return (
     <>
-      <SliderRow label={label1} min={min} max={max} step={step} value={value1} onChange={handle1} colors={colors} />
-      <SliderRow label={label2} min={min} max={max} step={step} value={value2} onChange={handle2} colors={colors} rightWidget={lockBtn} />
+      <SliderRow
+        label={label1}
+        min={min}
+        max={max}
+        step={step}
+        value={value1}
+        onChange={handle1}
+        colors={colors}
+      />
+      <SliderRow
+        label={label2}
+        min={min}
+        max={max}
+        step={step}
+        value={value2}
+        onChange={handle2}
+        colors={colors}
+        rightWidget={lockBtn}
+      />
     </>
   );
 }
@@ -237,45 +380,155 @@ type EffectType =
   // primary text
   | "mainText"
   // post-process
-  | "bloom" | "depthOfField" | "chromatic" | "filmGrain" | "glitch"
-  | "vignette" | "scanlines" | "colorGrading" | "pixelate" | "radialBlur"
-  | "circularBlur" | "sepia" | "invert" | "sobelEdge" | "thermal"
-  | "nightVision" | "duotone" | "posterize" | "colorOverlay" | "halftone"
-  | "sharpen" | "animChromatic" | "blur" | "lensDistort" | "mosaic"
-  | "noisePost" | "crtCurvature" | "vhsTracking" | "glowEdge" | "acid"
-  | "kaleidoscopePost" | "oldFilm" | "zoomBlur" | "crosshatch" | "glitchBlock"
-  | "speedLines" | "rgbShift" | "frostedGlass" | "waterRipple" | "pixelShift"
-  | "retroTv" | "antialiasing"
+  | "bloom"
+  | "depthOfField"
+  | "chromatic"
+  | "filmGrain"
+  | "glitch"
+  | "vignette"
+  | "scanlines"
+  | "colorGrading"
+  | "pixelate"
+  | "radialBlur"
+  | "circularBlur"
+  | "sepia"
+  | "invert"
+  | "sobelEdge"
+  | "thermal"
+  | "nightVision"
+  | "duotone"
+  | "posterize"
+  | "colorOverlay"
+  | "halftone"
+  | "sharpen"
+  | "animChromatic"
+  | "blur"
+  | "lensDistort"
+  | "mosaic"
+  | "noisePost"
+  | "crtCurvature"
+  | "vhsTracking"
+  | "glowEdge"
+  | "acid"
+  | "kaleidoscopePost"
+  | "oldFilm"
+  | "zoomBlur"
+  | "crosshatch"
+  | "glitchBlock"
+  | "speedLines"
+  | "rgbShift"
+  | "frostedGlass"
+  | "waterRipple"
+  | "pixelShift"
+  | "retroTv"
+  | "antialiasing"
   // vertex deform
-  | "fishEye" | "bend" | "wave" | "twist" | "inflate" | "taper" | "shear"
-  | "spherify" | "ripple" | "melt" | "pinch" | "voxelize" | "crumple"
-  | "noiseWobble" | "spiralDeform" | "bulge" | "squish" | "zap" | "explode"
-  | "fold" | "spikes" | "cylindrize"
+  | "fishEye"
+  | "bend"
+  | "wave"
+  | "twist"
+  | "inflate"
+  | "taper"
+  | "shear"
+  | "spherify"
+  | "ripple"
+  | "melt"
+  | "pinch"
+  | "voxelize"
+  | "crumple"
+  | "noiseWobble"
+  | "spiralDeform"
+  | "bulge"
+  | "squish"
+  | "zap"
+  | "explode"
+  | "fold"
+  | "spikes"
+  | "cylindrize"
   // material
-  | "envMap" | "neonGlow" | "metallicPreset" | "xRay" | "toonShading"
-  | "hologram" | "gradientMesh" | "rainbowMesh" | "iridescent"
-  | "emissivePulse" | "dissolveAnim" | "glass" | "matcap"
+  | "envMap"
+  | "neonGlow"
+  | "metallicPreset"
+  | "xRay"
+  | "toonShading"
+  | "hologram"
+  | "gradientMesh"
+  | "rainbowMesh"
+  | "iridescent"
+  | "emissivePulse"
+  | "dissolveAnim"
+  | "glass"
+  | "matcap"
   // lighting
-  | "spotlight" | "strobe" | "flicker" | "colorCycleLight" | "disco"
-  | "ambientPulse" | "rimLight" | "dramaticLight" | "lightningFlash" | "rainbowLights"
+  | "spotlight"
+  | "strobe"
+  | "flicker"
+  | "colorCycleLight"
+  | "disco"
+  | "ambientPulse"
+  | "rimLight"
+  | "dramaticLight"
+  | "lightningFlash"
+  | "rainbowLights"
   // scene objects
-  | "dust" | "wireframe" | "outline" | "echoCopies" | "rays"
-  | "floatingRings" | "starField3d" | "snow" | "rain" | "confetti"
-  | "sparkle" | "aura" | "gridFloor" | "orbiter" | "portalRing"
-  | "cometTrail" | "floatingCubes" | "mirrorPlane"
+  | "dust"
+  | "wireframe"
+  | "outline"
+  | "echoCopies"
+  | "rays"
+  | "floatingRings"
+  | "starField3d"
+  | "snow"
+  | "rain"
+  | "confetti"
+  | "sparkle"
+  | "aura"
+  | "gridFloor"
+  | "orbiter"
+  | "portalRing"
+  | "cometTrail"
+  | "floatingCubes"
+  | "mirrorPlane"
   // animation
-  | "pulse" | "spin" | "bounce" | "levitation" | "swing" | "tremble"
-  | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"
-  | "orbitAnim" | "rock" | "jitter" | "sway" | "figureEight" | "pendulum"
+  | "pulse"
+  | "spin"
+  | "bounce"
+  | "levitation"
+  | "swing"
+  | "tremble"
+  | "breathe"
+  | "wiggle"
+  | "floatDrift"
+  | "flipCoin"
+  | "grow"
+  | "shrink"
+  | "orbitAnim"
+  | "rock"
+  | "jitter"
+  | "sway"
+  | "figureEight"
+  | "pendulum"
   // ai-generated
   | "customJs"
   // added effects
-  | "text3d" | "graphics"
+  | "text3d"
+  | "graphics"
   // static effects
-  | "flatShade" | "shadowFloor" | "backgroundPlane" | "fogEffect"
-  | "emboss" | "threshold" | "mirrorH" | "mirrorV" | "sketch"
-  | "sunsetLight" | "studioLight" | "moonLight" | "chromeEdge"
-  | "colorBurn" | "depthLines";
+  | "flatShade"
+  | "shadowFloor"
+  | "backgroundPlane"
+  | "fogEffect"
+  | "emboss"
+  | "threshold"
+  | "mirrorH"
+  | "mirrorV"
+  | "sketch"
+  | "sunsetLight"
+  | "studioLight"
+  | "moonLight"
+  | "chromeEdge"
+  | "colorBurn"
+  | "depthLines";
 
 interface EffectInstance {
   id: string;
@@ -296,155 +549,240 @@ const EFFECT_TYPES: {
   // Primary text (always present, not user-addable)
   { type: "mainText", label: "Primary Text", primary: true },
   // Post-process
-  { type: "bloom",          label: "Bloom",           target: "post" },
-  { type: "depthOfField",   label: "Depth of Field",  target: "post" },
-  { type: "chromatic",      label: "Chromatic",       target: "post" },
-  { type: "filmGrain",      label: "Film Grain",      target: "post" },
-  { type: "glitch",         label: "Glitch",          target: "post",  animated: true },
-  { type: "vignette",       label: "Vignette",        target: "post" },
-  { type: "scanlines",      label: "Scanlines",       target: "post" },
-  { type: "colorGrading",   label: "Color Grading",   target: "post" },
-  { type: "pixelate",       label: "Pixelate",        target: "post" },
-  { type: "radialBlur",     label: "Radial Blur",     target: "post" },
-  { type: "circularBlur",   label: "Circular Blur",   target: "post" },
-  { type: "sepia",          label: "Sepia",           target: "post" },
-  { type: "invert",         label: "Invert",          target: "post" },
-  { type: "sobelEdge",      label: "Sobel Edge",      target: "post" },
-  { type: "thermal",        label: "Thermal",         target: "post" },
-  { type: "nightVision",    label: "Night Vision",    target: "post" },
-  { type: "duotone",        label: "Duotone",         target: "post" },
-  { type: "posterize",      label: "Posterize",       target: "post" },
-  { type: "colorOverlay",   label: "Color Overlay",   target: "post" },
-  { type: "halftone",       label: "Halftone",        target: "post" },
-  { type: "sharpen",        label: "Sharpen",         target: "post" },
-  { type: "animChromatic",  label: "Anim Chromatic",  target: "post",  animated: true },
-  { type: "blur",           label: "Blur",            target: "post" },
-  { type: "lensDistort",    label: "Lens Distort",    target: "post" },
-  { type: "mosaic",         label: "Mosaic",          target: "post" },
-  { type: "noisePost",      label: "Noise",           target: "post" },
-  { type: "crtCurvature",   label: "CRT Curvature",   target: "post" },
-  { type: "vhsTracking",    label: "VHS Tracking",    target: "post",  animated: true },
-  { type: "glowEdge",       label: "Glow Edge",       target: "post" },
-  { type: "acid",           label: "Acid",            target: "post",  animated: true },
-  { type: "kaleidoscopePost",label:"Kaleidoscope",    target: "post" },
-  { type: "oldFilm",        label: "Old Film",        target: "post",  animated: true },
-  { type: "zoomBlur",       label: "Zoom Blur",       target: "post" },
-  { type: "crosshatch",     label: "Crosshatch",      target: "post" },
-  { type: "glitchBlock",    label: "Glitch Block",    target: "post",  animated: true },
-  { type: "speedLines",     label: "Speed Lines",     target: "post" },
-  { type: "rgbShift",       label: "RGB Shift",       target: "post" },
-  { type: "frostedGlass",   label: "Frosted Glass",   target: "post" },
-  { type: "waterRipple",    label: "Water Ripple",    target: "post",  animated: true },
-  { type: "pixelShift",     label: "Pixel Shift",     target: "post",  animated: true },
-  { type: "retroTv",        label: "Retro TV",        target: "post",  animated: true },
-  { type: "antialiasing",   label: "Antialiasing",    target: "post" },
+  { type: "bloom", label: "Bloom", target: "post" },
+  { type: "depthOfField", label: "Depth of Field", target: "post" },
+  { type: "chromatic", label: "Chromatic", target: "post" },
+  { type: "filmGrain", label: "Film Grain", target: "post" },
+  { type: "glitch", label: "Glitch", target: "post", animated: true },
+  { type: "vignette", label: "Vignette", target: "post" },
+  { type: "scanlines", label: "Scanlines", target: "post" },
+  { type: "colorGrading", label: "Color Grading", target: "post" },
+  { type: "pixelate", label: "Pixelate", target: "post" },
+  { type: "radialBlur", label: "Radial Blur", target: "post" },
+  { type: "circularBlur", label: "Circular Blur", target: "post" },
+  { type: "sepia", label: "Sepia", target: "post" },
+  { type: "invert", label: "Invert", target: "post" },
+  { type: "sobelEdge", label: "Sobel Edge", target: "post" },
+  { type: "thermal", label: "Thermal", target: "post" },
+  { type: "nightVision", label: "Night Vision", target: "post" },
+  { type: "duotone", label: "Duotone", target: "post" },
+  { type: "posterize", label: "Posterize", target: "post" },
+  { type: "colorOverlay", label: "Color Overlay", target: "post" },
+  { type: "halftone", label: "Halftone", target: "post" },
+  { type: "sharpen", label: "Sharpen", target: "post" },
+  {
+    type: "animChromatic",
+    label: "Anim Chromatic",
+    target: "post",
+    animated: true,
+  },
+  { type: "blur", label: "Blur", target: "post" },
+  { type: "lensDistort", label: "Lens Distort", target: "post" },
+  { type: "mosaic", label: "Mosaic", target: "post" },
+  { type: "noisePost", label: "Noise", target: "post" },
+  { type: "crtCurvature", label: "CRT Curvature", target: "post" },
+  {
+    type: "vhsTracking",
+    label: "VHS Tracking",
+    target: "post",
+    animated: true,
+  },
+  { type: "glowEdge", label: "Glow Edge", target: "post" },
+  { type: "acid", label: "Acid", target: "post", animated: true },
+  { type: "kaleidoscopePost", label: "Kaleidoscope", target: "post" },
+  { type: "oldFilm", label: "Old Film", target: "post", animated: true },
+  { type: "zoomBlur", label: "Zoom Blur", target: "post" },
+  { type: "crosshatch", label: "Crosshatch", target: "post" },
+  {
+    type: "glitchBlock",
+    label: "Glitch Block",
+    target: "post",
+    animated: true,
+  },
+  { type: "speedLines", label: "Speed Lines", target: "post" },
+  { type: "rgbShift", label: "RGB Shift", target: "post" },
+  { type: "frostedGlass", label: "Frosted Glass", target: "post" },
+  {
+    type: "waterRipple",
+    label: "Water Ripple",
+    target: "post",
+    animated: true,
+  },
+  { type: "pixelShift", label: "Pixel Shift", target: "post", animated: true },
+  { type: "retroTv", label: "Retro TV", target: "post", animated: true },
+  { type: "antialiasing", label: "Antialiasing", target: "post" },
   // Post-process static
-  { type: "emboss",         label: "Emboss",          target: "post" },
-  { type: "threshold",      label: "Threshold",       target: "post" },
-  { type: "mirrorH",        label: "Mirror H",        target: "post" },
-  { type: "mirrorV",        label: "Mirror V",        target: "post" },
-  { type: "sketch",         label: "Sketch",          target: "post" },
-  { type: "colorBurn",      label: "Color Burn",      target: "post" },
-  { type: "depthLines",     label: "Depth Lines",     target: "post" },
+  { type: "emboss", label: "Emboss", target: "post" },
+  { type: "threshold", label: "Threshold", target: "post" },
+  { type: "mirrorH", label: "Mirror H", target: "post" },
+  { type: "mirrorV", label: "Mirror V", target: "post" },
+  { type: "sketch", label: "Sketch", target: "post" },
+  { type: "colorBurn", label: "Color Burn", target: "post" },
+  { type: "depthLines", label: "Depth Lines", target: "post" },
   // Vertex deform
-  { type: "fishEye",        label: "Fish Eye",        target: "geometry" },
-  { type: "bend",           label: "Bend",            target: "geometry" },
-  { type: "wave",           label: "Wave",            target: "geometry",  animated: true },
-  { type: "twist",          label: "Twist",           target: "geometry" },
-  { type: "inflate",        label: "Inflate",         target: "geometry" },
-  { type: "taper",          label: "Taper",           target: "geometry" },
-  { type: "shear",          label: "Shear",           target: "geometry" },
-  { type: "spherify",       label: "Spherify",        target: "geometry" },
-  { type: "ripple",         label: "Ripple",          target: "geometry",  animated: true },
-  { type: "melt",           label: "Melt",            target: "geometry",  animated: true },
-  { type: "pinch",          label: "Pinch",           target: "geometry" },
-  { type: "voxelize",       label: "Voxelize",        target: "geometry" },
-  { type: "crumple",        label: "Crumple",         target: "geometry" },
-  { type: "noiseWobble",    label: "Noise Wobble",    target: "geometry",  animated: true },
-  { type: "spiralDeform",   label: "Spiral Deform",   target: "geometry" },
-  { type: "bulge",          label: "Bulge",           target: "geometry" },
-  { type: "squish",         label: "Squish",          target: "geometry" },
-  { type: "zap",            label: "Zap",             target: "geometry",  animated: true },
-  { type: "explode",        label: "Explode",         target: "geometry",  animated: true },
-  { type: "fold",           label: "Fold",            target: "geometry" },
-  { type: "spikes",         label: "Spikes",          target: "geometry" },
-  { type: "cylindrize",     label: "Cylindrize",      target: "geometry" },
+  { type: "fishEye", label: "Fish Eye", target: "geometry" },
+  { type: "bend", label: "Bend", target: "geometry" },
+  { type: "wave", label: "Wave", target: "geometry", animated: true },
+  { type: "twist", label: "Twist", target: "geometry" },
+  { type: "inflate", label: "Inflate", target: "geometry" },
+  { type: "taper", label: "Taper", target: "geometry" },
+  { type: "shear", label: "Shear", target: "geometry" },
+  { type: "spherify", label: "Spherify", target: "geometry" },
+  { type: "ripple", label: "Ripple", target: "geometry", animated: true },
+  { type: "melt", label: "Melt", target: "geometry", animated: true },
+  { type: "pinch", label: "Pinch", target: "geometry" },
+  { type: "voxelize", label: "Voxelize", target: "geometry" },
+  { type: "crumple", label: "Crumple", target: "geometry" },
+  {
+    type: "noiseWobble",
+    label: "Noise Wobble",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "spiralDeform", label: "Spiral Deform", target: "geometry" },
+  { type: "bulge", label: "Bulge", target: "geometry" },
+  { type: "squish", label: "Squish", target: "geometry" },
+  { type: "zap", label: "Zap", target: "geometry", animated: true },
+  { type: "explode", label: "Explode", target: "geometry", animated: true },
+  { type: "fold", label: "Fold", target: "geometry" },
+  { type: "spikes", label: "Spikes", target: "geometry" },
+  { type: "cylindrize", label: "Cylindrize", target: "geometry" },
   // Material
-  { type: "envMap",         label: "Env Map",         target: "geometry" },
-  { type: "neonGlow",       label: "Neon Glow",       target: "geometry",  animated: true },
-  { type: "metallicPreset", label: "Metallic",        target: "geometry" },
-  { type: "xRay",           label: "X-Ray",           target: "geometry" },
-  { type: "toonShading",    label: "Toon Shading",    target: "geometry" },
-  { type: "hologram",       label: "Hologram",        target: "geometry",  animated: true },
-  { type: "gradientMesh",   label: "Gradient Mesh",   target: "geometry" },
-  { type: "rainbowMesh",    label: "Rainbow Mesh",    target: "geometry",  animated: true },
-  { type: "iridescent",     label: "Iridescent",      target: "geometry",  animated: true },
-  { type: "emissivePulse",  label: "Emissive Pulse",  target: "geometry",  animated: true },
-  { type: "dissolveAnim",   label: "Dissolve",        target: "geometry",  animated: true },
-  { type: "glass",          label: "Glass",           target: "geometry" },
-  { type: "matcap",         label: "Matcap",          target: "geometry" },
-  { type: "flatShade",      label: "Flat Shade",      target: "geometry" },
-  { type: "chromeEdge",     label: "Chrome Edge",     target: "geometry" },
+  { type: "envMap", label: "Env Map", target: "geometry" },
+  { type: "neonGlow", label: "Neon Glow", target: "geometry", animated: true },
+  { type: "metallicPreset", label: "Metallic", target: "geometry" },
+  { type: "xRay", label: "X-Ray", target: "geometry" },
+  { type: "toonShading", label: "Toon Shading", target: "geometry" },
+  { type: "hologram", label: "Hologram", target: "geometry", animated: true },
+  { type: "gradientMesh", label: "Gradient Mesh", target: "geometry" },
+  {
+    type: "rainbowMesh",
+    label: "Rainbow Mesh",
+    target: "geometry",
+    animated: true,
+  },
+  {
+    type: "iridescent",
+    label: "Iridescent",
+    target: "geometry",
+    animated: true,
+  },
+  {
+    type: "emissivePulse",
+    label: "Emissive Pulse",
+    target: "geometry",
+    animated: true,
+  },
+  {
+    type: "dissolveAnim",
+    label: "Dissolve",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "glass", label: "Glass", target: "geometry" },
+  { type: "matcap", label: "Matcap", target: "geometry" },
+  { type: "flatShade", label: "Flat Shade", target: "geometry" },
+  { type: "chromeEdge", label: "Chrome Edge", target: "geometry" },
   // Lighting
-  { type: "spotlight",      label: "Spotlight" },
-  { type: "strobe",         label: "Strobe",          animated: true },
-  { type: "flicker",        label: "Flicker",         animated: true },
-  { type: "colorCycleLight",label: "Color Cycle Light", animated: true },
-  { type: "disco",          label: "Disco",           animated: true },
-  { type: "ambientPulse",   label: "Ambient Pulse",   animated: true },
-  { type: "rimLight",       label: "Rim Light" },
-  { type: "dramaticLight",  label: "Dramatic Light" },
+  { type: "spotlight", label: "Spotlight" },
+  { type: "strobe", label: "Strobe", animated: true },
+  { type: "flicker", label: "Flicker", animated: true },
+  { type: "colorCycleLight", label: "Color Cycle Light", animated: true },
+  { type: "disco", label: "Disco", animated: true },
+  { type: "ambientPulse", label: "Ambient Pulse", animated: true },
+  { type: "rimLight", label: "Rim Light" },
+  { type: "dramaticLight", label: "Dramatic Light" },
   { type: "lightningFlash", label: "Lightning Flash", animated: true },
-  { type: "rainbowLights",  label: "Rainbow Lights",  animated: true },
-  { type: "sunsetLight",    label: "Sunset Light" },
-  { type: "studioLight",    label: "Studio Light" },
-  { type: "moonLight",      label: "Moon Light" },
+  { type: "rainbowLights", label: "Rainbow Lights", animated: true },
+  { type: "sunsetLight", label: "Sunset Light" },
+  { type: "studioLight", label: "Studio Light" },
+  { type: "moonLight", label: "Moon Light" },
   // Scene objects
-  { type: "dust",           label: "Particle Dust",   target: "geometry",  animated: true },
-  { type: "wireframe",      label: "Wireframe",       target: "geometry" },
-  { type: "outline",        label: "Outline",         target: "geometry" },
-  { type: "echoCopies",     label: "Echo Copies",     target: "geometry" },
-  { type: "rays",           label: "Rays",            target: "geometry" },
-  { type: "floatingRings",  label: "Floating Rings",  target: "geometry",  animated: true },
-  { type: "starField3d",    label: "Star Field 3D",   target: "geometry",  animated: true },
-  { type: "snow",           label: "Snow",            target: "geometry",  animated: true },
-  { type: "rain",           label: "Rain",            target: "geometry",  animated: true },
-  { type: "confetti",       label: "Confetti",        target: "geometry",  animated: true },
-  { type: "sparkle",        label: "Sparkle",         target: "geometry",  animated: true },
-  { type: "aura",           label: "Aura",            target: "geometry",  animated: true },
-  { type: "gridFloor",      label: "Grid Floor",      target: "geometry" },
-  { type: "orbiter",        label: "Orbiter",         target: "geometry",  animated: true },
-  { type: "portalRing",     label: "Portal Ring",     target: "geometry",  animated: true },
-  { type: "cometTrail",     label: "Comet Trail",     target: "geometry",  animated: true },
-  { type: "floatingCubes",  label: "Floating Cubes",  target: "geometry",  animated: true },
-  { type: "mirrorPlane",    label: "Mirror Plane",    target: "geometry" },
-  { type: "shadowFloor",    label: "Shadow Floor",    target: "geometry" },
-  { type: "backgroundPlane",label: "Background Plane",target: "geometry" },
-  { type: "fogEffect",      label: "Fog Effect",      target: "geometry" },
+  { type: "dust", label: "Particle Dust", target: "geometry", animated: true },
+  { type: "wireframe", label: "Wireframe", target: "geometry" },
+  { type: "outline", label: "Outline", target: "geometry" },
+  { type: "echoCopies", label: "Echo Copies", target: "geometry" },
+  { type: "rays", label: "Rays", target: "geometry" },
+  {
+    type: "floatingRings",
+    label: "Floating Rings",
+    target: "geometry",
+    animated: true,
+  },
+  {
+    type: "starField3d",
+    label: "Star Field 3D",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "snow", label: "Snow", target: "geometry", animated: true },
+  { type: "rain", label: "Rain", target: "geometry", animated: true },
+  { type: "confetti", label: "Confetti", target: "geometry", animated: true },
+  { type: "sparkle", label: "Sparkle", target: "geometry", animated: true },
+  { type: "aura", label: "Aura", target: "geometry", animated: true },
+  { type: "gridFloor", label: "Grid Floor", target: "geometry" },
+  { type: "orbiter", label: "Orbiter", target: "geometry", animated: true },
+  {
+    type: "portalRing",
+    label: "Portal Ring",
+    target: "geometry",
+    animated: true,
+  },
+  {
+    type: "cometTrail",
+    label: "Comet Trail",
+    target: "geometry",
+    animated: true,
+  },
+  {
+    type: "floatingCubes",
+    label: "Floating Cubes",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "mirrorPlane", label: "Mirror Plane", target: "geometry" },
+  { type: "shadowFloor", label: "Shadow Floor", target: "geometry" },
+  { type: "backgroundPlane", label: "Background Plane", target: "geometry" },
+  { type: "fogEffect", label: "Fog Effect", target: "geometry" },
   // Animation
-  { type: "pulse",          label: "Pulse",           target: "geometry",  animated: true },
-  { type: "spin",           label: "Spin",            target: "geometry",  animated: true },
-  { type: "bounce",         label: "Bounce",          target: "geometry",  animated: true },
-  { type: "levitation",     label: "Levitation",      target: "geometry",  animated: true },
-  { type: "swing",          label: "Swing",           target: "geometry",  animated: true },
-  { type: "tremble",        label: "Tremble",         target: "geometry",  animated: true },
-  { type: "breathe",        label: "Breathe",         target: "geometry",  animated: true },
-  { type: "wiggle",         label: "Wiggle",          target: "geometry",  animated: true },
-  { type: "floatDrift",     label: "Float Drift",     target: "geometry",  animated: true },
-  { type: "flipCoin",       label: "Flip Coin",       target: "geometry",  animated: true },
-  { type: "grow",           label: "Grow",            target: "geometry",  animated: true },
-  { type: "shrink",         label: "Shrink",          target: "geometry",  animated: true },
-  { type: "orbitAnim",      label: "Orbit",           target: "geometry",  animated: true },
-  { type: "rock",           label: "Rock",            target: "geometry",  animated: true },
-  { type: "jitter",         label: "Jitter",          target: "geometry",  animated: true },
-  { type: "sway",           label: "Sway",            target: "geometry",  animated: true },
-  { type: "figureEight",    label: "Figure Eight",    target: "geometry",  animated: true },
-  { type: "pendulum",       label: "Pendulum",        target: "geometry",  animated: true },
+  { type: "pulse", label: "Pulse", target: "geometry", animated: true },
+  { type: "spin", label: "Spin", target: "geometry", animated: true },
+  { type: "bounce", label: "Bounce", target: "geometry", animated: true },
+  {
+    type: "levitation",
+    label: "Levitation",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "swing", label: "Swing", target: "geometry", animated: true },
+  { type: "tremble", label: "Tremble", target: "geometry", animated: true },
+  { type: "breathe", label: "Breathe", target: "geometry", animated: true },
+  { type: "wiggle", label: "Wiggle", target: "geometry", animated: true },
+  {
+    type: "floatDrift",
+    label: "Float Drift",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "flipCoin", label: "Flip Coin", target: "geometry", animated: true },
+  { type: "grow", label: "Grow", target: "geometry", animated: true },
+  { type: "shrink", label: "Shrink", target: "geometry", animated: true },
+  { type: "orbitAnim", label: "Orbit", target: "geometry", animated: true },
+  { type: "rock", label: "Rock", target: "geometry", animated: true },
+  { type: "jitter", label: "Jitter", target: "geometry", animated: true },
+  { type: "sway", label: "Sway", target: "geometry", animated: true },
+  {
+    type: "figureEight",
+    label: "Figure Eight",
+    target: "geometry",
+    animated: true,
+  },
+  { type: "pendulum", label: "Pendulum", target: "geometry", animated: true },
   // AI-generated
-  { type: "customJs",       label: "AI Custom",       target: "geometry" },
+  { type: "customJs", label: "AI Custom", target: "geometry" },
   // Added effects
-  { type: "text3d",         label: "3D Text",          target: "geometry" },
-  { type: "graphics",       label: "Add Graphics",     target: "geometry" },
+  { type: "text3d", label: "3D Text", target: "geometry" },
+  { type: "graphics", label: "Add Graphics", target: "geometry" },
 ];
 
 function effectTypeLabel(type: EffectType, t: (k: string) => string) {
@@ -452,7 +790,9 @@ function effectTypeLabel(type: EffectType, t: (k: string) => string) {
 }
 
 // Stub kept only to satisfy the switch default below; the real implementation is in utils/effect-defaults.ts
-function createDefaultEffectParams_local(type: EffectType): Record<string, unknown> {
+function createDefaultEffectParams_local(
+  type: EffectType,
+): Record<string, unknown> {
   switch (type) {
     case "mainText":
       return {
@@ -490,7 +830,12 @@ function createDefaultEffectParams_local(type: EffectType): Record<string, unkno
     case "bend":
       return { strength: 0.18, axis: "x" };
     case "envMap":
-      return { style: "gradient", intensity: 1.5, seed: 42, customImageDataUrl: undefined };
+      return {
+        style: "gradient",
+        intensity: 1.5,
+        seed: 42,
+        customImageDataUrl: undefined,
+      };
     case "neonGlow":
       return {
         colorIdx: 0,
@@ -507,16 +852,16 @@ function createDefaultEffectParams_local(type: EffectType): Record<string, unkno
     case "outline":
       return { thickness: 1.05 };
     case "rays":
-        return {
-          mode: "radial",
-          count: 24,
-          innerThickness: 0.06,
-          outerThickness: 0.08,
-          lockThickness: true,
-          innerMargin: 2,
-          outerMargin: 6,
-          heartRotation: 0,
-        };
+      return {
+        mode: "radial",
+        count: 24,
+        innerThickness: 0.06,
+        outerThickness: 0.08,
+        lockThickness: true,
+        innerMargin: 2,
+        outerMargin: 6,
+        heartRotation: 0,
+      };
     case "radialBlur":
       return { strength: 0.12, samples: 8, center: [0.5, 0.5] };
     case "wave":
@@ -526,120 +871,242 @@ function createDefaultEffectParams_local(type: EffectType): Record<string, unkno
     case "pulse":
       return { amplitude: 0.12, speed: 1.0 };
     case "floatingRings":
-      return { count: 3, radiusMult: 1.6, speed: 0.25, thickness: 0.04, color: 0xff8800 };
+      return {
+        count: 3,
+        radiusMult: 1.6,
+        speed: 0.25,
+        thickness: 0.04,
+        color: 0xff8800,
+      };
     case "vignette":
       return { offset: 0.5, darkness: 1.0 };
     case "scanlines":
       return { count: 100, intensity: 0.3, scrollSpeed: 0 };
     case "colorGrading":
       return { hueShift: 0, saturation: 1.0, contrast: 1.0, brightness: 0 };
-    case "pixelate":        return { pixelSize: 4 };
-    case "circularBlur":   return { radius: 0.01, samples: 16 };
-    case "sepia":          return { amount: 1 };
-    case "invert":         return { amount: 1 };
-    case "sobelEdge":      return { strength: 1 };
-    case "thermal":        return { intensity: 1 };
-    case "nightVision":    return { intensity: 0.8, noise: 0.2 };
-    case "duotone":        return { colorA: 0xff6600, colorB: 0x0066ff };
-    case "posterize":      return { levels: 4 };
-    case "colorOverlay":   return { color: 0xff6600, opacity: 0.4 };
-    case "halftone":       return { dotSize: 4 };
-    case "sharpen":        return { amount: 1 };
-    case "animChromatic":  return { amount: 0.01, speed: 1 };
-    case "blur":           return { radius: 1 };
-    case "lensDistort":    return { k: 0.3 };
-    case "mosaic":         return { size: 0.05 };
-    case "noisePost":      return { amount: 0.15, animated: true };
-    case "crtCurvature":   return { bend: 4 };
-    case "vhsTracking":    return { strength: 0.04, speed: 1 };
-    case "glowEdge":       return { radius: 3, intensity: 1.5, color: 0xff6600 };
-    case "acid":           return { strength: 0.08, speed: 1 };
-    case "kaleidoscopePost": return { segments: 6 };
-    case "oldFilm":        return { scratchIntensity: 0.3, vignetteAmount: 0.5, grainAmount: 0.08 };
-    case "zoomBlur":       return { strength: 0.04, samples: 10 };
-    case "crosshatch":     return { density: 8, lineWidth: 0.5 };
-    case "glitchBlock":    return { intensity: 0.1, frequency: 1 };
-    case "speedLines":     return { intensity: 0.5, lineCount: 48 };
-    case "rgbShift":       return { amount: 0.005, angle: 0 };
-    case "frostedGlass":   return { blur: 2 };
-    case "waterRipple":    return { strength: 0.02, speed: 1, frequency: 10 };
-    case "pixelShift":     return { amount: 3, speed: 1 };
-    case "retroTv":        return { scanlineIntensity: 0.2, curvature: 5, noise: 0.05 };
-    case "antialiasing":   return {};
+    case "pixelate":
+      return { pixelSize: 4 };
+    case "circularBlur":
+      return { radius: 0.01, samples: 16 };
+    case "sepia":
+      return { amount: 1 };
+    case "invert":
+      return { amount: 1 };
+    case "sobelEdge":
+      return { strength: 1 };
+    case "thermal":
+      return { intensity: 1 };
+    case "nightVision":
+      return { intensity: 0.8, noise: 0.2 };
+    case "duotone":
+      return { colorA: 0xff6600, colorB: 0x0066ff };
+    case "posterize":
+      return { levels: 4 };
+    case "colorOverlay":
+      return { color: 0xff6600, opacity: 0.4 };
+    case "halftone":
+      return { dotSize: 4 };
+    case "sharpen":
+      return { amount: 1 };
+    case "animChromatic":
+      return { amount: 0.01, speed: 1 };
+    case "blur":
+      return { radius: 1 };
+    case "lensDistort":
+      return { k: 0.3 };
+    case "mosaic":
+      return { size: 0.05 };
+    case "noisePost":
+      return { amount: 0.15, animated: true };
+    case "crtCurvature":
+      return { bend: 4 };
+    case "vhsTracking":
+      return { strength: 0.04, speed: 1 };
+    case "glowEdge":
+      return { radius: 3, intensity: 1.5, color: 0xff6600 };
+    case "acid":
+      return { strength: 0.08, speed: 1 };
+    case "kaleidoscopePost":
+      return { segments: 6 };
+    case "oldFilm":
+      return { scratchIntensity: 0.3, vignetteAmount: 0.5, grainAmount: 0.08 };
+    case "zoomBlur":
+      return { strength: 0.04, samples: 10 };
+    case "crosshatch":
+      return { density: 8, lineWidth: 0.5 };
+    case "glitchBlock":
+      return { intensity: 0.1, frequency: 1 };
+    case "speedLines":
+      return { intensity: 0.5, lineCount: 48 };
+    case "rgbShift":
+      return { amount: 0.005, angle: 0 };
+    case "frostedGlass":
+      return { blur: 2 };
+    case "waterRipple":
+      return { strength: 0.02, speed: 1, frequency: 10 };
+    case "pixelShift":
+      return { amount: 3, speed: 1 };
+    case "retroTv":
+      return { scanlineIntensity: 0.2, curvature: 5, noise: 0.05 };
+    case "antialiasing":
+      return {};
     // vertex deform
-    case "inflate":        return { strength: 0.5 };
-    case "taper":          return { strength: 0.5, axis: "y" };
-    case "shear":          return { strength: 0.3, axis: "x" };
-    case "spherify":       return { strength: 0.5 };
-    case "ripple":         return { amplitude: 0.3, frequency: 2, speed: 1.5 };
-    case "melt":           return { strength: 0.5, speed: 0 };
-    case "pinch":          return { strength: 0.5 };
-    case "voxelize":       return { gridSize: 0.2 };
-    case "crumple":        return { strength: 0.3, seed: 42 };
-    case "noiseWobble":    return { amplitude: 0.3, frequency: 2, speed: 1 };
-    case "spiralDeform":   return { twist: 0.3, flare: 0.2 };
-    case "bulge":          return { strength: 0.5 };
-    case "squish":         return { strength: 0.5, axis: "y" };
-    case "zap":            return { strength: 1.5, density: 0.1 };
-    case "explode":        return { strength: 0.5, pulse: false };
-    case "fold":           return { strength: 0.5, axis: "y" };
-    case "spikes":         return { strength: 2, density: 0.05, seed: 42 };
-    case "cylindrize":     return { strength: 0.5, radius: 10 };
+    case "inflate":
+      return { strength: 0.5 };
+    case "taper":
+      return { strength: 0.5, axis: "y" };
+    case "shear":
+      return { strength: 0.3, axis: "x" };
+    case "spherify":
+      return { strength: 0.5 };
+    case "ripple":
+      return { amplitude: 0.3, frequency: 2, speed: 1.5 };
+    case "melt":
+      return { strength: 0.5, speed: 0 };
+    case "pinch":
+      return { strength: 0.5 };
+    case "voxelize":
+      return { gridSize: 0.2 };
+    case "crumple":
+      return { strength: 0.3, seed: 42 };
+    case "noiseWobble":
+      return { amplitude: 0.3, frequency: 2, speed: 1 };
+    case "spiralDeform":
+      return { twist: 0.3, flare: 0.2 };
+    case "bulge":
+      return { strength: 0.5 };
+    case "squish":
+      return { strength: 0.5, axis: "y" };
+    case "zap":
+      return { strength: 1.5, density: 0.1 };
+    case "explode":
+      return { strength: 0.5, pulse: false };
+    case "fold":
+      return { strength: 0.5, axis: "y" };
+    case "spikes":
+      return { strength: 2, density: 0.05, seed: 42 };
+    case "cylindrize":
+      return { strength: 0.5, radius: 10 };
     // material
-    case "xRay":           return { color: 0x00ffff, opacity: 0.4 };
-    case "toonShading":    return { color: 0x44cc88, steps: 4 };
-    case "hologram":       return { color: 0x00ffff, scanSpeed: 1 };
-    case "gradientMesh":   return { colorTop: 0xff6600, colorBottom: 0x0066ff, animated: false };
-    case "rainbowMesh":    return { speed: 0.3, saturation: 1 };
-    case "iridescent":     return { speed: 1 };
-    case "emissivePulse":  return { color: 0xff6600, minIntensity: 0, maxIntensity: 1.5, speed: 1.5 };
-    case "dissolveAnim":   return { speed: 0.5, color: 0xff6600 };
-    case "glass":          return { color: 0xaaddff, roughness: 0.05, transmission: 0.9 };
-    case "matcap":         return { colorA: 0xff6600, colorB: 0xffffff, shininess: 0.5 };
+    case "xRay":
+      return { color: 0x00ffff, opacity: 0.4 };
+    case "toonShading":
+      return { color: 0x44cc88, steps: 4 };
+    case "hologram":
+      return { color: 0x00ffff, scanSpeed: 1 };
+    case "gradientMesh":
+      return { colorTop: 0xff6600, colorBottom: 0x0066ff, animated: false };
+    case "rainbowMesh":
+      return { speed: 0.3, saturation: 1 };
+    case "iridescent":
+      return { speed: 1 };
+    case "emissivePulse":
+      return {
+        color: 0xff6600,
+        minIntensity: 0,
+        maxIntensity: 1.5,
+        speed: 1.5,
+      };
+    case "dissolveAnim":
+      return { speed: 0.5, color: 0xff6600 };
+    case "glass":
+      return { color: 0xaaddff, roughness: 0.05, transmission: 0.9 };
+    case "matcap":
+      return { colorA: 0xff6600, colorB: 0xffffff, shininess: 0.5 };
     // lighting
-    case "spotlight":      return { color: 0xffffff, intensity: 3, angle: 0.4, penumbra: 0.3 };
-    case "strobe":         return { color: 0xffffff, frequency: 4, intensity: 5 };
-    case "flicker":        return { color: 0xffa020, baseIntensity: 2, flickerAmount: 1.5 };
-    case "colorCycleLight":return { speed: 0.5, intensity: 2, saturation: 1 };
-    case "disco":          return { lightCount: 6, speed: 2, intensity: 2 };
-    case "ambientPulse":   return { color: 0xffffff, minIntensity: 0.1, maxIntensity: 2, speed: 1 };
-    case "rimLight":       return { color: 0x4488ff, intensity: 2 };
-    case "dramaticLight":  return { keyColor: 0xfff4e0, fillColor: 0x203060 };
-    case "lightningFlash": return { color: 0xaaccff, intensity: 8, frequency: 2 };
-    case "rainbowLights":  return { count: 7, speed: 0.5, intensity: 1.5 };
+    case "spotlight":
+      return { color: 0xffffff, intensity: 3, angle: 0.4, penumbra: 0.3 };
+    case "strobe":
+      return { color: 0xffffff, frequency: 4, intensity: 5 };
+    case "flicker":
+      return { color: 0xffa020, baseIntensity: 2, flickerAmount: 1.5 };
+    case "colorCycleLight":
+      return { speed: 0.5, intensity: 2, saturation: 1 };
+    case "disco":
+      return { lightCount: 6, speed: 2, intensity: 2 };
+    case "ambientPulse":
+      return { color: 0xffffff, minIntensity: 0.1, maxIntensity: 2, speed: 1 };
+    case "rimLight":
+      return { color: 0x4488ff, intensity: 2 };
+    case "dramaticLight":
+      return { keyColor: 0xfff4e0, fillColor: 0x203060 };
+    case "lightningFlash":
+      return { color: 0xaaccff, intensity: 8, frequency: 2 };
+    case "rainbowLights":
+      return { count: 7, speed: 0.5, intensity: 1.5 };
     // scene objects
-    case "echoCopies":     return { count: 4, offsetX: 0.3, offsetY: 0, offsetZ: -0.5, rotateY: 0, opacity: 0.4, color: 0xff6600, fade: true };
-    case "starField3d":    return { count: 800, speed: 0.05, spread: 30 };
-    case "snow":           return { count: 400, speed: 0.5, spread: 20 };
-    case "rain":           return { count: 300, speed: 1, spread: 20 };
-    case "confetti":       return { count: 60, speed: 1, spread: 15 };
-    case "sparkle":        return { count: 200, color: 0xffffaa, spread: 8 };
-    case "aura":           return { color: 0xff6600, opacity: 0.15, layers: 3, speed: 1 };
-    case "gridFloor":      return { color: 0x444444, opacity: 0.4, size: 40, divisions: 40 };
-    case "orbiter":        return { count: 4, color: 0xff6600, orbitRadius: 4, speed: 1, size: 0.3 };
-    case "portalRing":     return { color: 0x00ffff, radius: 5, speed: 0.5 };
-    case "cometTrail":     return { color: 0xffffff, speed: 1.2, count: 3 };
-    case "floatingCubes":  return { count: 12, color: 0xff6600, spread: 10, speed: 0.5 };
-    case "mirrorPlane":    return { opacity: 0.3, axis: "y", offset: 0 };
+    case "echoCopies":
+      return {
+        count: 4,
+        offsetX: 0.3,
+        offsetY: 0,
+        offsetZ: -0.5,
+        rotateY: 0,
+        opacity: 0.4,
+        color: 0xff6600,
+        fade: true,
+      };
+    case "starField3d":
+      return { count: 800, speed: 0.05, spread: 30 };
+    case "snow":
+      return { count: 400, speed: 0.5, spread: 20 };
+    case "rain":
+      return { count: 300, speed: 1, spread: 20 };
+    case "confetti":
+      return { count: 60, speed: 1, spread: 15 };
+    case "sparkle":
+      return { count: 200, color: 0xffffaa, spread: 8 };
+    case "aura":
+      return { color: 0xff6600, opacity: 0.15, layers: 3, speed: 1 };
+    case "gridFloor":
+      return { color: 0x444444, opacity: 0.4, size: 40, divisions: 40 };
+    case "orbiter":
+      return { count: 4, color: 0xff6600, orbitRadius: 4, speed: 1, size: 0.3 };
+    case "portalRing":
+      return { color: 0x00ffff, radius: 5, speed: 0.5 };
+    case "cometTrail":
+      return { color: 0xffffff, speed: 1.2, count: 3 };
+    case "floatingCubes":
+      return { count: 12, color: 0xff6600, spread: 10, speed: 0.5 };
+    case "mirrorPlane":
+      return { opacity: 0.3, axis: "y", offset: 0 };
     // animation
-    case "spin":           return { speedX: 0, speedY: 1, speedZ: 0 };
-    case "bounce":         return { height: 1.5, speed: 2 };
-    case "levitation":     return { amplitude: 0.5, speed: 0.8 };
-    case "swing":          return { angle: 0.4, speed: 1, axis: "z" };
-    case "tremble":        return { intensity: 0.05, speed: 20 };
-    case "breathe":        return { depth: 0.08, speed: 0.4 };
-    case "wiggle":         return { amount: 0.15, speed: 5 };
-    case "floatDrift":     return { amplitude: 0.3, speed: 0.3 };
-    case "flipCoin":       return { axis: "y", speed: 2 };
-    case "grow":           return { targetScale: 1, speed: 1 };
-    case "shrink":         return { targetScale: 0.5, speed: 1 };
-    case "orbitAnim":      return { radius: 3, speed: 0.5, axis: "y" };
-    case "rock":           return { angle: 0.2, speed: 1 };
-    case "jitter":         return { intensity: 0.1, frequency: 12 };
-    case "sway":           return { amplitude: 0.2, speed: 0.7 };
-    case "figureEight":    return { width: 2, height: 1, speed: 0.5 };
-    case "pendulum":       return { angle: 0.5, speed: 1.2 };
-    case "customJs":       return { code: '', description: '' };
+    case "spin":
+      return { speedX: 0, speedY: 1, speedZ: 0 };
+    case "bounce":
+      return { height: 1.5, speed: 2 };
+    case "levitation":
+      return { amplitude: 0.5, speed: 0.8 };
+    case "swing":
+      return { angle: 0.4, speed: 1, axis: "z" };
+    case "tremble":
+      return { intensity: 0.05, speed: 20 };
+    case "breathe":
+      return { depth: 0.08, speed: 0.4 };
+    case "wiggle":
+      return { amount: 0.15, speed: 5 };
+    case "floatDrift":
+      return { amplitude: 0.3, speed: 0.3 };
+    case "flipCoin":
+      return { axis: "y", speed: 2 };
+    case "grow":
+      return { targetScale: 1, speed: 1 };
+    case "shrink":
+      return { targetScale: 0.5, speed: 1 };
+    case "orbitAnim":
+      return { radius: 3, speed: 0.5, axis: "y" };
+    case "rock":
+      return { angle: 0.2, speed: 1 };
+    case "jitter":
+      return { intensity: 0.1, frequency: 12 };
+    case "sway":
+      return { amplitude: 0.2, speed: 0.7 };
+    case "figureEight":
+      return { width: 2, height: 1, speed: 0.5 };
+    case "pendulum":
+      return { angle: 0.5, speed: 1.2 };
+    case "customJs":
+      return { code: "", description: "" };
     case "text3d":
       return {
         text: "Text 3D",
@@ -683,26 +1150,48 @@ function createDefaultEffectParams_local(type: EffectType): Record<string, unkno
         rotY: 0,
         rotZ: 0,
       };
-    case "flatShade":      return {};
-    case "shadowFloor":    return { color: 0x000000, opacity: 0.35, size: 30, offsetY: 0 };
-    case "backgroundPlane": return { color: 0x111111, colorBottom: 0x222244, opacity: 1, width: 60, height: 40, offsetZ: -3, gradient: false };
-    case "fogEffect":      return { color: 0xaaaaaa, near: 10, far: 50 };
-    case "emboss":         return { strength: 1 };
-    case "threshold":      return { cutoff: 0.5, smoothing: 0.05 };
-    case "mirrorH":        return { split: 0.5 };
-    case "mirrorV":        return { split: 0.5 };
-    case "sketch":         return { strength: 3, paperColor: 0xf5f0e0, inkColor: 0x141008 };
-    case "sunsetLight":    return { intensity: 1 };
-    case "studioLight":    return { keyIntensity: 3, fillIntensity: 1.2, backIntensity: 1.5 };
-    case "moonLight":      return { intensity: 1, ambientIntensity: 0.15 };
-    case "chromeEdge":     return { color: 0xffffff, intensity: 0.6 };
-    case "colorBurn":      return { color: 0xff6600, strength: 0.5 };
-    case "depthLines":     return { lineCount: 12, lineWidth: 0.03, color: 0x000000 };
+    case "flatShade":
+      return {};
+    case "shadowFloor":
+      return { color: 0x000000, opacity: 0.35, size: 30, offsetY: 0 };
+    case "backgroundPlane":
+      return {
+        color: 0x111111,
+        colorBottom: 0x222244,
+        opacity: 1,
+        width: 60,
+        height: 40,
+        offsetZ: -3,
+        gradient: false,
+      };
+    case "fogEffect":
+      return { color: 0xaaaaaa, near: 10, far: 50 };
+    case "emboss":
+      return { strength: 1 };
+    case "threshold":
+      return { cutoff: 0.5, smoothing: 0.05 };
+    case "mirrorH":
+      return { split: 0.5 };
+    case "mirrorV":
+      return { split: 0.5 };
+    case "sketch":
+      return { strength: 3, paperColor: 0xf5f0e0, inkColor: 0x141008 };
+    case "sunsetLight":
+      return { intensity: 1 };
+    case "studioLight":
+      return { keyIntensity: 3, fillIntensity: 1.2, backIntensity: 1.5 };
+    case "moonLight":
+      return { intensity: 1, ambientIntensity: 0.15 };
+    case "chromeEdge":
+      return { color: 0xffffff, intensity: 0.6 };
+    case "colorBurn":
+      return { color: 0xff6600, strength: 0.5 };
+    case "depthLines":
+      return { lineCount: 12, lineWidth: 0.03, color: 0x000000 };
     default:
       return {};
   }
 }
-
 
 function createPipeFromInstance(effect: EffectInstance): EffectPipe {
   switch (effect.type) {
@@ -750,178 +1239,317 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new ScanlinesPipe(effect.params as any);
     case "colorGrading":
       return new ColorGradingPipe(effect.params as any);
-    case "pixelate":        return new PixelatePipe(effect.params as any);
-    case "circularBlur":   return new CircularBlurPipe(effect.params as any);
-    case "sepia":          return new SepiaPipe(effect.params as any);
-    case "invert":         return new InvertPipe(effect.params as any);
-    case "sobelEdge":      return new SobelEdgePipe(effect.params as any);
-    case "thermal":        return new ThermalPipe(effect.params as any);
-    case "nightVision":    return new NightVisionPipe(effect.params as any);
-    case "duotone":        return new DuotonePipe(effect.params as any);
-    case "posterize":      return new PosterizePipe(effect.params as any);
-    case "colorOverlay":   return new ColorOverlayPipe(effect.params as any);
-    case "halftone":       return new HalftonePipe(effect.params as any);
-    case "sharpen":        return new SharpenPipe(effect.params as any);
-    case "animChromatic":  return new AnimChromaticPipe(effect.params as any);
-    case "blur":           return new BlurPipe(effect.params as any);
-    case "lensDistort":    return new LensDistortPipe(effect.params as any);
-    case "mosaic":         return new MosaicPipe(effect.params as any);
-    case "noisePost":      return new NoisePostPipe(effect.params as any);
-    case "crtCurvature":   return new CrtCurvaturePipe(effect.params as any);
-    case "vhsTracking":    return new VhsTrackingPipe(effect.params as any);
-    case "glowEdge":       return new GlowEdgePipe(effect.params as any);
-    case "acid":           return new AcidPipe(effect.params as any);
-    case "kaleidoscopePost": return new KaleidoscopePostPipe(effect.params as any);
-    case "oldFilm":        return new OldFilmPipe(effect.params as any);
-    case "zoomBlur":       return new ZoomBlurPipe(effect.params as any);
-    case "crosshatch":     return new CrosshatchPipe(effect.params as any);
-    case "glitchBlock":    return new GlitchBlockPipe(effect.params as any);
-    case "speedLines":     return new SpeedLinesPipe(effect.params as any);
-    case "rgbShift":       return new RgbShiftPipe(effect.params as any);
-    case "frostedGlass":   return new FrostedGlassPipe(effect.params as any);
-    case "waterRipple":    return new WaterRipplePipe(effect.params as any);
-    case "pixelShift":     return new PixelShiftPipe(effect.params as any);
-    case "retroTv":        return new RetroTvPipe(effect.params as any);
-    case "antialiasing":   return new AntialiasingPipe(effect.params as any);
-    case "inflate":        return new InflatePipe(effect.params as any);
-    case "taper":          return new TaperPipe(effect.params as any);
-    case "shear":          return new ShearPipe(effect.params as any);
-    case "spherify":       return new SpherifyPipe(effect.params as any);
-    case "ripple":         return new RipplePipe(effect.params as any);
-    case "melt":           return new MeltPipe(effect.params as any);
-    case "pinch":          return new PinchPipe(effect.params as any);
-    case "voxelize":       return new VoxelizePipe(effect.params as any);
-    case "crumple":        return new CrumplePipe(effect.params as any);
-    case "noiseWobble":    return new NoiseWobblePipe(effect.params as any);
-    case "spiralDeform":   return new SpiralDeformPipe(effect.params as any);
-    case "bulge":          return new BulgePipe(effect.params as any);
-    case "squish":         return new SquishPipe(effect.params as any);
-    case "zap":            return new ZapPipe(effect.params as any);
-    case "explode":        return new ExplodePipe(effect.params as any);
-    case "fold":           return new FoldPipe(effect.params as any);
-    case "spikes":         return new SpikesPipe(effect.params as any);
-    case "cylindrize":     return new CylindrizePipe(effect.params as any);
-    case "xRay":           return new XRayPipe(effect.params as any);
-    case "toonShading":    return new ToonShadingPipe(effect.params as any);
-    case "hologram":       return new HologramPipe(effect.params as any);
-    case "gradientMesh":   return new GradientMeshPipe(effect.params as any);
-    case "rainbowMesh":    return new RainbowMeshPipe(effect.params as any);
-    case "iridescent":     return new IridescentPipe(effect.params as any);
-    case "emissivePulse":  return new EmissivePulsePipe(effect.params as any);
-    case "dissolveAnim":   return new DissolveAnimPipe(effect.params as any);
-    case "glass":          return new GlassPipe(effect.params as any);
-    case "matcap":         return new MatcapPipe(effect.params as any);
-    case "spotlight":      return new SpotlightPipe(effect.params as any);
-    case "strobe":         return new StrobePipe(effect.params as any);
-    case "flicker":        return new FlickerPipe(effect.params as any);
-    case "colorCycleLight":return new ColorCycleLightPipe(effect.params as any);
-    case "disco":          return new DiscoPipe(effect.params as any);
-    case "ambientPulse":   return new AmbientPulsePipe(effect.params as any);
-    case "rimLight":       return new RimLightPipe(effect.params as any);
-    case "dramaticLight":  return new DramaticLightPipe(effect.params as any);
-    case "lightningFlash": return new LightningFlashPipe(effect.params as any);
-    case "rainbowLights":  return new RainbowLightsPipe(effect.params as any);
-    case "echoCopies":     return new EchoCopiesPipe(effect.params as any);
-    case "starField3d":    return new StarField3dPipe(effect.params as any);
-    case "snow":           return new SnowPipe(effect.params as any);
-    case "rain":           return new RainPipe(effect.params as any);
-    case "confetti":       return new ConfettiPipe(effect.params as any);
-    case "sparkle":        return new SparklePipe(effect.params as any);
-    case "aura":           return new AuraPipe(effect.params as any);
-    case "gridFloor":      return new GridFloorPipe(effect.params as any);
-    case "orbiter":        return new OrbiterPipe(effect.params as any);
-    case "portalRing":     return new PortalRingPipe(effect.params as any);
-    case "cometTrail":     return new CometTrailPipe(effect.params as any);
-    case "floatingCubes":  return new FloatingCubesPipe(effect.params as any);
-    case "mirrorPlane":    return new MirrorPlanePipe(effect.params as any);
-    case "spin":           return new SpinPipe(effect.params as any);
-    case "bounce":         return new BouncePipe(effect.params as any);
-    case "levitation":     return new LevitationPipe(effect.params as any);
-    case "swing":          return new SwingPipe(effect.params as any);
-    case "tremble":        return new TremplePipe(effect.params as any);
-    case "breathe":        return new BreathePipe(effect.params as any);
-    case "wiggle":         return new WigglePipe(effect.params as any);
-    case "floatDrift":     return new FloatDriftPipe(effect.params as any);
-    case "flipCoin":       return new FlipCoinPipe(effect.params as any);
-    case "grow":           return new GrowPipe(effect.params as any);
-    case "shrink":         return new ShrinkPipe(effect.params as any);
-    case "orbitAnim":      return new OrbitAnimPipe(effect.params as any);
-    case "rock":           return new RockPipe(effect.params as any);
-    case "jitter":         return new JitterPipe(effect.params as any);
-    case "sway":           return new SwayPipe(effect.params as any);
-    case "figureEight":    return new FigureEightPipe(effect.params as any);
-    case "pendulum":       return new PendulumPipe(effect.params as any);
-    case "customJs":       return new CustomJsPipe(effect.params as any);
-    case "mainText":       return new MainTextPipe(effect.params as any);
-    case "text3d":         return new Text3dPipe(effect.params as any);
-    case "graphics":       return new GraphicsPipe(effect.params as any);
-    case "flatShade":      return new FlatShadePipe(effect.params as any);
-    case "shadowFloor":    return new ShadowFloorPipe(effect.params as any);
-    case "backgroundPlane":return new BackgroundPlanePipe(effect.params as any);
-    case "fogEffect":      return new FogEffectPipe(effect.params as any);
-    case "emboss":         return new EmbossPipe(effect.params as any);
-    case "threshold":      return new ThresholdPipe(effect.params as any);
-    case "mirrorH":        return new MirrorHPipe(effect.params as any);
-    case "mirrorV":        return new MirrorVPipe(effect.params as any);
-    case "sketch":         return new SketchPipe(effect.params as any);
-    case "sunsetLight":    return new SunsetLightPipe(effect.params as any);
-    case "studioLight":    return new StudioLightPipe(effect.params as any);
-    case "moonLight":      return new MoonLightPipe(effect.params as any);
-    case "chromeEdge":     return new ChromeEdgePipe(effect.params as any);
-    case "colorBurn":      return new ColorBurnPipe(effect.params as any);
-    case "depthLines":     return new DepthLinesPipe(effect.params as any);
+    case "pixelate":
+      return new PixelatePipe(effect.params as any);
+    case "circularBlur":
+      return new CircularBlurPipe(effect.params as any);
+    case "sepia":
+      return new SepiaPipe(effect.params as any);
+    case "invert":
+      return new InvertPipe(effect.params as any);
+    case "sobelEdge":
+      return new SobelEdgePipe(effect.params as any);
+    case "thermal":
+      return new ThermalPipe(effect.params as any);
+    case "nightVision":
+      return new NightVisionPipe(effect.params as any);
+    case "duotone":
+      return new DuotonePipe(effect.params as any);
+    case "posterize":
+      return new PosterizePipe(effect.params as any);
+    case "colorOverlay":
+      return new ColorOverlayPipe(effect.params as any);
+    case "halftone":
+      return new HalftonePipe(effect.params as any);
+    case "sharpen":
+      return new SharpenPipe(effect.params as any);
+    case "animChromatic":
+      return new AnimChromaticPipe(effect.params as any);
+    case "blur":
+      return new BlurPipe(effect.params as any);
+    case "lensDistort":
+      return new LensDistortPipe(effect.params as any);
+    case "mosaic":
+      return new MosaicPipe(effect.params as any);
+    case "noisePost":
+      return new NoisePostPipe(effect.params as any);
+    case "crtCurvature":
+      return new CrtCurvaturePipe(effect.params as any);
+    case "vhsTracking":
+      return new VhsTrackingPipe(effect.params as any);
+    case "glowEdge":
+      return new GlowEdgePipe(effect.params as any);
+    case "acid":
+      return new AcidPipe(effect.params as any);
+    case "kaleidoscopePost":
+      return new KaleidoscopePostPipe(effect.params as any);
+    case "oldFilm":
+      return new OldFilmPipe(effect.params as any);
+    case "zoomBlur":
+      return new ZoomBlurPipe(effect.params as any);
+    case "crosshatch":
+      return new CrosshatchPipe(effect.params as any);
+    case "glitchBlock":
+      return new GlitchBlockPipe(effect.params as any);
+    case "speedLines":
+      return new SpeedLinesPipe(effect.params as any);
+    case "rgbShift":
+      return new RgbShiftPipe(effect.params as any);
+    case "frostedGlass":
+      return new FrostedGlassPipe(effect.params as any);
+    case "waterRipple":
+      return new WaterRipplePipe(effect.params as any);
+    case "pixelShift":
+      return new PixelShiftPipe(effect.params as any);
+    case "retroTv":
+      return new RetroTvPipe(effect.params as any);
+    case "antialiasing":
+      return new AntialiasingPipe(effect.params as any);
+    case "inflate":
+      return new InflatePipe(effect.params as any);
+    case "taper":
+      return new TaperPipe(effect.params as any);
+    case "shear":
+      return new ShearPipe(effect.params as any);
+    case "spherify":
+      return new SpherifyPipe(effect.params as any);
+    case "ripple":
+      return new RipplePipe(effect.params as any);
+    case "melt":
+      return new MeltPipe(effect.params as any);
+    case "pinch":
+      return new PinchPipe(effect.params as any);
+    case "voxelize":
+      return new VoxelizePipe(effect.params as any);
+    case "crumple":
+      return new CrumplePipe(effect.params as any);
+    case "noiseWobble":
+      return new NoiseWobblePipe(effect.params as any);
+    case "spiralDeform":
+      return new SpiralDeformPipe(effect.params as any);
+    case "bulge":
+      return new BulgePipe(effect.params as any);
+    case "squish":
+      return new SquishPipe(effect.params as any);
+    case "zap":
+      return new ZapPipe(effect.params as any);
+    case "explode":
+      return new ExplodePipe(effect.params as any);
+    case "fold":
+      return new FoldPipe(effect.params as any);
+    case "spikes":
+      return new SpikesPipe(effect.params as any);
+    case "cylindrize":
+      return new CylindrizePipe(effect.params as any);
+    case "xRay":
+      return new XRayPipe(effect.params as any);
+    case "toonShading":
+      return new ToonShadingPipe(effect.params as any);
+    case "hologram":
+      return new HologramPipe(effect.params as any);
+    case "gradientMesh":
+      return new GradientMeshPipe(effect.params as any);
+    case "rainbowMesh":
+      return new RainbowMeshPipe(effect.params as any);
+    case "iridescent":
+      return new IridescentPipe(effect.params as any);
+    case "emissivePulse":
+      return new EmissivePulsePipe(effect.params as any);
+    case "dissolveAnim":
+      return new DissolveAnimPipe(effect.params as any);
+    case "glass":
+      return new GlassPipe(effect.params as any);
+    case "matcap":
+      return new MatcapPipe(effect.params as any);
+    case "spotlight":
+      return new SpotlightPipe(effect.params as any);
+    case "strobe":
+      return new StrobePipe(effect.params as any);
+    case "flicker":
+      return new FlickerPipe(effect.params as any);
+    case "colorCycleLight":
+      return new ColorCycleLightPipe(effect.params as any);
+    case "disco":
+      return new DiscoPipe(effect.params as any);
+    case "ambientPulse":
+      return new AmbientPulsePipe(effect.params as any);
+    case "rimLight":
+      return new RimLightPipe(effect.params as any);
+    case "dramaticLight":
+      return new DramaticLightPipe(effect.params as any);
+    case "lightningFlash":
+      return new LightningFlashPipe(effect.params as any);
+    case "rainbowLights":
+      return new RainbowLightsPipe(effect.params as any);
+    case "echoCopies":
+      return new EchoCopiesPipe(effect.params as any);
+    case "starField3d":
+      return new StarField3dPipe(effect.params as any);
+    case "snow":
+      return new SnowPipe(effect.params as any);
+    case "rain":
+      return new RainPipe(effect.params as any);
+    case "confetti":
+      return new ConfettiPipe(effect.params as any);
+    case "sparkle":
+      return new SparklePipe(effect.params as any);
+    case "aura":
+      return new AuraPipe(effect.params as any);
+    case "gridFloor":
+      return new GridFloorPipe(effect.params as any);
+    case "orbiter":
+      return new OrbiterPipe(effect.params as any);
+    case "portalRing":
+      return new PortalRingPipe(effect.params as any);
+    case "cometTrail":
+      return new CometTrailPipe(effect.params as any);
+    case "floatingCubes":
+      return new FloatingCubesPipe(effect.params as any);
+    case "mirrorPlane":
+      return new MirrorPlanePipe(effect.params as any);
+    case "spin":
+      return new SpinPipe(effect.params as any);
+    case "bounce":
+      return new BouncePipe(effect.params as any);
+    case "levitation":
+      return new LevitationPipe(effect.params as any);
+    case "swing":
+      return new SwingPipe(effect.params as any);
+    case "tremble":
+      return new TremplePipe(effect.params as any);
+    case "breathe":
+      return new BreathePipe(effect.params as any);
+    case "wiggle":
+      return new WigglePipe(effect.params as any);
+    case "floatDrift":
+      return new FloatDriftPipe(effect.params as any);
+    case "flipCoin":
+      return new FlipCoinPipe(effect.params as any);
+    case "grow":
+      return new GrowPipe(effect.params as any);
+    case "shrink":
+      return new ShrinkPipe(effect.params as any);
+    case "orbitAnim":
+      return new OrbitAnimPipe(effect.params as any);
+    case "rock":
+      return new RockPipe(effect.params as any);
+    case "jitter":
+      return new JitterPipe(effect.params as any);
+    case "sway":
+      return new SwayPipe(effect.params as any);
+    case "figureEight":
+      return new FigureEightPipe(effect.params as any);
+    case "pendulum":
+      return new PendulumPipe(effect.params as any);
+    case "customJs":
+      return new CustomJsPipe(effect.params as any);
+    case "mainText":
+      return new MainTextPipe(effect.params as any);
+    case "text3d":
+      return new Text3dPipe(effect.params as any);
+    case "graphics":
+      return new GraphicsPipe({ ...(effect.params as any), effectInstanceId: effect.id });
+    case "flatShade":
+      return new FlatShadePipe(effect.params as any);
+    case "shadowFloor":
+      return new ShadowFloorPipe(effect.params as any);
+    case "backgroundPlane":
+      return new BackgroundPlanePipe(effect.params as any);
+    case "fogEffect":
+      return new FogEffectPipe(effect.params as any);
+    case "emboss":
+      return new EmbossPipe(effect.params as any);
+    case "threshold":
+      return new ThresholdPipe(effect.params as any);
+    case "mirrorH":
+      return new MirrorHPipe(effect.params as any);
+    case "mirrorV":
+      return new MirrorVPipe(effect.params as any);
+    case "sketch":
+      return new SketchPipe(effect.params as any);
+    case "sunsetLight":
+      return new SunsetLightPipe(effect.params as any);
+    case "studioLight":
+      return new StudioLightPipe(effect.params as any);
+    case "moonLight":
+      return new MoonLightPipe(effect.params as any);
+    case "chromeEdge":
+      return new ChromeEdgePipe(effect.params as any);
+    case "colorBurn":
+      return new ColorBurnPipe(effect.params as any);
+    case "depthLines":
+      return new DepthLinesPipe(effect.params as any);
     default:
       return new FilmGrainPipe();
   }
 }
 
 const CURATED_COLORS = [
-  { label: 'Orange', value: 0xff6600 },
-  { label: 'Green', value: 0x00ff88 },
-  { label: 'Blue', value: 0x0088ff },
-  { label: 'Cyan', value: 0x00ffff },
-  { label: 'Magenta', value: 0xff00ff },
-  { label: 'Yellow', value: 0xffff00 },
-  { label: 'Purple', value: 0x8800ff },
-  { label: 'White', value: 0xffffff },
+  { label: "Orange", value: 0xff6600 },
+  { label: "Green", value: 0x00ff88 },
+  { label: "Blue", value: 0x0088ff },
+  { label: "Cyan", value: 0x00ffff },
+  { label: "Magenta", value: 0xff00ff },
+  { label: "Yellow", value: 0xffff00 },
+  { label: "Purple", value: 0x8800ff },
+  { label: "White", value: 0xffffff },
 ];
 
 // ── Color history (localStorage, max 12 recent) ───────────────────────────────
-const COLOR_HISTORY_KEY = 'comrev_recent_colors';
+const COLOR_HISTORY_KEY = "comrev_recent_colors";
 const MAX_COLOR_HISTORY = 12;
 
 function loadRecentColors(): number[] {
   try {
-    if (typeof localStorage === 'undefined') return [];
+    if (typeof localStorage === "undefined") return [];
     const raw = localStorage.getItem(COLOR_HISTORY_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function saveRecentColor(hex: number) {
   try {
-    if (typeof localStorage === 'undefined') return;
-    const list = loadRecentColors().filter(c => c !== hex);
+    if (typeof localStorage === "undefined") return;
+    const list = loadRecentColors().filter((c) => c !== hex);
     list.unshift(hex);
-    localStorage.setItem(COLOR_HISTORY_KEY, JSON.stringify(list.slice(0, MAX_COLOR_HISTORY)));
+    localStorage.setItem(
+      COLOR_HISTORY_KEY,
+      JSON.stringify(list.slice(0, MAX_COLOR_HISTORY)),
+    );
   } catch {}
 }
 
 function numToHex(n: number): string {
-  return '#' + n.toString(16).padStart(6, '0');
+  return "#" + n.toString(16).padStart(6, "0");
 }
 
 function hexToNum(s: string): number {
-  return parseInt(s.replace('#', ''), 16);
+  return parseInt(s.replace("#", ""), 16);
 }
 
-function ColorPickerRow({ label, value, onChange, colors }: { label: string; value: number; onChange: (v: number) => void; colors: any }) {
+function ColorPickerRow({
+  label,
+  value,
+  onChange,
+  colors,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  colors: any;
+}) {
   const _colorScheme = useColorScheme();
   const [showModal, setShowModal] = React.useState(false);
-  const [recentColors, setRecentColors] = React.useState<number[]>(() => loadRecentColors());
+  const [recentColors, setRecentColors] = React.useState<number[]>(() =>
+    loadRecentColors(),
+  );
   const [draftHex, setDraftHex] = React.useState(numToHex(value));
 
-  React.useEffect(() => { setDraftHex(numToHex(value)); }, [value]);
+  React.useEffect(() => {
+    setDraftHex(numToHex(value));
+  }, [value]);
 
   const applyColor = (num: number) => {
     onChange(num);
@@ -933,60 +1561,179 @@ function ColorPickerRow({ label, value, onChange, colors }: { label: string; val
     <>
       <View style={[styles.controlRow, { paddingVertical: 2 }]}>
         <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-        <TouchableOpacity onPress={() => { setDraftHex(numToHex(value)); setShowModal(true); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <View style={{ width: 28, height: 20, borderRadius: 3, backgroundColor: numToHex(value), borderWidth: 1, borderColor: '#888' }} />
+        <TouchableOpacity
+          onPress={() => {
+            setDraftHex(numToHex(value));
+            setShowModal(true);
+          }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+        >
+          <View
+            style={{
+              width: 28,
+              height: 20,
+              borderRadius: 3,
+              backgroundColor: numToHex(value),
+              borderWidth: 1,
+              borderColor: "#888",
+            }}
+          />
           <Text style={{ color: colors.tint, fontSize: 12 }}>Pick</Text>
         </TouchableOpacity>
       </View>
-      <Modal visible={showModal} transparent animationType="fade" onRequestClose={() => setShowModal(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: colors.background ?? '#1a1a1a', borderRadius: 12, padding: 20, width: 280, gap: 12 }}>
-            <Text style={{ color: colors.text, fontWeight: '600', fontSize: 15, marginBottom: 4 }}>{label}</Text>
+      <Modal
+        visible={showModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowModal(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.65)",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.background ?? "#1a1a1a",
+              borderRadius: 12,
+              padding: 20,
+              width: 280,
+              gap: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontWeight: "600",
+                fontSize: 15,
+                marginBottom: 4,
+              }}
+            >
+              {label}
+            </Text>
             {/* Native color input */}
-            <View style={{ alignItems: 'center' }}>
-              {typeof document !== 'undefined' && (
+            <View style={{ alignItems: "center" }}>
+              {typeof document !== "undefined" && (
                 <input
                   type="color"
                   value={draftHex}
                   onChange={(e: any) => setDraftHex(e.target.value)}
-                  style={{ width: 80, height: 80, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
                 />
               )}
             </View>
             {/* Recent colors */}
             {recentColors.length > 0 && (
               <View>
-                <Text style={{ color: colors.text, fontSize: 11, opacity: 0.6, marginBottom: 6 }}>Recent</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontSize: 11,
+                    opacity: 0.6,
+                    marginBottom: 6,
+                  }}
+                >
+                  Recent
+                </Text>
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}
+                >
                   {recentColors.map((c) => (
-                    <TouchableOpacity key={c} onPress={() => { setDraftHex(numToHex(c)); }}>
-                      <View style={{ width: 24, height: 24, borderRadius: 4, backgroundColor: numToHex(c), borderWidth: 2, borderColor: numToHex(c) === draftHex ? colors.tint : 'transparent' }} />
+                    <TouchableOpacity
+                      key={c}
+                      onPress={() => {
+                        setDraftHex(numToHex(c));
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 4,
+                          backgroundColor: numToHex(c),
+                          borderWidth: 2,
+                          borderColor:
+                            numToHex(c) === draftHex
+                              ? colors.tint
+                              : "transparent",
+                        }}
+                      />
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
             )}
             {/* Hex input */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
               <Text style={{ color: colors.text, fontSize: 12 }}>Hex:</Text>
               <TextInput
-                style={{ flex: 1, borderWidth: 1, borderColor: '#555', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, color: colors.text, fontSize: 13, fontFamily: 'monospace' }}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: "#555",
+                  borderRadius: 6,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  color: colors.text,
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                }}
                 value={draftHex}
-                onChangeText={(v) => { if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setDraftHex(v); }}
+                onChangeText={(v) => {
+                  if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setDraftHex(v);
+                }}
                 maxLength={7}
                 autoCapitalize="none"
               />
             </View>
             {/* Buttons */}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-              <TouchableOpacity onPress={() => setShowModal(false)} style={{ flex: 1, padding: 10, borderWidth: 1, borderColor: '#555', borderRadius: 8, alignItems: 'center' }}>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+              <TouchableOpacity
+                onPress={() => setShowModal(false)}
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: "#555",
+                  borderRadius: 8,
+                  alignItems: "center",
+                }}
+              >
                 <Text style={{ color: colors.text }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => { applyColor(hexToNum(draftHex)); setShowModal(false); }}
-                style={{ flex: 1, padding: 10, backgroundColor: colors.tint, borderRadius: 8, alignItems: 'center' }}
+                onPress={() => {
+                  applyColor(hexToNum(draftHex));
+                  setShowModal(false);
+                }}
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  backgroundColor: colors.tint,
+                  borderRadius: 8,
+                  alignItems: "center",
+                }}
               >
-                <Text style={{ color: _colorScheme === 'dark' ? '#000' : '#fff', fontWeight: '600' }}>Apply</Text>
+                <Text
+                  style={{
+                    color: _colorScheme === "dark" ? "#000" : "#fff",
+                    fontWeight: "600",
+                  }}
+                >
+                  Apply
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -996,38 +1743,60 @@ function ColorPickerRow({ label, value, onChange, colors }: { label: string; val
   );
 }
 
-function FontPickerRow({ params, onUpdate, colors }: { params: Record<string, unknown>; onUpdate: (key: string, value: unknown) => void; colors: any }) {
+function FontPickerRow({
+  params,
+  onUpdate,
+  colors,
+}: {
+  params: Record<string, unknown>;
+  onUpdate: (key: string, value: unknown) => void;
+  colors: any;
+}) {
   const { t } = useTranslation();
   const _colorScheme = useColorScheme();
   const [showUrlInput, setShowUrlInput] = React.useState(false);
-  const [draftUrl, setDraftUrl] = React.useState('');
-  const builtInFonts = AVAILABLE_FONTS.filter(f => !f.isCustom);
-  const currentFont = AVAILABLE_FONTS.find(f => f.id === params.fontFamily);
+  const [draftUrl, setDraftUrl] = React.useState("");
+  const builtInFonts = AVAILABLE_FONTS.filter((f) => !f.isCustom);
+  const currentFont = AVAILABLE_FONTS.find((f) => f.id === params.fontFamily);
 
   const cycleFont = () => {
-    const all = AVAILABLE_FONTS.filter(f => !f.isCustom);
-    const idx = all.findIndex(f => f.id === (params.fontFamily ?? 'helvetiker'));
+    const all = AVAILABLE_FONTS.filter((f) => !f.isCustom);
+    const idx = all.findIndex(
+      (f) => f.id === (params.fontFamily ?? "helvetiker"),
+    );
     onUpdate("fontFamily", all[(idx + 1) % all.length].id);
   };
 
   const applyCustomUrl = () => {
     const url = draftUrl.trim();
     if (!url) return;
-    const id = registerCustomFontUrl('Custom font', url);
+    const id = registerCustomFontUrl("Custom font", url);
     onUpdate("fontFamily", id);
     setShowUrlInput(false);
-    setDraftUrl('');
+    setDraftUrl("");
   };
 
   return (
     <>
       <Row>
-        <Text style={[styles.label, { color: colors.text }]}>{t('font')}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <CycleButton value={currentFont?.label ?? 'Helvetiker'} options={[]} onPress={cycleFont} colors={colors} />
+        <Text style={[styles.label, { color: colors.text }]}>{t("font")}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <CycleButton
+            value={currentFont?.label ?? "Helvetiker"}
+            options={[]}
+            onPress={cycleFont}
+            colors={colors}
+          />
           <TouchableOpacity
-            onPress={() => setShowUrlInput(v => !v)}
-            style={[styles.smallActionButton, { borderColor: colors.tint, paddingHorizontal: 6, paddingVertical: 2 }]}
+            onPress={() => setShowUrlInput((v) => !v)}
+            style={[
+              styles.smallActionButton,
+              {
+                borderColor: colors.tint,
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+              },
+            ]}
           >
             <Text style={{ color: colors.tint, fontSize: 11 }}>URL</Text>
           </TouchableOpacity>
@@ -1036,11 +1805,21 @@ function FontPickerRow({ params, onUpdate, colors }: { params: Record<string, un
       {showUrlInput && (
         <View style={{ paddingHorizontal: 4, paddingBottom: 4, gap: 6 }}>
           <Text style={{ color: colors.text, fontSize: 11, opacity: 0.7 }}>
-            Paste a URL to any typeface.json file (e.g. from facetype.js or Three.js CDN):
+            Paste a URL to any typeface.json file (e.g. from facetype.js or
+            Three.js CDN):
           </Text>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+          <View style={{ flexDirection: "row", gap: 6 }}>
             <TextInput
-              style={{ flex: 1, borderWidth: 1, borderColor: '#555', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, color: colors.text, fontSize: 12 }}
+              style={{
+                flex: 1,
+                borderWidth: 1,
+                borderColor: "#555",
+                borderRadius: 6,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                color: colors.text,
+                fontSize: 12,
+              }}
               value={draftUrl}
               onChangeText={setDraftUrl}
               placeholder="https://…/font.typeface.json"
@@ -1052,13 +1831,26 @@ function FontPickerRow({ params, onUpdate, colors }: { params: Record<string, un
             />
             <TouchableOpacity
               onPress={applyCustomUrl}
-              style={{ backgroundColor: colors.tint, borderRadius: 6, paddingHorizontal: 10, justifyContent: 'center' }}
+              style={{
+                backgroundColor: colors.tint,
+                borderRadius: 6,
+                paddingHorizontal: 10,
+                justifyContent: "center",
+              }}
             >
-              <Text style={{ color: _colorScheme === 'dark' ? '#000' : '#fff', fontSize: 12, fontWeight: '600' }}>Load</Text>
+              <Text
+                style={{
+                  color: _colorScheme === "dark" ? "#000" : "#fff",
+                  fontSize: 12,
+                  fontWeight: "600",
+                }}
+              >
+                Load
+              </Text>
             </TouchableOpacity>
           </View>
           <Text style={{ color: colors.text, fontSize: 10, opacity: 0.5 }}>
-            Built-in: {builtInFonts.map(f => f.label).join(' · ')}
+            Built-in: {builtInFonts.map((f) => f.label).join(" · ")}
           </Text>
         </View>
       )}
@@ -1078,33 +1870,83 @@ function renderText3dControls({
   colors: any;
   t: (key: string, options?: any) => string;
   onUpdate: (key: string, value: unknown) => void;
-  colorScheme?: 'light' | 'dark';
+  colorScheme?: "light" | "dark";
   includeTransform?: boolean;
 }) {
-  const inputBg = colorScheme === 'dark' ? '#2a2a2a' : '#f5f5f5';
+  const inputBg = colorScheme === "dark" ? "#2a2a2a" : "#f5f5f5";
 
   return (
     <>
       <TextInput
         style={[
           styles.textInput,
-          { color: colors.text, borderColor: colors.tint, backgroundColor: inputBg, marginVertical: 6 },
+          {
+            color: colors.text,
+            borderColor: colors.tint,
+            backgroundColor: inputBg,
+            marginVertical: 6,
+          },
         ]}
         placeholder="Enter text..."
-        placeholderTextColor={colorScheme === 'dark' ? '#999' : '#ccc'}
-        value={params.text as string || ''}
+        placeholderTextColor={colorScheme === "dark" ? "#999" : "#ccc"}
+        value={(params.text as string) || ""}
         onChangeText={(v) => onUpdate("text", v)}
         multiline
       />
-      <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
+      <ColorPickerRow
+        label={t("color")}
+        value={(params.color as number) ?? 0xff6600}
+        onChange={(v) => onUpdate("color", v)}
+        colors={colors}
+      />
       <FontPickerRow params={params} onUpdate={onUpdate} colors={colors} />
-      <SliderRow label={t('size')} min={0.5} max={6} step={0.1} value={params.size as number ?? 2} onChange={(v) => onUpdate("size", v)} colors={colors} />
-      <SliderRow label={t('depth')} min={0.05} max={3} step={0.05} value={params.height as number ?? 0.8} onChange={(v) => onUpdate("height", v)} colors={colors} />
-      <SliderRow label={t('metalness')} min={0} max={1} step={0.01} value={params.metalness as number ?? 0.95} onChange={(v) => onUpdate("metalness", v)} colors={colors} />
-      <SliderRow label={t('roughness')} min={0} max={1} step={0.01} value={params.roughness as number ?? 0.15} onChange={(v) => onUpdate("roughness", v)} colors={colors} />
-      <SliderRow label={t('envMapIntensity')} min={0} max={4} step={0.05} value={params.envMapIntensity as number ?? 1.5} onChange={(v) => onUpdate("envMapIntensity", v)} colors={colors} />
+      <SliderRow
+        label={t("size")}
+        min={0.5}
+        max={6}
+        step={0.1}
+        value={(params.size as number) ?? 2}
+        onChange={(v) => onUpdate("size", v)}
+        colors={colors}
+      />
+      <SliderRow
+        label={t("depth")}
+        min={0.05}
+        max={3}
+        step={0.05}
+        value={(params.height as number) ?? 0.8}
+        onChange={(v) => onUpdate("height", v)}
+        colors={colors}
+      />
+      <SliderRow
+        label={t("metalness")}
+        min={0}
+        max={1}
+        step={0.01}
+        value={(params.metalness as number) ?? 0.95}
+        onChange={(v) => onUpdate("metalness", v)}
+        colors={colors}
+      />
+      <SliderRow
+        label={t("roughness")}
+        min={0}
+        max={1}
+        step={0.01}
+        value={(params.roughness as number) ?? 0.15}
+        onChange={(v) => onUpdate("roughness", v)}
+        colors={colors}
+      />
+      <SliderRow
+        label={t("envMapIntensity")}
+        min={0}
+        max={4}
+        step={0.05}
+        value={(params.envMapIntensity as number) ?? 1.5}
+        onChange={(v) => onUpdate("envMapIntensity", v)}
+        colors={colors}
+      />
       <Row>
-        <Text style={[styles.label, { color: colors.text }]}>{t('bevel')}</Text>
+        <Text style={[styles.label, { color: colors.text }]}>{t("bevel")}</Text>
         <Switch
           value={Boolean(params.bevelEnabled ?? true)}
           onValueChange={(v) => onUpdate("bevelEnabled", v)}
@@ -1114,45 +1956,154 @@ function renderText3dControls({
       </Row>
       {(params.bevelEnabled ?? true) && (
         <>
-          <SliderRow label={t('bevelThickness')} min={0} max={0.5} step={0.01} value={params.bevelThickness as number ?? 0.15} onChange={(v) => onUpdate("bevelThickness", v)} colors={colors} />
-          <SliderRow label={t('bevelSize')} min={0} max={0.3} step={0.01} value={params.bevelSize as number ?? 0.08} onChange={(v) => onUpdate("bevelSize", v)} colors={colors} />
-          <SliderRow label={t('bevelOffset')} min={-0.2} max={0.2} step={0.01} value={params.bevelOffset as number ?? 0} onChange={(v) => onUpdate("bevelOffset", v)} colors={colors} />
-          <SliderRow label={t('bevelSegments')} min={1} max={12} step={1} value={params.bevelSegments as number ?? 5} onChange={(v) => onUpdate("bevelSegments", Math.round(v))} colors={colors} />
+          <SliderRow
+            label={t("bevelThickness")}
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={(params.bevelThickness as number) ?? 0.15}
+            onChange={(v) => onUpdate("bevelThickness", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("bevelSize")}
+            min={0}
+            max={0.3}
+            step={0.01}
+            value={(params.bevelSize as number) ?? 0.08}
+            onChange={(v) => onUpdate("bevelSize", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("bevelOffset")}
+            min={-0.2}
+            max={0.2}
+            step={0.01}
+            value={(params.bevelOffset as number) ?? 0}
+            onChange={(v) => onUpdate("bevelOffset", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("bevelSegments")}
+            min={1}
+            max={12}
+            step={1}
+            value={(params.bevelSegments as number) ?? 5}
+            onChange={(v) => onUpdate("bevelSegments", Math.round(v))}
+            colors={colors}
+          />
         </>
       )}
-      <SliderRow label={t('curveSegments')} min={2} max={128} step={1} value={params.curveSegments as number ?? 48} onChange={(v) => onUpdate("curveSegments", Math.round(v))} colors={colors} />
+      <SliderRow
+        label={t("curveSegments")}
+        min={2}
+        max={128}
+        step={1}
+        value={(params.curveSegments as number) ?? 48}
+        onChange={(v) => onUpdate("curveSegments", Math.round(v))}
+        colors={colors}
+      />
       <Row>
-        <Text style={[styles.label, { color: colors.text }]}>{t('equalizeWidths')}</Text>
-        <Switch
-          value={Boolean(params.equalizeLineWidths)}
-          onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
-          trackColor={{ false: "#767577", true: colors.tint }}
-          thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
-        />
+        <Text style={[styles.label, { color: colors.text }]}>
+          {t("equalizeWidths")}
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {Boolean(params.equalizeLineWidths) && (
+            <select
+              value={(params.equalizationMethod as string) ?? "fontSize"}
+              onChange={(e) => onUpdate("equalizationMethod", e.target.value)}
+              style={{ background: colorScheme === "dark" ? "#222" : "#fff", color: colors.text, border: `1px solid ${colorScheme === "dark" ? "#444" : "#ccc"}`, borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: "pointer" } as any}
+            >
+              <option value="fontSize">fontSize</option>
+              <option value="spacing">spacing</option>
+            </select>
+          )}
+          <Switch
+            value={Boolean(params.equalizeLineWidths)}
+            onValueChange={(v) => onUpdate("equalizeLineWidths", v)}
+            trackColor={{ false: "#767577", true: colors.tint }}
+            thumbColor={params.equalizeLineWidths ? colors.tint : "#f4f3f4"}
+          />
+        </View>
       </Row>
       {params.equalizeLineWidths && (
         <>
-          <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{t('method', { method: params.equalizationMethod as string ?? 'fontSize' })}</Text>
-            <CycleButton
-              value="Switch"
-              options={[]}
-              onPress={() => onUpdate("equalizationMethod", params.equalizationMethod === 'spacing' ? 'fontSize' : 'spacing')}
-              colors={colors}
-            />
-          </Row>
-          <SliderRow label={t('targetWidth')} min={5} max={40} step={0.1} value={params.targetWidth as number ?? 20} onChange={(v) => onUpdate("targetWidth", v)} colors={colors} />
+          <SliderRow
+            label={t("targetWidth")}
+            min={5}
+            max={40}
+            step={0.1}
+            value={(params.targetWidth as number) ?? 20}
+            onChange={(v) => onUpdate("targetWidth", v)}
+            colors={colors}
+          />
         </>
       )}
-      <SliderRow label={t('lineGap')} min={-1} max={6} step={0.05} value={params.lineSpacing as number ?? 1.0} onChange={(v) => onUpdate("lineSpacing", v)} colors={colors} />
+      <SliderRow
+        label={t("lineGap")}
+        min={-1}
+        max={6}
+        step={0.05}
+        value={(params.lineSpacing as number) ?? 1.0}
+        onChange={(v) => onUpdate("lineSpacing", v)}
+        colors={colors}
+      />
       {includeTransform && (
         <>
-          <SliderRow label={t('positionX')} min={-20} max={20} step={0.1} value={params.posX as number ?? 0} onChange={(v) => onUpdate("posX", v)} colors={colors} />
-          <SliderRow label={t('positionY')} min={-20} max={20} step={0.1} value={params.posY as number ?? 0} onChange={(v) => onUpdate("posY", v)} colors={colors} />
-          <SliderRow label={t('positionZ')} min={-20} max={20} step={0.1} value={params.posZ as number ?? 0} onChange={(v) => onUpdate("posZ", v)} colors={colors} />
-          <SliderRow label={t('rotationX')} min={-Math.PI} max={Math.PI} step={0.05} value={params.rotX as number ?? 0} onChange={(v) => onUpdate("rotX", v)} colors={colors} />
-          <SliderRow label={t('rotationY')} min={-Math.PI} max={Math.PI} step={0.05} value={params.rotY as number ?? 0} onChange={(v) => onUpdate("rotY", v)} colors={colors} />
-          <SliderRow label={t('rotationZ')} min={-Math.PI} max={Math.PI} step={0.05} value={params.rotZ as number ?? 0} onChange={(v) => onUpdate("rotZ", v)} colors={colors} />
+          <SliderRow
+            label={t("positionX")}
+            min={-20}
+            max={20}
+            step={0.1}
+            value={(params.posX as number) ?? 0}
+            onChange={(v) => onUpdate("posX", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("positionY")}
+            min={-20}
+            max={20}
+            step={0.1}
+            value={(params.posY as number) ?? 0}
+            onChange={(v) => onUpdate("posY", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("positionZ")}
+            min={-20}
+            max={20}
+            step={0.1}
+            value={(params.posZ as number) ?? 0}
+            onChange={(v) => onUpdate("posZ", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("rotationX")}
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.05}
+            value={(params.rotX as number) ?? 0}
+            onChange={(v) => onUpdate("rotX", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("rotationY")}
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.05}
+            value={(params.rotY as number) ?? 0}
+            onChange={(v) => onUpdate("rotY", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("rotationZ")}
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.05}
+            value={(params.rotZ as number) ?? 0}
+            onChange={(v) => onUpdate("rotZ", v)}
+            colors={colors}
+          />
         </>
       )}
     </>
@@ -1165,9 +2116,11 @@ function renderEffectControls(
   t: (key: string, options?: any) => string,
   onUpdate: (key: string, value: unknown) => void,
   onEditCode?: (id: string, code: string, description: string) => void,
-  colorScheme?: 'light' | 'dark',
+  colorScheme?: "light" | "dark",
+  onPickImage?: (instanceId: string, paramKey: string) => void,
 ) {
   const params = effect.params as Record<string, unknown>;
+  const id = effect.id;
   // shorthand: t(`p_${k}`) for param labels
   const p = (k: string) => t(`p_${k}`);
   switch (effect.type) {
@@ -1176,92 +2129,255 @@ function renderEffectControls(
     case "bloom":
       return (
         <>
-          <SliderRow label={p('strength')} min={0} max={3} step={0.05} value={params.strength as number} onChange={(v) => onUpdate("strength", v)} colors={colors} />
-          <SliderRow label={p('threshold')} min={0} max={1} step={0.01} value={params.threshold as number} onChange={(v) => onUpdate("threshold", v)} colors={colors} />
-          <SliderRow label={p('radius')} min={0} max={1} step={0.01} value={params.radius as number} onChange={(v) => onUpdate("radius", v)} colors={colors} />
+          <SliderRow
+            label={p("strength")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={params.strength as number}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("threshold")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.threshold as number}
+            onChange={(v) => onUpdate("threshold", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("radius")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.radius as number}
+            onChange={(v) => onUpdate("radius", v)}
+            colors={colors}
+          />
         </>
       );
     case "depthOfField":
       return (
         <>
-          <SliderRow label={p('focusDist')} min={1} max={40} step={0.5} value={params.focus as number} onChange={(v) => onUpdate("focus", v)} colors={colors} />
-          <SliderRow label={p('aperture')} min={0.5} max={20} step={0.1} value={params.aperture as number} onChange={(v) => onUpdate("aperture", v)} colors={colors} />
-          <SliderRow label={p('maxBlur')} min={0} max={0.05} step={0.001} value={params.maxBlur as number} onChange={(v) => onUpdate("maxBlur", v)} colors={colors} />
+          <SliderRow
+            label={p("focusDist")}
+            min={1}
+            max={40}
+            step={0.5}
+            value={params.focus as number}
+            onChange={(v) => onUpdate("focus", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("aperture")}
+            min={0.5}
+            max={20}
+            step={0.1}
+            value={params.aperture as number}
+            onChange={(v) => onUpdate("aperture", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("maxBlur")}
+            min={0}
+            max={0.05}
+            step={0.001}
+            value={params.maxBlur as number}
+            onChange={(v) => onUpdate("maxBlur", v)}
+            colors={colors}
+          />
         </>
       );
     case "chromatic":
-      return <SliderRow label={p('offset')} min={0} max={0.02} step={0.0005} value={params.offset as number} onChange={(v) => onUpdate("offset", v)} colors={colors} />;
+      return (
+        <SliderRow
+          label={p("offset")}
+          min={0}
+          max={0.02}
+          step={0.0005}
+          value={params.offset as number}
+          onChange={(v) => onUpdate("offset", v)}
+          colors={colors}
+        />
+      );
     case "filmGrain":
-      return <SliderRow label={p('intensity')} min={0} max={1} step={0.01} value={params.intensity as number} onChange={(v) => onUpdate("intensity", v)} colors={colors} />;
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
     case "glitch":
       return (
         <Row>
-          <Text style={[styles.label, { color: colors.text }]}>{p('wildMode')}</Text>
-          <Switch value={Boolean(params.wildGlitch)} onValueChange={(value) => onUpdate("wildGlitch", value)}
-            trackColor={{ false: "#767577", true: colors.tint }} thumbColor={Boolean(params.wildGlitch) ? colors.tint : "#f4f3f4"} />
+          <Text style={[styles.label, { color: colors.text }]}>
+            {p("wildMode")}
+          </Text>
+          <Switch
+            value={Boolean(params.wildGlitch)}
+            onValueChange={(value) => onUpdate("wildGlitch", value)}
+            trackColor={{ false: "#767577", true: colors.tint }}
+            thumbColor={Boolean(params.wildGlitch) ? colors.tint : "#f4f3f4"}
+          />
         </Row>
       );
     case "fishEye":
       return (
         <>
-          <SliderRow label={p('strength')} min={0} max={1} step={0.01} value={params.strength as number} onChange={(v) => onUpdate("strength", v)} colors={colors} />
-          <SliderRow label={p('radius')} min={2} max={30} step={0.5} value={params.radius as number} onChange={(v) => onUpdate("radius", v)} colors={colors} />
+          <SliderRow
+            label={p("strength")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.strength as number}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("radius")}
+            min={2}
+            max={30}
+            step={0.5}
+            value={params.radius as number}
+            onChange={(v) => onUpdate("radius", v)}
+            colors={colors}
+          />
         </>
       );
     case "bend":
       return (
         <>
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{p('axis')}</Text>
-            <CycleButton value={(params.axis as string)?.toUpperCase() ?? "X"} options={[]}
-              onPress={() => { const nextAxis = params.axis === "x" ? "y" : params.axis === "y" ? "z" : "x"; onUpdate("axis", nextAxis); }} colors={colors} />
+            <Text style={[styles.label, { color: colors.text }]}>
+              {p("axis")}
+            </Text>
+            <CycleButton
+              value={(params.axis as string)?.toUpperCase() ?? "X"}
+              options={[]}
+              onPress={() => {
+                const nextAxis =
+                  params.axis === "x" ? "y" : params.axis === "y" ? "z" : "x";
+                onUpdate("axis", nextAxis);
+              }}
+              colors={colors}
+            />
           </Row>
-          <SliderRow label={p('strength')} min={0} max={0.5} step={0.01} value={params.strength as number} onChange={(v) => onUpdate("strength", v)} colors={colors} />
+          <SliderRow
+            label={p("strength")}
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={params.strength as number}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
         </>
       );
     case "envMap":
       return (
         <>
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{p('style')}</Text>
-            <CycleButton value={(params.style as string) ?? "gradient"} options={[]}
-              onPress={() => { const stylesList: EnvMapStyle[] = ["gradient","studio","starfield","sunset","neon","custom"]; const idx = stylesList.indexOf(params.style as EnvMapStyle); onUpdate("style", stylesList[(idx + 1) % stylesList.length]); }} colors={colors} />
+            <Text style={[styles.label, { color: colors.text }]}>
+              {p("style")}
+            </Text>
+            <select
+              value={(params.style as string) ?? "gradient"}
+              onChange={(e) => onUpdate("style", e.target.value)}
+              style={
+                {
+                  background: colorScheme === "dark" ? "#222" : "#fff",
+                  color: colors.text,
+                  border: `1px solid ${colorScheme === "dark" ? "#444" : "#ccc"}`,
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                  fontSize: 13,
+                  cursor: "pointer",
+                } as any
+              }
+            >
+              {(
+                [
+                  "gradient",
+                  "studio",
+                  "starfield",
+                  "sunset",
+                  "neon",
+                  "custom",
+                ] as EnvMapStyle[]
+              ).map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </Row>
-          {params.style === 'custom' && (
+          {params.style === "custom" && (
             <Row>
-              <Text style={[styles.label, { color: colors.text }]}>{p('customImage')}</Text>
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <Text style={[styles.label, { color: colors.text }]}>
+                {p("customImage")}
+              </Text>
+              <View
+                style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+              >
                 <TouchableOpacity
-                  style={[styles.smallActionButton, { borderColor: colors.tint, paddingHorizontal: 10, paddingVertical: 4 }]}
-                  onPress={() => {
-                    if (typeof document !== 'undefined') {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = 'image/*';
-                      input.onchange = (e: any) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.readAsDataURL(file);
-                        reader.onload = () => onUpdate("customImageDataUrl", reader.result as string);
-                      };
-                      input.click();
-                    }
-                  }}
+                  style={[
+                    styles.smallActionButton,
+                    {
+                      borderColor: colors.tint,
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                    },
+                  ]}
+                  onPress={() => onPickImage?.(id, "customImageDataUrl")}
                 >
                   <Text style={[styles.buttonText, { color: colors.tint }]}>
-                    {params.customImageDataUrl ? p('changeImage') : p('chooseImage')}
+                    {params.customImageDataUrl
+                      ? p("changeImage")
+                      : p("chooseImage")}
                   </Text>
                 </TouchableOpacity>
                 {Boolean(params.customImageDataUrl) && (
-                  <img src={params.customImageDataUrl as string} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 } as any} />
+                  <img
+                    src={params.customImageDataUrl as string}
+                    style={
+                      {
+                        width: 40,
+                        height: 40,
+                        objectFit: "cover",
+                        borderRadius: 4,
+                      } as any
+                    }
+                  />
                 )}
               </View>
             </Row>
           )}
-          <SliderRow label={p('intensity')} min={0} max={3} step={0.05} value={params.intensity as number} onChange={(v) => onUpdate("intensity", v)} colors={colors} />
-          {params.style !== 'custom' && (
-            <SliderRow label={p('seed')} min={0} max={999} step={1} value={params.seed as number} onChange={(v) => onUpdate("seed", Math.round(v))} colors={colors} />
+          <SliderRow
+            label={p("intensity")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={params.intensity as number}
+            onChange={(v) => onUpdate("intensity", v)}
+            colors={colors}
+          />
+          {params.style !== "custom" && (
+            <SliderRow
+              label={p("seed")}
+              min={0}
+              max={999}
+              step={1}
+              value={params.seed as number}
+              onChange={(v) => onUpdate("seed", Math.round(v))}
+              colors={colors}
+            />
           )}
         </>
       );
@@ -1269,63 +2385,239 @@ function renderEffectControls(
       return (
         <>
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{t('color')}</Text>
-            <CycleButton value={["Magenta","Cyan","Green","Orange","Blue"][params.colorIdx as number]} options={[]}
-              onPress={() => onUpdate("colorIdx", ((params.colorIdx as number) + 1) % 5)} colors={colors} />
+            <Text style={[styles.label, { color: colors.text }]}>
+              {t("color")}
+            </Text>
+            <CycleButton
+              value={
+                ["Magenta", "Cyan", "Green", "Orange", "Blue"][
+                  params.colorIdx as number
+                ]
+              }
+              options={[]}
+              onPress={() =>
+                onUpdate("colorIdx", ((params.colorIdx as number) + 1) % 5)
+              }
+              colors={colors}
+            />
           </Row>
-          <SliderRow label={p('intensity')} min={0} max={2} step={0.05} value={params.intensity as number} onChange={(v) => onUpdate("intensity", v)} colors={colors} />
-          <SliderRow label={p('pulseSpeed')} min={0} max={5} step={0.1} value={params.pulseSpeed as number} onChange={(v) => onUpdate("pulseSpeed", v)} colors={colors} />
-          <SliderRow label={p('pulseAmplitude')} min={0} max={1} step={0.01} value={params.pulseAmplitude as number} onChange={(v) => onUpdate("pulseAmplitude", v)} colors={colors} />
+          <SliderRow
+            label={p("intensity")}
+            min={0}
+            max={2}
+            step={0.05}
+            value={params.intensity as number}
+            onChange={(v) => onUpdate("intensity", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("pulseSpeed")}
+            min={0}
+            max={5}
+            step={0.1}
+            value={params.pulseSpeed as number}
+            onChange={(v) => onUpdate("pulseSpeed", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("pulseAmplitude")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.pulseAmplitude as number}
+            onChange={(v) => onUpdate("pulseAmplitude", v)}
+            colors={colors}
+          />
         </>
       );
     case "metallicPreset":
       return (
         <Row>
-          <Text style={[styles.label, { color: colors.text }]}>{p('preset')}</Text>
-          <CycleButton value={(params.preset as string) ?? "gold"} options={[]}
-            onPress={() => { const presets: MetallicPreset[] = ["gold","chrome","copper","holographic","obsidian"]; const idx = presets.indexOf(params.preset as MetallicPreset); onUpdate("preset", presets[(idx + 1) % presets.length]); }} colors={colors} />
+          <Text style={[styles.label, { color: colors.text }]}>
+            {p("preset")}
+          </Text>
+          <CycleButton
+            value={(params.preset as string) ?? "gold"}
+            options={[]}
+            onPress={() => {
+              const presets: MetallicPreset[] = [
+                "gold",
+                "chrome",
+                "copper",
+                "holographic",
+                "obsidian",
+              ];
+              const idx = presets.indexOf(params.preset as MetallicPreset);
+              onUpdate("preset", presets[(idx + 1) % presets.length]);
+            }}
+            colors={colors}
+          />
         </Row>
       );
     case "dust":
       return (
         <>
-          <SliderRow label={p('count')} min={50} max={2000} step={50} value={params.count as number} onChange={(v) => onUpdate("count", Math.round(v))} colors={colors} />
-          <SliderRow label={p('speed')} min={0} max={2} step={0.05} value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
-          <SliderRow label={t('size')} min={0.01} max={0.3} step={0.005} value={params.size as number} onChange={(v) => onUpdate("size", v)} colors={colors} />
-          <SliderRow label={p('seed')} min={0} max={999} step={1} value={params.seed as number} onChange={(v) => onUpdate("seed", Math.round(v))} colors={colors} />
+          <SliderRow
+            label={p("count")}
+            min={50}
+            max={2000}
+            step={50}
+            value={params.count as number}
+            onChange={(v) => onUpdate("count", Math.round(v))}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("speed")}
+            min={0}
+            max={2}
+            step={0.05}
+            value={params.speed as number}
+            onChange={(v) => onUpdate("speed", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("size")}
+            min={0.01}
+            max={0.3}
+            step={0.005}
+            value={params.size as number}
+            onChange={(v) => onUpdate("size", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("seed")}
+            min={0}
+            max={999}
+            step={1}
+            value={params.seed as number}
+            onChange={(v) => onUpdate("seed", Math.round(v))}
+            colors={colors}
+          />
         </>
       );
     case "wireframe":
-      return <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number} onChange={(v) => onUpdate("opacity", v)} colors={colors} />;
+      return (
+        <SliderRow
+          label={p("opacity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.opacity as number}
+          onChange={(v) => onUpdate("opacity", v)}
+          colors={colors}
+        />
+      );
     case "outline":
-      return <SliderRow label={p('thickness')} min={1.01} max={1.2} step={0.005} value={params.thickness as number} onChange={(v) => onUpdate("thickness", v)} colors={colors} />;
+      return (
+        <SliderRow
+          label={p("thickness")}
+          min={1.01}
+          max={1.2}
+          step={0.005}
+          value={params.thickness as number}
+          onChange={(v) => onUpdate("thickness", v)}
+          colors={colors}
+        />
+      );
     case "rays": {
       const raysMode = (params.mode as string) ?? "radial";
       return (
         <>
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{p('mode')}</Text>
-            <CycleButton value={raysMode} options={[]}
-              onPress={() => onUpdate("mode", raysMode === "radial" ? "spaghetti" : raysMode === "spaghetti" ? "chip" : raysMode === "chip" ? "heart" : "radial")} colors={colors} />
+            <Text style={[styles.label, { color: colors.text }]}>
+              {p("mode")}
+            </Text>
+            <CycleButton
+              value={raysMode}
+              options={[]}
+              onPress={() =>
+                onUpdate(
+                  "mode",
+                  raysMode === "radial"
+                    ? "spaghetti"
+                    : raysMode === "spaghetti"
+                      ? "chip"
+                      : raysMode === "chip"
+                        ? "heart"
+                        : "radial",
+                )
+              }
+              colors={colors}
+            />
           </Row>
-          <SliderRow label={p('count')} min={4} max={128} step={1} value={params.count as number} onChange={(v) => onUpdate("count", Math.round(v))} colors={colors} />
+          <SliderRow
+            label={p("count")}
+            min={4}
+            max={128}
+            step={1}
+            value={params.count as number}
+            onChange={(v) => onUpdate("count", Math.round(v))}
+            colors={colors}
+          />
           {raysMode !== "spaghetti" && (
             <LinkedSliderPair
-              label1={p('innerThickness')} label2={p('outerThickness')}
-              min={0.01} max={0.5} step={0.01}
-              value1={params.innerThickness as number} value2={params.outerThickness as number}
-              onChange1={(v) => onUpdate("innerThickness", v)} onChange2={(v) => onUpdate("outerThickness", v)}
-              locked={Boolean(params.lockThickness)} onLockToggle={() => onUpdate("lockThickness", !Boolean(params.lockThickness))} colors={colors} />
+              label1={p("innerThickness")}
+              label2={p("outerThickness")}
+              min={0.01}
+              max={0.5}
+              step={0.01}
+              value1={params.innerThickness as number}
+              value2={params.outerThickness as number}
+              onChange1={(v) => onUpdate("innerThickness", v)}
+              onChange2={(v) => onUpdate("outerThickness", v)}
+              locked={Boolean(params.lockThickness)}
+              onLockToggle={() =>
+                onUpdate("lockThickness", !Boolean(params.lockThickness))
+              }
+              colors={colors}
+            />
           )}
           {raysMode === "spaghetti" && (
-            <SliderRow label={p('thickness')} min={0.01} max={0.5} step={0.01}
-              value={((params.innerThickness as number) + (params.outerThickness as number)) / 2}
-              onChange={(v) => { onUpdate("innerThickness", v); onUpdate("outerThickness", v); }} colors={colors} />
+            <SliderRow
+              label={p("thickness")}
+              min={0.01}
+              max={0.5}
+              step={0.01}
+              value={
+                ((params.innerThickness as number) +
+                  (params.outerThickness as number)) /
+                2
+              }
+              onChange={(v) => {
+                onUpdate("innerThickness", v);
+                onUpdate("outerThickness", v);
+              }}
+              colors={colors}
+            />
           )}
-          <SliderRow label={p('innerMargin')} min={0} max={20} step={0.1} value={params.innerMargin as number} onChange={(v) => onUpdate("innerMargin", v)} colors={colors} />
-          <SliderRow label={p('outerMargin')} min={0} max={40} step={0.1} value={params.outerMargin as number} onChange={(v) => onUpdate("outerMargin", v)} colors={colors} />
+          <SliderRow
+            label={p("innerMargin")}
+            min={0}
+            max={20}
+            step={0.1}
+            value={params.innerMargin as number}
+            onChange={(v) => onUpdate("innerMargin", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("outerMargin")}
+            min={0}
+            max={40}
+            step={0.1}
+            value={params.outerMargin as number}
+            onChange={(v) => onUpdate("outerMargin", v)}
+            colors={colors}
+          />
           {raysMode === "heart" && (
-            <SliderRow label={p('heartRotation')} min={0} max={180} step={1} value={(params.heartRotation as number) ?? 0} onChange={(v) => onUpdate("heartRotation", v)} colors={colors} />
+            <SliderRow
+              label={p("heartRotation")}
+              min={0}
+              max={180}
+              step={1}
+              value={(params.heartRotation as number) ?? 0}
+              onChange={(v) => onUpdate("heartRotation", v)}
+              colors={colors}
+            />
           )}
         </>
       );
@@ -1333,283 +2625,1707 @@ function renderEffectControls(
     case "radialBlur":
       return (
         <>
-          <SliderRow label={p('strength')} min={0} max={1} step={0.01} value={params.strength as number} onChange={(v) => onUpdate("strength", v)} colors={colors} />
-          <SliderRow label={p('segments')} min={1} max={32} step={1} value={params.samples as number} onChange={(v) => onUpdate("samples", Math.round(v))} colors={colors} />
+          <SliderRow
+            label={p("strength")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.strength as number}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("segments")}
+            min={1}
+            max={32}
+            step={1}
+            value={params.samples as number}
+            onChange={(v) => onUpdate("samples", Math.round(v))}
+            colors={colors}
+          />
         </>
       );
     case "wave":
       return (
         <>
-          <SliderRow label={p('amplitude')} min={0} max={3} step={0.05} value={params.amplitude as number} onChange={(v) => onUpdate("amplitude", v)} colors={colors} />
-          <SliderRow label={p('frequency')} min={0.1} max={5} step={0.05} value={params.frequency as number} onChange={(v) => onUpdate("frequency", v)} colors={colors} />
-          <SliderRow label={p('speed')} min={0} max={5} step={0.1} value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+          <SliderRow
+            label={p("amplitude")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={params.amplitude as number}
+            onChange={(v) => onUpdate("amplitude", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("frequency")}
+            min={0.1}
+            max={5}
+            step={0.05}
+            value={params.frequency as number}
+            onChange={(v) => onUpdate("frequency", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("speed")}
+            min={0}
+            max={5}
+            step={0.1}
+            value={params.speed as number}
+            onChange={(v) => onUpdate("speed", v)}
+            colors={colors}
+          />
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{p('axis')}</Text>
-            <CycleButton value={(params.axis as string) ?? "x"} options={[]}
-              onPress={() => onUpdate("axis", params.axis === "x" ? "y" : "x")} colors={colors} />
+            <Text style={[styles.label, { color: colors.text }]}>
+              {p("axis")}
+            </Text>
+            <CycleButton
+              value={(params.axis as string) ?? "x"}
+              options={[]}
+              onPress={() => onUpdate("axis", params.axis === "x" ? "y" : "x")}
+              colors={colors}
+            />
           </Row>
         </>
       );
     case "twist":
       return (
         <>
-          <SliderRow label={p('strength')} min={-3} max={3} step={0.05} value={params.strength as number} onChange={(v) => onUpdate("strength", v)} colors={colors} />
+          <SliderRow
+            label={p("strength")}
+            min={-3}
+            max={3}
+            step={0.05}
+            value={params.strength as number}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>{p('axis')}</Text>
-            <CycleButton value={(params.axis as string) ?? "y"} options={[]}
-              onPress={() => onUpdate("axis", params.axis === "x" ? "y" : params.axis === "y" ? "z" : "x")} colors={colors} />
+            <Text style={[styles.label, { color: colors.text }]}>
+              {p("axis")}
+            </Text>
+            <CycleButton
+              value={(params.axis as string) ?? "y"}
+              options={[]}
+              onPress={() =>
+                onUpdate(
+                  "axis",
+                  params.axis === "x" ? "y" : params.axis === "y" ? "z" : "x",
+                )
+              }
+              colors={colors}
+            />
           </Row>
         </>
       );
     case "pulse":
       return (
         <>
-          <SliderRow label={p('amplitude')} min={0} max={0.5} step={0.01} value={params.amplitude as number} onChange={(v) => onUpdate("amplitude", v)} colors={colors} />
-          <SliderRow label={p('speed')} min={0.1} max={5} step={0.1} value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+          <SliderRow
+            label={p("amplitude")}
+            min={0}
+            max={0.5}
+            step={0.01}
+            value={params.amplitude as number}
+            onChange={(v) => onUpdate("amplitude", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("speed")}
+            min={0.1}
+            max={5}
+            step={0.1}
+            value={params.speed as number}
+            onChange={(v) => onUpdate("speed", v)}
+            colors={colors}
+          />
         </>
       );
     case "floatingRings":
       return (
         <>
-          <SliderRow label={p('count')} min={1} max={6} step={1} value={params.count as number} onChange={(v) => onUpdate("count", Math.round(v))} colors={colors} />
-          <SliderRow label={p('radius')} min={0.5} max={4} step={0.05} value={params.radiusMult as number} onChange={(v) => onUpdate("radiusMult", v)} colors={colors} />
-          <SliderRow label={p('speed')} min={0} max={2} step={0.05} value={params.speed as number} onChange={(v) => onUpdate("speed", v)} colors={colors} />
-          <SliderRow label={p('thickness')} min={0.01} max={0.15} step={0.005} value={params.thickness as number} onChange={(v) => onUpdate("thickness", v)} colors={colors} />
+          <SliderRow
+            label={p("count")}
+            min={1}
+            max={6}
+            step={1}
+            value={params.count as number}
+            onChange={(v) => onUpdate("count", Math.round(v))}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("radius")}
+            min={0.5}
+            max={4}
+            step={0.05}
+            value={params.radiusMult as number}
+            onChange={(v) => onUpdate("radiusMult", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("speed")}
+            min={0}
+            max={2}
+            step={0.05}
+            value={params.speed as number}
+            onChange={(v) => onUpdate("speed", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("thickness")}
+            min={0.01}
+            max={0.15}
+            step={0.005}
+            value={params.thickness as number}
+            onChange={(v) => onUpdate("thickness", v)}
+            colors={colors}
+          />
         </>
       );
     case "vignette":
       return (
         <>
-          <SliderRow label={p('offset')} min={0} max={1} step={0.01} value={params.offset as number} onChange={(v) => onUpdate("offset", v)} colors={colors} />
-          <SliderRow label={p('darkness')} min={0} max={5} step={0.1} value={params.darkness as number} onChange={(v) => onUpdate("darkness", v)} colors={colors} />
+          <SliderRow
+            label={p("offset")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.offset as number}
+            onChange={(v) => onUpdate("offset", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("darkness")}
+            min={0}
+            max={5}
+            step={0.1}
+            value={params.darkness as number}
+            onChange={(v) => onUpdate("darkness", v)}
+            colors={colors}
+          />
         </>
       );
     case "scanlines":
       return (
         <>
-          <SliderRow label={p('count')} min={10} max={400} step={5} value={params.count as number} onChange={(v) => onUpdate("count", Math.round(v))} colors={colors} />
-          <SliderRow label={p('intensity')} min={0} max={1} step={0.01} value={params.intensity as number} onChange={(v) => onUpdate("intensity", v)} colors={colors} />
-          <SliderRow label={p('scroll')} min={0} max={3} step={0.05} value={params.scrollSpeed as number} onChange={(v) => onUpdate("scrollSpeed", v)} colors={colors} />
+          <SliderRow
+            label={p("count")}
+            min={10}
+            max={400}
+            step={5}
+            value={params.count as number}
+            onChange={(v) => onUpdate("count", Math.round(v))}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("intensity")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.intensity as number}
+            onChange={(v) => onUpdate("intensity", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("scroll")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={params.scrollSpeed as number}
+            onChange={(v) => onUpdate("scrollSpeed", v)}
+            colors={colors}
+          />
         </>
       );
     case "colorGrading":
       return (
         <>
-          <SliderRow label={p('hueShift')} min={0} max={1} step={0.01} value={params.hueShift as number} onChange={(v) => onUpdate("hueShift", v)} colors={colors} />
-          <SliderRow label={p('saturation')} min={0} max={3} step={0.05} value={params.saturation as number} onChange={(v) => onUpdate("saturation", v)} colors={colors} />
-          <SliderRow label={p('contrast')} min={0} max={3} step={0.05} value={params.contrast as number} onChange={(v) => onUpdate("contrast", v)} colors={colors} />
-          <SliderRow label={p('brightness')} min={-0.5} max={0.5} step={0.01} value={params.brightness as number} onChange={(v) => onUpdate("brightness", v)} colors={colors} />
+          <SliderRow
+            label={p("hueShift")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.hueShift as number}
+            onChange={(v) => onUpdate("hueShift", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("saturation")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={params.saturation as number}
+            onChange={(v) => onUpdate("saturation", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("contrast")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={params.contrast as number}
+            onChange={(v) => onUpdate("contrast", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("brightness")}
+            min={-0.5}
+            max={0.5}
+            step={0.01}
+            value={params.brightness as number}
+            onChange={(v) => onUpdate("brightness", v)}
+            colors={colors}
+          />
         </>
       );
     case "pixelate":
-      return <SliderRow label={p('pixelSize')} min={1} max={32} step={1} value={params.pixelSize as number} onChange={(v) => onUpdate("pixelSize", Math.round(v))} colors={colors} />;
-    case "circularBlur":   return <SliderRow label={p('radius')}    min={0} max={0.05} step={0.001} value={params.radius as number}    onChange={v=>onUpdate("radius",v)}    colors={colors} />;
-    case "sepia":          return <SliderRow label={p('amount')}    min={0} max={1}    step={0.01}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "invert":         return <SliderRow label={p('amount')}    min={0} max={1}    step={0.01}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "sobelEdge":      return <SliderRow label={p('strength')}  min={0} max={5}    step={0.1}   value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
-    case "thermal":        return <SliderRow label={p('intensity')} min={0} max={1}    step={0.01}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "nightVision":    return <SliderRow label={p('intensity')} min={0} max={2}    step={0.05}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "duotone": return (
-      <>
-        <ColorPickerRow label={p('colorA')} value={params.colorA as number ?? 0xff6600} onChange={v=>onUpdate("colorA",v)} colors={colors} />
-        <ColorPickerRow label={p('colorB')} value={params.colorB as number ?? 0x0066ff} onChange={v=>onUpdate("colorB",v)} colors={colors} />
-      </>
-    );
-    case "posterize":      return <SliderRow label={p('levels')}    min={2} max={16}   step={1}     value={params.levels as number}    onChange={v=>onUpdate("levels",Math.round(v))} colors={colors} />;
-    case "colorOverlay": return (
-      <>
-        <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v=>onUpdate("color",v)} colors={colors} />
-        <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />
-      </>
-    );
-    case "halftone":       return <SliderRow label={p('dotSize')}   min={1} max={16}   step={0.5}   value={params.dotSize as number}   onChange={v=>onUpdate("dotSize",v)}   colors={colors} />;
-    case "sharpen":        return <SliderRow label={p('amount')}    min={0} max={3}    step={0.05}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "animChromatic":  return <SliderRow label={p('amount')}    min={0} max={0.05} step={0.001} value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "blur":           return <SliderRow label={p('radius')}    min={0} max={5}    step={0.1}   value={params.radius as number}    onChange={v=>onUpdate("radius",v)}    colors={colors} />;
-    case "lensDistort":    return <SliderRow label={p('k')}         min={-1} max={1}   step={0.01}  value={params.k as number}         onChange={v=>onUpdate("k",v)}         colors={colors} />;
-    case "mosaic":         return <SliderRow label={t('size')}      min={0.01} max={0.3} step={0.005} value={params.size as number}   onChange={v=>onUpdate("size",v)}       colors={colors} />;
-    case "noisePost":      return <SliderRow label={p('amount')}    min={0} max={0.5}  step={0.01}  value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "crtCurvature":   return <SliderRow label={p('bend')}      min={1} max={20}   step={0.5}   value={params.bend as number}      onChange={v=>onUpdate("bend",v)}      colors={colors} />;
-    case "vhsTracking":    return <SliderRow label={p('strength')}  min={0} max={0.2}  step={0.002} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
-    case "glowEdge":       return <SliderRow label={p('intensity')} min={0} max={5}    step={0.1}   value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "acid":           return <SliderRow label={p('strength')}  min={0} max={0.3}  step={0.005} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
-    case "kaleidoscopePost":return <SliderRow label={p('segments')} min={2} max={16}   step={1}     value={params.segments as number}  onChange={v=>onUpdate("segments",Math.round(v))} colors={colors} />;
-    case "oldFilm":        return <SliderRow label={p('grain')}     min={0} max={0.3}  step={0.005} value={params.grainAmount as number} onChange={v=>onUpdate("grainAmount",v)} colors={colors} />;
-    case "zoomBlur":       return <SliderRow label={p('strength')}  min={0} max={0.2}  step={0.002} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
-    case "crosshatch":     return <SliderRow label={p('density')}   min={4} max={24}   step={1}     value={params.density as number}   onChange={v=>onUpdate("density",v)}   colors={colors} />;
-    case "glitchBlock":    return <SliderRow label={p('intensity')} min={0} max={1}    step={0.01}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "speedLines":     return <SliderRow label={p('intensity')} min={0} max={2}    step={0.05}  value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "rgbShift":       return <SliderRow label={p('amount')}    min={0} max={0.03} step={0.001} value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "frostedGlass":   return <SliderRow label={p('blur')}      min={0} max={10}   step={0.2}   value={params.blur as number}      onChange={v=>onUpdate("blur",v)}      colors={colors} />;
-    case "waterRipple":    return <SliderRow label={p('strength')}  min={0} max={0.1}  step={0.002} value={params.strength as number}  onChange={v=>onUpdate("strength",v)}  colors={colors} />;
-    case "pixelShift":     return <SliderRow label={p('amount')}    min={0} max={20}   step={0.5}   value={params.amount as number}    onChange={v=>onUpdate("amount",v)}    colors={colors} />;
-    case "retroTv":        return <SliderRow label={p('blur')}      min={0} max={0.3}  step={0.005} value={params.noise as number}     onChange={v=>onUpdate("noise",v)}     colors={colors} />;
-    case "antialiasing":   return null;
-    case "inflate":  case "spherify": case "pinch": case "bulge": case "squish":
-    case "melt": case "fold": case "cylindrize":
-      return <SliderRow label={p('strength')} min={0} max={2} step={0.05} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
-    case "taper": case "shear": case "explode":
-      return <SliderRow label={p('strength')} min={0} max={2} step={0.05} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
-    case "voxelize": return <SliderRow label={p('gridSize')} min={0.05} max={1} step={0.05} value={params.gridSize as number} onChange={v=>onUpdate("gridSize",v)} colors={colors} />;
-    case "crumple": case "spikes":
-      return <SliderRow label={p('strength')} min={0} max={3} step={0.05} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
-    case "ripple": case "noiseWobble":
-      return <SliderRow label={p('amplitude')} min={0} max={2} step={0.05} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
-    case "zap": return <SliderRow label={p('strength')} min={0} max={5} step={0.1} value={params.strength as number} onChange={v=>onUpdate("strength",v)} colors={colors} />;
-    case "spiralDeform": return <SliderRow label={p('twist')} min={0} max={2} step={0.05} value={params.twist as number} onChange={v=>onUpdate("twist",v)} colors={colors} />;
-    case "xRay": return <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />;
-    case "toonShading": return <SliderRow label={p('steps')} min={2} max={8} step={1} value={params.steps as number} onChange={v=>onUpdate("steps",Math.round(v))} colors={colors} />;
-    case "hologram": return <SliderRow label={p('scanSpeed')} min={0} max={3} step={0.1} value={params.scanSpeed as number} onChange={v=>onUpdate("scanSpeed",v)} colors={colors} />;
-    case "gradientMesh": return <SliderRow label={p('amount')} min={0} max={1} step={1} value={params.animated ? 1 : 0} onChange={v=>onUpdate("animated",v===1)} colors={colors} />;
-    case "rainbowMesh": return <SliderRow label={p('speed')} min={0} max={2} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "iridescent": return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "emissivePulse": return <SliderRow label={p('maxIntensity')} min={0} max={3} step={0.1} value={params.maxIntensity as number} onChange={v=>onUpdate("maxIntensity",v)} colors={colors} />;
-    case "dissolveAnim": return <SliderRow label={p('speed')} min={0} max={2} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "glass": return <SliderRow label={p('amount')} min={0} max={1} step={0.01} value={params.transmission as number} onChange={v=>onUpdate("transmission",v)} colors={colors} />;
-    case "matcap": return null;
-    case "spotlight": return <SliderRow label={p('intensity')} min={0} max={10} step={0.1} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "strobe": return <SliderRow label={p('frequency')} min={0.5} max={20} step={0.5} value={params.frequency as number} onChange={v=>onUpdate("frequency",v)} colors={colors} />;
-    case "flicker": return <SliderRow label={p('flickerAmount')} min={0} max={3} step={0.1} value={params.flickerAmount as number} onChange={v=>onUpdate("flickerAmount",v)} colors={colors} />;
-    case "colorCycleLight": return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "disco": return <SliderRow label={p('speed')} min={0} max={5} step={0.1} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "ambientPulse": return <SliderRow label={p('maxIntensity')} min={0} max={5} step={0.1} value={params.maxIntensity as number} onChange={v=>onUpdate("maxIntensity",v)} colors={colors} />;
-    case "rimLight": return <SliderRow label={p('intensity')} min={0} max={5} step={0.1} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "dramaticLight": return null;
-    case "lightningFlash": return <SliderRow label={p('frequency')} min={0.5} max={10} step={0.5} value={params.frequency as number} onChange={v=>onUpdate("frequency",v)} colors={colors} />;
-    case "rainbowLights": return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "echoCopies": return <SliderRow label={p('count')} min={1} max={12} step={1} value={params.count as number} onChange={v=>onUpdate("count",Math.round(v))} colors={colors} />;
-    case "starField3d": return <SliderRow label={p('speed')} min={0} max={0.5} step={0.005} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "snow": case "rain": case "confetti":
-      return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "sparkle": return <SliderRow label={p('count')} min={50} max={500} step={10} value={params.count as number} onChange={v=>onUpdate("count",Math.round(v))} colors={colors} />;
-    case "aura": return <SliderRow label={p('layers')} min={1} max={6} step={1} value={params.layers as number} onChange={v=>onUpdate("layers",Math.round(v))} colors={colors} />;
-    case "gridFloor": return <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />;
-    case "orbiter": return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "portalRing": return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "cometTrail": return <SliderRow label={p('speed')} min={0} max={5} step={0.1} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "floatingCubes": return <SliderRow label={p('count')} min={4} max={30} step={1} value={params.count as number} onChange={v=>onUpdate("count",Math.round(v))} colors={colors} />;
-    case "mirrorPlane": return <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number} onChange={v=>onUpdate("opacity",v)} colors={colors} />;
-    case "flatShade":   return null;
-    case "shadowFloor": return (
-      <>
-        <ColorPickerRow label={p('color')} value={params.color as number ?? 0x000000} onChange={v=>onUpdate("color",v)} colors={colors} />
-        <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number ?? 0.35} onChange={v=>onUpdate("opacity",v)} colors={colors} />
-        <SliderRow label={t('size')} min={5} max={100} step={1} value={params.size as number ?? 30} onChange={v=>onUpdate("size",v)} colors={colors} />
-      </>
-    );
-    case "backgroundPlane": return (
-      <>
-        <ColorPickerRow label={t('color')} value={params.color as number ?? 0x111111} onChange={v=>onUpdate("color",v)} colors={colors} />
-        <Row>
-          <Text style={[styles.label, { color: colors.text }]}>{p('gradient')}</Text>
-          <Switch value={Boolean(params.gradient)} onValueChange={v=>onUpdate("gradient",v)}
-            trackColor={{ false: "#767577", true: colors.tint }} thumbColor={params.gradient ? colors.tint : "#f4f3f4"} />
-        </Row>
-        {params.gradient && <ColorPickerRow label={p('colorBottom')} value={params.colorBottom as number ?? 0x222244} onChange={v=>onUpdate("colorBottom",v)} colors={colors} />}
-        <SliderRow label={p('opacity')} min={0} max={1} step={0.01} value={params.opacity as number ?? 1} onChange={v=>onUpdate("opacity",v)} colors={colors} />
-        <SliderRow label={p('offsetZ')} min={-20} max={0} step={0.1} value={params.offsetZ as number ?? -3} onChange={v=>onUpdate("offsetZ",v)} colors={colors} />
-      </>
-    );
-    case "fogEffect": return (
-      <>
-        <ColorPickerRow label={t('color')} value={params.color as number ?? 0xaaaaaa} onChange={v=>onUpdate("color",v)} colors={colors} />
-        <SliderRow label={p('near')} min={1} max={50} step={0.5} value={params.near as number ?? 10} onChange={v=>onUpdate("near",v)} colors={colors} />
-        <SliderRow label={p('far')} min={5} max={200} step={1} value={params.far as number ?? 50} onChange={v=>onUpdate("far",v)} colors={colors} />
-      </>
-    );
-    case "emboss":     return <SliderRow label={p('strength')} min={0} max={5} step={0.1} value={params.strength as number ?? 1} onChange={v=>onUpdate("strength",v)} colors={colors} />;
-    case "threshold":  return <SliderRow label={p('cutoff')} min={0} max={1} step={0.01} value={params.cutoff as number ?? 0.5} onChange={v=>onUpdate("cutoff",v)} colors={colors} />;
-    case "mirrorH":    return <SliderRow label={p('split')} min={0} max={1} step={0.01} value={params.split as number ?? 0.5} onChange={v=>onUpdate("split",v)} colors={colors} />;
-    case "mirrorV":    return <SliderRow label={p('split')} min={0} max={1} step={0.01} value={params.split as number ?? 0.5} onChange={v=>onUpdate("split",v)} colors={colors} />;
-    case "sketch": return (
-      <>
-        <SliderRow label={p('strength')} min={0} max={10} step={0.1} value={params.strength as number ?? 3} onChange={v=>onUpdate("strength",v)} colors={colors} />
-        <ColorPickerRow label={p('paperColor')} value={params.paperColor as number ?? 0xf5f0e0} onChange={v=>onUpdate("paperColor",v)} colors={colors} />
-        <ColorPickerRow label={p('inkColor')} value={params.inkColor as number ?? 0x141008} onChange={v=>onUpdate("inkColor",v)} colors={colors} />
-      </>
-    );
-    case "sunsetLight":  return <SliderRow label={p('intensity')} min={0} max={3} step={0.05} value={params.intensity as number ?? 1} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "studioLight":  return <SliderRow label={p('keyIntensity')} min={0} max={8} step={0.1} value={params.keyIntensity as number ?? 3} onChange={v=>onUpdate("keyIntensity",v)} colors={colors} />;
-    case "moonLight":    return <SliderRow label={p('intensity')} min={0} max={3} step={0.05} value={params.intensity as number ?? 1} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "chromeEdge": return (
-      <>
-        <ColorPickerRow label={t('color')} value={params.color as number ?? 0xffffff} onChange={v=>onUpdate("color",v)} colors={colors} />
-        <SliderRow label={p('intensity')} min={0} max={3} step={0.05} value={params.intensity as number ?? 0.6} onChange={v=>onUpdate("intensity",v)} colors={colors} />
-      </>
-    );
-    case "colorBurn": return (
-      <>
-        <ColorPickerRow label={t('color')} value={params.color as number ?? 0xff6600} onChange={v=>onUpdate("color",v)} colors={colors} />
-        <SliderRow label={p('strength')} min={0} max={1} step={0.01} value={params.strength as number ?? 0.5} onChange={v=>onUpdate("strength",v)} colors={colors} />
-      </>
-    );
-    case "depthLines": return (
-      <>
-        <SliderRow label={p('lineCount')} min={2} max={32} step={1} value={params.lineCount as number ?? 12} onChange={v=>onUpdate("lineCount",Math.round(v))} colors={colors} />
-        <SliderRow label={p('lineWidth')} min={0.005} max={0.2} step={0.005} value={params.lineWidth as number ?? 0.03} onChange={v=>onUpdate("lineWidth",v)} colors={colors} />
-        <ColorPickerRow label={t('color')} value={params.color as number ?? 0x000000} onChange={v=>onUpdate("color",v)} colors={colors} />
-      </>
-    );
-    case "spin": return <SliderRow label={p('speedY')} min={-5} max={5} step={0.1} value={params.speedY as number} onChange={v=>onUpdate("speedY",v)} colors={colors} />;
-    case "bounce": return <SliderRow label={p('height')} min={0} max={5} step={0.1} value={params.height as number} onChange={v=>onUpdate("height",v)} colors={colors} />;
-    case "levitation": return <SliderRow label={p('amplitude')} min={0} max={3} step={0.05} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
-    case "swing": return <SliderRow label={p('angle')} min={0} max={1} step={0.01} value={params.angle as number} onChange={v=>onUpdate("angle",v)} colors={colors} />;
-    case "tremble": return <SliderRow label={p('intensity')} min={0} max={0.5} step={0.005} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "breathe": return <SliderRow label={t('depth')} min={0} max={0.3} step={0.005} value={params.depth as number} onChange={v=>onUpdate("depth",v)} colors={colors} />;
-    case "wiggle": return <SliderRow label={p('amount')} min={0} max={1} step={0.01} value={params.amount as number} onChange={v=>onUpdate("amount",v)} colors={colors} />;
-    case "floatDrift": return <SliderRow label={p('amplitude')} min={0} max={2} step={0.05} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
-    case "flipCoin": return <SliderRow label={p('speed')} min={0} max={5} step={0.1} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "grow": return <SliderRow label={p('speed')} min={0} max={3} step={0.05} value={params.speed as number} onChange={v=>onUpdate("speed",v)} colors={colors} />;
-    case "shrink": return <SliderRow label={p('targetScale')} min={0} max={1} step={0.01} value={params.targetScale as number} onChange={v=>onUpdate("targetScale",v)} colors={colors} />;
-    case "orbitAnim": return <SliderRow label={p('radius')} min={0} max={10} step={0.1} value={params.radius as number} onChange={v=>onUpdate("radius",v)} colors={colors} />;
-    case "rock": return <SliderRow label={p('angle')} min={0} max={1} step={0.01} value={params.angle as number} onChange={v=>onUpdate("angle",v)} colors={colors} />;
-    case "jitter": return <SliderRow label={p('intensity')} min={0} max={1} step={0.01} value={params.intensity as number} onChange={v=>onUpdate("intensity",v)} colors={colors} />;
-    case "sway": return <SliderRow label={p('amplitude')} min={0} max={1} step={0.01} value={params.amplitude as number} onChange={v=>onUpdate("amplitude",v)} colors={colors} />;
-    case "figureEight": return <SliderRow label={p('width')} min={0} max={5} step={0.1} value={params.width as number} onChange={v=>onUpdate("width",v)} colors={colors} />;
-    case "pendulum": return <SliderRow label={p('angle')} min={0} max={1.5} step={0.01} value={params.angle as number} onChange={v=>onUpdate("angle",v)} colors={colors} />;
+      return (
+        <SliderRow
+          label={p("pixelSize")}
+          min={1}
+          max={32}
+          step={1}
+          value={params.pixelSize as number}
+          onChange={(v) => onUpdate("pixelSize", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "circularBlur":
+      return (
+        <SliderRow
+          label={p("radius")}
+          min={0}
+          max={0.05}
+          step={0.001}
+          value={params.radius as number}
+          onChange={(v) => onUpdate("radius", v)}
+          colors={colors}
+        />
+      );
+    case "sepia":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "invert":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "sobelEdge":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "thermal":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "nightVision":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "duotone":
+      return (
+        <>
+          <ColorPickerRow
+            label={p("colorA")}
+            value={(params.colorA as number) ?? 0xff6600}
+            onChange={(v) => onUpdate("colorA", v)}
+            colors={colors}
+          />
+          <ColorPickerRow
+            label={p("colorB")}
+            value={(params.colorB as number) ?? 0x0066ff}
+            onChange={(v) => onUpdate("colorB", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "posterize":
+      return (
+        <SliderRow
+          label={p("levels")}
+          min={2}
+          max={16}
+          step={1}
+          value={params.levels as number}
+          onChange={(v) => onUpdate("levels", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "colorOverlay":
+      return (
+        <>
+          <ColorPickerRow
+            label={t("color")}
+            value={(params.color as number) ?? 0xff6600}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("opacity")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.opacity as number}
+            onChange={(v) => onUpdate("opacity", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "halftone":
+      return (
+        <SliderRow
+          label={p("dotSize")}
+          min={1}
+          max={16}
+          step={0.5}
+          value={params.dotSize as number}
+          onChange={(v) => onUpdate("dotSize", v)}
+          colors={colors}
+        />
+      );
+    case "sharpen":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "animChromatic":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={0.05}
+          step={0.001}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "blur":
+      return (
+        <SliderRow
+          label={p("radius")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.radius as number}
+          onChange={(v) => onUpdate("radius", v)}
+          colors={colors}
+        />
+      );
+    case "lensDistort":
+      return (
+        <SliderRow
+          label={p("k")}
+          min={-1}
+          max={1}
+          step={0.01}
+          value={params.k as number}
+          onChange={(v) => onUpdate("k", v)}
+          colors={colors}
+        />
+      );
+    case "mosaic":
+      return (
+        <SliderRow
+          label={t("size")}
+          min={0.01}
+          max={0.3}
+          step={0.005}
+          value={params.size as number}
+          onChange={(v) => onUpdate("size", v)}
+          colors={colors}
+        />
+      );
+    case "noisePost":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={0.5}
+          step={0.01}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "crtCurvature":
+      return (
+        <SliderRow
+          label={p("bend")}
+          min={1}
+          max={20}
+          step={0.5}
+          value={params.bend as number}
+          onChange={(v) => onUpdate("bend", v)}
+          colors={colors}
+        />
+      );
+    case "vhsTracking":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={0.2}
+          step={0.002}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "glowEdge":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "acid":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={0.3}
+          step={0.005}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "kaleidoscopePost":
+      return (
+        <SliderRow
+          label={p("segments")}
+          min={2}
+          max={16}
+          step={1}
+          value={params.segments as number}
+          onChange={(v) => onUpdate("segments", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "oldFilm":
+      return (
+        <SliderRow
+          label={p("grain")}
+          min={0}
+          max={0.3}
+          step={0.005}
+          value={params.grainAmount as number}
+          onChange={(v) => onUpdate("grainAmount", v)}
+          colors={colors}
+        />
+      );
+    case "zoomBlur":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={0.2}
+          step={0.002}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "crosshatch":
+      return (
+        <SliderRow
+          label={p("density")}
+          min={4}
+          max={24}
+          step={1}
+          value={params.density as number}
+          onChange={(v) => onUpdate("density", v)}
+          colors={colors}
+        />
+      );
+    case "glitchBlock":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "speedLines":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "rgbShift":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={0.03}
+          step={0.001}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "frostedGlass":
+      return (
+        <SliderRow
+          label={p("blur")}
+          min={0}
+          max={10}
+          step={0.2}
+          value={params.blur as number}
+          onChange={(v) => onUpdate("blur", v)}
+          colors={colors}
+        />
+      );
+    case "waterRipple":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={0.1}
+          step={0.002}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "pixelShift":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={20}
+          step={0.5}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "retroTv":
+      return (
+        <SliderRow
+          label={p("blur")}
+          min={0}
+          max={0.3}
+          step={0.005}
+          value={params.noise as number}
+          onChange={(v) => onUpdate("noise", v)}
+          colors={colors}
+        />
+      );
+    case "antialiasing":
+      return null;
+    case "inflate":
+    case "spherify":
+    case "pinch":
+    case "bulge":
+    case "squish":
+    case "melt":
+    case "fold":
+    case "cylindrize":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "taper":
+    case "shear":
+    case "explode":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "voxelize":
+      return (
+        <SliderRow
+          label={p("gridSize")}
+          min={0.05}
+          max={1}
+          step={0.05}
+          value={params.gridSize as number}
+          onChange={(v) => onUpdate("gridSize", v)}
+          colors={colors}
+        />
+      );
+    case "crumple":
+    case "spikes":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "ripple":
+    case "noiseWobble":
+      return (
+        <SliderRow
+          label={p("amplitude")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.amplitude as number}
+          onChange={(v) => onUpdate("amplitude", v)}
+          colors={colors}
+        />
+      );
+    case "zap":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.strength as number}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "spiralDeform":
+      return (
+        <SliderRow
+          label={p("twist")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.twist as number}
+          onChange={(v) => onUpdate("twist", v)}
+          colors={colors}
+        />
+      );
+    case "xRay":
+      return (
+        <SliderRow
+          label={p("opacity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.opacity as number}
+          onChange={(v) => onUpdate("opacity", v)}
+          colors={colors}
+        />
+      );
+    case "toonShading":
+      return (
+        <SliderRow
+          label={p("steps")}
+          min={2}
+          max={8}
+          step={1}
+          value={params.steps as number}
+          onChange={(v) => onUpdate("steps", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "hologram":
+      return (
+        <SliderRow
+          label={p("scanSpeed")}
+          min={0}
+          max={3}
+          step={0.1}
+          value={params.scanSpeed as number}
+          onChange={(v) => onUpdate("scanSpeed", v)}
+          colors={colors}
+        />
+      );
+    case "gradientMesh":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={1}
+          step={1}
+          value={params.animated ? 1 : 0}
+          onChange={(v) => onUpdate("animated", v === 1)}
+          colors={colors}
+        />
+      );
+    case "rainbowMesh":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "iridescent":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "emissivePulse":
+      return (
+        <SliderRow
+          label={p("maxIntensity")}
+          min={0}
+          max={3}
+          step={0.1}
+          value={params.maxIntensity as number}
+          onChange={(v) => onUpdate("maxIntensity", v)}
+          colors={colors}
+        />
+      );
+    case "dissolveAnim":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "glass":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.transmission as number}
+          onChange={(v) => onUpdate("transmission", v)}
+          colors={colors}
+        />
+      );
+    case "matcap":
+      return null;
+    case "spotlight":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={10}
+          step={0.1}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "strobe":
+      return (
+        <SliderRow
+          label={p("frequency")}
+          min={0.5}
+          max={20}
+          step={0.5}
+          value={params.frequency as number}
+          onChange={(v) => onUpdate("frequency", v)}
+          colors={colors}
+        />
+      );
+    case "flicker":
+      return (
+        <SliderRow
+          label={p("flickerAmount")}
+          min={0}
+          max={3}
+          step={0.1}
+          value={params.flickerAmount as number}
+          onChange={(v) => onUpdate("flickerAmount", v)}
+          colors={colors}
+        />
+      );
+    case "colorCycleLight":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "disco":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "ambientPulse":
+      return (
+        <SliderRow
+          label={p("maxIntensity")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.maxIntensity as number}
+          onChange={(v) => onUpdate("maxIntensity", v)}
+          colors={colors}
+        />
+      );
+    case "rimLight":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "dramaticLight":
+      return null;
+    case "lightningFlash":
+      return (
+        <SliderRow
+          label={p("frequency")}
+          min={0.5}
+          max={10}
+          step={0.5}
+          value={params.frequency as number}
+          onChange={(v) => onUpdate("frequency", v)}
+          colors={colors}
+        />
+      );
+    case "rainbowLights":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "echoCopies":
+      return (
+        <SliderRow
+          label={p("count")}
+          min={1}
+          max={12}
+          step={1}
+          value={params.count as number}
+          onChange={(v) => onUpdate("count", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "starField3d":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={0.5}
+          step={0.005}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "snow":
+    case "rain":
+    case "confetti":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "sparkle":
+      return (
+        <SliderRow
+          label={p("count")}
+          min={50}
+          max={500}
+          step={10}
+          value={params.count as number}
+          onChange={(v) => onUpdate("count", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "aura":
+      return (
+        <SliderRow
+          label={p("layers")}
+          min={1}
+          max={6}
+          step={1}
+          value={params.layers as number}
+          onChange={(v) => onUpdate("layers", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "gridFloor":
+      return (
+        <SliderRow
+          label={p("opacity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.opacity as number}
+          onChange={(v) => onUpdate("opacity", v)}
+          colors={colors}
+        />
+      );
+    case "orbiter":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "portalRing":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "cometTrail":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "floatingCubes":
+      return (
+        <SliderRow
+          label={p("count")}
+          min={4}
+          max={30}
+          step={1}
+          value={params.count as number}
+          onChange={(v) => onUpdate("count", Math.round(v))}
+          colors={colors}
+        />
+      );
+    case "mirrorPlane":
+      return (
+        <SliderRow
+          label={p("opacity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.opacity as number}
+          onChange={(v) => onUpdate("opacity", v)}
+          colors={colors}
+        />
+      );
+    case "flatShade":
+      return null;
+    case "shadowFloor":
+      return (
+        <>
+          <ColorPickerRow
+            label={p("color")}
+            value={(params.color as number) ?? 0x000000}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("opacity")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={(params.opacity as number) ?? 0.35}
+            onChange={(v) => onUpdate("opacity", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={t("size")}
+            min={5}
+            max={100}
+            step={1}
+            value={(params.size as number) ?? 30}
+            onChange={(v) => onUpdate("size", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "backgroundPlane":
+      return (
+        <>
+          <ColorPickerRow
+            label={t("color")}
+            value={(params.color as number) ?? 0x111111}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>
+              {p("gradient")}
+            </Text>
+            <Switch
+              value={Boolean(params.gradient)}
+              onValueChange={(v) => onUpdate("gradient", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={params.gradient ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {params.gradient && (
+            <ColorPickerRow
+              label={p("colorBottom")}
+              value={(params.colorBottom as number) ?? 0x222244}
+              onChange={(v) => onUpdate("colorBottom", v)}
+              colors={colors}
+            />
+          )}
+          <SliderRow
+            label={p("opacity")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={(params.opacity as number) ?? 1}
+            onChange={(v) => onUpdate("opacity", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("offsetZ")}
+            min={-20}
+            max={0}
+            step={0.1}
+            value={(params.offsetZ as number) ?? -3}
+            onChange={(v) => onUpdate("offsetZ", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "fogEffect":
+      return (
+        <>
+          <ColorPickerRow
+            label={t("color")}
+            value={(params.color as number) ?? 0xaaaaaa}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("near")}
+            min={1}
+            max={50}
+            step={0.5}
+            value={(params.near as number) ?? 10}
+            onChange={(v) => onUpdate("near", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("far")}
+            min={5}
+            max={200}
+            step={1}
+            value={(params.far as number) ?? 50}
+            onChange={(v) => onUpdate("far", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "emboss":
+      return (
+        <SliderRow
+          label={p("strength")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={(params.strength as number) ?? 1}
+          onChange={(v) => onUpdate("strength", v)}
+          colors={colors}
+        />
+      );
+    case "threshold":
+      return (
+        <SliderRow
+          label={p("cutoff")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={(params.cutoff as number) ?? 0.5}
+          onChange={(v) => onUpdate("cutoff", v)}
+          colors={colors}
+        />
+      );
+    case "mirrorH":
+      return (
+        <SliderRow
+          label={p("split")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={(params.split as number) ?? 0.5}
+          onChange={(v) => onUpdate("split", v)}
+          colors={colors}
+        />
+      );
+    case "mirrorV":
+      return (
+        <SliderRow
+          label={p("split")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={(params.split as number) ?? 0.5}
+          onChange={(v) => onUpdate("split", v)}
+          colors={colors}
+        />
+      );
+    case "sketch":
+      return (
+        <>
+          <SliderRow
+            label={p("strength")}
+            min={0}
+            max={10}
+            step={0.1}
+            value={(params.strength as number) ?? 3}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
+          <ColorPickerRow
+            label={p("paperColor")}
+            value={(params.paperColor as number) ?? 0xf5f0e0}
+            onChange={(v) => onUpdate("paperColor", v)}
+            colors={colors}
+          />
+          <ColorPickerRow
+            label={p("inkColor")}
+            value={(params.inkColor as number) ?? 0x141008}
+            onChange={(v) => onUpdate("inkColor", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "sunsetLight":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={(params.intensity as number) ?? 1}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "studioLight":
+      return (
+        <SliderRow
+          label={p("keyIntensity")}
+          min={0}
+          max={8}
+          step={0.1}
+          value={(params.keyIntensity as number) ?? 3}
+          onChange={(v) => onUpdate("keyIntensity", v)}
+          colors={colors}
+        />
+      );
+    case "moonLight":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={(params.intensity as number) ?? 1}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "chromeEdge":
+      return (
+        <>
+          <ColorPickerRow
+            label={t("color")}
+            value={(params.color as number) ?? 0xffffff}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("intensity")}
+            min={0}
+            max={3}
+            step={0.05}
+            value={(params.intensity as number) ?? 0.6}
+            onChange={(v) => onUpdate("intensity", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "colorBurn":
+      return (
+        <>
+          <ColorPickerRow
+            label={t("color")}
+            value={(params.color as number) ?? 0xff6600}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("strength")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={(params.strength as number) ?? 0.5}
+            onChange={(v) => onUpdate("strength", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "depthLines":
+      return (
+        <>
+          <SliderRow
+            label={p("lineCount")}
+            min={2}
+            max={32}
+            step={1}
+            value={(params.lineCount as number) ?? 12}
+            onChange={(v) => onUpdate("lineCount", Math.round(v))}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("lineWidth")}
+            min={0.005}
+            max={0.2}
+            step={0.005}
+            value={(params.lineWidth as number) ?? 0.03}
+            onChange={(v) => onUpdate("lineWidth", v)}
+            colors={colors}
+          />
+          <ColorPickerRow
+            label={t("color")}
+            value={(params.color as number) ?? 0x000000}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+        </>
+      );
+    case "spin":
+      return (
+        <SliderRow
+          label={p("speedY")}
+          min={-5}
+          max={5}
+          step={0.1}
+          value={params.speedY as number}
+          onChange={(v) => onUpdate("speedY", v)}
+          colors={colors}
+        />
+      );
+    case "bounce":
+      return (
+        <SliderRow
+          label={p("height")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.height as number}
+          onChange={(v) => onUpdate("height", v)}
+          colors={colors}
+        />
+      );
+    case "levitation":
+      return (
+        <SliderRow
+          label={p("amplitude")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.amplitude as number}
+          onChange={(v) => onUpdate("amplitude", v)}
+          colors={colors}
+        />
+      );
+    case "swing":
+      return (
+        <SliderRow
+          label={p("angle")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.angle as number}
+          onChange={(v) => onUpdate("angle", v)}
+          colors={colors}
+        />
+      );
+    case "tremble":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={0.5}
+          step={0.005}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "breathe":
+      return (
+        <SliderRow
+          label={t("depth")}
+          min={0}
+          max={0.3}
+          step={0.005}
+          value={params.depth as number}
+          onChange={(v) => onUpdate("depth", v)}
+          colors={colors}
+        />
+      );
+    case "wiggle":
+      return (
+        <SliderRow
+          label={p("amount")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.amount as number}
+          onChange={(v) => onUpdate("amount", v)}
+          colors={colors}
+        />
+      );
+    case "floatDrift":
+      return (
+        <SliderRow
+          label={p("amplitude")}
+          min={0}
+          max={2}
+          step={0.05}
+          value={params.amplitude as number}
+          onChange={(v) => onUpdate("amplitude", v)}
+          colors={colors}
+        />
+      );
+    case "flipCoin":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "grow":
+      return (
+        <SliderRow
+          label={p("speed")}
+          min={0}
+          max={3}
+          step={0.05}
+          value={params.speed as number}
+          onChange={(v) => onUpdate("speed", v)}
+          colors={colors}
+        />
+      );
+    case "shrink":
+      return (
+        <SliderRow
+          label={p("targetScale")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.targetScale as number}
+          onChange={(v) => onUpdate("targetScale", v)}
+          colors={colors}
+        />
+      );
+    case "orbitAnim":
+      return (
+        <SliderRow
+          label={p("radius")}
+          min={0}
+          max={10}
+          step={0.1}
+          value={params.radius as number}
+          onChange={(v) => onUpdate("radius", v)}
+          colors={colors}
+        />
+      );
+    case "rock":
+      return (
+        <SliderRow
+          label={p("angle")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.angle as number}
+          onChange={(v) => onUpdate("angle", v)}
+          colors={colors}
+        />
+      );
+    case "jitter":
+      return (
+        <SliderRow
+          label={p("intensity")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.intensity as number}
+          onChange={(v) => onUpdate("intensity", v)}
+          colors={colors}
+        />
+      );
+    case "sway":
+      return (
+        <SliderRow
+          label={p("amplitude")}
+          min={0}
+          max={1}
+          step={0.01}
+          value={params.amplitude as number}
+          onChange={(v) => onUpdate("amplitude", v)}
+          colors={colors}
+        />
+      );
+    case "figureEight":
+      return (
+        <SliderRow
+          label={p("width")}
+          min={0}
+          max={5}
+          step={0.1}
+          value={params.width as number}
+          onChange={(v) => onUpdate("width", v)}
+          colors={colors}
+        />
+      );
+    case "pendulum":
+      return (
+        <SliderRow
+          label={p("angle")}
+          min={0}
+          max={1.5}
+          step={0.01}
+          value={params.angle as number}
+          onChange={(v) => onUpdate("angle", v)}
+          colors={colors}
+        />
+      );
     case "customJs":
       return (
         <View style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
           {params.description ? (
-            <Text style={{ color: colors.text, fontSize: 12, marginBottom: 4 }} numberOfLines={2}>
+            <Text
+              style={{ color: colors.text, fontSize: 12, marginBottom: 4 }}
+              numberOfLines={2}
+            >
               {params.description as string}
             </Text>
           ) : null}
-          <Text style={{ color: colors.text, fontSize: 11, fontFamily: 'monospace', opacity: 0.6, marginBottom: 6 }} numberOfLines={1}>
-            {params.code ? String(params.code).slice(0, 60) + '…' : 'No code yet — tap Refine to generate'}
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 11,
+              fontFamily: "monospace",
+              opacity: 0.6,
+              marginBottom: 6,
+            }}
+            numberOfLines={1}
+          >
+            {params.code
+              ? String(params.code).slice(0, 60) + "…"
+              : "No code yet — tap Refine to generate"}
           </Text>
           <TouchableOpacity
-            onPress={() => onEditCode?.(effect.id, String(params.code ?? ''), String(params.description ?? ''))}
-            style={{ paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderRadius: 6, borderColor: colors.tint, alignSelf: 'flex-start' }}
+            onPress={() =>
+              onEditCode?.(
+                effect.id,
+                String(params.code ?? ""),
+                String(params.description ?? ""),
+              )
+            }
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              borderWidth: 1,
+              borderRadius: 6,
+              borderColor: colors.tint,
+              alignSelf: "flex-start",
+            }}
           >
-            <Text style={{ color: colors.tint, fontSize: 12, fontWeight: '600' }}>Refine with AI</Text>
+            <Text
+              style={{ color: colors.tint, fontSize: 12, fontWeight: "600" }}
+            >
+              Refine with AI
+            </Text>
           </TouchableOpacity>
         </View>
       );
     case "text3d":
-      return renderText3dControls({ params, colors, t, onUpdate, colorScheme, includeTransform: true });
+      return renderText3dControls({
+        params,
+        colors,
+        t,
+        onUpdate,
+        colorScheme,
+        includeTransform: true,
+      });
     case "graphics":
       return (
         <>
           <Row>
             <Text style={[styles.label, { color: colors.text }]}>Layout</Text>
             <CycleButton
-              value={params.layout as string ?? 'row'}
+              value={(params.layout as string) ?? "row"}
               options={[]}
               onPress={() => {
-                const layouts = ['row', 'grid', 'pile'];
-                const currentIdx = layouts.indexOf(params.layout as string ?? 'row');
+                const layouts = ["row", "grid", "pile"];
+                const currentIdx = layouts.indexOf(
+                  (params.layout as string) ?? "row",
+                );
                 const nextIdx = (currentIdx + 1) % layouts.length;
                 onUpdate("layout", layouts[nextIdx]);
               }}
               colors={colors}
             />
           </Row>
-          <SliderRow label="Spacing" min={0.5} max={15} step={0.1} value={params.spacing as number ?? 4} onChange={(v) => onUpdate("spacing", v)} colors={colors} />
-          <SliderRow label="Scale" min={0.1} max={5} step={0.05} value={params.scale as number ?? 1} onChange={(v) => onUpdate("scale", v)} colors={colors} />
-          <SliderRow label="Extrude Depth" min={0} max={2} step={0.05} value={params.extrudeDepth as number ?? 0.2} onChange={(v) => onUpdate("extrudeDepth", v)} colors={colors} />
+          <SliderRow
+            label="Spacing"
+            min={0.5}
+            max={15}
+            step={0.1}
+            value={(params.spacing as number) ?? 4}
+            onChange={(v) => onUpdate("spacing", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Scale"
+            min={0.1}
+            max={5}
+            step={0.05}
+            value={(params.scale as number) ?? 1}
+            onChange={(v) => onUpdate("scale", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Extrude Depth"
+            min={0}
+            max={2}
+            step={0.05}
+            value={(params.extrudeDepth as number) ?? 0.2}
+            onChange={(v) => onUpdate("extrudeDepth", v)}
+            colors={colors}
+          />
           <Row>
-            <Text style={[styles.label, { color: colors.text }]}>Color Override (SVG)</Text>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Color Override (SVG)
+            </Text>
             <Switch
               value={Boolean(params.colorOverride)}
               onValueChange={(v) => onUpdate("colorOverride", v)}
@@ -1618,38 +4334,100 @@ function renderEffectControls(
             />
           </Row>
           {params.colorOverride && (
-            <ColorPickerRow label={t('overrideColor')} value={params.color as number ?? 0xff6600} onChange={v => onUpdate("color", v)} colors={colors} />
+            <ColorPickerRow
+              label={t("overrideColor")}
+              value={(params.color as number) ?? 0xff6600}
+              onChange={(v) => onUpdate("color", v)}
+              colors={colors}
+            />
           )}
-          <SliderRow label="Position X" min={-20} max={20} step={0.1} value={params.posX as number ?? 0} onChange={(v) => onUpdate("posX", v)} colors={colors} />
-          <SliderRow label="Position Y" min={-20} max={20} step={0.1} value={params.posY as number ?? 0} onChange={(v) => onUpdate("posY", v)} colors={colors} />
-          <SliderRow label="Position Z" min={-20} max={20} step={0.1} value={params.posZ as number ?? 0} onChange={(v) => onUpdate("posZ", v)} colors={colors} />
-          <SliderRow label="Rotation X" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotX as number ?? 0} onChange={(v) => onUpdate("rotX", v)} colors={colors} />
-          <SliderRow label="Rotation Y" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotY as number ?? 0} onChange={(v) => onUpdate("rotY", v)} colors={colors} />
-          <SliderRow label="Rotation Z" min={-Math.PI} max={Math.PI} step={0.05} value={params.rotZ as number ?? 0} onChange={(v) => onUpdate("rotZ", v)} colors={colors} />
+          <SliderRow
+            label="Position X"
+            min={-20}
+            max={20}
+            step={0.1}
+            value={(params.posX as number) ?? 0}
+            onChange={(v) => onUpdate("posX", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Position Y"
+            min={-20}
+            max={20}
+            step={0.1}
+            value={(params.posY as number) ?? 0}
+            onChange={(v) => onUpdate("posY", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Position Z"
+            min={-20}
+            max={20}
+            step={0.1}
+            value={(params.posZ as number) ?? 0}
+            onChange={(v) => onUpdate("posZ", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Rotation X"
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.05}
+            value={(params.rotX as number) ?? 0}
+            onChange={(v) => onUpdate("rotX", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Rotation Y"
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.05}
+            value={(params.rotY as number) ?? 0}
+            onChange={(v) => onUpdate("rotY", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Rotation Z"
+            min={-Math.PI}
+            max={Math.PI}
+            step={0.05}
+            value={(params.rotZ as number) ?? 0}
+            onChange={(v) => onUpdate("rotZ", v)}
+            colors={colors}
+          />
 
           <TouchableOpacity
-            style={[styles.smallActionButton, { borderColor: colors.tint, marginVertical: 8, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8 }]}
+            style={[
+              styles.smallActionButton,
+              {
+                borderColor: colors.tint,
+                marginVertical: 8,
+                alignSelf: "flex-start",
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+              },
+            ]}
             onPress={() => {
-              if (typeof document !== 'undefined') {
-                const input = document.createElement('input');
-                input.type = 'file';
+              if (typeof document !== "undefined") {
+                const input = document.createElement("input");
+                input.type = "file";
                 input.multiple = true;
-                input.accept = 'image/*,.svg';
+                input.accept = "image/*,.svg";
                 input.onchange = async (e: any) => {
                   const files = e.target.files;
                   if (!files) return;
-                  const newItems = [...(params.items as any[] || [])];
+                  const newItems = [...((params.items as any[]) || [])];
                   for (let i = 0; i < files.length; i++) {
                     const file = files[i];
                     const reader = new FileReader();
-                    if (file.name.toLowerCase().endsWith('.svg')) {
+                    if (file.name.toLowerCase().endsWith(".svg")) {
                       reader.readAsText(file);
                       await new Promise((resolve) => {
                         reader.onload = () => {
                           newItems.push({
                             id: Math.random().toString(36).substring(2),
                             name: file.name,
-                            type: 'svg',
+                            type: "svg",
                             content: reader.result as string,
                           });
                           resolve(null);
@@ -1662,7 +4440,7 @@ function renderEffectControls(
                           newItems.push({
                             id: Math.random().toString(36).substring(2),
                             name: file.name,
-                            type: 'image',
+                            type: "image",
                             content: reader.result as string,
                           });
                           resolve(null);
@@ -1670,30 +4448,63 @@ function renderEffectControls(
                       });
                     }
                   }
-                  onUpdate('items', newItems);
+                  onUpdate("items", newItems);
                 };
                 input.click();
               }
             }}
           >
-            <Text style={[styles.buttonText, { color: colors.tint }]}>Select Graphic Files</Text>
+            <Text style={[styles.buttonText, { color: colors.tint }]}>
+              Select Graphic Files
+            </Text>
           </TouchableOpacity>
 
           {params.items && (params.items as any[]).length > 0 && (
             <View style={{ marginTop: 8 }}>
-              <Text style={{ color: colors.text, fontWeight: 'bold', fontSize: 13, marginBottom: 4 }}>Uploaded Files:</Text>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "bold",
+                  fontSize: 13,
+                  marginBottom: 4,
+                }}
+              >
+                Uploaded Files:
+              </Text>
               {(params.items as any[]).map((item, idx) => (
-                <View key={item.id || idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 2 }}>
-                  <Text style={{ color: colors.text, fontSize: 12, opacity: 0.8, flex: 1 }} numberOfLines={1}>
+                <View
+                  key={item.id || idx}
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginVertical: 2,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontSize: 12,
+                      opacity: 0.8,
+                      flex: 1,
+                    }}
+                    numberOfLines={1}
+                  >
                     {item.name} ({item.type.toUpperCase()})
                   </Text>
                   <TouchableOpacity
                     onPress={() => {
-                      const newItems = (params.items as any[]).filter(x => x.id !== item.id);
-                      onUpdate('items', newItems);
+                      const newItems = (params.items as any[]).filter(
+                        (x) => x.id !== item.id,
+                      );
+                      onUpdate("items", newItems);
                     }}
                   >
-                    <Text style={{ color: '#ff4444', fontSize: 12, marginLeft: 8 }}>Delete</Text>
+                    <Text
+                      style={{ color: "#ff4444", fontSize: 12, marginLeft: 8 }}
+                    >
+                      Delete
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -1711,11 +4522,30 @@ export default function ThreeDTextScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { t, i18n: i18nInstance } = useTranslation();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isSmallScreen = screenWidth < 600;
-  const canvasFlex = isSmallScreen ? 1 : 2;
+  const initialControlsHeight = isSmallScreen
+    ? Math.round(screenHeight * 0.45)
+    : Math.round(screenHeight * 0.38);
+  const controlsHeightSv = useSharedValue(initialControlsHeight);
+  const dividerDragBase = useSharedValue(0);
+  const controlsAnimStyle = useAnimatedStyle(() => ({
+    height: controlsHeightSv.value,
+  }));
+  const dividerGesture = Gesture.Pan()
+    .onBegin(() => {
+      dividerDragBase.value = controlsHeightSv.value;
+    })
+    .onUpdate((e) => {
+      const newH = Math.round(dividerDragBase.value - e.translationY);
+      controlsHeightSv.value = Math.max(80, Math.min(screenHeight - 120, newH));
+    });
 
-  const { effectInstances, setEffectInstances, resetToBasic: storeResetToBasic } = useThreeDStore();
+  const {
+    effectInstances,
+    setEffectInstances,
+    resetToBasic: storeResetToBasic,
+  } = useThreeDStore();
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
   const [selectedEffectSearch, setSelectedEffectSearch] = useState("");
@@ -1725,6 +4555,10 @@ export default function ThreeDTextScreen() {
   } | null>(null);
   const undoTimerRef = useRef<number | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [imagePickerTarget, setImagePickerTarget] = useState<{
+    instanceId: string;
+    paramKey: string;
+  } | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [aiChatTarget, setAiChatTarget] = useState<{
@@ -1740,23 +4574,28 @@ export default function ThreeDTextScreen() {
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controlsScrollRef = useRef<ScrollView | null>(null);
 
   const c = colors; // shorthand
 
   // Load preset passed from the presets gallery screen
-  useFocusEffect(React.useCallback(() => {
-    const pending = consumePendingPresetToLoad();
-    if (pending) {
-      setEffectInstances(pending.effects.map((item) => ({
-        ...item,
-        enabled: item.enabled ?? true,
-        animate: item.animate ?? true,
-        params: item.params ?? {},
-      })));
-      setSaveStatus(`Loaded: ${pending.name}`);
-      setTimeout(() => setSaveStatus(null), 3000);
-    }
-  }, []));
+  useFocusEffect(
+    React.useCallback(() => {
+      const pending = consumePendingPresetToLoad();
+      if (pending) {
+        setEffectInstances(
+          pending.effects.map((item) => ({
+            ...item,
+            enabled: item.enabled ?? true,
+            animate: item.animate ?? true,
+            params: item.params ?? {},
+          })),
+        );
+        setSaveStatus(`Loaded: ${pending.name}`);
+        setTimeout(() => setSaveStatus(null), 3000);
+      }
+    }, []),
+  );
 
   const effectInstancesRef = useRef(effectInstances);
   useEffect(() => {
@@ -1785,7 +4624,7 @@ export default function ThreeDTextScreen() {
   }, [effectInstances]);
 
   const mainTextParams = useMemo(() => {
-    const inst = effectInstances.find(i => i.type === 'mainText');
+    const inst = effectInstances.find((i) => i.type === "mainText");
     return (inst?.params ?? {}) as Record<string, unknown>;
   }, [effectInstances]);
 
@@ -1849,13 +4688,18 @@ export default function ThreeDTextScreen() {
 
   const addEffectInstance = (type?: EffectType) => {
     const t = type ?? selectedEffectType;
-    setEffectInstances((instances) => [
-      ...instances,
-      createEffectInstance(t),
-    ]);
+    setEffectInstances((instances) => [...instances, createEffectInstance(t)]);
+    setTimeout(
+      () => controlsScrollRef.current?.scrollToEnd({ animated: true }),
+      50,
+    );
   };
 
-  const handleApplyAiEffect = (code: string, description: string, targetId: string | null) => {
+  const handleApplyAiEffect = (
+    code: string,
+    description: string,
+    targetId: string | null,
+  ) => {
     if (targetId) {
       setEffectInstances((instances) =>
         instances.map((inst) =>
@@ -1869,7 +4713,7 @@ export default function ThreeDTextScreen() {
         ...instances,
         {
           id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-          type: 'customJs',
+          type: "customJs",
           enabled: true,
           animate: true,
           params: { code, description },
@@ -1904,7 +4748,9 @@ export default function ThreeDTextScreen() {
   };
 
   const confirmSavePreset = async () => {
-    const name = draftPresetName.trim() || generatePresetName(effectInstances.filter((i) => i.enabled));
+    const name =
+      draftPresetName.trim() ||
+      generatePresetName(effectInstances.filter((i) => i.enabled));
     setShowSavePresetModal(false);
     try {
       const now = new Date().toISOString();
@@ -1927,12 +4773,14 @@ export default function ThreeDTextScreen() {
   };
 
   const handleLoadPreset = (preset: PresetRecord) => {
-    setEffectInstances(preset.effects.map((item) => ({
-      ...item,
-      enabled: item.enabled ?? true,
-      animate: item.animate ?? true,
-      params: item.params ?? {},
-    })));
+    setEffectInstances(
+      preset.effects.map((item) => ({
+        ...item,
+        enabled: item.enabled ?? true,
+        animate: item.animate ?? true,
+        params: item.params ?? {},
+      })),
+    );
     setShowPresetPicker(false);
     setSaveStatus(`Loaded preset: ${preset.name}`);
     setTimeout(() => setSaveStatus(null), 3000);
@@ -1941,10 +4789,16 @@ export default function ThreeDTextScreen() {
   const handleDeletePreset = async (id: string) => {
     try {
       await deletePreset(id);
-      try { await deletePresetFromBackend(API_BASE, id); } catch { /* ignore, best-effort */ }
+      try {
+        await deletePresetFromBackend(API_BASE, id);
+      } catch {
+        /* ignore, best-effort */
+      }
       setPresets((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
-      setSaveStatus(`Delete preset failed: ${err instanceof Error ? err.message : String(err)}`);
+      setSaveStatus(
+        `Delete preset failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
@@ -1955,16 +4809,30 @@ export default function ThreeDTextScreen() {
     };
 
     if (typeof window !== "undefined" && window.confirm) {
-      if (window.confirm(t('resetConfirm', 'Are you sure you want to delete all effects except 3D text?'))) {
+      if (
+        window.confirm(
+          t(
+            "resetConfirm",
+            "Are you sure you want to delete all effects except 3D text?",
+          ),
+        )
+      ) {
         performReset();
       }
     } else {
       Alert.alert(
-        t('resetToBasic', 'Reset to basic settings'),
-        t('resetConfirm', 'Are you sure you want to delete all effects except 3D text?'),
+        t("resetToBasic", "Reset to basic settings"),
+        t(
+          "resetConfirm",
+          "Are you sure you want to delete all effects except 3D text?",
+        ),
         [
-          { text: t('cancel', 'Cancel'), style: "cancel" },
-          { text: t('delete', 'Delete'), style: "destructive", onPress: performReset },
+          { text: t("cancel", "Cancel"), style: "cancel" },
+          {
+            text: t("delete", "Delete"),
+            style: "destructive",
+            onPress: performReset,
+          },
         ],
       );
     }
@@ -2040,21 +4908,21 @@ export default function ThreeDTextScreen() {
 
     // confirmation dialog for delete
     const effectName = effectTypeLabel(
-      effectInstances.find((i) => i.id === id)?.type ?? 'mainText',
+      effectInstances.find((i) => i.id === id)?.type ?? "mainText",
       t,
     );
-    const confirmMsg = t('deleteEffectConfirm', { name: effectName });
+    const confirmMsg = t("deleteEffectConfirm", { name: effectName });
     if (typeof window !== "undefined" && window.confirm) {
       if (window.confirm(confirmMsg)) performDelete();
     } else if (typeof Alert !== "undefined" && Alert.alert) {
-      Alert.alert(
-        t('deleteEffect', 'Delete effect'),
-        confirmMsg,
-        [
-          { text: t('cancel', 'Cancel'), style: "cancel" },
-          { text: t('delete', 'Delete'), style: "destructive", onPress: performDelete },
-        ],
-      );
+      Alert.alert(t("deleteEffect", "Delete effect"), confirmMsg, [
+        { text: t("cancel", "Cancel"), style: "cancel" },
+        {
+          text: t("delete", "Delete"),
+          style: "destructive",
+          onPress: performDelete,
+        },
+      ]);
     } else {
       performDelete();
     }
@@ -2113,13 +4981,30 @@ export default function ThreeDTextScreen() {
           : [];
 
         // Migration: if no mainText effect in saved config, create one from old top-level fields
-        if (!instances.find(i => i.type === 'mainText')) {
-          const mainInst = createEffectInstance('mainText');
-          if (latest.text) mainInst.params = { ...mainInst.params, text: latest.text };
-          if (latest.equalizeLineWidths !== undefined) mainInst.params = { ...mainInst.params, equalizeLineWidths: latest.equalizeLineWidths };
-          if (latest.equalizationMethod) mainInst.params = { ...mainInst.params, equalizationMethod: latest.equalizationMethod };
-          if (latest.targetWidth) mainInst.params = { ...mainInst.params, targetWidth: latest.targetWidth };
-          if (latest.lineSpacing) mainInst.params = { ...mainInst.params, lineSpacing: latest.lineSpacing };
+        if (!instances.find((i) => i.type === "mainText")) {
+          const mainInst = createEffectInstance("mainText");
+          if (latest.text)
+            mainInst.params = { ...mainInst.params, text: latest.text };
+          if (latest.equalizeLineWidths !== undefined)
+            mainInst.params = {
+              ...mainInst.params,
+              equalizeLineWidths: latest.equalizeLineWidths,
+            };
+          if (latest.equalizationMethod)
+            mainInst.params = {
+              ...mainInst.params,
+              equalizationMethod: latest.equalizationMethod,
+            };
+          if (latest.targetWidth)
+            mainInst.params = {
+              ...mainInst.params,
+              targetWidth: latest.targetWidth,
+            };
+          if (latest.lineSpacing)
+            mainInst.params = {
+              ...mainInst.params,
+              lineSpacing: latest.lineSpacing,
+            };
           instances = [mainInst, ...instances];
         }
 
@@ -2139,7 +5024,12 @@ export default function ThreeDTextScreen() {
         } catch {
           loaded = await getPresets();
         }
-        if (active) setPresets(loaded.sort((a, b) => b.when_last_modified.localeCompare(a.when_last_modified)));
+        if (active)
+          setPresets(
+            loaded.sort((a, b) =>
+              b.when_last_modified.localeCompare(a.when_last_modified),
+            ),
+          );
       } catch (error) {
         console.warn("Unable to load presets:", error);
       }
@@ -2197,11 +5087,12 @@ export default function ThreeDTextScreen() {
       savedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       // Mirror mainText params for backward compat / easy querying
-      text: p.text as string ?? '',
-      equalizeLineWidths: p.equalizeLineWidths as boolean ?? false,
-      equalizationMethod: (p.equalizationMethod as 'spacing' | 'fontSize') ?? 'fontSize',
-      targetWidth: p.targetWidth as number ?? 20,
-      lineSpacing: p.lineSpacing as number ?? 1.5,
+      text: (p.text as string) ?? "",
+      equalizeLineWidths: (p.equalizeLineWidths as boolean) ?? false,
+      equalizationMethod:
+        (p.equalizationMethod as "spacing" | "fontSize") ?? "fontSize",
+      targetWidth: (p.targetWidth as number) ?? 20,
+      lineSpacing: (p.lineSpacing as number) ?? 1.5,
       effectInstances,
       showAdvanced,
     };
@@ -2260,12 +5151,15 @@ export default function ThreeDTextScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: c.background }]}>
+    <SafeAreaView
+      edges={["bottom"]}
+      style={[styles.container, { backgroundColor: c.background }]}
+    >
       <View style={styles.content}>
-        <View style={[styles.canvas, { flex: canvasFlex }]}>
+        <View style={[styles.canvas]}>
           <ThreeDText
             ref={threeDTextRef}
-            text={mainTextParams.text as string ?? ''}
+            text={(mainTextParams.text as string) ?? ""}
             size={mainTextParams.size as number | undefined}
             height={mainTextParams.height as number | undefined}
             curveSegments={mainTextParams.curveSegments as number | undefined}
@@ -2278,394 +5172,554 @@ export default function ThreeDTextScreen() {
             color={mainTextParams.color as number | undefined}
             metalness={mainTextParams.metalness as number | undefined}
             roughness={mainTextParams.roughness as number | undefined}
-            envMapIntensity={mainTextParams.envMapIntensity as number | undefined}
-            equalizeLineWidths={mainTextParams.equalizeLineWidths as boolean | undefined}
-            equalizationMethod={mainTextParams.equalizationMethod as 'spacing' | 'fontSize' | undefined}
+            envMapIntensity={
+              mainTextParams.envMapIntensity as number | undefined
+            }
+            equalizeLineWidths={
+              mainTextParams.equalizeLineWidths as boolean | undefined
+            }
+            equalizationMethod={
+              mainTextParams.equalizationMethod as
+                | "spacing"
+                | "fontSize"
+                | undefined
+            }
             targetWidth={mainTextParams.targetWidth as number | undefined}
             lineSpacing={mainTextParams.lineSpacing as number | undefined}
             pipes={activePipes}
+            onPrimaryMeshClick={() => {
+              const mainInst = effectInstances.find(
+                (i) => i.type === "mainText",
+              );
+              if (!mainInst) return;
+              const layout = itemLayouts.current[mainInst.id];
+              if (layout)
+                controlsScrollRef.current?.scrollTo({
+                  y: layout.y,
+                  animated: true,
+                });
+            }}
+            onNonPrimaryTap={(effectInstanceId) => {
+              const layout = itemLayouts.current[effectInstanceId];
+              if (layout)
+                controlsScrollRef.current?.scrollTo({
+                  y: layout.y,
+                  animated: true,
+                });
+            }}
           />
         </View>
 
-        <ScrollView
-          style={styles.controls}
-          contentContainerStyle={{ paddingBottom: 32 }}
-        >
-          {/* ── Effects ── */}
-          <Text style={[styles.groupLabel, { color: c.text }]}>
-            {t('effects')}
-          </Text>
-          <View style={styles.effectListContainer}>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginHorizontal: 12,
-              }}
-            >
-              <Text style={[styles.label, { color: c.text }]}>
-                {t('pipelinePresets')}
-              </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flex: 1 }}>
-                <TouchableOpacity
-                  style={[styles.smallActionButton, { borderColor: c.tint }]}
-                  onPress={handleResetToBasic}
+        <GestureDetector gesture={dividerGesture}>
+          <View style={styles.dividerHandle}>
+            <View style={styles.dividerGrip} />
+          </View>
+        </GestureDetector>
+
+        <Animated.View style={[styles.controls, controlsAnimStyle]}>
+          <ScrollView
+            ref={controlsScrollRef}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 32 }}
+          >
+            {/* ── Effects ── */}
+            <Text style={[styles.groupLabel, { color: c.text }]}>
+              {t("effects")}
+            </Text>
+            <View style={styles.effectListContainer}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginHorizontal: 12,
+                }}
+              >
+                <Text style={[styles.label, { color: c.text }]}>
+                  {t("pipelinePresets")}
+                </Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    justifyContent: "flex-end",
+                    flex: 1,
+                  }}
                 >
-                  <Text style={[styles.buttonText, { color: c.tint }]}>
-                    {t('resetToBasic')}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.smallActionButton, { borderColor: c.tint }]}
-                  onPress={handleSavePreset}
-                >
-                  <Text style={[styles.buttonText, { color: c.tint }]}>
-                    {t('savePreset')}
-                  </Text>
-                </TouchableOpacity>
-                {presets.length > 0 && (
                   <TouchableOpacity
                     style={[styles.smallActionButton, { borderColor: c.tint }]}
-                    onPress={() => setShowPresetPicker(true)}
+                    onPress={handleResetToBasic}
                   >
                     <Text style={[styles.buttonText, { color: c.tint }]}>
-                      {t('loadPreset')}
+                      {t("resetToBasic")}
                     </Text>
                   </TouchableOpacity>
-                )}
+                  <TouchableOpacity
+                    style={[styles.smallActionButton, { borderColor: c.tint }]}
+                    onPress={handleSavePreset}
+                  >
+                    <Text style={[styles.buttonText, { color: c.tint }]}>
+                      {t("savePreset")}
+                    </Text>
+                  </TouchableOpacity>
+                  {presets.length > 0 && (
+                    <TouchableOpacity
+                      style={[
+                        styles.smallActionButton,
+                        { borderColor: c.tint },
+                      ]}
+                      onPress={() => setShowPresetPicker(true)}
+                    >
+                      <Text style={[styles.buttonText, { color: c.tint }]}>
+                        {t("loadPreset")}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
-            </View>
-            <View style={{ marginHorizontal: 12, marginVertical: 8 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                <Text style={[styles.label, { color: c.text }]}>
-                  {t('addEffect')}
-                </Text>
-                <TextInput
-                  style={[
-                    styles.searchInput,
-                    { borderColor: c.tint, color: c.text, flex: 1, marginBottom: 0 },
-                  ]}
-                  placeholder="Search effects..."
-                  placeholderTextColor={
-                    colorScheme === "dark" ? "#666" : "#999"
-                  }
-                  value={selectedEffectSearch}
-                  onChangeText={setSelectedEffectSearch}
-                />
-                <TouchableOpacity
-                  onPress={() => setAiChatTarget({ id: null, code: '', description: '' })}
-                  style={[styles.smallActionButton, { borderColor: c.tint, paddingHorizontal: 10 }]}
+              <View style={{ marginHorizontal: 12, marginVertical: 8 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 6,
+                    gap: 8,
+                  }}
                 >
-                  <Text style={{ color: c.tint, fontSize: 13, fontWeight: '600' }}>AI</Text>
-                </TouchableOpacity>
-              </View>
-              <View>
-                {selectedEffectSearch.length > 0 ? (
-                  <View
-                    style={[styles.effectSearchList, { borderColor: c.tint }]}
+                  <Text style={[styles.label, { color: c.text }]}>
+                    {t("addEffect")}
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.searchInput,
+                      {
+                        borderColor: c.tint,
+                        color: c.text,
+                        flex: 1,
+                        marginBottom: 0,
+                      },
+                    ]}
+                    placeholder="Search effects..."
+                    placeholderTextColor={
+                      colorScheme === "dark" ? "#666" : "#999"
+                    }
+                    value={selectedEffectSearch}
+                    onChangeText={setSelectedEffectSearch}
+                  />
+                  <TouchableOpacity
+                    onPress={() =>
+                      setAiChatTarget({ id: null, code: "", description: "" })
+                    }
+                    style={[
+                      styles.smallActionButton,
+                      { borderColor: c.tint, paddingHorizontal: 10 },
+                    ]}
                   >
-                    {EFFECT_TYPES.filter((e) =>
-                      !e.primary &&
-                      (t(`eff_${e.type}`) + " " + e.type)
-                        .toLowerCase()
-                        .includes(selectedEffectSearch.toLowerCase()),
-                    ).map((e) => (
-                      <TouchableOpacity
-                        key={e.type}
-                        style={styles.effectSearchItem}
-                        onPress={() => {
-                          addEffectInstance(e.type);
-                          setSelectedEffectSearch("");
-                        }}
-                      >
-                        <Text style={{ color: c.text }}>{t(`eff_${e.type}`)}</Text>
-                        {e.animated && (
-                          <Text style={{ color: "#ff9800", fontSize: 11, fontWeight: 'bold' }}> A</Text>
-                        )}
-                        {e.target && (
-                          <Text style={{ color: "#888", fontSize: 11 }}>
-                            {" " +
-                              (e.target === "geometry"
-                                ? "G"
-                                : e.target === "post"
-                                  ? "P"
-                                  : "B")}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      flexWrap: "wrap",
-                      marginTop: 8,
-                    }}
-                  >
-                    {EFFECT_TYPES.filter(e => !e.primary).map((e) => (
-                      <TouchableOpacity
-                        key={e.type}
-                        style={[
-                          styles.effectPill,
-                          {
-                            borderColor: c.tint,
-                            backgroundColor:
-                              colorScheme === "dark" ? "#222" : "#fff",
-                          },
-                        ]}
-                        onPress={() => addEffectInstance(e.type)}
-                      >
-                        <Text
-                          style={[styles.effectPillText, { color: c.text }]}
+                    <Text
+                      style={{ color: c.tint, fontSize: 13, fontWeight: "600" }}
+                    >
+                      AI
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View>
+                  {selectedEffectSearch.length > 0 ? (
+                    <View
+                      style={[styles.effectSearchList, { borderColor: c.tint }]}
+                    >
+                      {EFFECT_TYPES.filter(
+                        (e) =>
+                          !e.primary &&
+                          (t(`eff_${e.type}`) + " " + e.type)
+                            .toLowerCase()
+                            .includes(selectedEffectSearch.toLowerCase()),
+                      ).map((e) => (
+                        <TouchableOpacity
+                          key={e.type}
+                          style={styles.effectSearchItem}
+                          onPress={() => {
+                            addEffectInstance(e.type);
+                            setSelectedEffectSearch("");
+                          }}
                         >
-                          {t(`eff_${e.type}`)}
-                        </Text>
-                        {e.animated && (
-                          <View style={[styles.targetBadge, { backgroundColor: "#ff9800" }]}>
-                            <Text style={{ color: "#fff", fontSize: 10 }}>A</Text>
-                          </View>
-                        )}
-                        {e.target && (
-                          <View
+                          <Text style={{ color: c.text }}>
+                            {t(`eff_${e.type}`)}
+                          </Text>
+                          {e.animated && (
+                            <Text
+                              style={{
+                                color: "#ff9800",
+                                fontSize: 11,
+                                fontWeight: "bold",
+                              }}
+                            >
+                              {" "}
+                              A
+                            </Text>
+                          )}
+                          {e.target && (
+                            <Text style={{ color: "#888", fontSize: 11 }}>
+                              {" " +
+                                (e.target === "geometry"
+                                  ? "G"
+                                  : e.target === "post"
+                                    ? "P"
+                                    : "B")}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        flexWrap: "wrap",
+                        marginTop: 8,
+                      }}
+                    >
+                      {EFFECT_TYPES.filter((e) => !e.primary).map((e) => (
+                        <TouchableOpacity
+                          key={e.type}
+                          style={[
+                            styles.effectPill,
+                            {
+                              borderColor: c.tint,
+                              backgroundColor:
+                                colorScheme === "dark" ? "#222" : "#fff",
+                            },
+                          ]}
+                          onPress={() => addEffectInstance(e.type)}
+                        >
+                          <Text
+                            style={[styles.effectPillText, { color: c.text }]}
+                          >
+                            {t(`eff_${e.type}`)}
+                          </Text>
+                          {e.animated && (
+                            <View
+                              style={[
+                                styles.targetBadge,
+                                { backgroundColor: "#ff9800" },
+                              ]}
+                            >
+                              <Text style={{ color: "#fff", fontSize: 10 }}>
+                                A
+                              </Text>
+                            </View>
+                          )}
+                          {e.target && (
+                            <View
+                              style={[
+                                styles.targetBadge,
+                                {
+                                  backgroundColor:
+                                    e.target === "geometry"
+                                      ? "#4caf50"
+                                      : e.target === "post"
+                                        ? "#2196f3"
+                                        : "#9c27b0",
+                                },
+                              ]}
+                            >
+                              <Text style={{ color: "#fff", fontSize: 10 }}>
+                                {e.target === "geometry"
+                                  ? "G"
+                                  : e.target === "post"
+                                    ? "P"
+                                    : "B"}
+                              </Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Undo banner if recently deleted */}
+              {lastDeleted && (
+                <View
+                  style={{
+                    marginHorizontal: 12,
+                    marginVertical: 6,
+                    padding: 8,
+                    borderWidth: 1,
+                    borderRadius: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    borderColor: c.tint,
+                    backgroundColor:
+                      colorScheme === "dark" ? "#161616" : "#fff",
+                  }}
+                >
+                  <Text style={{ color: c.text }}>
+                    {t("deleted", {
+                      name: effectTypeLabel(lastDeleted.item.type, t),
+                    })}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={undoDelete}
+                    style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: c.tint }}>{t("undo")}</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {effectInstances.filter((i) => i.type !== "mainText").length ===
+                0 && (
+                <Text
+                  style={[
+                    styles.label,
+                    {
+                      color: c.text,
+                      opacity: 0.5,
+                      marginHorizontal: 12,
+                      marginVertical: 8,
+                    },
+                  ]}
+                >
+                  {t("noAdditionalEffects")}
+                </Text>
+              )}
+
+              {effectInstances.map((instance, index) => (
+                <View
+                  key={instance.id}
+                  onLayout={(e) => {
+                    itemLayouts.current[instance.id] = {
+                      y: e.nativeEvent.layout.y,
+                      height: e.nativeEvent.layout.height,
+                    };
+                  }}
+                  pointerEvents={draggingId === instance.id ? "none" : "auto"}
+                  style={[
+                    styles.effectCard,
+                    {
+                      borderColor: c.tint,
+                      backgroundColor:
+                        colorScheme === "dark" ? "#1f1f1f" : "#fafafa",
+                    },
+                    draggingId === instance.id && styles.hiddenItem,
+                  ]}
+                >
+                  <View style={styles.effectCardHeader}>
+                    {instance.type !== "mainText" && (
+                      <GestureDetector gesture={createDragGesture(instance.id)}>
+                        <View style={styles.dragHandle}>
+                          <Text style={[styles.buttonText, { color: c.tint }]}>
+                            ≡
+                          </Text>
+                        </View>
+                      </GestureDetector>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <SectionHeader
+                        title={`${index + 1}. ${effectTypeLabel(instance.type, t)}`}
+                        enabled={instance.enabled}
+                        onToggle={() => toggleEffectEnabled(instance.id)}
+                        colors={c}
+                      />
+                    </View>
+                    {instance.type !== "mainText" && (
+                      <Row>
+                        <TouchableOpacity
+                          style={styles.smallActionButton}
+                          onPress={() => toggleEffectAnimate(instance.id)}
+                        >
+                          <Text
                             style={[
-                              styles.targetBadge,
+                              styles.buttonText,
                               {
-                                backgroundColor:
-                                  e.target === "geometry"
-                                    ? "#4caf50"
-                                    : e.target === "post"
-                                      ? "#2196f3"
-                                      : "#9c27b0",
+                                color:
+                                  (instance.animate ?? true) ? c.tint : "#666",
                               },
                             ]}
                           >
-                            <Text style={{ color: "#fff", fontSize: 10 }}>
-                              {e.target === "geometry"
-                                ? "G"
-                                : e.target === "post"
-                                  ? "P"
-                                  : "B"}
-                            </Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    ))}
+                            {(instance.animate ?? true) ? "▶" : "⏸"}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.smallActionButton}
+                          onPress={() => duplicateEffectInstance(instance.id)}
+                        >
+                          <Text style={[styles.buttonText, { color: c.tint }]}>
+                            ⧉
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.smallActionButton}
+                          onPress={() => moveEffect(instance.id, -1)}
+                        >
+                          <Text style={[styles.buttonText, { color: c.tint }]}>
+                            ↑
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.smallActionButton}
+                          onPress={() => moveEffect(instance.id, 1)}
+                        >
+                          <Text style={[styles.buttonText, { color: c.tint }]}>
+                            ↓
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.smallActionButton}
+                          onPress={() => removeEffectInstance(instance.id)}
+                        >
+                          <Text style={[styles.buttonText, { color: c.tint }]}>
+                            ✕
+                          </Text>
+                        </TouchableOpacity>
+                      </Row>
+                    )}
                   </View>
-                )}
-              </View>
+                  {instance.enabled &&
+                    renderEffectControls(
+                      instance,
+                      c,
+                      t,
+                      (key, value) =>
+                        updateEffectParam(instance.id, key, value),
+                      (id, code, desc) =>
+                        setAiChatTarget({ id, code, description: desc }),
+                      colorScheme ?? "light",
+                      (instanceId, paramKey) =>
+                        setImagePickerTarget({ instanceId, paramKey }),
+                    )}
+                </View>
+              ))}
+
+              {draggingItem && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.effectCard,
+                    styles.draggingOverlay,
+                    {
+                      borderColor: c.tint,
+                      backgroundColor:
+                        colorScheme === "dark" ? "#1f1f1f" : "#fafafa",
+                    },
+                    dragOverlayStyle,
+                  ]}
+                >
+                  <View style={styles.effectCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.sectionTitle, { color: c.tint }]}
+                      >{`Dragging: ${effectTypeLabel(draggingItem.type, t)}`}</Text>
+                    </View>
+                  </View>
+                  {renderEffectControls(
+                    draggingItem,
+                    c,
+                    t,
+                    () => undefined,
+                    undefined,
+                    colorScheme ?? "light",
+                  )}
+                </Animated.View>
+              )}
             </View>
 
-            {/* Undo banner if recently deleted */}
-            {lastDeleted && (
-              <View
-                style={{
-                  marginHorizontal: 12,
-                  marginVertical: 6,
-                  padding: 8,
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  borderColor: c.tint,
-                  backgroundColor: colorScheme === "dark" ? "#161616" : "#fff",
-                }}
-              >
-                <Text style={{ color: c.text }}>
-                  {t('deleted', { name: effectTypeLabel(lastDeleted.item.type, t) })}
-                </Text>
-                <TouchableOpacity
-                  onPress={undoDelete}
-                  style={{ paddingHorizontal: 10, paddingVertical: 6 }}
-                >
-                  <Text style={{ color: c.tint }}>{t('undo')}</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {effectInstances.filter(i => i.type !== 'mainText').length === 0 && (
-              <Text style={[styles.label, { color: c.text, opacity: 0.5, marginHorizontal: 12, marginVertical: 8 }]}>
-                {t('noAdditionalEffects')}
+            <TouchableOpacity
+              style={[styles.advancedToggle, { borderColor: "#555" }]}
+              onPress={() => setShowAdvanced((v) => !v)}
+            >
+              <Text style={[styles.buttonText, { color: "#888" }]}>
+                {showAdvanced
+                  ? `▲ ${t("hideAdvanced")}`
+                  : `▼ ${t("showAdvanced")}`}
               </Text>
-            )}
+            </TouchableOpacity>
 
-            {effectInstances.map((instance, index) => (
-              <View
-                key={instance.id}
-                onLayout={(e) => {
-                  itemLayouts.current[instance.id] = {
-                    y: e.nativeEvent.layout.y,
-                    height: e.nativeEvent.layout.height,
-                  };
-                }}
-                pointerEvents={draggingId === instance.id ? "none" : "auto"}
-                style={[
-                  styles.effectCard,
-                  {
-                    borderColor: c.tint,
-                    backgroundColor:
-                      colorScheme === "dark" ? "#1f1f1f" : "#fafafa",
-                  },
-                  draggingId === instance.id && styles.hiddenItem,
-                ]}
-              >
-                <View style={styles.effectCardHeader}>
-                  {instance.type !== 'mainText' && (
-                  <GestureDetector gesture={createDragGesture(instance.id)}>
-                    <View style={styles.dragHandle}>
-                      <Text style={[styles.buttonText, { color: c.tint }]}>
-                        ≡
-                      </Text>
-                    </View>
-                  </GestureDetector>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <SectionHeader
-                      title={`${index + 1}. ${effectTypeLabel(instance.type, t)}`}
-                      enabled={instance.enabled}
-                      onToggle={() => toggleEffectEnabled(instance.id)}
-                      colors={c}
-                    />
-                  </View>
-                  {instance.type !== 'mainText' && (
-                  <Row>
-                    <TouchableOpacity
-                      style={styles.smallActionButton}
-                      onPress={() => toggleEffectAnimate(instance.id)}
-                    >
-                      <Text style={[styles.buttonText, { color: (instance.animate ?? true) ? c.tint : "#666" }]}>
-                        {(instance.animate ?? true) ? "▶" : "⏸"}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.smallActionButton}
-                      onPress={() => duplicateEffectInstance(instance.id)}
-                    >
-                      <Text style={[styles.buttonText, { color: c.tint }]}>
-                        ⧉
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.smallActionButton}
-                      onPress={() => moveEffect(instance.id, -1)}
-                    >
-                      <Text style={[styles.buttonText, { color: c.tint }]}>
-                        ↑
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.smallActionButton}
-                      onPress={() => moveEffect(instance.id, 1)}
-                    >
-                      <Text style={[styles.buttonText, { color: c.tint }]}>
-                        ↓
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.smallActionButton}
-                      onPress={() => removeEffectInstance(instance.id)}
-                    >
-                      <Text style={[styles.buttonText, { color: c.tint }]}>
-                        ✕
-                      </Text>
-                    </TouchableOpacity>
-                  </Row>
-                  )}
-                </View>
-                {instance.enabled &&
-                  renderEffectControls(
-                    instance, c, t,
-                    (key, value) => updateEffectParam(instance.id, key, value),
-                    (id, code, desc) => setAiChatTarget({ id, code, description: desc }),
-                    colorScheme ?? 'light',
-                  )}
-              </View>
-            ))}
-
-            {draggingItem && (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.effectCard,
-                  styles.draggingOverlay,
-                  {
-                    borderColor: c.tint,
-                    backgroundColor:
-                      colorScheme === "dark" ? "#1f1f1f" : "#fafafa",
-                  },
-                  dragOverlayStyle,
-                ]}
-              >
-                <View style={styles.effectCardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={[styles.sectionTitle, { color: c.tint }]}
-                    >{`Dragging: ${effectTypeLabel(draggingItem.type, t)}`}</Text>
-                  </View>
-                </View>
-                {renderEffectControls(draggingItem, c, t, () => undefined, undefined, colorScheme ?? 'light')}
-              </Animated.View>
-            )}
-          </View>
-
-          <TouchableOpacity
-            style={[styles.advancedToggle, { borderColor: "#555" }]}
-            onPress={() => setShowAdvanced((v) => !v)}
-          >
-            <Text style={[styles.buttonText, { color: "#888" }]}>
-              {showAdvanced ? `▲ ${t('hideAdvanced')}` : `▼ ${t('showAdvanced')}`}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Language picker */}
-          <View style={[styles.controlRow, { marginTop: 8 }]}>
-            <Text style={[styles.label, { color: c.text }]}>{t('language')}</Text>
-            {typeof document !== 'undefined' ? (
-              <select
-                value={i18nInstance.language}
-                onChange={(e: any) => i18nInstance.changeLanguage(e.target.value)}
-                style={{
-                  background: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
-                  color: c.text as string,
-                  border: `1px solid ${c.tint}`,
-                  borderRadius: '5px',
-                  padding: '4px 8px',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  outline: 'none',
-                } as any}
-              >
-                {SUPPORTED_LANGUAGES.map(lang => (
-                  <option key={lang.code} value={lang.code}>{lang.label}</option>
-                ))}
-              </select>
-            ) : (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {SUPPORTED_LANGUAGES.map(lang => (
-                  <TouchableOpacity
-                    key={lang.code}
-                    onPress={() => i18nInstance.changeLanguage(lang.code)}
-                    style={[styles.smallActionButton, { borderColor: i18nInstance.language === lang.code ? c.tint : '#555' }]}
-                  >
-                    <Text style={[styles.buttonText, { color: i18nInstance.language === lang.code ? c.tint : c.text }]}>
+            {/* Language picker */}
+            <View style={[styles.controlRow, { marginTop: 8 }]}>
+              <Text style={[styles.label, { color: c.text }]}>
+                {t("language")}
+              </Text>
+              {typeof document !== "undefined" ? (
+                <select
+                  value={i18nInstance.language}
+                  onChange={(e: any) =>
+                    i18nInstance.changeLanguage(e.target.value)
+                  }
+                  style={
+                    {
+                      background:
+                        colorScheme === "dark" ? "#1a1a1a" : "#ffffff",
+                      color: c.text as string,
+                      border: `1px solid ${c.tint}`,
+                      borderRadius: "5px",
+                      padding: "4px 8px",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      outline: "none",
+                    } as any
+                  }
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
                       {lang.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <TouchableOpacity
+                      key={lang.code}
+                      onPress={() => i18nInstance.changeLanguage(lang.code)}
+                      style={[
+                        styles.smallActionButton,
+                        {
+                          borderColor:
+                            i18nInstance.language === lang.code
+                              ? c.tint
+                              : "#555",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.buttonText,
+                          {
+                            color:
+                              i18nInstance.language === lang.code
+                                ? c.tint
+                                : c.text,
+                          },
+                        ]}
+                      >
+                        {lang.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
 
-          {/* Export button */}
-          <TouchableOpacity
-            style={[styles.advancedToggle, { borderColor: c.tint, marginTop: 4 }]}
-            onPress={() => setShowExportModal(true)}
-          >
-            <Text style={[styles.buttonText, { color: c.tint }]}>{t('export')}</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            {/* Export button */}
+            <TouchableOpacity
+              style={[
+                styles.advancedToggle,
+                { borderColor: c.tint, marginTop: 4 },
+              ]}
+              onPress={() => setShowExportModal(true)}
+            >
+              <Text style={[styles.buttonText, { color: c.tint }]}>
+                {t("export")}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
       </View>
 
       {/* Modals */}
@@ -2673,7 +5727,9 @@ export default function ThreeDTextScreen() {
         <AiEffectChatModal
           visible
           onClose={() => setAiChatTarget(null)}
-          onApplyEffect={(code, desc) => handleApplyAiEffect(code, desc, aiChatTarget.id)}
+          onApplyEffect={(code, desc) =>
+            handleApplyAiEffect(code, desc, aiChatTarget.id)
+          }
           initialCode={aiChatTarget.code || undefined}
           initialDescription={aiChatTarget.description || undefined}
         />
@@ -2681,9 +5737,28 @@ export default function ThreeDTextScreen() {
       <ExportModal
         visible={showExportModal}
         onClose={() => setShowExportModal(false)}
-        captureFrame={() => threeDTextRef.current?.captureFrame() ?? Promise.resolve(null)}
+        captureFrame={() =>
+          threeDTextRef.current?.captureFrame() ?? Promise.resolve(null)
+        }
         getMesh={() => threeDTextRef.current?.getMesh() ?? null}
         getScene={() => threeDTextRef.current?.getScene() ?? null}
+      />
+      <ImagePickerModal
+        visible={imagePickerTarget !== null}
+        onClose={() => setImagePickerTarget(null)}
+        onSelect={({ dataUrl }) => {
+          if (!imagePickerTarget) return;
+          updateEffectParam(
+            imagePickerTarget.instanceId,
+            imagePickerTarget.paramKey,
+            dataUrl,
+          );
+          setImagePickerTarget(null);
+        }}
+        tint={c.tint}
+        textColor={c.text}
+        background={colorScheme === "dark" ? "#1e1e1e" : "#fff"}
+        borderColor={colorScheme === "dark" ? "#333" : "#ccc"}
       />
 
       {/* Preset picker modal */}
@@ -2694,15 +5769,35 @@ export default function ThreeDTextScreen() {
         animationType="fade"
         onRequestClose={() => setShowSavePresetModal(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <View style={{ backgroundColor: colorScheme === 'dark' ? '#1e1e1e' : '#fff', borderRadius: 14, padding: 20, gap: 14 }}>
-            <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>{t('savePreset')}</Text>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.55)",
+            justifyContent: "center",
+            paddingHorizontal: 32,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colorScheme === "dark" ? "#1e1e1e" : "#fff",
+              borderRadius: 14,
+              padding: 20,
+              gap: 14,
+            }}
+          >
+            <Text style={{ color: c.text, fontWeight: "700", fontSize: 16 }}>
+              {t("savePreset")}
+            </Text>
             <TextInput
               style={{
-                borderWidth: 1, borderColor: c.tint, borderRadius: 8,
-                paddingHorizontal: 12, paddingVertical: 8,
-                color: c.text, fontSize: 14,
-                backgroundColor: colorScheme === 'dark' ? '#111' : '#fafafa',
+                borderWidth: 1,
+                borderColor: c.tint,
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                color: c.text,
+                fontSize: 14,
+                backgroundColor: colorScheme === "dark" ? "#111" : "#fafafa",
               }}
               value={draftPresetName}
               onChangeText={setDraftPresetName}
@@ -2711,18 +5806,41 @@ export default function ThreeDTextScreen() {
               onSubmitEditing={confirmSavePreset}
               returnKeyType="done"
             />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity
                 onPress={() => setShowSavePresetModal(false)}
-                style={{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#555', alignItems: 'center' }}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: "#555",
+                  alignItems: "center",
+                }}
               >
-                <Text style={{ color: c.text, fontSize: 14 }}>{t('cancel')}</Text>
+                <Text style={{ color: c.text, fontSize: 14 }}>
+                  {t("cancel")}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={confirmSavePreset}
-                style={{ flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: c.tint, alignItems: 'center' }}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                  backgroundColor: c.tint,
+                  alignItems: "center",
+                }}
               >
-                <Text style={{ color: colorScheme === 'dark' ? '#000' : '#fff', fontSize: 14, fontWeight: '600' }}>{t('savePreset')}</Text>
+                <Text
+                  style={{
+                    color: colorScheme === "dark" ? "#000" : "#fff",
+                    fontSize: 14,
+                    fontWeight: "600",
+                  }}
+                >
+                  {t("savePreset")}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2735,68 +5853,174 @@ export default function ThreeDTextScreen() {
         animationType="slide"
         onRequestClose={() => setShowPresetPicker(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '80%' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: colorScheme === 'dark' ? '#2a2a2a' : '#eee' }}>
-              <Text style={{ color: c.text, fontWeight: '600', fontSize: 16 }}>{t('loadPreset')}</Text>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.55)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colorScheme === "dark" ? "#1a1a1a" : "#fff",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              maxHeight: "80%",
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: 16,
+                borderBottomWidth: 1,
+                borderColor: colorScheme === "dark" ? "#2a2a2a" : "#eee",
+              }}
+            >
+              <Text style={{ color: c.text, fontWeight: "600", fontSize: 16 }}>
+                {t("loadPreset")}
+              </Text>
               <TouchableOpacity onPress={() => setShowPresetPicker(false)}>
                 <Text style={{ color: c.tint, fontSize: 18 }}>✕</Text>
               </TouchableOpacity>
             </View>
             {presets.length === 0 ? (
-              <View style={{ padding: 32, alignItems: 'center' }}>
-                <Text style={{ color: '#888', fontSize: 14 }}>No presets saved yet.</Text>
+              <View style={{ padding: 32, alignItems: "center" }}>
+                <Text style={{ color: "#888", fontSize: 14 }}>
+                  No presets saved yet.
+                </Text>
               </View>
             ) : (
-              <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', padding: 10, gap: 10 }}>
+              <ScrollView
+                contentContainerStyle={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  padding: 10,
+                  gap: 10,
+                }}
+              >
                 {presets.map((preset) => {
-                  const chips = preset.effects.filter(e => e.enabled && e.type !== 'mainText');
+                  const chips = preset.effects.filter(
+                    (e) => e.enabled && e.type !== "mainText",
+                  );
                   return (
                     <TouchableOpacity
                       key={preset.id}
                       onPress={() => handleLoadPreset(preset)}
                       style={{
-                        width: '47%', minWidth: 140,
-                        backgroundColor: colorScheme === 'dark' ? '#252525' : '#f5f5f5',
-                        borderRadius: 10, borderWidth: 1, borderColor: colorScheme === 'dark' ? '#333' : '#ddd',
-                        padding: 10, gap: 6,
+                        width: "47%",
+                        minWidth: 140,
+                        backgroundColor:
+                          colorScheme === "dark" ? "#252525" : "#f5f5f5",
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: colorScheme === "dark" ? "#333" : "#ddd",
+                        padding: 10,
+                        gap: 6,
                       }}
                     >
                       {/* Effect type preview — colour-coded pills */}
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, minHeight: 42 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          flexWrap: "wrap",
+                          gap: 3,
+                          minHeight: 42,
+                        }}
+                      >
                         {chips.slice(0, 9).map((e, i) => (
-                          <View key={i} style={{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: c.tint + '33' }}>
-                            <Text style={{ color: c.tint, fontSize: 9, fontWeight: '600' }}>
+                          <View
+                            key={i}
+                            style={{
+                              paddingHorizontal: 5,
+                              paddingVertical: 2,
+                              borderRadius: 4,
+                              backgroundColor: c.tint + "33",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: c.tint,
+                                fontSize: 9,
+                                fontWeight: "600",
+                              }}
+                            >
                               {effectTypeLabel(e.type, t)}
                             </Text>
                           </View>
                         ))}
                         {chips.length > 9 && (
-                          <View style={{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: colorScheme === 'dark' ? '#333' : '#e0e0e0' }}>
-                            <Text style={{ color: '#888', fontSize: 9 }}>+{chips.length - 9}</Text>
+                          <View
+                            style={{
+                              paddingHorizontal: 5,
+                              paddingVertical: 2,
+                              borderRadius: 4,
+                              backgroundColor:
+                                colorScheme === "dark" ? "#333" : "#e0e0e0",
+                            }}
+                          >
+                            <Text style={{ color: "#888", fontSize: 9 }}>
+                              +{chips.length - 9}
+                            </Text>
                           </View>
                         )}
                         {chips.length === 0 && (
-                          <Text style={{ color: '#888', fontSize: 10, fontStyle: 'italic' }}>No effects</Text>
+                          <Text
+                            style={{
+                              color: "#888",
+                              fontSize: 10,
+                              fontStyle: "italic",
+                            }}
+                          >
+                            No effects
+                          </Text>
                         )}
                       </View>
 
                       {/* Name */}
-                      <Text style={{ color: c.text, fontWeight: '600', fontSize: 12 }} numberOfLines={2}>
+                      <Text
+                        style={{
+                          color: c.text,
+                          fontWeight: "600",
+                          fontSize: 12,
+                        }}
+                        numberOfLines={2}
+                      >
                         {preset.name}
                       </Text>
-                      <Text style={{ color: '#888', fontSize: 10 }}>
-                        {new Date(preset.when_last_modified).toLocaleDateString()}
+                      <Text style={{ color: "#888", fontSize: 10 }}>
+                        {new Date(
+                          preset.when_last_modified,
+                        ).toLocaleDateString()}
                       </Text>
 
                       {/* Load indicator */}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                        <Text style={{ color: c.tint, fontSize: 11, fontWeight: '600' }}>{t('load')} →</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginTop: 2,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: c.tint,
+                            fontSize: 11,
+                            fontWeight: "600",
+                          }}
+                        >
+                          {t("load")} →
+                        </Text>
                         <TouchableOpacity
-                          onPress={(e) => { e.stopPropagation?.(); handleDeletePreset(preset.id); }}
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            handleDeletePreset(preset.id);
+                          }}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={{ color: '#e55', fontSize: 12 }}>✕</Text>
+                          <Text style={{ color: "#e55", fontSize: 12 }}>✕</Text>
                         </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
@@ -2814,11 +6038,25 @@ export default function ThreeDTextScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, flexDirection: "column" },
-  canvas: { flex: 2, width: "100%" },
+  canvas: { flex: 1, width: "100%", minHeight: 0 },
+  dividerHandle: {
+    height: 14,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+    cursor: "row-resize" as any,
+    zIndex: 10,
+  },
+  dividerGrip: {
+    width: 48,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#aaa",
+  },
   controls: {
-    flex: 1,
-    borderTopWidth: 1,
-    borderTopColor: "#ccc",
+    flexShrink: 0,
+    overflow: "hidden" as any,
     alignSelf: "center",
     width: "100%",
     maxWidth: 760,

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface HologramPipeParams { color?: number; scanSpeed?: number; }
 
@@ -7,13 +7,16 @@ export class HologramPipe implements EffectPipe {
   readonly name = 'hologram';
   private mesh: THREE.Mesh | THREE.Group | null = null;
   private materials: THREE.ShaderMaterial[] = [];
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: HologramPipeParams = {}) {}
   setup(_ctx: PipeSetupContext) {}
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh; this.materials = [];
     if (!mesh) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     const color = new THREE.Color(this.params.color ?? 0x00ffff);
     mesh.traverse(child => {
       if (child instanceof THREE.Mesh) {
@@ -38,5 +41,8 @@ export class HologramPipe implements EffectPipe {
     for (const mat of this.materials) mat.uniforms.time.value = ctx.time * (this.params.scanSpeed ?? 1);
   }
 
-  dispose() { this.materials = []; this.mesh = null; }
+  dispose() {
+    restoreMeshMaterials(this.savedMaterials);
+    this.materials = []; this.mesh = null;
+  }
 }

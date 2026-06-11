@@ -2,6 +2,26 @@ import * as THREE from "three";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 
+/**
+ * Patches a MeshStandardMaterial to discard fragments whose interpolated
+ * view-space normal faces away from the camera (vNormal.z < 0).
+ * This eliminates the bright bevel-edge artifact caused by smooth-shaded
+ * bevel triangles whose normals shade toward the back even though the triangle
+ * itself is geometrically front-facing.
+ */
+function patchBackNormalDiscard(mat: THREE.MeshStandardMaterial): void {
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <normal_fragment_begin>',
+      `#ifndef FLAT_SHADED
+        if (vNormal.z < 0.0) discard;
+      #endif
+      #include <normal_fragment_begin>`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'text-back-normal-discard';
+}
+
 export interface TextGeometryOptions {
   text: string;
   fontFamily?: string;
@@ -348,6 +368,7 @@ export async function createTextGeometry(
       envMap: mergedOptions.envMap || undefined,
       envMapIntensity: mergedOptions.envMapIntensity,
     });
+    patchBackNormalDiscard(material);
 
     return { geometry: mainGroup, material };
   } catch (error) {
@@ -444,6 +465,7 @@ export async function createTextGeometry(
       envMap: mergedOptions.envMap || undefined,
       envMapIntensity: mergedOptions.envMapIntensity,
     });
+    patchBackNormalDiscard(material);
 
     return { geometry: mainGroup, material };
   }

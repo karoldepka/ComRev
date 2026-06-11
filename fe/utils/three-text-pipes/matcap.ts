@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface MatcapPipeParams { colorA?: number; colorB?: number; shininess?: number; }
 
@@ -7,6 +7,7 @@ export class MatcapPipe implements EffectPipe {
   readonly name = 'matcap';
   private texture: THREE.Texture | null = null;
   private mesh: THREE.Mesh | THREE.Group | null = null;
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: MatcapPipeParams = {}) {}
 
@@ -35,8 +36,10 @@ export class MatcapPipe implements EffectPipe {
   }
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh;
     if (!mesh || !this.texture) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     mesh.traverse(child => {
       if (child instanceof THREE.Mesh) child.material = new THREE.MeshMatcapMaterial({ matcap: this.texture! });
     });
@@ -45,6 +48,7 @@ export class MatcapPipe implements EffectPipe {
   update(_ctx: PipeFrameContext) {}
 
   dispose() {
+    restoreMeshMaterials(this.savedMaterials);
     this.texture?.dispose();
     this.texture = null;
     this.mesh = null;

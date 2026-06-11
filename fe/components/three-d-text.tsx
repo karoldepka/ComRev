@@ -2,8 +2,8 @@ import { createTextGeometry } from "@/utils/three-text-geometry";
 import { EffectPipe, PipelineManager } from "@/utils/three-text-pipes";
 import { GLView } from "expo-gl";
 import { Renderer } from "expo-three";
-import React, { useEffect, useImperativeHandle, useRef } from "react";
-import { View } from "react-native";
+import React, { useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { LayoutChangeEvent, View } from "react-native";
 import * as THREE from "three";
 
 export interface ThreeDTextHandle {
@@ -37,6 +37,8 @@ interface ThreeDTextProps {
   targetWidth?: number;
   lineSpacing?: number;
   pipes?: EffectPipe[];
+  onPrimaryMeshClick?: () => void;
+  onNonPrimaryTap?: (effectInstanceId: string) => void;
 }
 
 export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
@@ -61,6 +63,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       targetWidth = 20,
       lineSpacing,
       pipes = [],
+      onPrimaryMeshClick,
+      onNonPrimaryTap,
     },
     ref,
   ) {
@@ -104,6 +108,9 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     // Interaction state
     const isDraggingRef = useRef(false);
     const lastMousePosition = useRef({ x: 0, y: 0 });
+    const pointerDownPos = useRef({ x: 0, y: 0 });
+    const pointerDownOnPrimary = useRef(false);
+    const pointerDownHitRef = useRef<THREE.Object3D | null>(null);
     const rotationRef = useRef({ x: 0, y: 0 });
     // Object selection / 3D drag
     const raycasterRef = useRef(new THREE.Raycaster());
@@ -111,32 +118,101 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const dragModeRef = useRef<"rotate" | "translate">("rotate");
     const dragPlaneRef = useRef(new THREE.Plane());
     const dragOffsetRef = useRef(new THREE.Vector3());
+    // Pinch zoom state
+    const isPinchingRef = useRef(false);
+    const pinchStartDistRef = useRef(0);
+    const pinchStartCamPosRef = useRef(new THREE.Vector3());
 
-    // Attach wheel listener via DOM (onWheel prop not supported on RN View)
+    // Returns the 3D scene-center focus point under the given NDC coordinates.
+    // Uses a plane through the origin perpendicular to the camera's view direction.
+    const getZoomTarget = useCallback((ndx: number, ndy: number): THREE.Vector3 => {
+      const camera = cameraRef.current;
+      if (!camera) return new THREE.Vector3();
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(ndx, ndy), camera);
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      const focusPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(forward, new THREE.Vector3());
+      const target = new THREE.Vector3();
+      if (!ray.ray.intersectPlane(focusPlane, target)) target.set(0, 0, 0);
+      return target;
+    }, []);
+
+    // Zooms camera toward/away from `target` by `scaleFactor` (< 1 = zoom in).
+    const applyZoom = useCallback((scaleFactor: number, target: THREE.Vector3) => {
+      const camera = cameraRef.current;
+      if (!camera) return;
+      const offset = camera.position.clone().sub(target);
+      const newPos = target.clone().addScaledVector(offset, scaleFactor);
+      const dist = newPos.length();
+      if (dist >= 2 && dist <= 80) camera.position.copy(newPos);
+    }, []);
+
+    // Wheel + pinch zoom via DOM events
     useEffect(() => {
       const el = containerRef.current as HTMLElement | null;
       if (!el?.addEventListener) return;
+
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
         if (!cameraRef.current) return;
         const rect = el.getBoundingClientRect();
         const ndx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const ndy = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        const worldPoint = new THREE.Vector3(ndx, ndy, 0.5).unproject(
-          cameraRef.current,
-        );
-        const dir = worldPoint.sub(cameraRef.current.position).normalize();
-        const zoomSpeed = 1.0;
-        const zoomDelta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
-        const newPos = cameraRef.current.position
-          .clone()
-          .addScaledVector(dir, zoomDelta);
-        const dist = newPos.length();
-        if (dist > 2 && dist < 80) cameraRef.current.position.copy(newPos);
+        // Normalize delta across deltaMode values
+        let delta = e.deltaY;
+        if (e.deltaMode === 1) delta *= 40;
+        if (e.deltaMode === 2) delta *= 800;
+        // scaleFactor > 1 = camera moves further (zoom out), < 1 = zoom in
+        const scaleFactor = Math.pow(1.001, delta);
+        applyZoom(scaleFactor, getZoomTarget(ndx, ndy));
       };
+
+      const onTouchStart = (e: TouchEvent) => {
+        if (e.touches.length !== 2) return;
+        e.preventDefault();
+        isPinchingRef.current = true;
+        isDraggingRef.current = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchStartDistRef.current = Math.sqrt(dx * dx + dy * dy);
+        pinchStartCamPosRef.current.copy(
+          cameraRef.current?.position ?? new THREE.Vector3(0, 0, 15),
+        );
+      };
+
+      const onTouchMove = (e: TouchEvent) => {
+        if (e.touches.length !== 2 || !isPinchingRef.current) return;
+        e.preventDefault();
+        if (!cameraRef.current || pinchStartDistRef.current === 0) return;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        // scaleFactor: fingers spreading → dist > start → scaleFactor < 1 → zoom in
+        const scaleFactor = pinchStartDistRef.current / dist;
+        const newPos = pinchStartCamPosRef.current.clone().multiplyScalar(scaleFactor);
+        const d = newPos.length();
+        if (d >= 2 && d <= 80) cameraRef.current.position.copy(newPos);
+      };
+
+      const onTouchEnd = (e: TouchEvent) => {
+        if (e.touches.length < 2) {
+          isPinchingRef.current = false;
+          pinchStartDistRef.current = 0;
+        }
+      };
+
       el.addEventListener("wheel", onWheel, { passive: false });
-      return () => el.removeEventListener("wheel", onWheel);
-    }, []);
+      el.addEventListener("touchstart", onTouchStart, { passive: false });
+      el.addEventListener("touchmove", onTouchMove, { passive: false });
+      el.addEventListener("touchend", onTouchEnd);
+      return () => {
+        el.removeEventListener("wheel", onWheel);
+        el.removeEventListener("touchstart", onTouchStart);
+        el.removeEventListener("touchmove", onTouchMove);
+        el.removeEventListener("touchend", onTouchEnd);
+      };
+    }, [applyZoom, getZoomTarget]);
 
     // Rebuild PipelineManager when the pipes array reference changes
     useEffect(() => {
@@ -280,6 +356,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       const px = event.nativeEvent.pageX;
       const py = event.nativeEvent.pageY;
       lastMousePosition.current = { x: px, y: py };
+      pointerDownPos.current = { x: px, y: py };
+      pointerDownOnPrimary.current = false;
 
       const el = containerRef.current as HTMLElement | null;
       if (!el || !cameraRef.current || !sceneRef.current) {
@@ -314,9 +392,12 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         if (isPrimaryMesh) {
           dragModeRef.current = "rotate";
           selectedObjectRef.current = null;
+          pointerDownOnPrimary.current = true;
+          pointerDownHitRef.current = null;
         } else {
           dragModeRef.current = "translate";
           selectedObjectRef.current = hit;
+          pointerDownHitRef.current = hit;
           const cameraDir = new THREE.Vector3();
           cameraRef.current.getWorldDirection(cameraDir);
           dragPlaneRef.current.setFromNormalAndCoplanarPoint(
@@ -333,11 +414,12 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       } else {
         dragModeRef.current = "rotate";
         selectedObjectRef.current = null;
+        pointerDownHitRef.current = null;
       }
     };
 
     const handlePointerMove = (event: any) => {
-      if (!isDraggingRef.current) return;
+      if (!isDraggingRef.current || isPinchingRef.current) return;
       const px = event.nativeEvent.pageX;
       const py = event.nativeEvent.pageY;
       const deltaX = px - lastMousePosition.current.x;
@@ -376,10 +458,31 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       lastMousePosition.current = { x: px, y: py };
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (event: any) => {
       isDraggingRef.current = false;
+      const hitObject = pointerDownHitRef.current;
       selectedObjectRef.current = null;
+      pointerDownHitRef.current = null;
       dragModeRef.current = "rotate";
+
+      const dx = (event?.nativeEvent?.pageX ?? 0) - pointerDownPos.current.x;
+      const dy = (event?.nativeEvent?.pageY ?? 0) - pointerDownPos.current.y;
+      const wasTap = Math.sqrt(dx * dx + dy * dy) < 8;
+
+      if (pointerDownOnPrimary.current && wasTap) {
+        onPrimaryMeshClick?.();
+      } else if (wasTap && hitObject && onNonPrimaryTap) {
+        // Walk up the hierarchy to find the nearest effectInstanceId in userData
+        let obj: THREE.Object3D | null = hitObject;
+        while (obj) {
+          if (obj.userData?.effectInstanceId) {
+            onNonPrimaryTap(obj.userData.effectInstanceId);
+            break;
+          }
+          obj = obj.parent;
+        }
+      }
+      pointerDownOnPrimary.current = false;
     };
 
     const onContextCreate = async (gl: any) => {
@@ -506,10 +609,29 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       animate();
     };
 
+    const handleLayout = useCallback((e: LayoutChangeEvent) => {
+      const { width: cssW, height: cssH } = e.nativeEvent.layout;
+      if (cssW <= 0 || cssH <= 0) return;
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio ?? 1) : 1;
+      const w = Math.round(cssW * dpr);
+      const h = Math.round(cssH * dpr);
+      if (w === widthRef.current && h === heightRef.current) return;
+      widthRef.current = w;
+      heightRef.current = h;
+      const webglRenderer = rendererRef.current as any;
+      webglRenderer?.setSize(w, h, false);
+      if (cameraRef.current) {
+        cameraRef.current.aspect = w / h;
+        cameraRef.current.updateProjectionMatrix();
+      }
+      pipelineManagerRef.current?.resize(w, h);
+    }, []);
+
     return (
       <View
         ref={containerRef}
         style={{ flex: 1 }}
+        onLayout={handleLayout}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

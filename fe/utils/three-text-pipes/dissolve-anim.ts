@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
+import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
 
 export interface DissolveAnimPipeParams { speed?: number; color?: number; }
 
@@ -7,13 +7,16 @@ export class DissolveAnimPipe implements EffectPipe {
   readonly name = 'dissolveAnim';
   private materials: THREE.ShaderMaterial[] = [];
   private mesh: THREE.Mesh | THREE.Group | null = null;
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: DissolveAnimPipeParams = {}) {}
   setup(_ctx: PipeSetupContext) {}
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
+    restoreMeshMaterials(this.savedMaterials);
     this.mesh = mesh; this.materials = [];
     if (!mesh) return;
+    this.savedMaterials = saveMeshMaterials(mesh);
     const color = new THREE.Color(this.params.color ?? 0xff6600);
     mesh.traverse(child => {
       if (child instanceof THREE.Mesh) {
@@ -40,5 +43,8 @@ export class DissolveAnimPipe implements EffectPipe {
     for (const mat of this.materials) mat.uniforms.time.value = ctx.time * (this.params.speed ?? 0.5);
   }
 
-  dispose() { this.materials = []; this.mesh = null; }
+  dispose() {
+    restoreMeshMaterials(this.savedMaterials);
+    this.materials = []; this.mesh = null;
+  }
 }

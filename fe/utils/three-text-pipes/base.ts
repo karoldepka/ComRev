@@ -5,6 +5,22 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 
+// ── Material save/restore helpers ────────────────────────────────────────────
+export type MaterialMap = Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
+
+export function saveMeshMaterials(mesh: THREE.Mesh | THREE.Group): MaterialMap {
+  const saved: MaterialMap = new Map();
+  mesh.traverse(child => {
+    if (child instanceof THREE.Mesh) saved.set(child, child.material);
+  });
+  return saved;
+}
+
+export function restoreMeshMaterials(saved: MaterialMap) {
+  saved.forEach((mat, mesh) => { mesh.material = mat as any; });
+  saved.clear();
+}
+
 // ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────────
 export function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -114,6 +130,11 @@ export class PipelineManager {
     for (const p of this.pipes) p.restoreGeometry?.();
   }
 
+  resize(width: number, height: number) {
+    if (this.setupCtx) this.setupCtx = { ...this.setupCtx, width, height };
+    this.composer?.setSize(width, height);
+  }
+
   dispose() {
     for (const p of this.pipes) p.dispose();
     this.composer?.dispose();
@@ -208,6 +229,107 @@ export function computeAabb(pos: Float32Array): Aabb {
 
 // ── Shared vertex shader for all ShaderPass pipes ─────────────────────────────
 export const UV_VS = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+
+// ── LayeredMeshPipeBase ───────────────────────────────────────────────────────
+/**
+ * Base for pipes that replace the mesh's appearance by cloning it and hiding
+ * the original.  Geometry is shared (so deform pipes still work), only
+ * materials differ.  On dispose the clone is removed and the original is shown.
+ */
+export abstract class LayeredMeshPipeBase implements EffectPipe {
+  abstract readonly name: string;
+
+  private cloneRef: THREE.Mesh | THREE.Group | null = null;
+  private originalRef: THREE.Mesh | THREE.Group | null = null;
+  private sceneRef: THREE.Scene | null = null;
+
+  setup(ctx: PipeSetupContext) { this.sceneRef = ctx.scene; }
+
+  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, ctx: PipeSetupContext) {
+    this.clearClone();
+    this.originalRef = mesh;
+    if (!mesh) return;
+
+    const clone = this.shallowClone(mesh);
+    this.applyToClone(clone, mesh, ctx);
+    clone.visible = true;
+    this.cloneRef = clone;
+    ctx.scene.add(clone);
+
+    // Sync initial transform
+    this.syncTransform();
+
+    // Hide original so only the clone renders
+    mesh.visible = false;
+  }
+
+  update(ctx: PipeFrameContext) {
+    this.syncTransform();
+    this.tick(ctx);
+  }
+
+  /** Override to animate the clone each frame. */
+  protected tick(_ctx: PipeFrameContext): void {}
+
+  /**
+   * Implement to apply materials / shaders to the freshly-cloned mesh.
+   * `original` is the source mesh still in the scene (world transform valid).
+   */
+  protected abstract applyToClone(
+    clone: THREE.Mesh | THREE.Group,
+    original: THREE.Mesh | THREE.Group,
+    ctx: PipeSetupContext,
+  ): void;
+
+  dispose() {
+    if (this.originalRef) this.originalRef.visible = true;
+    this.clearClone();
+    this.originalRef = null;
+    this.sceneRef = null;
+  }
+
+  private syncTransform() {
+    if (!this.cloneRef || !this.originalRef) return;
+    this.cloneRef.position.copy(this.originalRef.position);
+    this.cloneRef.quaternion.copy(this.originalRef.quaternion);
+    this.cloneRef.scale.copy(this.originalRef.scale);
+  }
+
+  private shallowClone(src: THREE.Object3D): THREE.Mesh | THREE.Group {
+    if (src instanceof THREE.Mesh) {
+      const m = new THREE.Mesh(src.geometry, src.material);
+      m.castShadow = src.castShadow;
+      m.receiveShadow = src.receiveShadow;
+      return m;
+    }
+    const g = new THREE.Group();
+    for (const child of src.children) {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Group) {
+        const c = this.shallowClone(child);
+        c.position.copy(child.position);
+        c.quaternion.copy(child.quaternion);
+        c.scale.copy(child.scale);
+        g.add(c);
+      }
+    }
+    return g;
+  }
+
+  private clearClone() {
+    if (this.cloneRef && this.sceneRef) {
+      this.sceneRef.remove(this.cloneRef);
+      this.cloneRef.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const mats = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
+          mats.forEach((m: THREE.Material) => m?.dispose());
+        }
+      });
+    }
+    this.cloneRef = null;
+  }
+}
 
 // ── DeformPipeBase ────────────────────────────────────────────────────────────
 export abstract class DeformPipeBase implements EffectPipe {
