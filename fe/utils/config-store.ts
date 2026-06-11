@@ -46,13 +46,19 @@ export type EffectType =
   // ai-generated
   | "customJs"
   // added effects
-  | "mainText" | "text3d" | "graphics";
+  | "mainText" | "text3d" | "graphics"
+  // static effects
+  | "flatShade" | "shadowFloor" | "backgroundPlane" | "fogEffect"
+  | "emboss" | "threshold" | "mirrorH" | "mirrorV" | "sketch"
+  | "sunsetLight" | "studioLight" | "moonLight" | "chromeEdge"
+  | "colorBurn" | "depthLines";
 
 export interface EffectInstance {
   id: string;
   type: EffectType;
   enabled: boolean;
   animate: boolean;
+  seed?: number;
   params: Record<string, unknown>;
 }
 
@@ -119,7 +125,8 @@ function openDb(): Promise<IDBDatabase> {
 export interface PresetRecord {
   id: string;
   name: string;
-  createdAt: string;
+  when_created: string;
+  when_last_modified: string;
   effects: EffectInstance[];
 }
 
@@ -292,5 +299,56 @@ export async function syncPendingConfigs(apiBase: string): Promise<void> {
     } catch (error) {
       console.warn("Failed to sync pending config", config.id, error);
     }
+  }
+}
+
+export async function syncPresetToBackend(
+  apiBase: string,
+  preset: PresetRecord,
+): Promise<void> {
+  if (!isOnline()) return;
+  const base = apiBase.replace(/\/$/, "");
+  const response = await fetch(`${base}/presets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(preset),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Preset sync failed: ${response.status} ${text}`);
+  }
+}
+
+export async function loadPresetsFromBackend(
+  apiBase: string,
+): Promise<PresetRecord[]> {
+  const base = apiBase.replace(/\/$/, "");
+  const response = await fetch(`${base}/presets`);
+  if (!response.ok) throw new Error(`Load presets failed: ${response.status}`);
+  return response.json();
+}
+
+export async function deletePresetFromBackend(
+  apiBase: string,
+  id: string,
+): Promise<void> {
+  if (!isOnline()) return;
+  const base = apiBase.replace(/\/$/, "");
+  const response = await fetch(`${base}/presets/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Delete preset failed: ${response.status} ${text}`);
+  }
+}
+
+export async function savePresetOfflineFirst(
+  preset: PresetRecord,
+  apiBase: string,
+): Promise<void> {
+  await savePreset(preset);
+  try {
+    await syncPresetToBackend(apiBase, preset);
+  } catch (error) {
+    console.warn("Preset saved locally; backend sync failed:", error);
   }
 }

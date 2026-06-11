@@ -15,12 +15,19 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import {
   AiMessage,
+  AiProvider,
   callAiEffectApi,
   extractCode,
   getStoredApiKey,
   getStoredModel,
+  getStoredOllamaModel,
+  getStoredOllamaUrl,
+  getStoredProvider,
   setStoredApiKey,
   setStoredModel,
+  setStoredOllamaModel,
+  setStoredOllamaUrl,
+  setStoredProvider,
 } from '@/utils/ai-effect-api';
 
 interface Props {
@@ -50,9 +57,12 @@ export function AiEffectChatModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [provider, setProviderState] = useState<AiProvider>(() => getStoredProvider());
   const [apiKey, setApiKeyState] = useState(() => getStoredApiKey());
   const [model, setModelState] = useState(() => getStoredModel());
-  const [showSettings, setShowSettings] = useState(() => !getStoredApiKey());
+  const [ollamaUrl, setOllamaUrlState] = useState(() => getStoredOllamaUrl());
+  const [ollamaModel, setOllamaModelState] = useState(() => getStoredOllamaModel());
+  const [showSettings, setShowSettings] = useState(() => provider === 'anthropic' && !getStoredApiKey());
 
   // Editable code block — starts from initialCode or last AI-generated code
   const [editableCode, setEditableCode] = useState(initialCode ?? '');
@@ -61,15 +71,18 @@ export function AiEffectChatModal({
   const scrollRef = useRef<ScrollView>(null);
 
   const handleSaveSettings = () => {
+    setStoredProvider(provider);
     setStoredApiKey(apiKey);
     setStoredModel(model);
+    setStoredOllamaUrl(ollamaUrl);
+    setStoredOllamaModel(ollamaModel);
     setShowSettings(false);
   };
 
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || loading) return;
-    if (!apiKey) { setShowSettings(true); setError('Please enter your API key first.'); return; }
+    if (provider === 'anthropic' && !apiKey) { setShowSettings(true); setError('Please enter your Anthropic API key first.'); return; }
 
     const userMsg: AiMessage = { role: 'user', content: text };
     const nextMessages = [...messages, userMsg];
@@ -79,7 +92,12 @@ export function AiEffectChatModal({
     setError('');
 
     try {
-      const raw = await callAiEffectApi(nextMessages, apiKey, model);
+      const raw = await callAiEffectApi(
+        nextMessages, apiKey,
+        provider === 'ollama' ? ollamaModel : model,
+        provider === 'ollama' ? ollamaUrl : 'https://api.anthropic.com',
+        provider,
+      );
       const code = extractCode(raw);
       const assistantMsg: AiMessage = { role: 'assistant', content: raw };
       setMessages([...nextMessages, assistantMsg]);
@@ -94,7 +112,7 @@ export function AiEffectChatModal({
       setLoading(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [input, loading, apiKey, model, messages, codeDescription]);
+  }, [input, loading, apiKey, model, ollamaUrl, ollamaModel, provider, messages, codeDescription]);
 
   const handleApply = () => {
     if (!editableCode.trim()) return;
@@ -124,42 +142,60 @@ export function AiEffectChatModal({
 
           {/* Settings panel */}
           <View style={[styles.settingsBar, { borderBottomColor: border }]}>
-            <TouchableOpacity
-              onPress={() => setShowSettings((v) => !v)}
-              style={styles.settingsToggle}
-            >
+            <TouchableOpacity onPress={() => setShowSettings((v) => !v)} style={styles.settingsToggle}>
               <Text style={{ color: c.tint, fontSize: 13 }}>
-                {showSettings ? '▲' : '▼'} API Settings
-                {apiKey ? ' ✓' : ' (required)'}
+                {showSettings ? '▲' : '▼'} AI Settings
+                {' — '}{provider === 'ollama' ? `Ollama (${ollamaModel})` : `Anthropic${apiKey ? ' ✓' : ' (required)'}`}
               </Text>
             </TouchableOpacity>
             {showSettings && (
               <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
-                <Text style={[styles.label, { color: c.text }]}>Anthropic API Key</Text>
-                <TextInput
-                  style={[styles.apiInput, { color: c.text, borderColor: border, backgroundColor: cardBg }]}
-                  value={apiKey}
-                  onChangeText={setApiKeyState}
-                  placeholder="sk-ant-..."
-                  placeholderTextColor="#888"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Text style={[styles.label, { color: c.text, marginTop: 6 }]}>Model</Text>
-                <TextInput
-                  style={[styles.apiInput, { color: c.text, borderColor: border, backgroundColor: cardBg }]}
-                  value={model}
-                  onChangeText={setModelState}
-                  placeholder="claude-sonnet-4-6"
-                  placeholderTextColor="#888"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  onPress={handleSaveSettings}
-                  style={[styles.saveBtn, { backgroundColor: c.tint }]}
-                >
+                {/* Provider toggle */}
+                <Text style={[styles.label, { color: c.text }]}>Provider</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                  {(['anthropic', 'ollama'] as AiProvider[]).map((p) => (
+                    <TouchableOpacity
+                      key={p}
+                      onPress={() => setProviderState(p)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, borderWidth: 1,
+                        borderColor: provider === p ? c.tint : border,
+                        backgroundColor: provider === p ? c.tint + '22' : 'transparent' }}
+                    >
+                      <Text style={{ color: provider === p ? c.tint : c.text, fontSize: 13, fontWeight: '600' }}>
+                        {p === 'anthropic' ? 'Anthropic' : 'Ollama (local)'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {provider === 'anthropic' ? (
+                  <>
+                    <Text style={[styles.label, { color: c.text }]}>Anthropic API Key</Text>
+                    <TextInput style={[styles.apiInput, { color: c.text, borderColor: border, backgroundColor: cardBg }]}
+                      value={apiKey} onChangeText={setApiKeyState} placeholder="sk-ant-..."
+                      placeholderTextColor="#888" secureTextEntry autoCapitalize="none" autoCorrect={false} />
+                    <Text style={[styles.label, { color: c.text, marginTop: 6 }]}>Model</Text>
+                    <TextInput style={[styles.apiInput, { color: c.text, borderColor: border, backgroundColor: cardBg }]}
+                      value={model} onChangeText={setModelState} placeholder="claude-sonnet-4-6"
+                      placeholderTextColor="#888" autoCapitalize="none" autoCorrect={false} />
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.label, { color: c.text }]}>Ollama URL</Text>
+                    <TextInput style={[styles.apiInput, { color: c.text, borderColor: border, backgroundColor: cardBg }]}
+                      value={ollamaUrl} onChangeText={setOllamaUrlState} placeholder="http://localhost:11434"
+                      placeholderTextColor="#888" autoCapitalize="none" autoCorrect={false} />
+                    <Text style={[styles.label, { color: c.text, marginTop: 6 }]}>Model</Text>
+                    <TextInput style={[styles.apiInput, { color: c.text, borderColor: border, backgroundColor: cardBg }]}
+                      value={ollamaModel} onChangeText={setOllamaModelState} placeholder="qwen2.5-coder:7b"
+                      placeholderTextColor="#888" autoCapitalize="none" autoCorrect={false} />
+                    <Text style={{ color: '#888', fontSize: 11, marginTop: 4 }}>
+                      Ollama must be running locally. Run: ollama serve
+                    </Text>
+                  </>
+                )}
+
+                <TouchableOpacity onPress={handleSaveSettings} style={[styles.saveBtn, { backgroundColor: c.tint }]}>
                   <Text style={{ color: isDark ? '#000' : '#fff', fontWeight: '600' }}>Save</Text>
                 </TouchableOpacity>
               </View>

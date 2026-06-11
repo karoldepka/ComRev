@@ -26,7 +26,7 @@ export interface TextGeometryOptions {
 const defaultOptions: Partial<TextGeometryOptions> = {
   size: 2,
   height: 0.8,
-  curveSegments: 12,
+  curveSegments: 48,
   bevelEnabled: true,
   bevelThickness: 0.15,
   bevelSize: 0.08,
@@ -100,6 +100,7 @@ export async function createTextGeometry(
 
     // First pass: calculate natural widths
     for (const line of lines) {
+      if (!line.trim()) { lineWidths.push(0); continue; }
       const geometry = new TextGeometry(line, {
         font: font as any,
         size: mergedOptions.size,
@@ -113,8 +114,9 @@ export async function createTextGeometry(
       } as any);
 
       geometry.computeBoundingBox();
-      const width = geometry.boundingBox!.max.x - geometry.boundingBox!.min.x;
+      const width = (geometry.boundingBox?.max.x ?? 0) - (geometry.boundingBox?.min.x ?? 0);
       lineWidths.push(width);
+      geometry.dispose();
     }
 
     // Calculate equalization factors
@@ -135,6 +137,13 @@ export async function createTextGeometry(
       const factor = equalizationFactors[lineIndex];
 
       if (mergedOptions.equalizationMethod === 'fontSize' || !mergedOptions.equalizeLineWidths) {
+        // Empty line → use a blank spacer (no visible geometry, but correct spacing)
+        if (!line.trim()) {
+          const spacerGroup = new THREE.Group();
+          const emptySize = mergedOptions.size! * factor;
+          lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: emptySize * 0.8 });
+          continue;
+        }
         const lineGeometry = new TextGeometry(line, {
           font: font as any,
           size: mergedOptions.size! * factor,
@@ -148,13 +157,19 @@ export async function createTextGeometry(
         } as any);
 
         lineGeometry.computeBoundingBox();
-        const lineWidth = lineGeometry.boundingBox!.max.x - lineGeometry.boundingBox!.min.x;
+        const lineWidth = (lineGeometry.boundingBox?.max.x ?? 0) - (lineGeometry.boundingBox?.min.x ?? 0);
         // Store actual geometry extents (X-translate doesn't affect Y)
         const minY = lineGeometry.boundingBox?.min.y ?? 0;
         const maxY = lineGeometry.boundingBox?.max.y ?? mergedOptions.size!;
         lineGeometry.translate(-lineWidth / 2, 0, 0);
         lineGeometries.push({ geometry: lineGeometry, minY, maxY });
       } else {
+        // Empty line in spacing mode → spacer
+        if (!line.trim()) {
+          const spacerGroup = new THREE.Group();
+          lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: mergedOptions.size! * 0.8 });
+          continue;
+        }
         // Spacing mode: create per-character geometries with extra gaps
         const naturalWidth = lineWidths[lineIndex];
         const extraSpace = (mergedOptions.targetWidth! - naturalWidth) / Math.max(1, line.length - 1);

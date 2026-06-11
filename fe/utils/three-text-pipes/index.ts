@@ -119,6 +119,23 @@ export * from './mirror-plane';
 // ── AI-generated / custom JS pipe ─────────────────────────────────────────────
 export * from './custom-js';
 
+// ── Static: material / scene / post pipes ────────────────────────────────────
+export * from './flat-shade';
+export * from './shadow-floor';
+export * from './background-plane';
+export * from './fog-effect';
+export * from './emboss';
+export * from './threshold';
+export * from './mirror-h';
+export * from './mirror-v';
+export * from './sketch';
+export * from './sunset-light';
+export * from './studio-light';
+export * from './moon-light';
+export * from './chrome-edge';
+export * from './color-burn';
+export * from './depth-lines';
+
 // ── Animation pipes ───────────────────────────────────────────────────────────
 export * from './pulse';
 export * from './spin';

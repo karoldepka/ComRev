@@ -40,6 +40,8 @@ export interface EffectPipe {
   update?(ctx: PipeFrameContext): void;
   onMeshChanged?(mesh: THREE.Mesh | THREE.Group | null, ctx: PipeSetupContext): void;
   restoreGeometry?(): void;
+  /** Called after another deform pipe runs so this pipe sees the new vertex positions as its "original". */
+  syncOriginalFromCurrentGeometry?(): void;
   dispose(): void;
 }
 
@@ -72,7 +74,9 @@ export class PipelineManager {
   }
 
   update(ctx: PipeFrameContext) {
-    for (const p of this.pipes) {
+    const n = this.pipes.length;
+    for (let i = 0; i < n; i++) {
+      const p = this.pipes[i];
       if (p.paused) {
         // Still apply effect each frame so geometry stays deformed; just freeze time.
         const frozenTime = this.frozenTimes.get(p) ?? ctx.time;
@@ -80,6 +84,13 @@ export class PipelineManager {
       } else {
         this.frozenTimes.set(p, ctx.time);
         p.update?.(ctx);
+      }
+      // After a deform pipe runs, update subsequent deform pipes' stored originals
+      // so they see this pipe's output as their input (enables chaining).
+      if (p.syncOriginalFromCurrentGeometry) {
+        for (let j = i + 1; j < n; j++) {
+          this.pipes[j].syncOriginalFromCurrentGeometry?.();
+        }
       }
     }
   }
@@ -200,6 +211,14 @@ export abstract class DeformPipeBase implements EffectPipe {
   }
 
   restoreGeometry() { restoreDeformStates(this.states); }
+
+  syncOriginalFromCurrentGeometry() {
+    for (const s of this.states) {
+      const arr = s.geometry.attributes.position.array as Float32Array;
+      s.originalPosition.set(arr);
+    }
+  }
+
   dispose() { this.states = []; }
 
   abstract update(ctx: PipeFrameContext): void;

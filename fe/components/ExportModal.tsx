@@ -92,6 +92,7 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
   const [selected, setSelected] = useState<Set<string>>(new Set(['png']));
   const [exporting, setExporting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [showPayment, setShowPayment] = useState(false);
 
   const bg = isDark ? '#1a1a1a' : '#fff';
   const cardBg = isDark ? '#252525' : '#f5f5f5';
@@ -99,7 +100,7 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
   const premiumColor = '#f59e0b'; // amber for premium badge
 
   const toggleFormat = (id: string, isPremium: boolean) => {
-    if (isPremium) return; // premium formats are not togglable (just show upgrade prompt)
+    if (isPremium) { setShowPayment(true); return; }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -242,7 +243,7 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
               <Text style={{ color: isDark ? '#ccc' : '#555', fontSize: 12 }}>
                 Get merchandise exports, 3D print files, and more.
               </Text>
-              <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: premiumColor }]}>
+              <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: premiumColor }]} onPress={() => setShowPayment(true)}>
                 <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Get Premium</Text>
               </TouchableOpacity>
             </View>
@@ -273,6 +274,62 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
           </View>
         </View>
       </View>
+      {/* Payment modal */}
+      <Modal visible={showPayment} transparent animationType="slide" onRequestClose={() => setShowPayment(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { backgroundColor: bg, borderColor: border, maxHeight: '80%' }]}>
+            <View style={[styles.header, { borderBottomColor: border }]}>
+              <Text style={[styles.title, { color: c.text }]}>Unlock PRO</Text>
+              <TouchableOpacity onPress={() => setShowPayment(false)} style={styles.closeBtn}>
+                <Text style={{ color: c.text, fontSize: 18 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 16 }}>
+              {/* Pay-per-download */}
+              <Text style={{ color: premiumColor, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Pay-per-download</Text>
+              {[
+                { label: 'High-res PNG (2K+)', price: '$0.49', desc: 'Full-resolution screenshot, no watermark' },
+                { label: '3D Model (OBJ / GLB)', price: '$0.99', desc: 'Export mesh for 3D printing or import' },
+                { label: 'Merchandise artwork', price: '$0.99', desc: 'Print-ready design for shirt / towel / mousepad' },
+              ].map((item) => (
+                <View key={item.label} style={[styles.formatRow, { backgroundColor: cardBg, borderColor: border, marginBottom: 6 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: c.text, fontWeight: '600', fontSize: 13 }}>{item.label}</Text>
+                    <Text style={{ color: isDark ? '#888' : '#999', fontSize: 11 }}>{item.desc}</Text>
+                  </View>
+                  <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: premiumColor, borderRadius: 6 }}
+                    onPress={() => {/* TODO: initiate Stripe one-time payment */}}>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{item.price}</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {/* Subscription */}
+              <Text style={{ color: premiumColor, fontWeight: '700', fontSize: 13, marginTop: 16, marginBottom: 8 }}>Monthly subscription</Text>
+              <View style={[styles.formatRow, { backgroundColor: `${premiumColor}18`, borderColor: premiumColor, marginBottom: 6 }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: c.text, fontWeight: '700', fontSize: 14 }}>Creator — $9 / month</Text>
+                  <Text style={{ color: isDark ? '#aaa' : '#666', fontSize: 12, marginTop: 2 }}>
+                    Unlimited high-res exports, 3D models, merchandise art, and backend preset storage
+                  </Text>
+                </View>
+                <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: premiumColor, borderRadius: 6 }}
+                  onPress={() => {/* TODO: initiate Stripe subscription */}}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Subscribe</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Payment methods */}
+              <Text style={{ color: isDark ? '#888' : '#999', fontSize: 12, marginTop: 16, textAlign: 'center' }}>
+                Accepted: Card · PayPal · BLIK · Bizum · Apple Pay · Google Pay
+              </Text>
+              <Text style={{ color: isDark ? '#555' : '#ccc', fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                Payments securely processed by Stripe
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
