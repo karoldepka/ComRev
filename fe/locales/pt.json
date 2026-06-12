@@ -240,6 +240,7 @@
   "p_refineWithAi": "Refinar com IA",
   "p_dragging": "Arrastar",
   "resetToBasic": "Redefinir para configurações básicas",
+  "randomConfig": "Random",
   "resetConfirm": "Tem certeza de que deseja excluir todos os efeitos, exceto o texto 3D?",
   "eff_graphics_kw": "imagem foto ícone SVG gráfico logo textura",
   "eff_text3d_kw": "texto palavras letras fonte tipografia escrever",

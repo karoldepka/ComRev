@@ -240,6 +240,7 @@
   "p_refineWithAi": "Affina con AI",
   "p_dragging": "Trascina",
   "resetToBasic": "Ripristina impostazioni di base",
+  "randomConfig": "Random",
   "resetConfirm": "Sei sicuro di voler eliminare tutti gli effetti tranne il testo 3D?",
   "eff_graphics_kw": "immagine foto icona SVG grafica logo texture",
   "eff_text3d_kw": "testo parole lettere carattere tipografia scrivere",

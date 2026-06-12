@@ -240,6 +240,7 @@
   "p_refineWithAi": "AI优化",
   "p_dragging": "拖动",
   "resetToBasic": "重置为基本设置",
+  "randomConfig": "Random",
   "resetConfirm": "您确定要删除除 3D 文本之外的所有效果吗？",
   "eff_graphics_kw": "图像 照片 图片 图标 SVG 图形 标志 纹理",
   "eff_text3d_kw": "文字 词语 字母 字体 排版 书写",

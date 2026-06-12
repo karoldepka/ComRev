@@ -240,6 +240,7 @@
   "p_refineWithAi": "Affiner avec IA",
   "p_dragging": "Glisser",
   "resetToBasic": "Réinitialiser aux paramètres de base",
+  "randomConfig": "Random",
   "resetConfirm": "Êtes-vous sûr de vouloir supprimer tous les effets sauf le texte 3D ?",
   "eff_graphics_kw": "image photo icône SVG graphique logo texture",
   "eff_text3d_kw": "texte mots lettres police typographie écrire",

@@ -240,6 +240,7 @@
   "p_refineWithAi": "Mit KI verfeinern",
   "p_dragging": "Ziehen",
   "resetToBasic": "Auf Grundeinstellungen zurücksetzen",
+  "randomConfig": "Random",
   "resetConfirm": "Sind Sie sicher, dass Sie alle Effekte außer dem 3D-Text löschen möchten?",
   "eff_graphics_kw": "Bild Foto Bild Symbol SVG Grafik Logo Textur",
   "eff_text3d_kw": "Text Wörter Buchstaben Schrift Typografie schreiben",

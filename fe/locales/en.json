@@ -9,6 +9,7 @@
   "loadPreset": "Load preset",
   "load": "Load",
   "resetToBasic": "Reset to basic",
+  "randomConfig": "Random",
   "resetConfirm": "Remove all effects except 3D text?",
   "saveConfig": "Save Configuration",
   "syncPending": "Sync pending",

@@ -14,6 +14,7 @@ import {
   getPresets,
   loadPresetsFromBackend,
   PresetRecord,
+  getTriedEffects,
   recordTriedEffect,
   saveConfigOfflineFirst,
   savePreset,
@@ -1050,6 +1051,111 @@ const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
 
 function effectTypeLabel(type: EffectType, t: (k: string) => string) {
   return t(`eff_${type}`);
+}
+
+// ── Random config generation ──────────────────────────────────────────────────
+
+const RANDOM_MOTION_TYPES = new Set<EffectType>([
+  'pulse', 'spin', 'bounce', 'levitation', 'swing', 'tremble', 'breathe', 'wiggle',
+  'floatDrift', 'flipCoin', 'grow', 'shrink', 'orbitAnim', 'rock', 'jitter', 'sway',
+  'figureEight', 'pendulum',
+]);
+const RANDOM_DEFORM_TYPES = new Set<EffectType>([
+  'fishEye', 'bend', 'wave', 'twist', 'inflate', 'taper', 'shear', 'spherify',
+  'ripple', 'melt', 'pinch', 'voxelize', 'crumple', 'noiseWobble', 'spiralDeform',
+  'bulge', 'squish', 'zap', 'explode', 'fold', 'spikes', 'cylindrize',
+]);
+const RANDOM_MATERIAL_TYPES = new Set<EffectType>([
+  'envMap', 'neonGlow', 'metallicPreset', 'xRay', 'toonShading', 'hologram',
+  'gradientMesh', 'rainbowMesh', 'iridescent', 'emissivePulse', 'dissolveAnim',
+  'glass', 'matcap', 'flatShade', 'chromeEdge',
+]);
+const RANDOM_LIGHTING_TYPES = new Set<EffectType>([
+  'spotlight', 'strobe', 'flicker', 'colorCycleLight', 'disco', 'ambientPulse',
+  'rimLight', 'dramaticLight', 'lightningFlash', 'rainbowLights',
+  'sunsetLight', 'studioLight', 'moonLight',
+]);
+const RANDOM_SCENE_TYPES = new Set<EffectType>([
+  'dust', 'wireframe', 'outline', 'echoCopies', 'rays', 'floatingRings', 'starField3d',
+  'snow', 'rain', 'confetti', 'sparkle', 'aura', 'gridFloor', 'orbiter', 'portalRing',
+  'cometTrail', 'floatingCubes', 'mirrorPlane', 'shadowFloor', 'backgroundPlane',
+  'fogEffect', 'wings', 'fire', 'smoke', 'skySphere',
+]);
+
+function pickOne<T extends { type: EffectType }>(
+  pool: T[],
+  tried: Set<string>,
+): T | null {
+  if (pool.length === 0) return null;
+  const untried = pool.filter((e) => !tried.has(e.type));
+  // 80% chance to pick untried if any exist
+  const src = untried.length > 0 && Math.random() < 0.8 ? untried : pool;
+  return src[Math.floor(Math.random() * src.length)];
+}
+
+function randomizeColor(): number {
+  return Math.floor(Math.random() * 0xffffff);
+}
+
+function withRandomColor(params: Record<string, unknown>): Record<string, unknown> {
+  if ('color' in params) return { ...params, color: randomizeColor() };
+  return params;
+}
+
+async function generateRandomConfig(
+  currentInstances: EffectInstance[],
+  apiBase: string,
+): Promise<EffectInstance[]> {
+  const triedArr = await getTriedEffects().catch(() => [] as string[]);
+  const tried = new Set(triedArr);
+
+  const addable = EFFECT_TYPES.filter((e) => !e.primary && e.type !== 'customJs' && !DEFAULT_HIDDEN_EFFECT_TYPES.has(e.type));
+
+  const byCategory = (set: Set<EffectType>) => addable.filter((e) => set.has(e.type));
+
+  const picked = new Set<EffectType>();
+  const add = (entry: (typeof addable)[0] | null) => {
+    if (entry && !picked.has(entry.type)) picked.add(entry.type);
+  };
+
+  // 1. Always include 1 motion animation (makes it dynamic)
+  add(pickOne(byCategory(RANDOM_MOTION_TYPES), tried));
+
+  // 2. Maybe include 1 deform (65%)
+  if (Math.random() < 0.65) add(pickOne(byCategory(RANDOM_DEFORM_TYPES), tried));
+
+  // 3. Maybe include 1 material (55%)
+  if (Math.random() < 0.55) add(pickOne(byCategory(RANDOM_MATERIAL_TYPES), tried));
+
+  // 4. Maybe include 1 lighting (40%)
+  if (Math.random() < 0.40) add(pickOne(byCategory(RANDOM_LIGHTING_TYPES), tried));
+
+  // 5. Maybe include 1 scene object (45%)
+  if (Math.random() < 0.45) add(pickOne(byCategory(RANDOM_SCENE_TYPES), tried));
+
+  // 6. Maybe include 1 post-process (35%)
+  const postPool = addable.filter((e) => e.target === 'post');
+  if (Math.random() < 0.35) add(pickOne(postPool, tried));
+
+  // Fallback: ensure at least one effect
+  if (picked.size === 0) add(pickOne(addable, tried));
+
+  const mainText = currentInstances.find((i) => i.type === 'mainText') ?? createEffectInstance('mainText');
+
+  const newInstances: EffectInstance[] = [
+    mainText,
+    ...[...picked].map((type) => {
+      const inst = createEffectInstance(type);
+      return { ...inst, params: withRandomColor(inst.params) };
+    }),
+  ];
+
+  // Record newly tried types (fire-and-forget)
+  for (const type of picked) {
+    recordTriedEffect(type, apiBase).catch(() => {});
+  }
+
+  return newInstances;
 }
 
 // Stub kept only to satisfy the switch default below; the real implementation is in utils/effect-defaults.ts
@@ -5279,11 +5385,14 @@ export function ThreeDTextScreen({
         if (typeof document !== 'undefined' && document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
         }
+        // After layout settles, fit camera to mesh so all content is visible
+        setTimeout(() => threeDTextRef.current?.fitCamera(), 180);
       } else {
         controlsHeightSv.value = savedControlsHeight.current;
         if (typeof document !== 'undefined' && document.exitFullscreen && document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
         }
+        setTimeout(() => threeDTextRef.current?.fitCamera(), 180);
       }
       return !prev;
     });
@@ -5483,6 +5592,21 @@ export function ThreeDTextScreen({
       50,
     );
   };
+
+  const [triedCount, setTriedCount] = useState(0);
+  const totalAddableCount = EFFECT_TYPES.filter((e) => !e.primary && e.type !== 'customJs').length;
+  useEffect(() => {
+    getTriedEffects().then((arr) => setTriedCount(arr.length)).catch(() => {});
+  }, [effectInstances]);
+
+  const handleRandom = React.useCallback(async () => {
+    const newInstances = await generateRandomConfig(effectInstances, API_BASE);
+    setEffectInstances(newInstances);
+    setTriedCount((await getTriedEffects().catch(() => [])).length);
+    setSaveStatus("Random config applied!");
+    setTimeout(() => setSaveStatus(null), 2000);
+    setTimeout(() => controlsScrollRef.current?.scrollTo({ y: 0, animated: true }), 80);
+  }, [effectInstances, setEffectInstances]);
 
   const handleApplyAiEffect = (
     code: string,
@@ -6112,6 +6236,17 @@ export function ThreeDTextScreen({
                     flex: 1,
                   }}
                 >
+                  <TouchableOpacity
+                    style={[styles.smallActionButton, { borderColor: c.tint, backgroundColor: c.tint + '22' }]}
+                    onPress={handleRandom}
+                  >
+                    <Text style={[styles.buttonText, { color: c.tint, fontWeight: '700' }]}>
+                      {`🎲 ${t("randomConfig")}`}
+                      {triedCount < totalAddableCount
+                        ? ` (${totalAddableCount - triedCount} new)`
+                        : ''}
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.smallActionButton, { borderColor: c.tint }]}
                     onPress={handleResetToBasic}

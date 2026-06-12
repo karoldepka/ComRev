@@ -15,6 +15,8 @@ export interface ThreeDTextHandle {
   getScene(): THREE.Scene | null;
   /** Resets the camera to its default position and clears any orbit rotation. */
   resetCamera(): void;
+  /** Adjusts camera Z so the whole mesh fits within the viewport with a margin. */
+  fitCamera(margin?: number): void;
 }
 
 interface ThreeDTextProps {
@@ -102,6 +104,22 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           cameraRef.current.lookAt(0, 0, 0);
         }
         rotationRef.current = { x: 0, y: 0 };
+      },
+      fitCamera: (margin = 1.18) => {
+        const camera = cameraRef.current;
+        const mesh = meshRef.current;
+        if (!camera || !mesh) return;
+        const bbox = new THREE.Box3().setFromObject(mesh);
+        const halfW = (bbox.max.x - bbox.min.x) / 2;
+        const halfH = (bbox.max.y - bbox.min.y) / 2;
+        const fovRad = (camera.fov * Math.PI) / 180;
+        const aspect = widthRef.current / Math.max(1, heightRef.current);
+        const hFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
+        const distForHeight = halfH / Math.tan(fovRad / 2);
+        const distForWidth  = halfW / Math.tan(hFovRad / 2);
+        const dist = Math.max(distForHeight, distForWidth) * margin;
+        camera.position.set(0, 0, Math.max(5, dist));
+        camera.lookAt(0, 0, 0);
       },
     }));
 
