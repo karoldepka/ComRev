@@ -271,14 +271,6 @@ function getPrincipalText(params: Record<string, unknown>): string {
   return getActivePrincipalTextSet(params).text;
 }
 
-function getSequenceLines(text: string): string[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return lines.length > 0 ? lines : [text || " "];
-}
-
 function estimateSequenceDurationMs(text: string, minimumMs: number): number {
   const clean = text.trim();
   const words = clean.split(/\s+/).filter(Boolean).length;
@@ -304,18 +296,15 @@ function getSequencePages(
     "zoom",
     "wipe",
   ];
-  const pages = textSets.flatMap((set, setIndex) =>
-    getSequenceLines(set.text).map((line, lineIndex) => {
-      const pageIndex = setIndex * 1000 + lineIndex;
-      return {
-        id: `${set.id}-${lineIndex}`,
-        setName: set.name,
-        text: line,
-        durationMs: estimateSequenceDurationMs(line, minimumDurationMs),
-        transition: transitions[pageIndex % transitions.length],
-      };
-    }),
-  );
+  const pages = textSets
+    .filter((set) => set.text.trim().length > 0)
+    .map((set, setIndex) => ({
+      id: set.id,
+      setName: set.name,
+      text: set.text,
+      durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs),
+      transition: transitions[setIndex % transitions.length],
+    }));
   return pages.length > 0
     ? pages
     : [
