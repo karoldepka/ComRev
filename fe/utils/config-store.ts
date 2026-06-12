@@ -47,7 +47,7 @@ export type EffectType =
   // ai-generated
   | "customJs"
   // added effects
-  | "mainText" | "text3d" | "graphics" | "wings"
+  | "mainText" | "text3d" | "graphics" | "wings" | "fire" | "smoke" | "skySphere"
   // static effects
   | "flatShade" | "shadowFloor" | "backgroundPlane" | "fogEffect"
   | "emboss" | "threshold" | "mirrorH" | "mirrorV" | "sketch"

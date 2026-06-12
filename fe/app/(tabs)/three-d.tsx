@@ -134,6 +134,9 @@ import {
   RainbowMeshPipe,
   RainPipe,
   RaysPipe,
+  DEFAULT_STAR_SVG,
+  DEFAULT_HEART_SVG,
+  DEFAULT_LIGHTNING_SVG,
   RetroTvPipe,
   RgbShiftPipe,
   RimLightPipe,
@@ -177,6 +180,10 @@ import {
   WavePipe,
   WigglePipe,
   WingsPipe,
+  FirePipe,
+  SmokePipe,
+  SkySpherePipe,
+  SkyStyle,
   WireframePipe,
   XRayPipe,
   ZapPipe,
@@ -731,6 +738,9 @@ type EffectType =
   | "text3d"
   | "graphics"
   | "wings"
+  | "fire"
+  | "smoke"
+  | "skySphere"
   // static effects
   | "flatShade"
   | "shadowFloor"
@@ -1001,7 +1011,10 @@ const EFFECT_TYPES: {
   // Added effects
   { type: "text3d", label: "3D Text", target: "geometry" },
   { type: "graphics", label: "Add Graphics", target: "geometry" },
-  { type: "wings", label: "Wings", target: "geometry", animated: true },
+  { type: "wings",      label: "Wings",      target: "geometry", animated: true },
+  { type: "fire",       label: "Fire",        target: "geometry", animated: true },
+  { type: "smoke",      label: "Smoke",       target: "geometry", animated: true },
+  { type: "skySphere",  label: "Sky",         target: "geometry", animated: true },
 ];
 
 const DEFAULT_HIDDEN_EFFECT_TYPES = new Set<EffectType>(["crosshatch"]);
@@ -1010,6 +1023,9 @@ const DEFAULT_HIDDEN_EFFECT_TYPES = new Set<EffectType>(["crosshatch"]);
 // Locale files may also provide eff_<type>_kw keys for localized synonyms.
 const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
   wings:          ["angel", "bird", "fly", "feather", "butterfly", "bat", "flap", "wing"],
+  fire:           ["flame", "blaze", "burn", "heat", "hot", "ember", "inferno"],
+  smoke:          ["fog", "mist", "haze", "cloud", "vapor", "steam", "grey"],
+  skySphere:      ["sky", "background", "environment", "space", "horizon", "aurora", "nebula", "night", "sunset", "day"],
   graphics:       ["image", "picture", "photo", "icon", "svg", "artwork", "logo", "texture"],
   text3d:         ["text", "words", "letters", "font", "typography", "write", "caption"],
   bloom:          ["glow", "light", "luminous", "radiance", "shine", "halo", "bright"],
@@ -1719,6 +1735,12 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new GraphicsPipe({ ...(effect.params as any), effectInstanceId: effect.id });
     case "wings":
       return new WingsPipe(effect.params as any);
+    case "fire":
+      return new FirePipe(effect.params as any);
+    case "smoke":
+      return new SmokePipe(effect.params as any);
+    case "skySphere":
+      return new SkySpherePipe(effect.params as any);
     case "flatShade":
       return new FlatShadePipe(effect.params as any);
     case "shadowFloor":
@@ -2951,28 +2973,62 @@ function renderEffectControls(
         />
       );
     case "rays": {
-      const raysMode = (params.mode as string) ?? "radial";
+      let rayShape = (params.rayShape as string);
+      let layout = (params.layout as string);
+
+      if (rayShape === undefined && layout === undefined) {
+        const mode = (params.mode as string) ?? "radial";
+        if (mode === "spaghetti") {
+          rayShape = "spaghetti";
+          layout = "radial";
+        } else {
+          rayShape = "bar";
+          layout = mode;
+        }
+      } else {
+        rayShape = rayShape ?? "bar";
+        layout = layout ?? "radial";
+      }
+
       return (
         <>
           <Row>
             <Text style={[styles.label, { color: colors.text }]}>
-              {p("mode")}
+              Ray shape
             </Text>
             <CycleButton
-              value={raysMode}
+              value={rayShape}
               options={[]}
               onPress={() =>
                 onUpdate(
-                  "mode",
-                  raysMode === "radial"
+                  "rayShape",
+                  rayShape === "bar"
                     ? "spaghetti"
-                    : raysMode === "spaghetti"
-                      ? "chip"
-                      : raysMode === "chip"
-                        ? "wings"
-                        : raysMode === "wings"
-                          ? "heart"
-                          : "radial",
+                    : rayShape === "spaghetti"
+                      ? "image"
+                      : "bar",
+                )
+              }
+              colors={colors}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>
+              Ray layout
+            </Text>
+            <CycleButton
+              value={layout}
+              options={[]}
+              onPress={() =>
+                onUpdate(
+                  "layout",
+                  layout === "radial"
+                    ? "chip"
+                    : layout === "chip"
+                      ? "wings"
+                      : layout === "wings"
+                        ? "heart"
+                        : "radial",
                 )
               }
               colors={colors}
@@ -2983,19 +3039,19 @@ function renderEffectControls(
             min={4}
             max={128}
             step={1}
-            value={params.count as number}
+            value={(params.count as number) ?? 24}
             onChange={(v) => onUpdate("count", Math.round(v))}
             colors={colors}
           />
-          {raysMode !== "spaghetti" && (
+          {rayShape === "bar" && (
             <LinkedSliderPair
               label1={p("innerThickness")}
               label2={p("outerThickness")}
               min={0.01}
               max={0.5}
               step={0.01}
-              value1={params.innerThickness as number}
-              value2={params.outerThickness as number}
+              value1={(params.innerThickness as number) ?? 0.06}
+              value2={(params.outerThickness as number) ?? 0.08}
               onChange1={(v) => onUpdate("innerThickness", v)}
               onChange2={(v) => onUpdate("outerThickness", v)}
               locked={Boolean(params.lockThickness)}
@@ -3005,15 +3061,15 @@ function renderEffectControls(
               colors={colors}
             />
           )}
-          {raysMode === "spaghetti" && (
+          {rayShape === "spaghetti" && (
             <SliderRow
               label={p("thickness")}
               min={0.01}
               max={0.5}
               step={0.01}
               value={
-                ((params.innerThickness as number) +
-                  (params.outerThickness as number)) /
+                (((params.innerThickness as number) ?? 0.06) +
+                  ((params.outerThickness as number) ?? 0.08)) /
                 2
               }
               onChange={(v) => {
@@ -3023,12 +3079,109 @@ function renderEffectControls(
               colors={colors}
             />
           )}
+          {rayShape === "image" && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Ray image
+                </Text>
+                <View
+                  style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.smallActionButton,
+                      {
+                        borderColor: colors.tint,
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                      },
+                    ]}
+                    onPress={() => onPickImage?.(id, "rayImage")}
+                  >
+                    <Text style={[styles.buttonText, { color: colors.tint }]}>
+                      {params.rayImage ? "Change Image" : "Choose Image"}
+                    </Text>
+                  </TouchableOpacity>
+                  {Boolean(params.rayImage) && (
+                    <img
+                      src={params.rayImage as string}
+                      style={
+                        {
+                          width: 40,
+                          height: 40,
+                          objectFit: "contain",
+                          borderRadius: 4,
+                          backgroundColor: "#333",
+                        } as any
+                      }
+                    />
+                  )}
+                </View>
+              </Row>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Presets
+                </Text>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallActionButton,
+                      {
+                        borderColor: colors.tint,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                      },
+                    ]}
+                    onPress={() => onUpdate("rayImage", DEFAULT_STAR_SVG)}
+                  >
+                    <Text style={{ color: colors.tint, fontSize: 11 }}>Star</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallActionButton,
+                      {
+                        borderColor: colors.tint,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                      },
+                    ]}
+                    onPress={() => onUpdate("rayImage", DEFAULT_HEART_SVG)}
+                  >
+                    <Text style={{ color: colors.tint, fontSize: 11 }}>Heart</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallActionButton,
+                      {
+                        borderColor: colors.tint,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                      },
+                    ]}
+                    onPress={() => onUpdate("rayImage", DEFAULT_LIGHTNING_SVG)}
+                  >
+                    <Text style={{ color: colors.tint, fontSize: 11 }}>Lightning</Text>
+                  </TouchableOpacity>
+                </View>
+              </Row>
+              <SliderRow
+                label="Image scale"
+                min={0.1}
+                max={5}
+                step={0.05}
+                value={(params.imageScale as number) ?? 1.0}
+                onChange={(v) => onUpdate("imageScale", v)}
+                colors={colors}
+              />
+            </>
+          )}
           <SliderRow
             label={p("innerMargin")}
             min={0}
             max={20}
             step={0.1}
-            value={params.innerMargin as number}
+            value={(params.innerMargin as number) ?? 2}
             onChange={(v) => onUpdate("innerMargin", v)}
             colors={colors}
           />
@@ -3037,11 +3190,11 @@ function renderEffectControls(
             min={0}
             max={40}
             step={0.1}
-            value={params.outerMargin as number}
+            value={(params.outerMargin as number) ?? 6}
             onChange={(v) => onUpdate("outerMargin", v)}
             colors={colors}
           />
-          {raysMode === "heart" && (
+          {layout === "heart" && (
             <SliderRow
               label={p("heartRotation")}
               min={0}
@@ -5003,6 +5156,52 @@ function renderEffectControls(
             onChange={(v) => onUpdate("opacity", v)}
             colors={colors}
           />
+        </>
+      );
+    case "fire":
+      return (
+        <>
+          <SliderRow label={p("count")} min={50} max={600} step={10}
+            value={(params.count as number) ?? 280} onChange={(v) => onUpdate("count", v)} colors={colors} />
+          <SliderRow label={p("size")} min={0.2} max={3} step={0.05}
+            value={(params.size as number) ?? 0.85} onChange={(v) => onUpdate("size", v)} colors={colors} />
+          <SliderRow label={p("speed")} min={0.1} max={4} step={0.05}
+            value={(params.speed as number) ?? 1} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+          <SliderRow label={p("spread")} min={0} max={3} step={0.05}
+            value={(params.spread as number) ?? 1} onChange={(v) => onUpdate("spread", v)} colors={colors} />
+        </>
+      );
+    case "smoke":
+      return (
+        <>
+          <SliderRow label={p("count")} min={10} max={200} step={5}
+            value={(params.count as number) ?? 70} onChange={(v) => onUpdate("count", v)} colors={colors} />
+          <SliderRow label={p("size")} min={0.5} max={6} step={0.1}
+            value={(params.size as number) ?? 1.6} onChange={(v) => onUpdate("size", v)} colors={colors} />
+          <SliderRow label={p("speed")} min={0.1} max={3} step={0.05}
+            value={(params.speed as number) ?? 1} onChange={(v) => onUpdate("speed", v)} colors={colors} />
+          <SliderRow label={p("opacity")} min={0} max={1} step={0.01}
+            value={(params.opacity as number) ?? 0.55} onChange={(v) => onUpdate("opacity", v)} colors={colors} />
+          <ColorPickerRow label={p("color")} value={(params.color as number) ?? 0x888888}
+            onChange={(v) => onUpdate("color", v)} colors={colors} />
+        </>
+      );
+    case "skySphere":
+      return (
+        <>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("style")}</Text>
+            <CycleButton
+              value={(params.style as string) ?? "day"}
+              options={["day", "sunset", "night", "nebula", "aurora"]}
+              onPress={() => {
+                const opts = ["day", "sunset", "night", "nebula", "aurora"];
+                const idx = opts.indexOf((params.style as string) ?? "day");
+                onUpdate("style", opts[(idx + 1) % opts.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
         </>
       );
     default:

@@ -161,4 +161,7 @@ export * from './main-text';
 export * from './text-3d';
 export * from './graphics';
 export * from './wings';
+export * from './fire';
+export * from './smoke';
+export * from './sky-sphere';
 

@@ -628,8 +628,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       animate();
     };
 
-    const handleLayout = useCallback((e: LayoutChangeEvent) => {
-      const { width: cssW, height: cssH } = e.nativeEvent.layout;
+    const applyResize = useCallback((cssW: number, cssH: number) => {
       if (cssW <= 0 || cssH <= 0) return;
       const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio ?? 1) : 1;
       const w = Math.round(cssW * dpr);
@@ -645,6 +644,28 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       }
       pipelineManagerRef.current?.resize(w, h);
     }, []);
+
+    const handleLayout = useCallback((e: LayoutChangeEvent) => {
+      const { width: cssW, height: cssH } = e.nativeEvent.layout;
+      applyResize(cssW, cssH);
+    }, [applyResize]);
+
+    // Handle browser fullscreen / window resize events (web only)
+    useEffect(() => {
+      if (typeof window === 'undefined') return;
+      const onResize = () => {
+        const el = containerRef.current;
+        if (!el) return;
+        const rect = typeof el.getBoundingClientRect === 'function'
+          ? el.getBoundingClientRect()
+          : null;
+        if (rect && rect.width > 0 && rect.height > 0) {
+          applyResize(rect.width, rect.height);
+        }
+      };
+      window.addEventListener('resize', onResize);
+      return () => window.removeEventListener('resize', onResize);
+    }, [applyResize]);
 
     return (
       <View
