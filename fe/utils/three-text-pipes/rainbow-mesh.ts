@@ -6,6 +6,7 @@ export interface RainbowMeshPipeParams { speed?: number; saturation?: number; }
 export class RainbowMeshPipe extends LayeredMeshPipeBase {
   readonly name = 'rainbowMesh';
   private materials: THREE.ShaderMaterial[] = [];
+  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: RainbowMeshPipeParams = {}) { super(); }
 
