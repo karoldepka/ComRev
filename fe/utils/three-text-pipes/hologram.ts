@@ -6,7 +6,6 @@ export interface HologramPipeParams { color?: number; scanSpeed?: number; }
 export class HologramPipe extends LayeredMeshPipeBase {
   readonly name = 'hologram';
   private materials: THREE.ShaderMaterial[] = [];
-  private savedMaterials: MaterialMap = new Map();
 
   constructor(public params: HologramPipeParams = {}) { super(); }
 
