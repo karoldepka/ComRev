@@ -1,26 +1,20 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
+import { LayeredMeshPipeBase, PipeSetupContext, PipeFrameContext } from './base';
 
 export interface IridescentPipeParams { speed?: number; }
 
-export class IridescentPipe implements EffectPipe {
+export class IridescentPipe extends LayeredMeshPipeBase {
   readonly name = 'iridescent';
   private materials: THREE.ShaderMaterial[] = [];
-  private mesh: THREE.Mesh | THREE.Group | null = null;
-  private savedMaterials: MaterialMap = new Map();
 
-  constructor(public params: IridescentPipeParams = {}) {}
-  setup(_ctx: PipeSetupContext) {}
+  constructor(public params: IridescentPipeParams = {}) { super(); }
 
-  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    restoreMeshMaterials(this.savedMaterials);
-    this.mesh = mesh; this.materials = [];
-    if (!mesh) return;
-    this.savedMaterials = saveMeshMaterials(mesh);
-    mesh.traverse(child => {
+  protected applyToClone(clone: THREE.Mesh | THREE.Group, _original: THREE.Mesh | THREE.Group, _ctx: PipeSetupContext) {
+    this.materials = [];
+    clone.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = new THREE.ShaderMaterial({
-          uniforms: { time:{value:0} },
+          uniforms: { time: { value: 0 } },
           vertexShader: `varying vec3 vNormal; varying vec3 vViewDir;
             void main(){vNormal=normalize(normalMatrix*normal);
               vec4 mvPos=modelViewMatrix*vec4(position,1.);vViewDir=normalize(-mvPos.xyz);
@@ -41,12 +35,12 @@ export class IridescentPipe implements EffectPipe {
     });
   }
 
-  update(ctx: PipeFrameContext) {
+  protected tick(ctx: PipeFrameContext) {
     for (const mat of this.materials) mat.uniforms.time.value = ctx.time * (this.params.speed ?? 1);
   }
 
   dispose() {
-    restoreMeshMaterials(this.savedMaterials);
-    this.materials = []; this.mesh = null;
+    super.dispose();
+    this.materials = [];
   }
 }

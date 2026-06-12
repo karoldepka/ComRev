@@ -47,7 +47,7 @@ export type EffectType =
   // ai-generated
   | "customJs"
   // added effects
-  | "mainText" | "text3d" | "graphics"
+  | "mainText" | "text3d" | "graphics" | "wings"
   // static effects
   | "flatShade" | "shadowFloor" | "backgroundPlane" | "fogEffect"
   | "emboss" | "threshold" | "mirrorH" | "mirrorV" | "sketch"
@@ -129,6 +129,7 @@ export interface PresetRecord {
   when_created: string;
   when_last_modified: string;
   effects: EffectInstance[];
+  thumbnail?: string;
 }
 
 function requestPromise<T>(request: IDBRequest<T>): Promise<T> {

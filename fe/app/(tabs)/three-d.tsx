@@ -176,6 +176,7 @@ import {
   WaterRipplePipe,
   WavePipe,
   WigglePipe,
+  WingsPipe,
   WireframePipe,
   XRayPipe,
   ZapPipe,
@@ -187,7 +188,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
+  Image,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -513,6 +516,7 @@ type EffectType =
   // added effects
   | "text3d"
   | "graphics"
+  | "wings"
   // static effects
   | "flatShade"
   | "shadowFloor"
@@ -783,7 +787,44 @@ const EFFECT_TYPES: {
   // Added effects
   { type: "text3d", label: "3D Text", target: "geometry" },
   { type: "graphics", label: "Add Graphics", target: "geometry" },
+  { type: "wings", label: "Wings", target: "geometry", animated: true },
 ];
+
+// English synonym keywords for effects — searched in addition to the translated label.
+// Locale files may also provide eff_<type>_kw keys for localized synonyms.
+const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
+  wings:          ["angel", "bird", "fly", "feather", "butterfly", "bat", "flap", "wing"],
+  graphics:       ["image", "picture", "photo", "icon", "svg", "artwork", "logo", "texture"],
+  text3d:         ["text", "words", "letters", "font", "typography", "write", "caption"],
+  bloom:          ["glow", "light", "luminous", "radiance", "shine", "halo", "bright"],
+  depthOfField:   ["focus", "bokeh", "lens", "dof", "depth", "blur"],
+  chromatic:      ["aberration", "prism", "fringe", "color shift", "rainbow edge"],
+  filmGrain:      ["noise", "grain", "static", "film", "gritty"],
+  glitch:         ["distort", "corrupt", "error", "artifact", "digital", "bug", "corrupt"],
+  vignette:       ["dark edges", "border", "frame", "fade", "shadow"],
+  sepia:          ["vintage", "old", "antique", "brown", "aged", "retro"],
+  invert:         ["negative", "reverse", "opposite", "negate"],
+  nightVision:    ["green", "dark", "thermal", "vision", "goggles"],
+  hologram:       ["holo", "sci-fi", "projection", "transparent", "futuristic"],
+  xRay:           ["xray", "transparent", "see-through", "skeleton", "medical"],
+  toonShading:    ["cartoon", "anime", "cel", "comic", "flat", "toon"],
+  glass:          ["transparent", "crystal", "ice", "clear", "translucent", "refractive"],
+  dissolveAnim:   ["disappear", "fade", "disintegrate", "particles", "crumble"],
+  gradientMesh:   ["gradient", "blend", "color", "transition", "fade"],
+  rainbowMesh:    ["rainbow", "colorful", "spectrum", "multicolor", "hue"],
+  iridescent:     ["pearl", "opal", "sheen", "prismatic", "holographic"],
+  wireframe:      ["mesh", "edges", "grid", "lines", "skeletal", "outline"],
+  envMap:         ["environment", "reflection", "reflective", "mirror", "shiny"],
+  neonGlow:       ["neon", "electric", "bright", "light", "LED", "glow"],
+  snow:           ["winter", "snowflakes", "blizzard", "cold", "ice", "flakes"],
+  rain:           ["water", "drops", "storm", "drizzle", "downpour", "wet"],
+  confetti:       ["party", "celebration", "festive", "colorful", "ticker tape"],
+  sparkle:        ["stars", "glitter", "shine", "twinkle", "magic", "fairy"],
+  dust:           ["particles", "motes", "floating", "ambient", "atmosphere", "sand"],
+  spotlight:      ["light", "lamp", "beam", "cone", "illuminate", "spot"],
+  matcap:         ["material", "surface", "reflection", "preset", "shader"],
+  customJs:       ["ai", "custom", "code", "script", "javascript", "generated", "creative"],
+};
 
 function effectTypeLabel(type: EffectType, t: (k: string) => string) {
   return t(`eff_${type}`);
@@ -1150,6 +1191,8 @@ function createDefaultEffectParams_local(
         rotY: 0,
         rotZ: 0,
       };
+    case "wings":
+      return { style: "angel", color: 0xffffff, size: 2.5, flapSpeed: 2.5, flapAmplitude: 0.45, opacity: 0.88 };
     case "flatShade":
       return {};
     case "shadowFloor":
@@ -1449,6 +1492,8 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new Text3dPipe(effect.params as any);
     case "graphics":
       return new GraphicsPipe({ ...(effect.params as any), effectInstanceId: effect.id });
+    case "wings":
+      return new WingsPipe(effect.params as any);
     case "flatShade":
       return new FlatShadePipe(effect.params as any);
     case "shadowFloor":
@@ -4512,9 +4557,90 @@ function renderEffectControls(
           )}
         </>
       );
+    case "wings":
+      return (
+        <>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("style")}</Text>
+            <CycleButton
+              value={(params.style as string) ?? "angel"}
+              options={["angel", "butterfly", "bat"]}
+              onPress={() => {
+                const styles2 = ["angel", "butterfly", "bat"];
+                const idx = styles2.indexOf((params.style as string) ?? "angel");
+                onUpdate("style", styles2[(idx + 1) % styles2.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <ColorPickerRow
+            label={p("color")}
+            value={(params.color as number) ?? 0xffffff}
+            onChange={(v) => onUpdate("color", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("size")}
+            min={0.5}
+            max={8}
+            step={0.1}
+            value={(params.size as number) ?? 2.5}
+            onChange={(v) => onUpdate("size", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("flapSpeed")}
+            min={0}
+            max={8}
+            step={0.1}
+            value={(params.flapSpeed as number) ?? 2.5}
+            onChange={(v) => onUpdate("flapSpeed", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("flapAmplitude")}
+            min={0}
+            max={1.2}
+            step={0.01}
+            value={(params.flapAmplitude as number) ?? 0.45}
+            onChange={(v) => onUpdate("flapAmplitude", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("opacity")}
+            min={0}
+            max={1}
+            step={0.01}
+            value={(params.opacity as number) ?? 0.88}
+            onChange={(v) => onUpdate("opacity", v)}
+            colors={colors}
+          />
+        </>
+      );
     default:
       return null;
   }
+}
+
+async function resizeThumbnail(dataUrl: string, targetSize: number): Promise<string> {
+  if (typeof document === 'undefined') return dataUrl;
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = Math.min(targetSize / img.width, targetSize / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx2d = canvas.getContext('2d');
+      if (!ctx2d) { resolve(dataUrl); return; }
+      ctx2d.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -4571,6 +4697,7 @@ export default function ThreeDTextScreen() {
   const [presets, setPresets] = useState<PresetRecord[]>([]);
   const [showSavePresetModal, setShowSavePresetModal] = useState(false);
   const [draftPresetName, setDraftPresetName] = useState("");
+  const [zoomedThumbnailUrl, setZoomedThumbnailUrl] = useState<string | null>(null);
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4754,12 +4881,17 @@ export default function ThreeDTextScreen() {
     setShowSavePresetModal(false);
     try {
       const now = new Date().toISOString();
+      const rawFrame = await threeDTextRef.current?.captureFrame();
+      const thumbnail = rawFrame
+        ? await resizeThumbnail(rawFrame, 256)
+        : undefined;
       const preset: PresetRecord = {
         id: nanoid(),
         name,
         when_created: now,
         when_last_modified: now,
         effects: effectInstances,
+        thumbnail,
       };
       await savePresetOfflineFirst(preset, API_BASE);
       setPresets((prev) => [preset, ...prev]);
@@ -5328,13 +5460,16 @@ export default function ThreeDTextScreen() {
                     <View
                       style={[styles.effectSearchList, { borderColor: c.tint }]}
                     >
-                      {EFFECT_TYPES.filter(
-                        (e) =>
-                          !e.primary &&
-                          (t(`eff_${e.type}`) + " " + e.type)
-                            .toLowerCase()
-                            .includes(selectedEffectSearch.toLowerCase()),
-                      ).map((e) => (
+                      {EFFECT_TYPES.filter((e) => {
+                        if (e.primary) return false;
+                        const q = selectedEffectSearch.toLowerCase();
+                        const base = (t(`eff_${e.type}`) + " " + e.type).toLowerCase();
+                        if (base.includes(q)) return true;
+                        const eng = (EFFECT_KEYWORDS[e.type] ?? []).join(" ").toLowerCase();
+                        if (eng.includes(q)) return true;
+                        const loc = t(`eff_${e.type}_kw`, { defaultValue: "" }).toLowerCase();
+                        return loc.includes(q);
+                      }).map((e) => (
                         <TouchableOpacity
                           key={e.type}
                           style={styles.effectSearchItem}
@@ -5920,63 +6055,83 @@ export default function ThreeDTextScreen() {
                         gap: 6,
                       }}
                     >
-                      {/* Effect type preview — colour-coded pills */}
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          flexWrap: "wrap",
-                          gap: 3,
-                          minHeight: 42,
-                        }}
-                      >
-                        {chips.slice(0, 9).map((e, i) => (
-                          <View
-                            key={i}
+                      {/* Thumbnail or effect-pill preview */}
+                      {preset.thumbnail ? (
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            setZoomedThumbnailUrl(preset.thumbnail!);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Image
+                            source={{ uri: preset.thumbnail }}
                             style={{
-                              paddingHorizontal: 5,
-                              paddingVertical: 2,
-                              borderRadius: 4,
-                              backgroundColor: c.tint + "33",
+                              width: "100%",
+                              height: 90,
+                              borderRadius: 6,
+                              resizeMode: "cover",
                             }}
-                          >
-                            <Text
+                          />
+                        </TouchableOpacity>
+                      ) : (
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            gap: 3,
+                            minHeight: 42,
+                          }}
+                        >
+                          {chips.slice(0, 9).map((e, i) => (
+                            <View
+                              key={i}
                               style={{
-                                color: c.tint,
-                                fontSize: 9,
-                                fontWeight: "600",
+                                paddingHorizontal: 5,
+                                paddingVertical: 2,
+                                borderRadius: 4,
+                                backgroundColor: c.tint + "33",
                               }}
                             >
-                              {effectTypeLabel(e.type, t)}
+                              <Text
+                                style={{
+                                  color: c.tint,
+                                  fontSize: 9,
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {effectTypeLabel(e.type, t)}
+                              </Text>
+                            </View>
+                          ))}
+                          {chips.length > 9 && (
+                            <View
+                              style={{
+                                paddingHorizontal: 5,
+                                paddingVertical: 2,
+                                borderRadius: 4,
+                                backgroundColor:
+                                  colorScheme === "dark" ? "#333" : "#e0e0e0",
+                              }}
+                            >
+                              <Text style={{ color: "#888", fontSize: 9 }}>
+                                +{chips.length - 9}
+                              </Text>
+                            </View>
+                          )}
+                          {chips.length === 0 && (
+                            <Text
+                              style={{
+                                color: "#888",
+                                fontSize: 10,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              No effects
                             </Text>
-                          </View>
-                        ))}
-                        {chips.length > 9 && (
-                          <View
-                            style={{
-                              paddingHorizontal: 5,
-                              paddingVertical: 2,
-                              borderRadius: 4,
-                              backgroundColor:
-                                colorScheme === "dark" ? "#333" : "#e0e0e0",
-                            }}
-                          >
-                            <Text style={{ color: "#888", fontSize: 9 }}>
-                              +{chips.length - 9}
-                            </Text>
-                          </View>
-                        )}
-                        {chips.length === 0 && (
-                          <Text
-                            style={{
-                              color: "#888",
-                              fontSize: 10,
-                              fontStyle: "italic",
-                            }}
-                          >
-                            No effects
-                          </Text>
-                        )}
-                      </View>
+                          )}
+                        </View>
+                      )}
 
                       {/* Name */}
                       <Text
@@ -6031,7 +6186,66 @@ export default function ThreeDTextScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Thumbnail zoom modal */}
+      <Modal
+        visible={zoomedThumbnailUrl !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setZoomedThumbnailUrl(null)}
+        statusBarTranslucent
+      >
+        <ThumbnailZoomOverlay
+          url={zoomedThumbnailUrl}
+          onDismiss={() => setZoomedThumbnailUrl(null)}
+        />
+      </Modal>
     </SafeAreaView>
+  );
+}
+
+function ThumbnailZoomOverlay({
+  url,
+  onDismiss,
+}: {
+  url: string | null;
+  onDismiss: () => void;
+}) {
+  const { width, height } = useWindowDimensions();
+
+  React.useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onDismiss(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onDismiss]);
+
+  if (!url) return null;
+
+  const imgSize = Math.min(width, height) * 0.85;
+
+  return (
+    <Pressable
+      onPress={onDismiss}
+      style={{
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.82)',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Pressable onPress={(e) => e.stopPropagation?.()}>
+        <Image
+          source={{ uri: url }}
+          style={{
+            width: imgSize,
+            height: imgSize,
+            borderRadius: 10,
+            resizeMode: 'contain',
+          }}
+        />
+      </Pressable>
+    </Pressable>
   );
 }
 

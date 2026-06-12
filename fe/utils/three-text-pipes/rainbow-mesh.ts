@@ -1,28 +1,22 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
+import { LayeredMeshPipeBase, PipeSetupContext, PipeFrameContext } from './base';
 
 export interface RainbowMeshPipeParams { speed?: number; saturation?: number; }
 
-export class RainbowMeshPipe implements EffectPipe {
+export class RainbowMeshPipe extends LayeredMeshPipeBase {
   readonly name = 'rainbowMesh';
-  private mesh: THREE.Mesh | THREE.Group | null = null;
   private materials: THREE.ShaderMaterial[] = [];
-  private savedMaterials: MaterialMap = new Map();
 
-  constructor(public params: RainbowMeshPipeParams = {}) {}
-  setup(_ctx: PipeSetupContext) {}
+  constructor(public params: RainbowMeshPipeParams = {}) { super(); }
 
-  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    restoreMeshMaterials(this.savedMaterials);
-    this.mesh = mesh; this.materials = [];
-    if (!mesh) return;
-    this.savedMaterials = saveMeshMaterials(mesh);
-    const bbox = new THREE.Box3().setFromObject(mesh);
+  protected applyToClone(clone: THREE.Mesh | THREE.Group, original: THREE.Mesh | THREE.Group, _ctx: PipeSetupContext) {
+    this.materials = [];
+    const bbox = new THREE.Box3().setFromObject(original);
     const minX = bbox.min.x, maxX = bbox.max.x;
-    mesh.traverse(child => {
+    clone.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = new THREE.ShaderMaterial({
-          uniforms: { minX:{value:minX}, maxX:{value:maxX}, time:{value:0}, saturation:{value:1} },
+          uniforms: { minX: { value: minX }, maxX: { value: maxX }, time: { value: 0 }, saturation: { value: 1 } },
           vertexShader: `varying float vX; void main(){vX=(modelMatrix*vec4(position,1.)).x;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
           fragmentShader: `uniform float minX,maxX,time,saturation; varying float vX;
             vec3 hsl2rgb(float h,float s,float l){
@@ -40,7 +34,7 @@ export class RainbowMeshPipe implements EffectPipe {
     });
   }
 
-  update(ctx: PipeFrameContext) {
+  protected tick(ctx: PipeFrameContext) {
     for (const mat of this.materials) {
       mat.uniforms.time.value = ctx.time * (this.params.speed ?? 0.3);
       mat.uniforms.saturation.value = this.params.saturation ?? 1;
@@ -48,7 +42,7 @@ export class RainbowMeshPipe implements EffectPipe {
   }
 
   dispose() {
-    restoreMeshMaterials(this.savedMaterials);
-    this.materials = []; this.mesh = null;
+    super.dispose();
+    this.materials = [];
   }
 }

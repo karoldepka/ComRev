@@ -1,27 +1,21 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
+import { LayeredMeshPipeBase, PipeSetupContext, PipeFrameContext } from './base';
 
 export interface HologramPipeParams { color?: number; scanSpeed?: number; }
 
-export class HologramPipe implements EffectPipe {
+export class HologramPipe extends LayeredMeshPipeBase {
   readonly name = 'hologram';
-  private mesh: THREE.Mesh | THREE.Group | null = null;
   private materials: THREE.ShaderMaterial[] = [];
-  private savedMaterials: MaterialMap = new Map();
 
-  constructor(public params: HologramPipeParams = {}) {}
-  setup(_ctx: PipeSetupContext) {}
+  constructor(public params: HologramPipeParams = {}) { super(); }
 
-  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    restoreMeshMaterials(this.savedMaterials);
-    this.mesh = mesh; this.materials = [];
-    if (!mesh) return;
-    this.savedMaterials = saveMeshMaterials(mesh);
+  protected applyToClone(clone: THREE.Mesh | THREE.Group, _original: THREE.Mesh | THREE.Group, _ctx: PipeSetupContext) {
+    this.materials = [];
     const color = new THREE.Color(this.params.color ?? 0x00ffff);
-    mesh.traverse(child => {
+    clone.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = new THREE.ShaderMaterial({
-          uniforms: { color:{value:color}, time:{value:0} },
+          uniforms: { color: { value: color }, time: { value: 0 } },
           vertexShader: `varying vec2 vUv; varying vec3 vNormal; void main(){vUv=uv;vNormal=normalMatrix*normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
           fragmentShader: `uniform vec3 color; uniform float time; varying vec2 vUv; varying vec3 vNormal;
             void main(){
@@ -37,12 +31,12 @@ export class HologramPipe implements EffectPipe {
     });
   }
 
-  update(ctx: PipeFrameContext) {
+  protected tick(ctx: PipeFrameContext) {
     for (const mat of this.materials) mat.uniforms.time.value = ctx.time * (this.params.scanSpeed ?? 1);
   }
 
   dispose() {
-    restoreMeshMaterials(this.savedMaterials);
-    this.materials = []; this.mesh = null;
+    super.dispose();
+    this.materials = [];
   }
 }

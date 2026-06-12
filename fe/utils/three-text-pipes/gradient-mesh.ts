@@ -1,31 +1,27 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
+import { LayeredMeshPipeBase, PipeSetupContext, PipeFrameContext } from './base';
 
 export interface GradientMeshPipeParams { colorTop?: number; colorBottom?: number; animated?: boolean; speed?: number; }
 
-export class GradientMeshPipe implements EffectPipe {
+export class GradientMeshPipe extends LayeredMeshPipeBase {
   readonly name = 'gradientMesh';
-  private mesh: THREE.Mesh | THREE.Group | null = null;
   private materials: THREE.ShaderMaterial[] = [];
-  private savedMaterials: MaterialMap = new Map();
-  private bbox = new THREE.Box3();
 
-  constructor(public params: GradientMeshPipeParams = {}) {}
-  setup(_ctx: PipeSetupContext) {}
+  constructor(public params: GradientMeshPipeParams = {}) { super(); }
 
-  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    restoreMeshMaterials(this.savedMaterials);
-    this.mesh = mesh; this.materials = [];
-    if (!mesh) return;
-    this.savedMaterials = saveMeshMaterials(mesh);
-    this.bbox.setFromObject(mesh);
+  protected applyToClone(clone: THREE.Mesh | THREE.Group, original: THREE.Mesh | THREE.Group, _ctx: PipeSetupContext) {
+    this.materials = [];
+    const bbox = new THREE.Box3().setFromObject(original);
     const colorTop    = new THREE.Color(this.params.colorTop    ?? 0xff6600);
     const colorBottom = new THREE.Color(this.params.colorBottom ?? 0x0066ff);
-    const minY = this.bbox.min.y, maxY = this.bbox.max.y;
-    mesh.traverse(child => {
+    const minY = bbox.min.y, maxY = bbox.max.y;
+    clone.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = new THREE.ShaderMaterial({
-          uniforms: { colorTop:{value:colorTop}, colorBottom:{value:colorBottom}, minY:{value:minY}, maxY:{value:maxY}, time:{value:0}, animated:{value:0} },
+          uniforms: {
+            colorTop: { value: colorTop }, colorBottom: { value: colorBottom },
+            minY: { value: minY }, maxY: { value: maxY }, time: { value: 0 }, animated: { value: 0 },
+          },
           vertexShader: `varying float vY; void main(){vY=(modelMatrix*vec4(position,1.)).y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
           fragmentShader: `uniform vec3 colorTop,colorBottom; uniform float minY,maxY,time,animated;
             varying float vY;
@@ -40,7 +36,7 @@ export class GradientMeshPipe implements EffectPipe {
     });
   }
 
-  update(ctx: PipeFrameContext) {
+  protected tick(ctx: PipeFrameContext) {
     const animated = this.params.animated ?? false;
     for (const mat of this.materials) {
       mat.uniforms.time.value = ctx.time * (this.params.speed ?? 1);
@@ -51,7 +47,7 @@ export class GradientMeshPipe implements EffectPipe {
   }
 
   dispose() {
-    restoreMeshMaterials(this.savedMaterials);
-    this.materials = []; this.mesh = null;
+    super.dispose();
+    this.materials = [];
   }
 }

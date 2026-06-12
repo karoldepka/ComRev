@@ -11,6 +11,8 @@ import ca from '../locales/ca.json';
 import zh from '../locales/zh.json';
 import pt from '../locales/pt.json';
 import es from '../locales/es.json';
+import hi from '../locales/hi.json';
+import ar from '../locales/ar.json';
 
 export const SUPPORTED_LANGUAGES = [
   { code: 'en', label: 'English' },
@@ -22,6 +24,8 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'zh', label: '中文' },
   { code: 'pt', label: 'Português' },
   { code: 'es', label: 'Español' },
+  { code: 'hi', label: 'हिन्दी' },
+  { code: 'ar', label: 'العربية' },
 ] as const;
 
 export type LanguageCode = typeof SUPPORTED_LANGUAGES[number]['code'];
@@ -49,6 +53,8 @@ i18n
       zh: { translation: zh },
       pt: { translation: pt },
       es: { translation: es },
+      hi: { translation: hi },
+      ar: { translation: ar },
     },
     lng: detectLocale(),
     fallbackLng: 'en',

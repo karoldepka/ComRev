@@ -5,22 +5,6 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 
-// ── Material save/restore helpers ────────────────────────────────────────────
-export type MaterialMap = Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
-
-export function saveMeshMaterials(mesh: THREE.Mesh | THREE.Group): MaterialMap {
-  const saved: MaterialMap = new Map();
-  mesh.traverse(child => {
-    if (child instanceof THREE.Mesh) saved.set(child, child.material);
-  });
-  return saved;
-}
-
-export function restoreMeshMaterials(saved: MaterialMap) {
-  saved.forEach((mat, mesh) => { mesh.material = mat as any; });
-  saved.clear();
-}
-
 // ── Seeded PRNG (mulberry32) ──────────────────────────────────────────────────
 export function makeRng(seed: number) {
   let s = seed >>> 0;

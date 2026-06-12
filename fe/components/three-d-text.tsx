@@ -114,7 +114,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const rotationRef = useRef({ x: 0, y: 0 });
     // Object selection / 3D drag
     const raycasterRef = useRef(new THREE.Raycaster());
-    const selectedObjectRef = useRef<THREE.Object3D | null>(null);
+    const selectedObjectRef = useRef<THREE.Object3D | null>(null); // drag primary
+    const selectedObjectsRef = useRef<Set<THREE.Object3D>>(new Set()); // persistent multi-selection
     const dragModeRef = useRef<"rotate" | "translate">("rotate");
     const dragPlaneRef = useRef(new THREE.Plane());
     const dragOffsetRef = useRef(new THREE.Vector3());
@@ -358,6 +359,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       lastMousePosition.current = { x: px, y: py };
       pointerDownPos.current = { x: px, y: py };
       pointerDownOnPrimary.current = false;
+      const isMultiSelect = !!(event.nativeEvent?.ctrlKey || event.nativeEvent?.metaKey);
 
       const el = containerRef.current as HTMLElement | null;
       if (!el || !cameraRef.current || !sceneRef.current) {
@@ -392,10 +394,21 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         if (isPrimaryMesh) {
           dragModeRef.current = "rotate";
           selectedObjectRef.current = null;
+          if (!isMultiSelect) selectedObjectsRef.current.clear();
           pointerDownOnPrimary.current = true;
           pointerDownHitRef.current = null;
         } else {
           dragModeRef.current = "translate";
+          if (isMultiSelect) {
+            if (selectedObjectsRef.current.has(hit)) {
+              selectedObjectsRef.current.delete(hit);
+            } else {
+              selectedObjectsRef.current.add(hit);
+            }
+          } else {
+            selectedObjectsRef.current.clear();
+            selectedObjectsRef.current.add(hit);
+          }
           selectedObjectRef.current = hit;
           pointerDownHitRef.current = hit;
           const cameraDir = new THREE.Vector3();
@@ -414,6 +427,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       } else {
         dragModeRef.current = "rotate";
         selectedObjectRef.current = null;
+        if (!isMultiSelect) selectedObjectsRef.current.clear();
         pointerDownHitRef.current = null;
       }
     };
@@ -446,9 +460,14 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
               intersection,
             )
           ) {
-            selectedObjectRef.current.position.copy(
-              intersection.add(dragOffsetRef.current),
-            );
+            const newPrimPos = intersection.clone().add(dragOffsetRef.current);
+            const delta = newPrimPos.clone().sub(selectedObjectRef.current.position);
+            // Move all selected objects by the same delta (includes primary)
+            selectedObjectsRef.current.forEach(obj => obj.position.add(delta));
+            // If primary not in set (safety), set it directly
+            if (!selectedObjectsRef.current.has(selectedObjectRef.current)) {
+              selectedObjectRef.current.position.copy(newPrimPos);
+            }
           }
         }
       } else {

@@ -178,6 +178,7 @@
   "eff_customJs": "KI-Eigenes",
   "eff_text3d": "3D-Text",
   "eff_graphics": "Grafik hinzufügen",
+  "eff_wings": "Flügel",
   "p_strength": "Stärke",
   "p_speed": "Geschwindigkeit",
   "p_count": "Anzahl",
@@ -236,5 +237,19 @@
   "p_refineWithAi": "Mit KI verfeinern",
   "p_dragging": "Ziehen",
   "resetToBasic": "Auf Grundeinstellungen zurücksetzen",
-  "resetConfirm": "Sind Sie sicher, dass Sie alle Effekte außer dem 3D-Text löschen möchten?"
+  "resetConfirm": "Sind Sie sicher, dass Sie alle Effekte außer dem 3D-Text löschen möchten?",
+  "eff_graphics_kw": "Bild Foto Bild Symbol SVG Grafik Logo Textur",
+  "eff_text3d_kw": "Text Wörter Buchstaben Schrift Typografie schreiben",
+  "eff_bloom_kw": "Glühen Leuchten Strahlen Glanz hell Halo",
+  "eff_hologram_kw": "Holo Hologramm Zukunft Projektion transparent",
+  "eff_glass_kw": "transparent Kristall Eis klar durchsichtig",
+  "eff_wireframe_kw": "Gitter Kanten Maschennetz Linien",
+  "eff_snow_kw": "Winter Schneeflocken Blizzard kalt Eis",
+  "eff_rain_kw": "Wasser Tropfen Sturm Nieselregen nass",
+  "eff_confetti_kw": "Party Feier festlich bunt",
+  "eff_sparkle_kw": "Sterne Glitzer Funkeln Zauber",
+  "eff_dust_kw": "Partikel schwebend Atmosphäre",
+  "eff_neonGlow_kw": "Neon elektrisch hell Licht Glühen",
+  "eff_toonShading_kw": "Cartoon Anime Comic flach Zeichentrick",
+  "eff_xRay_kw": "Röntgen transparent durchsichtig"
 }

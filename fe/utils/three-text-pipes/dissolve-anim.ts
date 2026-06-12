@@ -1,27 +1,21 @@
 import * as THREE from 'three';
-import { EffectPipe, PipeSetupContext, PipeFrameContext, MaterialMap, saveMeshMaterials, restoreMeshMaterials } from './base';
+import { LayeredMeshPipeBase, PipeSetupContext, PipeFrameContext } from './base';
 
 export interface DissolveAnimPipeParams { speed?: number; color?: number; }
 
-export class DissolveAnimPipe implements EffectPipe {
+export class DissolveAnimPipe extends LayeredMeshPipeBase {
   readonly name = 'dissolveAnim';
   private materials: THREE.ShaderMaterial[] = [];
-  private mesh: THREE.Mesh | THREE.Group | null = null;
-  private savedMaterials: MaterialMap = new Map();
 
-  constructor(public params: DissolveAnimPipeParams = {}) {}
-  setup(_ctx: PipeSetupContext) {}
+  constructor(public params: DissolveAnimPipeParams = {}) { super(); }
 
-  onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    restoreMeshMaterials(this.savedMaterials);
-    this.mesh = mesh; this.materials = [];
-    if (!mesh) return;
-    this.savedMaterials = saveMeshMaterials(mesh);
+  protected applyToClone(clone: THREE.Mesh | THREE.Group, _original: THREE.Mesh | THREE.Group, _ctx: PipeSetupContext) {
+    this.materials = [];
     const color = new THREE.Color(this.params.color ?? 0xff6600);
-    mesh.traverse(child => {
+    clone.traverse(child => {
       if (child instanceof THREE.Mesh) {
         const mat = new THREE.ShaderMaterial({
-          uniforms: { time:{value:0}, color:{value:color} },
+          uniforms: { time: { value: 0 }, color: { value: color } },
           vertexShader: `varying vec3 vPos; void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
           fragmentShader: `uniform float time; uniform vec3 color; varying vec3 vPos;
             float hash(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5);}
@@ -39,12 +33,12 @@ export class DissolveAnimPipe implements EffectPipe {
     });
   }
 
-  update(ctx: PipeFrameContext) {
+  protected tick(ctx: PipeFrameContext) {
     for (const mat of this.materials) mat.uniforms.time.value = ctx.time * (this.params.speed ?? 0.5);
   }
 
   dispose() {
-    restoreMeshMaterials(this.savedMaterials);
-    this.materials = []; this.mesh = null;
+    super.dispose();
+    this.materials = [];
   }
 }
