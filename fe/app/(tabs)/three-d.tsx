@@ -379,6 +379,50 @@ function CycleButton({
   );
 }
 
+function DebouncedTextInput({
+  value,
+  onCommit,
+  delay = 600,
+  style,
+  placeholder,
+  placeholderTextColor,
+  multiline,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  delay?: number;
+  style?: any;
+  placeholder?: string;
+  placeholderTextColor?: string;
+  multiline?: boolean;
+}) {
+  const [local, setLocal] = React.useState(value);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    setLocal(value);
+  }, [value]);
+
+  const handleChange = (v: string) => {
+    setLocal(v);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onCommit(v), delay);
+  };
+
+  React.useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  return (
+    <TextInput
+      style={style}
+      placeholder={placeholder}
+      placeholderTextColor={placeholderTextColor}
+      value={local}
+      onChangeText={handleChange}
+      multiline={multiline}
+    />
+  );
+}
+
 type EffectType =
   // primary text
   | "mainText"
@@ -1922,7 +1966,7 @@ function renderText3dControls({
 
   return (
     <>
-      <TextInput
+      <DebouncedTextInput
         style={[
           styles.textInput,
           {
@@ -1935,7 +1979,7 @@ function renderText3dControls({
         placeholder="Enter text..."
         placeholderTextColor={colorScheme === "dark" ? "#999" : "#ccc"}
         value={(params.text as string) || ""}
-        onChangeText={(v) => onUpdate("text", v)}
+        onCommit={(v) => onUpdate("text", v)}
         multiline
       />
       <ColorPickerRow
@@ -4686,6 +4730,26 @@ export default function ThreeDTextScreen() {
     paramKey: string;
   } | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const savedControlsHeight = React.useRef(initialControlsHeight);
+
+  const toggleFullscreen = React.useCallback(() => {
+    setIsFullscreen((prev) => {
+      if (!prev) {
+        savedControlsHeight.current = controlsHeightSv.value;
+        controlsHeightSv.value = 0;
+        if (typeof document !== 'undefined' && document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } else {
+        controlsHeightSv.value = savedControlsHeight.current;
+        if (typeof document !== 'undefined' && document.exitFullscreen && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+      return !prev;
+    });
+  }, [controlsHeightSv]);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [aiChatTarget, setAiChatTarget] = useState<{
     id: string | null;
@@ -5232,6 +5296,22 @@ export default function ThreeDTextScreen() {
 
   // Auto-save on every change (debounced 800ms)
   useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handler = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen((prev) => {
+          if (prev) {
+            controlsHeightSv.value = savedControlsHeight.current;
+          }
+          return false;
+        });
+      }
+    };
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, [controlsHeightSv]);
+
+  useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
       try {
@@ -5288,7 +5368,7 @@ export default function ThreeDTextScreen() {
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <View style={styles.content}>
-        <View style={[styles.canvas]}>
+        <View style={[styles.canvas, { position: 'relative' }]}>
           <ThreeDText
             ref={threeDTextRef}
             text={(mainTextParams.text as string) ?? ""}
@@ -5340,13 +5420,36 @@ export default function ThreeDTextScreen() {
                 });
             }}
           />
+          {/* Fullscreen toggle button */}
+          <TouchableOpacity
+            onPress={toggleFullscreen}
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              width: 34,
+              height: 34,
+              borderRadius: 8,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, lineHeight: 18 }}>
+              {isFullscreen ? '⤡' : '⤢'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <GestureDetector gesture={dividerGesture}>
-          <View style={styles.dividerHandle}>
-            <View style={styles.dividerGrip} />
-          </View>
-        </GestureDetector>
+        {!isFullscreen && (
+          <GestureDetector gesture={dividerGesture}>
+            <View style={styles.dividerHandle}>
+              <View style={styles.dividerGrip} />
+            </View>
+          </GestureDetector>
+        )}
 
         <Animated.View style={[styles.controls, controlsAnimStyle]}>
           <ScrollView
