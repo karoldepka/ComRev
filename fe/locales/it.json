@@ -178,6 +178,8 @@
   "eff_customJs": "AI Personalizzato",
   "eff_text3d": "Testo 3D",
   "eff_graphics": "Aggiungi grafica",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "Ali",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",

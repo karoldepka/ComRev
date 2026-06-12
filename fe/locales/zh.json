@@ -178,6 +178,8 @@
   "eff_customJs": "AI自定义",
   "eff_text3d": "3D文字",
   "eff_graphics": "添加图形",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "翅膀",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",

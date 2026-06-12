@@ -157,6 +157,7 @@ export * from './figure-eight';
 export * from './pendulum';
 
 // ── Added pipes ──
+export * from './tessellate';
 export * from './main-text';
 export * from './text-3d';
 export * from './graphics';

@@ -178,6 +178,8 @@
   "eff_customJs": "AI Własny",
   "eff_text3d": "Tekst 3D",
   "eff_graphics": "Dodaj grafikę",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "Skrzydła",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",

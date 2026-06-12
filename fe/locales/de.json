@@ -178,6 +178,8 @@
   "eff_customJs": "KI-Eigenes",
   "eff_text3d": "3D-Text",
   "eff_graphics": "Grafik hinzufügen",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "Flügel",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",

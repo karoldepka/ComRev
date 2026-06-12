@@ -178,6 +178,8 @@
   "eff_customJs": "IA Personalizado",
   "eff_text3d": "Texto 3D",
   "eff_graphics": "Adicionar gráfico",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "Asas",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",

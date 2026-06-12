@@ -182,6 +182,8 @@
   "eff_customJs": "AI कस्टम",
   "eff_text3d": "3D पाठ",
   "eff_graphics": "ग्राफिक जोड़ें",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "पंख",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",

@@ -193,6 +193,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "figureEight":    return { width: 2, height: 1, speed: 0.5 };
     case "pendulum":       return { angle: 0.5, speed: 1.2 };
     case "customJs":       return { code: '', description: '' };
+    case "tessellate": return { iterations: 1 };
     case "wings":      return { style: "angel", color: 0xffffff, size: 2.5, flapSpeed: 2.5, flapAmplitude: 0.45, opacity: 0.88 };
     case "fire":       return { count: 280, size: 0.85, speed: 1, spread: 1 };
     case "smoke":      return { count: 70, size: 1.6, speed: 1, opacity: 0.55, color: 0x888888 };

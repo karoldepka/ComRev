@@ -181,6 +181,7 @@ import {
   WaterRipplePipe,
   WavePipe,
   WigglePipe,
+  TessellatePipe,
   WingsPipe,
   FirePipe,
   SmokePipe,
@@ -726,6 +727,7 @@ type EffectType =
   // ai-generated
   | "customJs"
   // added effects
+  | "tessellate"
   | "text3d"
   | "graphics"
   | "wings"
@@ -1002,6 +1004,7 @@ const EFFECT_TYPES: {
   // Added effects
   { type: "text3d", label: "3D Text", target: "geometry" },
   { type: "graphics", label: "Add Graphics", target: "geometry" },
+  { type: "tessellate", label: "Tessellate",  target: "geometry" },
   { type: "wings",      label: "Wings",      target: "geometry", animated: true },
   { type: "fire",       label: "Fire",        target: "geometry", animated: true },
   { type: "smoke",      label: "Smoke",       target: "geometry", animated: true },
@@ -1829,6 +1832,8 @@ function createPipeFromInstance(effect: EffectInstance): EffectPipe {
       return new Text3dPipe(effect.params as any);
     case "graphics":
       return new GraphicsPipe({ ...(effect.params as any), effectInstanceId: effect.id });
+    case "tessellate":
+      return new TessellatePipe(effect.params as any);
     case "wings":
       return new WingsPipe(effect.params as any);
     case "fire":
@@ -5254,6 +5259,16 @@ function renderEffectControls(
           />
         </>
       );
+    case "tessellate":
+      return (
+        <>
+          <Text style={{ color: colors.text, fontSize: 11, marginBottom: 4, opacity: 0.65 }}>
+            {t("tessellateHint")}
+          </Text>
+          <SliderRow label={p("iterations")} min={1} max={3} step={1}
+            value={(params.iterations as number) ?? 1} onChange={(v) => onUpdate("iterations", v)} colors={colors} />
+        </>
+      );
     case "fire":
       return (
         <>
@@ -5586,23 +5601,39 @@ export function ThreeDTextScreen({
   const addEffectInstance = (type?: EffectType) => {
     const t = type ?? selectedEffectType;
     setEffectInstances((instances) => [...instances, createEffectInstance(t)]);
-    recordTriedEffect(t, API_BASE).catch(() => {});
+    markTried(t);
     setTimeout(
       () => controlsScrollRef.current?.scrollToEnd({ animated: true }),
       50,
     );
   };
 
-  const [triedCount, setTriedCount] = useState(0);
+  const [triedEffectsSet, setTriedEffectsSet] = useState<Set<string>>(new Set());
   const totalAddableCount = EFFECT_TYPES.filter((e) => !e.primary && e.type !== 'customJs').length;
+  // Load from IDB once on mount
   useEffect(() => {
-    getTriedEffects().then((arr) => setTriedCount(arr.length)).catch(() => {});
-  }, [effectInstances]);
+    getTriedEffects().then((arr) => setTriedEffectsSet(new Set(arr))).catch(() => {});
+  }, []);
+
+  const markTried = React.useCallback((type: EffectType) => {
+    setTriedEffectsSet((prev) => {
+      if (prev.has(type)) return prev;
+      const next = new Set(prev);
+      next.add(type);
+      return next;
+    });
+    recordTriedEffect(type, API_BASE).catch(() => {});
+  }, []);
 
   const handleRandom = React.useCallback(async () => {
     const newInstances = await generateRandomConfig(effectInstances, API_BASE);
+    // Collect newly tried types synchronously from the new instances
+    setTriedEffectsSet((prev) => {
+      const next = new Set(prev);
+      newInstances.forEach((i) => { if (i.type !== 'mainText') next.add(i.type); });
+      return next;
+    });
     setEffectInstances(newInstances);
-    setTriedCount((await getTriedEffects().catch(() => [])).length);
     setSaveStatus("Random config applied!");
     setTimeout(() => setSaveStatus(null), 2000);
     setTimeout(() => controlsScrollRef.current?.scrollTo({ y: 0, animated: true }), 80);
@@ -5632,7 +5663,7 @@ export function ThreeDTextScreen({
           params: { code, description },
         },
       ]);
-      recordTriedEffect("customJs", API_BASE).catch(() => {});
+      markTried("customJs");
     }
   };
 
@@ -6242,8 +6273,8 @@ export function ThreeDTextScreen({
                   >
                     <Text style={[styles.buttonText, { color: c.tint, fontWeight: '700' }]}>
                       {`🎲 ${t("randomConfig")}`}
-                      {triedCount < totalAddableCount
-                        ? ` (${totalAddableCount - triedCount} new)`
+                      {triedEffectsSet.size < totalAddableCount
+                        ? ` (${totalAddableCount - triedEffectsSet.size} new)`
                         : ''}
                     </Text>
                   </TouchableOpacity>

@@ -182,6 +182,8 @@
   "eff_customJs": "AI مخصص",
   "eff_text3d": "نص ثلاثي الأبعاد",
   "eff_graphics": "إضافة رسوميات",
+  "eff_tessellate": "Tessellate",
+  "tessellateHint": "Place before deformation effects",
   "eff_wings": "أجنحة",
   "eff_fire": "Fire",
   "eff_smoke": "Smoke",
