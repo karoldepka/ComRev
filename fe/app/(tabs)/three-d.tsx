@@ -334,20 +334,21 @@ function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | nu
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.55, now + 0.01);
-    master.gain.exponentialRampToValueAtTime(0.22, now + 0.3);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 4.5);
+    master.gain.exponentialRampToValueAtTime(1.0, now + 0.008);  // hard slam
+    master.gain.exponentialRampToValueAtTime(0.7, now + 0.05);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 6.0); // long ring
     master.connect(ctx.destination);
 
-    // Inharmonic metallic partials (gong ratios)
-    const base = 110;
+    // Inharmonic metallic partials (large gong ratios)
+    const base = 80; // lower fundamental = bigger gong
     const partials = [
-      { ratio: 1.0,   gain: 1.0,  decay: 4.5 },
-      { ratio: 1.72,  gain: 0.55, decay: 3.2 },
-      { ratio: 2.46,  gain: 0.35, decay: 2.1 },
-      { ratio: 3.13,  gain: 0.22, decay: 1.5 },
-      { ratio: 4.57,  gain: 0.12, decay: 0.9 },
-      { ratio: 6.21,  gain: 0.07, decay: 0.6 },
+      { ratio: 1.0,   gain: 1.0,  decay: 6.0 },
+      { ratio: 1.72,  gain: 0.75, decay: 4.5 },
+      { ratio: 2.46,  gain: 0.55, decay: 3.2 },
+      { ratio: 3.13,  gain: 0.38, decay: 2.3 },
+      { ratio: 4.57,  gain: 0.22, decay: 1.5 },
+      { ratio: 6.21,  gain: 0.14, decay: 1.0 },
+      { ratio: 8.04,  gain: 0.07, decay: 0.6 },
     ];
 
     for (const { ratio, gain, decay } of partials) {
@@ -356,7 +357,7 @@ function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | nu
       osc.type = "sine";
       osc.frequency.setValueAtTime(base * ratio, now);
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(gain * 0.35, now + 0.015);
+      g.gain.exponentialRampToValueAtTime(gain, now + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, now + decay);
       osc.connect(g);
       g.connect(master);
@@ -364,19 +365,19 @@ function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | nu
       osc.stop(now + decay + 0.1);
     }
 
-    // Strike transient — short noise burst
-    const bufLen = Math.ceil(ctx.sampleRate * 0.04);
+    // Heavy strike transient — broad noise burst
+    const bufLen = Math.ceil(ctx.sampleRate * 0.08);
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
     const data = buf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 1.5);
     const noise = ctx.createBufferSource();
     const nf = ctx.createBiquadFilter();
     nf.type = "bandpass";
-    nf.frequency.setValueAtTime(base * 2, now);
-    nf.Q.setValueAtTime(0.8, now);
+    nf.frequency.setValueAtTime(base * 2.5, now);
+    nf.Q.setValueAtTime(0.5, now);
     const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.18, now);
-    ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+    ng.gain.setValueAtTime(0.9, now);
+    ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
     noise.buffer = buf;
     noise.connect(nf);
     nf.connect(ng);
@@ -5767,7 +5768,7 @@ export function ThreeDTextScreen({
       const now = new Date().toISOString();
       const rawFrame = await threeDTextRef.current?.captureFrame();
       const thumbnail = rawFrame
-        ? await resizeThumbnail(rawFrame, 256)
+        ? await resizeThumbnail(rawFrame, 600)
         : undefined;
       const preset: PresetRecord = {
         id: nanoid(),
@@ -6539,26 +6540,30 @@ export function ThreeDTextScreen({
                           )}
                         </TouchableOpacity>
                       ))}
-                      <TouchableOpacity
-                        style={[
-                          styles.effectPill,
-                          {
-                            borderColor: c.tint,
-                            backgroundColor:
-                              colorScheme === "dark" ? "#181818" : "#f7f7f7",
-                          },
-                        ]}
-                        onPress={() => setShowMoreEffects((value) => !value)}
-                      >
-                        <Text
+                      {EFFECT_TYPES.some(
+                        (e) => !e.primary && DEFAULT_HIDDEN_EFFECT_TYPES.has(e.type),
+                      ) && (
+                        <TouchableOpacity
                           style={[
-                            styles.effectPillText,
-                            { color: c.tint, marginRight: 0 },
+                            styles.effectPill,
+                            {
+                              borderColor: c.tint,
+                              backgroundColor:
+                                colorScheme === "dark" ? "#181818" : "#f7f7f7",
+                            },
                           ]}
+                          onPress={() => setShowMoreEffects((value) => !value)}
                         >
-                          {showMoreEffects ? "Less" : "More..."}
-                        </Text>
-                      </TouchableOpacity>
+                          <Text
+                            style={[
+                              styles.effectPillText,
+                              { color: c.tint, marginRight: 0 },
+                            ]}
+                          >
+                            {showMoreEffects ? "Less" : "More..."}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </View>
@@ -7019,8 +7024,6 @@ export function ThreeDTextScreen({
             ) : (
               <ScrollView
                 contentContainerStyle={{
-                  flexDirection: "row",
-                  flexWrap: "wrap",
                   padding: 10,
                   gap: 10,
                 }}
@@ -7034,8 +7037,7 @@ export function ThreeDTextScreen({
                       key={preset.id}
                       onPress={() => handleLoadPreset(preset)}
                       style={{
-                        width: "47%",
-                        minWidth: 140,
+                        width: "100%",
                         backgroundColor:
                           colorScheme === "dark" ? "#252525" : "#f5f5f5",
                         borderRadius: 10,
@@ -7058,8 +7060,8 @@ export function ThreeDTextScreen({
                             source={{ uri: preset.thumbnail }}
                             style={{
                               width: "100%",
-                              height: 90,
-                              borderRadius: 6,
+                              height: 300,
+                              borderRadius: 8,
                               resizeMode: "cover",
                             }}
                           />
