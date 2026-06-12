@@ -321,6 +321,72 @@ function getSequencePages(
       ];
 }
 
+function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
+  if (typeof window === "undefined") return;
+  const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioCtor) return;
+  try {
+    const ctx = audioContextRef.current ?? new AudioCtor();
+    audioContextRef.current = ctx;
+    ctx.resume?.().catch(() => undefined);
+    if (ctx.state === "suspended") return;
+
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.55, now + 0.01);
+    master.gain.exponentialRampToValueAtTime(0.22, now + 0.3);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 4.5);
+    master.connect(ctx.destination);
+
+    // Inharmonic metallic partials (gong ratios)
+    const base = 110;
+    const partials = [
+      { ratio: 1.0,   gain: 1.0,  decay: 4.5 },
+      { ratio: 1.72,  gain: 0.55, decay: 3.2 },
+      { ratio: 2.46,  gain: 0.35, decay: 2.1 },
+      { ratio: 3.13,  gain: 0.22, decay: 1.5 },
+      { ratio: 4.57,  gain: 0.12, decay: 0.9 },
+      { ratio: 6.21,  gain: 0.07, decay: 0.6 },
+    ];
+
+    for (const { ratio, gain, decay } of partials) {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(base * ratio, now);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(gain * 0.35, now + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(now);
+      osc.stop(now + decay + 0.1);
+    }
+
+    // Strike transient — short noise burst
+    const bufLen = Math.ceil(ctx.sampleRate * 0.04);
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+    const noise = ctx.createBufferSource();
+    const nf = ctx.createBiquadFilter();
+    nf.type = "bandpass";
+    nf.frequency.setValueAtTime(base * 2, now);
+    nf.Q.setValueAtTime(0.8, now);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.18, now);
+    ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+    noise.buffer = buf;
+    noise.connect(nf);
+    nf.connect(ng);
+    ng.connect(master);
+    noise.start(now);
+  } catch (error) {
+    console.warn("Unable to play gong sound:", error);
+  }
+}
+
 function playSequencePageSound(
   audioContextRef: React.MutableRefObject<AudioContext | null>,
   pageIndex: number,
@@ -5522,13 +5588,13 @@ export function ThreeDTextScreen({
 
   useEffect(() => {
     if (!sequenceMode) return;
-    playSequencePageSound(audioContextRef, sequenceLineIndex);
+    playGongSound(audioContextRef);
   }, [sequenceLineIndex, sequenceMode]);
 
   useEffect(() => {
     if (!sequenceMode || typeof window === "undefined") return;
     const unlockAudio = () => {
-      playSequencePageSound(audioContextRef, sequenceLineIndex);
+      playGongSound(audioContextRef);
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
