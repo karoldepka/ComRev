@@ -87,10 +87,11 @@ export interface ThreeDConfig {
 }
 
 const DB_NAME = "ComRevConfigDB";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_CONFIGS = "configs";
 const STORE_PENDING = "pendingSync";
 const STORE_PRESETS = "presets";
+const STORE_TRIED_EFFECTS = "triedEffects";
 
 function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== "undefined" && indexedDB !== null;
@@ -118,6 +119,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_PRESETS)) {
         db.createObjectStore(STORE_PRESETS, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(STORE_TRIED_EFFECTS)) {
+        db.createObjectStore(STORE_TRIED_EFFECTS, { keyPath: "id" });
       }
     };
   });
@@ -341,6 +345,60 @@ export async function deletePresetFromBackend(
     const text = await response.text();
     throw new Error(`Delete preset failed: ${response.status} ${text}`);
   }
+}
+
+// ── Tried-effects tracking ────────────────────────────────────────────────────
+// Records which EffectType values the user has ever added, locally + backend.
+// Used in future "gimme totally new" / novelty suggestions.
+
+const TRIED_EFFECTS_KEY = "singleton";
+
+interface TriedEffectsRecord {
+  id: typeof TRIED_EFFECTS_KEY;
+  tried: string[]; // EffectType values
+  updatedAt: string;
+}
+
+async function getTriedEffectsRecord(): Promise<TriedEffectsRecord> {
+  try {
+    const rec = await withStore<TriedEffectsRecord | undefined>(
+      STORE_TRIED_EFFECTS,
+      "readonly",
+      (store) => store.get(TRIED_EFFECTS_KEY),
+    );
+    return rec ?? { id: TRIED_EFFECTS_KEY, tried: [], updatedAt: "" };
+  } catch {
+    return { id: TRIED_EFFECTS_KEY, tried: [], updatedAt: "" };
+  }
+}
+
+export async function getTriedEffects(): Promise<string[]> {
+  return (await getTriedEffectsRecord()).tried;
+}
+
+export async function recordTriedEffect(type: EffectType, apiBase: string): Promise<void> {
+  try {
+    const rec = await getTriedEffectsRecord();
+    if (rec.tried.includes(type)) return; // already recorded — nothing to do
+    const updated: TriedEffectsRecord = {
+      id: TRIED_EFFECTS_KEY,
+      tried: [...rec.tried, type],
+      updatedAt: new Date().toISOString(),
+    };
+    await withStore(STORE_TRIED_EFFECTS, "readwrite", (store) => store.put(updated));
+    syncTriedEffectsToBackend(apiBase, updated).catch(() => {});
+  } catch (error) {
+    console.warn("recordTriedEffect failed:", error);
+  }
+}
+
+async function syncTriedEffectsToBackend(apiBase: string, rec: TriedEffectsRecord): Promise<void> {
+  if (!isOnline() || !apiBase) return;
+  await fetch(`${apiBase.replace(/\/$/, "")}/tried-effects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tried: rec.tried, updatedAt: rec.updatedAt }),
+  });
 }
 
 // Cross-tab preset handoff (module-level, survives navigation)

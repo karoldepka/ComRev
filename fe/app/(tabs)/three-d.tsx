@@ -14,6 +14,7 @@ import {
   getPresets,
   loadPresetsFromBackend,
   PresetRecord,
+  recordTriedEffect,
   saveConfigOfflineFirst,
   savePreset,
   savePresetOfflineFirst,
@@ -5476,6 +5477,7 @@ export function ThreeDTextScreen({
   const addEffectInstance = (type?: EffectType) => {
     const t = type ?? selectedEffectType;
     setEffectInstances((instances) => [...instances, createEffectInstance(t)]);
+    recordTriedEffect(t, API_BASE).catch(() => {});
     setTimeout(
       () => controlsScrollRef.current?.scrollToEnd({ animated: true }),
       50,
@@ -5506,6 +5508,7 @@ export function ThreeDTextScreen({
           params: { code, description },
         },
       ]);
+      recordTriedEffect("customJs", API_BASE).catch(() => {});
     }
   };
 
