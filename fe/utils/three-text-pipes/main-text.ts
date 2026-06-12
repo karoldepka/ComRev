@@ -2,6 +2,9 @@ import { EffectPipe, PipeSetupContext } from './base';
 
 export interface MainTextPipeParams {
   text?: string;
+  textSets?: { id: string; name: string; text: string }[];
+  activeTextSetId?: string;
+  sequenceLineDurationMs?: number;
   fontFamily?: string;
   size?: number;
   height?: number;

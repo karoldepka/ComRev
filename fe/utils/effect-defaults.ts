@@ -1,5 +1,8 @@
 import { EffectInstance, EffectType } from './config-store';
 
+const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
+const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
+
 export function createId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -8,7 +11,16 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
   switch (type) {
     case "mainText":
       return {
-        text: "Hi\nHello World\nThis is a very long line of text",
+        text: DEFAULT_MAIN_TEXT,
+        textSets: [
+          {
+            id: "default",
+            name: "Set 1",
+            text: DEFAULT_MAIN_TEXT,
+          },
+        ],
+        activeTextSetId: "default",
+        sequenceLineDurationMs: DEFAULT_SEQUENCE_LINE_DURATION_MS,
         fontFamily: "helvetiker",
         size: 2,
         height: 0.8,

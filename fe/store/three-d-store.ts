@@ -22,11 +22,16 @@ export const useThreeDStore = create<ThreeDStore>((set, get) => ({
   },
 
   resetToBasic: () => {
-    const currentText = get().effectInstances.find(i => i.type === 'mainText')?.params?.text;
+    const currentParams = get().effectInstances.find(i => i.type === 'mainText')?.params ?? {};
     const fresh = createEffectInstance('mainText');
-    if (currentText !== undefined) {
-      fresh.params = { ...fresh.params, text: currentText };
-    }
+    fresh.params = {
+      ...fresh.params,
+      text: currentParams.text ?? fresh.params.text,
+      textSets: currentParams.textSets ?? fresh.params.textSets,
+      activeTextSetId: currentParams.activeTextSetId ?? fresh.params.activeTextSetId,
+      sequenceLineDurationMs:
+        currentParams.sequenceLineDurationMs ?? fresh.params.sequenceLineDurationMs,
+    };
     set({ effectInstances: [fresh] });
   },
 }));

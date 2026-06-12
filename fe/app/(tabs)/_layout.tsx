@@ -54,6 +54,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="line-sequence"
+        options={{
+          title: "Sequence",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="play.rectangle.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="presets"
         options={{
           title: "Presets",

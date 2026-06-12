@@ -209,6 +209,176 @@ import Animated, {
 } from "react-native-reanimated";
 
 const API_BASE = "http://localhost:8000";
+const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
+const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
+const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
+
+type PrincipalTextSet = {
+  id: string;
+  name: string;
+  text: string;
+};
+
+type SequencePage = {
+  id: string;
+  setName: string;
+  text: string;
+  durationMs: number;
+  transition: "flare" | "slide" | "zoom" | "wipe";
+};
+
+function normalizePrincipalTextSets(
+  params: Record<string, unknown>,
+): PrincipalTextSet[] {
+  const rawSets = params.textSets;
+  if (Array.isArray(rawSets) && rawSets.length > 0) {
+    return rawSets.map((set, index) => {
+      const item = (set ?? {}) as Partial<PrincipalTextSet>;
+      return {
+        id: String(item.id || `set-${index + 1}`),
+        name: String(item.name || `Set ${index + 1}`),
+        text: String(item.text ?? ""),
+      };
+    });
+  }
+
+  return [
+    {
+      id: "default",
+      name: "Set 1",
+      text: String(params.text ?? DEFAULT_MAIN_TEXT),
+    },
+  ];
+}
+
+function getActivePrincipalTextSet(
+  params: Record<string, unknown>,
+): PrincipalTextSet {
+  const sets = normalizePrincipalTextSets(params);
+  const activeId =
+    typeof params.activeTextSetId === "string" ? params.activeTextSetId : "";
+  return sets.find((set) => set.id === activeId) ?? sets[0];
+}
+
+function getPrincipalText(params: Record<string, unknown>): string {
+  return getActivePrincipalTextSet(params).text;
+}
+
+function getSequenceLines(text: string): string[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length > 0 ? lines : [text || " "];
+}
+
+function estimateSequenceDurationMs(text: string, minimumMs: number): number {
+  const clean = text.trim();
+  const words = clean.split(/\s+/).filter(Boolean).length;
+  const punctuationBonus = /[.!?;:]$/.test(clean) ? 450 : 0;
+  const duration =
+    minimumMs +
+    clean.length * 36 +
+    words * 95 +
+    punctuationBonus;
+  return Math.max(
+    minimumMs,
+    Math.min(MAX_SEQUENCE_ITEM_DURATION_MS, Math.round(duration)),
+  );
+}
+
+function getSequencePages(
+  textSets: PrincipalTextSet[],
+  minimumDurationMs: number,
+): SequencePage[] {
+  const transitions: SequencePage["transition"][] = [
+    "flare",
+    "slide",
+    "zoom",
+    "wipe",
+  ];
+  const pages = textSets.flatMap((set, setIndex) =>
+    getSequenceLines(set.text).map((line, lineIndex) => {
+      const pageIndex = setIndex * 1000 + lineIndex;
+      return {
+        id: `${set.id}-${lineIndex}`,
+        setName: set.name,
+        text: line,
+        durationMs: estimateSequenceDurationMs(line, minimumDurationMs),
+        transition: transitions[pageIndex % transitions.length],
+      };
+    }),
+  );
+  return pages.length > 0
+    ? pages
+    : [
+        {
+          id: "empty",
+          setName: "Set 1",
+          text: " ",
+          durationMs: minimumDurationMs,
+          transition: "flare",
+        },
+      ];
+}
+
+function playSequencePageSound(
+  audioContextRef: React.MutableRefObject<AudioContext | null>,
+  pageIndex: number,
+) {
+  if (typeof window === "undefined") return;
+  const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioCtor) return;
+
+  try {
+    const ctx = audioContextRef.current ?? new AudioCtor();
+    audioContextRef.current = ctx;
+    ctx.resume?.().catch(() => undefined);
+    if (ctx.state === "suspended") return;
+
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.setValueAtTime(90, now);
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.24, now + 0.035);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+    master.connect(filter);
+    filter.connect(ctx.destination);
+
+    const base = 174.61 * Math.pow(2, (pageIndex % 5) / 12);
+    [1, 1.5, 2.25].forEach((ratio, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = i === 0 ? "sawtooth" : "triangle";
+      osc.frequency.setValueAtTime(base * ratio * 0.75, now);
+      osc.frequency.exponentialRampToValueAtTime(base * ratio * 1.7, now + 0.24);
+      gain.gain.setValueAtTime(0.0001, now + i * 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.18 / (i + 1), now + 0.06 + i * 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.52 + i * 0.08);
+      osc.connect(gain);
+      gain.connect(master);
+      osc.start(now + i * 0.025);
+      osc.stop(now + 0.9);
+    });
+
+    const shimmer = ctx.createOscillator();
+    const shimmerGain = ctx.createGain();
+    shimmer.type = "sine";
+    shimmer.frequency.setValueAtTime(base * 5, now + 0.05);
+    shimmer.frequency.exponentialRampToValueAtTime(base * 8, now + 0.55);
+    shimmerGain.gain.setValueAtTime(0.0001, now + 0.05);
+    shimmerGain.gain.exponentialRampToValueAtTime(0.08, now + 0.12);
+    shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+    shimmer.connect(shimmerGain);
+    shimmerGain.connect(master);
+    shimmer.start(now + 0.05);
+    shimmer.stop(now + 0.85);
+  } catch (error) {
+    console.warn("Unable to play sequence sound:", error);
+  }
+}
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
 function Row({ children }: { children: React.ReactNode }) {
@@ -834,6 +1004,8 @@ const EFFECT_TYPES: {
   { type: "wings", label: "Wings", target: "geometry", animated: true },
 ];
 
+const DEFAULT_HIDDEN_EFFECT_TYPES = new Set<EffectType>(["crosshatch"]);
+
 // English synonym keywords for effects — searched in addition to the translated label.
 // Locale files may also provide eff_<type>_kw keys for localized synonyms.
 const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
@@ -881,7 +1053,16 @@ function createDefaultEffectParams_local(
   switch (type) {
     case "mainText":
       return {
-        text: "Hi\nHello World\nThis is a very long line of text",
+        text: DEFAULT_MAIN_TEXT,
+        textSets: [
+          {
+            id: "default",
+            name: "Set 1",
+            text: DEFAULT_MAIN_TEXT,
+          },
+        ],
+        activeTextSetId: "default",
+        sequenceLineDurationMs: DEFAULT_SEQUENCE_LINE_DURATION_MS,
         fontFamily: "helvetiker",
         size: 2,
         height: 0.8,
@@ -1963,9 +2144,158 @@ function renderText3dControls({
   includeTransform?: boolean;
 }) {
   const inputBg = colorScheme === "dark" ? "#2a2a2a" : "#f5f5f5";
+  const textSets = normalizePrincipalTextSets(params);
+  const activeTextSet = getActivePrincipalTextSet(params);
+  const canDeleteTextSet = textSets.length > 1;
+
+  const commitTextSets = (
+    nextSets: PrincipalTextSet[],
+    nextActiveId = activeTextSet.id,
+  ) => {
+    const nextActive = nextSets.find((set) => set.id === nextActiveId) ?? nextSets[0];
+    onUpdate("textSets", nextSets);
+    onUpdate("activeTextSetId", nextActive.id);
+    onUpdate("text", nextActive.text);
+  };
+
+  const renameActiveTextSet = (name: string) => {
+    commitTextSets(
+      textSets.map((set) =>
+        set.id === activeTextSet.id
+          ? { ...set, name: name.trim() || "Untitled set" }
+          : set,
+      ),
+    );
+  };
+
+  const updateActiveTextSet = (text: string) => {
+    commitTextSets(
+      textSets.map((set) =>
+        set.id === activeTextSet.id ? { ...set, text } : set,
+      ),
+    );
+  };
+
+  const addTextSet = () => {
+    const id = createId();
+    const nextSet: PrincipalTextSet = {
+      id,
+      name: `Set ${textSets.length + 1}`,
+      text: activeTextSet.text,
+    };
+    commitTextSets([...textSets, nextSet], id);
+  };
+
+  const deleteActiveTextSet = () => {
+    if (!canDeleteTextSet) return;
+    const performDelete = () => {
+      const index = textSets.findIndex((set) => set.id === activeTextSet.id);
+      const nextSets = textSets.filter((set) => set.id !== activeTextSet.id);
+      const nextActive =
+        nextSets[Math.max(0, Math.min(index, nextSets.length - 1))] ?? nextSets[0];
+      commitTextSets(nextSets, nextActive.id);
+    };
+    const message = `Delete "${activeTextSet.name}"? This removes its multiline text set.`;
+    if (typeof window !== "undefined" && window.confirm) {
+      if (window.confirm(message)) performDelete();
+    } else {
+      Alert.alert("Delete text set", message, [
+        { text: t("cancel", "Cancel"), style: "cancel" },
+        {
+          text: t("delete", "Delete"),
+          style: "destructive",
+          onPress: performDelete,
+        },
+      ]);
+    }
+  };
 
   return (
     <>
+      <View style={{ marginHorizontal: 12, marginTop: 8, gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Principal text
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, flex: 1 }}>
+            {textSets.map((set) => {
+              const active = set.id === activeTextSet.id;
+              return (
+                <TouchableOpacity
+                  key={set.id}
+                  onPress={() => commitTextSets(textSets, set.id)}
+                  style={[
+                    styles.textSetChip,
+                    {
+                      borderColor: active ? colors.tint : "#777",
+                      backgroundColor: active
+                        ? `${colors.tint}22`
+                        : colorScheme === "dark"
+                          ? "#202020"
+                          : "#fff",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: active ? colors.tint : colors.text,
+                      fontSize: 12,
+                      fontWeight: active ? "700" : "500",
+                    }}
+                    numberOfLines={1}
+                  >
+                    {set.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <TextInput
+            style={[
+              styles.searchInput,
+              {
+                color: colors.text,
+                borderColor: colors.tint,
+                backgroundColor: inputBg,
+                flex: 1,
+                marginBottom: 0,
+              },
+            ]}
+            value={activeTextSet.name}
+            onChangeText={renameActiveTextSet}
+            placeholder="Set name"
+            placeholderTextColor={colorScheme === "dark" ? "#777" : "#999"}
+          />
+          <TouchableOpacity
+            style={[styles.smallActionButton, { borderColor: colors.tint }]}
+            onPress={addTextSet}
+          >
+            <Text style={[styles.buttonText, { color: colors.tint }]}>Add</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.smallActionButton,
+              {
+                borderColor: canDeleteTextSet ? "#e55" : "#777",
+                opacity: canDeleteTextSet ? 1 : 0.45,
+              },
+            ]}
+            onPress={deleteActiveTextSet}
+            disabled={!canDeleteTextSet}
+          >
+            <Text
+              style={[
+                styles.buttonText,
+                { color: canDeleteTextSet ? "#e55" : "#777" },
+              ]}
+            >
+              Delete
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
       <DebouncedTextInput
         style={[
           styles.textInput,
@@ -1978,9 +2308,21 @@ function renderText3dControls({
         ]}
         placeholder="Enter text..."
         placeholderTextColor={colorScheme === "dark" ? "#999" : "#ccc"}
-        value={(params.text as string) || ""}
-        onCommit={(v) => onUpdate("text", v)}
+        value={activeTextSet.text}
+        onCommit={updateActiveTextSet}
         multiline
+      />
+      <SliderRow
+        label="Min read time"
+        min={300}
+        max={10000}
+        step={100}
+        value={
+          (params.sequenceLineDurationMs as number) ??
+          DEFAULT_SEQUENCE_LINE_DURATION_MS
+        }
+        onChange={(v) => onUpdate("sequenceLineDurationMs", Math.round(v))}
+        colors={colors}
       />
       <ColorPickerRow
         label={t("color")}
@@ -2627,8 +2969,10 @@ function renderEffectControls(
                     : raysMode === "spaghetti"
                       ? "chip"
                       : raysMode === "chip"
-                        ? "heart"
-                        : "radial",
+                        ? "wings"
+                        : raysMode === "wings"
+                          ? "heart"
+                          : "radial",
                 )
               }
               colors={colors}
@@ -4688,7 +5032,11 @@ async function resizeThumbnail(dataUrl: string, targetSize: number): Promise<str
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
-export default function ThreeDTextScreen() {
+export function ThreeDTextScreen({
+  sequenceMode = false,
+}: {
+  sequenceMode?: boolean;
+}) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { t, i18n: i18nInstance } = useTranslation();
@@ -4719,6 +5067,7 @@ export default function ThreeDTextScreen() {
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
   const [selectedEffectSearch, setSelectedEffectSearch] = useState("");
+  const [showMoreEffects, setShowMoreEffects] = useState(false);
   const [lastDeleted, setLastDeleted] = useState<{
     item: EffectInstance;
     index: number;
@@ -4766,6 +5115,7 @@ export default function ThreeDTextScreen() {
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlsScrollRef = useRef<ScrollView | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const c = colors; // shorthand
 
@@ -4818,6 +5168,64 @@ export default function ThreeDTextScreen() {
     const inst = effectInstances.find((i) => i.type === "mainText");
     return (inst?.params ?? {}) as Record<string, unknown>;
   }, [effectInstances]);
+  const principalTextSets = useMemo(
+    () => normalizePrincipalTextSets(mainTextParams),
+    [mainTextParams],
+  );
+  const principalText = useMemo(
+    () => getPrincipalText(mainTextParams),
+    [mainTextParams],
+  );
+  const sequenceLineDurationMs =
+    (mainTextParams.sequenceLineDurationMs as number | undefined) ??
+    DEFAULT_SEQUENCE_LINE_DURATION_MS;
+  const sequencePages = useMemo(
+    () => getSequencePages(principalTextSets, sequenceLineDurationMs),
+    [principalTextSets, sequenceLineDurationMs],
+  );
+  const [sequenceLineIndex, setSequenceLineIndex] = useState(0);
+  const currentSequencePage =
+    sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
+  const displayText = sequenceMode
+    ? currentSequencePage.text
+    : principalText;
+
+  useEffect(() => {
+    setSequenceLineIndex(0);
+  }, [principalTextSets, sequenceMode]);
+
+  useEffect(() => {
+    if (!sequenceMode || sequencePages.length <= 1) return;
+    const timer = setTimeout(() => {
+      setSequenceLineIndex((index) => (index + 1) % sequencePages.length);
+    }, currentSequencePage.durationMs);
+    return () => clearTimeout(timer);
+  }, [
+    currentSequencePage.durationMs,
+    sequenceLineIndex,
+    sequenceMode,
+    sequencePages.length,
+  ]);
+
+  useEffect(() => {
+    if (!sequenceMode) return;
+    playSequencePageSound(audioContextRef, sequenceLineIndex);
+  }, [sequenceLineIndex, sequenceMode]);
+
+  useEffect(() => {
+    if (!sequenceMode || typeof window === "undefined") return;
+    const unlockAudio = () => {
+      playSequencePageSound(audioContextRef, sequenceLineIndex);
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    window.addEventListener("keydown", unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+  }, [sequenceLineIndex, sequenceMode]);
 
   const reorderEffectByIndex = (from: number, to: number) => {
     if (from === to) return;
@@ -5283,7 +5691,7 @@ export default function ThreeDTextScreen() {
       savedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       // Mirror mainText params for backward compat / easy querying
-      text: (p.text as string) ?? "",
+      text: getPrincipalText(p),
       equalizeLineWidths: (p.equalizeLineWidths as boolean) ?? false,
       equalizationMethod:
         (p.equalizationMethod as "spacing" | "fontSize") ?? "fontSize",
@@ -5371,7 +5779,7 @@ export default function ThreeDTextScreen() {
         <View style={[styles.canvas, { position: 'relative' }]}>
           <ThreeDText
             ref={threeDTextRef}
-            text={(mainTextParams.text as string) ?? ""}
+            text={displayText}
             size={mainTextParams.size as number | undefined}
             height={mainTextParams.height as number | undefined}
             curveSegments={mainTextParams.curveSegments as number | undefined}
@@ -5420,6 +5828,37 @@ export default function ThreeDTextScreen() {
                 });
             }}
           />
+          {sequenceMode && (
+            <SequenceTransitionOverlay
+              key={currentSequencePage.id}
+              page={currentSequencePage}
+            />
+          )}
+          {sequenceMode && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.sequenceBadge,
+                {
+                  backgroundColor:
+                    colorScheme === "dark"
+                      ? "rgba(0,0,0,0.62)"
+                      : "rgba(255,255,255,0.82)",
+                  borderColor: c.tint,
+                },
+              ]}
+            >
+              <Text style={{ color: c.text, fontSize: 12, fontWeight: "700" }}>
+                {sequenceLineIndex + 1}/{sequencePages.length}
+              </Text>
+              <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
+                {currentSequencePage.setName}
+              </Text>
+              <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
+                {Math.round(currentSequencePage.durationMs / 100) / 10}s
+              </Text>
+            </View>
+          )}
           {/* Fullscreen toggle button */}
           <TouchableOpacity
             onPress={toggleFullscreen}
@@ -5617,7 +6056,12 @@ export default function ThreeDTextScreen() {
                         marginTop: 8,
                       }}
                     >
-                      {EFFECT_TYPES.filter((e) => !e.primary).map((e) => (
+                      {EFFECT_TYPES.filter(
+                        (e) =>
+                          !e.primary &&
+                          (showMoreEffects ||
+                            !DEFAULT_HIDDEN_EFFECT_TYPES.has(e.type)),
+                      ).map((e) => (
                         <TouchableOpacity
                           key={e.type}
                           style={[
@@ -5672,6 +6116,26 @@ export default function ThreeDTextScreen() {
                           )}
                         </TouchableOpacity>
                       ))}
+                      <TouchableOpacity
+                        style={[
+                          styles.effectPill,
+                          {
+                            borderColor: c.tint,
+                            backgroundColor:
+                              colorScheme === "dark" ? "#181818" : "#f7f7f7",
+                          },
+                        ]}
+                        onPress={() => setShowMoreEffects((value) => !value)}
+                      >
+                        <Text
+                          style={[
+                            styles.effectPillText,
+                            { color: c.tint, marginRight: 0 },
+                          ]}
+                        >
+                          {showMoreEffects ? "Less" : "More..."}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
@@ -6307,6 +6771,82 @@ export default function ThreeDTextScreen() {
   );
 }
 
+export default ThreeDTextScreen;
+
+function SequenceTransitionOverlay({ page }: { page: SequencePage }) {
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("sequence-transition-styles")) return;
+    const style = document.createElement("style");
+    style.id = "sequence-transition-styles";
+    style.textContent = `
+      @keyframes seqFlare {
+        0% { opacity: 0; transform: scale(0.92); filter: blur(10px); }
+        18% { opacity: 0.95; transform: scale(1.02); filter: blur(0); }
+        100% { opacity: 0; transform: scale(1.18); filter: blur(12px); }
+      }
+      @keyframes seqSlide {
+        0% { opacity: 0.88; transform: translateX(-100%) skewX(-12deg); }
+        42% { opacity: 0.72; transform: translateX(8%) skewX(-12deg); }
+        100% { opacity: 0; transform: translateX(115%) skewX(-12deg); }
+      }
+      @keyframes seqZoom {
+        0% { opacity: 0; transform: scale(1.35) rotate(-2deg); }
+        22% { opacity: 0.7; transform: scale(1.02) rotate(0deg); }
+        100% { opacity: 0; transform: scale(0.88) rotate(1deg); }
+      }
+      @keyframes seqWipe {
+        0% { opacity: 0.9; clip-path: inset(0 100% 0 0); }
+        40% { opacity: 0.68; clip-path: inset(0 0 0 0); }
+        100% { opacity: 0; clip-path: inset(0 0 0 100%); }
+      }
+      .sequence-transition {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+        mix-blend-mode: screen;
+        overflow: hidden;
+      }
+      .sequence-transition::before,
+      .sequence-transition::after {
+        content: "";
+        position: absolute;
+        inset: -18%;
+      }
+      .sequence-transition-flare::before {
+        background:
+          radial-gradient(circle at 50% 45%, rgba(255,255,255,0.95), rgba(255,120,0,0.45) 20%, rgba(0,170,255,0.18) 46%, transparent 72%);
+        animation: seqFlare 900ms cubic-bezier(.16,1,.3,1) both;
+      }
+      .sequence-transition-slide::before {
+        width: 58%;
+        left: -18%;
+        background: linear-gradient(100deg, transparent, rgba(255,255,255,0.92), rgba(255,118,0,0.54), transparent);
+        animation: seqSlide 820ms cubic-bezier(.22,1,.36,1) both;
+      }
+      .sequence-transition-zoom::before {
+        background:
+          repeating-conic-gradient(from 20deg, rgba(255,255,255,.26) 0deg 7deg, transparent 7deg 18deg),
+          radial-gradient(circle, rgba(0,170,255,0.28), rgba(255,102,0,0.42), transparent 62%);
+        animation: seqZoom 980ms cubic-bezier(.16,1,.3,1) both;
+      }
+      .sequence-transition-wipe::before {
+        background: linear-gradient(90deg, rgba(0,170,255,0.2), rgba(255,255,255,0.86), rgba(255,102,0,0.5));
+        animation: seqWipe 760ms cubic-bezier(.65,0,.35,1) both;
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  return (
+    <div
+      aria-hidden="true"
+      className={`sequence-transition sequence-transition-${page.transition}`}
+    />
+  );
+}
+
 function ThumbnailZoomOverlay({
   url,
   onDismiss,
@@ -6448,6 +6988,24 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 13,
     marginBottom: 6,
+  },
+  textSetChip: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    maxWidth: 132,
+  },
+  sequenceBadge: {
+    position: "absolute",
+    left: 10,
+    top: 10,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    zIndex: 10,
+    gap: 2,
   },
   effectSearchList: {
     borderWidth: 1,

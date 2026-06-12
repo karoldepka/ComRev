@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
+import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
+import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 
 /**
  * Patches a MeshStandardMaterial to discard fragments whose interpolated
@@ -54,6 +56,16 @@ export interface FontDef {
 }
 
 export const AVAILABLE_FONTS: FontDef[] = [
+  {
+    id: 'roboto',
+    label: 'Roboto (Latin-ext: PL, ES, CA, PT, DE)',
+    urls: [],
+  },
+  {
+    id: 'inter',
+    label: 'Inter (Latin-ext: PL, ES, CA, PT, DE)',
+    urls: [],
+  },
   {
     id: 'helvetiker',
     label: 'Helvetiker (sans)',
@@ -173,6 +185,25 @@ async function loadFont(fontId = 'helvetiker'): Promise<Font> {
   if (fontCache.has(fontId)) return fontCache.get(fontId)!;
 
   const def = AVAILABLE_FONTS.find(f => f.id === fontId) ?? AVAILABLE_FONTS[0];
+
+  if (def.id === 'roboto') {
+    const font = new Font(robotoRegularFont as any);
+    fontCache.set(def.id, font);
+    if (fontId !== def.id) {
+      fontCache.set(fontId, font);
+    }
+    return font;
+  }
+
+  if (def.id === 'inter') {
+    const font = new Font(interRegularFont as any);
+    fontCache.set(def.id, font);
+    if (fontId !== def.id) {
+      fontCache.set(fontId, font);
+    }
+    return font;
+  }
+
   const urls = def.urls;
 
   return new Promise((resolve, reject) => {

@@ -20,6 +20,7 @@ const MAPPING = {
   'chevron.right': 'chevron-right',
   'cube.fill': 'view-in-ar',
   'list.bullet': 'list',
+  'play.rectangle.fill': 'slideshow',
 } as IconMapping;
 
 /**
