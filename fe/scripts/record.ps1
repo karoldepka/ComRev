@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Record 3D text animations for YouTube or YouTube Shorts.
 

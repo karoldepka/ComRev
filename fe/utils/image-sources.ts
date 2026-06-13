@@ -318,9 +318,12 @@ export function processSvgDataUrl(
       svgText = decodeURIComponent(dataUrl.split(',')[1] ?? '');
     }
 
-    let cssRules = '';
+    let cssRules = 'svg { background: transparent !important; } ';
     if (color) {
       cssRules += `* { fill: ${color} !important; color: ${color} !important; } `;
+      // Undo the forced fill on background-like rectangles (full-width/full-height rects that are
+      // direct children of <svg>). These are decorative backgrounds, not icon elements.
+      cssRules += `svg > rect[width="100%"], svg > rect[height="100%"], svg > rect[x="0"][y="0"] { fill: transparent !important; } `;
     }
     if (strokeWidth && strokeWidth > 0 && color) {
       cssRules += `* { stroke: ${color} !important; stroke-width: ${strokeWidth} !important; paint-order: stroke fill; } `;

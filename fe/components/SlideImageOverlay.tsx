@@ -39,8 +39,6 @@ export function slideImageStyle(img: SlideImage): React.CSSProperties {
     width: 200,
     height: 140,
     objectFit: isSvg ? "contain" : "cover",
-    borderRadius: 10,
-    boxShadow: "0 4px 18px rgba(0,0,0,0.55)",
     ...(img.imagePosition === "top-left"     ? { top: 16, left: 16 }    : {}),
     ...(img.imagePosition === "top-right"    ? { top: 16, right: 16 }   : {}),
     ...(img.imagePosition === "bottom-left"  ? { bottom: 16, left: 16 } : {}),

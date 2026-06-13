@@ -8,6 +8,7 @@ import {
   fetchIconSvg, generateAiImage, IconResult, PlasmaParams,
   PRESET_SCHEMES, SCHEME_NAMES, renderFractal, renderPlasma, searchIcons,
 } from '@/utils/image-sources';
+import { preprocessSvg } from '@/utils/svg-preprocess';
 
 export interface ImagePickerResult { dataUrl: string; type: 'image' | 'svg'; }
 
@@ -111,8 +112,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
   const [iconSearched, setIconSearched] = useState(false);
 
   const c = { tint, text: textColor, bg: background, border: borderColor };
-  // Text colour to use ON a tint-coloured button (white tint in dark mode needs dark text).
-  const onTint = background;
+  const onTint = '#fff';
   const setErr = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
 
   const accept = (dataUrl: string, type: 'image' | 'svg' = 'image') => {
@@ -203,7 +203,17 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
       if (!file) return;
       const isSvg = file.type === 'image/svg+xml' || file.name.endsWith('.svg');
       const reader = new FileReader();
-      reader.onload = () => accept(reader.result as string, isSvg ? 'svg' : 'image');
+      reader.onload = async () => {
+        let dataUrl = reader.result as string;
+        if (isSvg) {
+          try {
+            const svgText = atob(dataUrl.split(';base64,')[1] ?? '');
+            const optimized = await preprocessSvg(svgText);
+            dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(optimized)));
+          } catch { /* fallback to original */ }
+        }
+        accept(dataUrl, isSvg ? 'svg' : 'image');
+      };
       reader.readAsDataURL(file);
     };
     input.click();
@@ -266,7 +276,8 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
     setLoading(true); setError(null);
     try {
       const svg = await fetchIconSvg(icon);
-      const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+      const processed = await preprocessSvg(svg);
+      const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(processed)));
       accept(dataUrl, 'svg');
     } catch (e) { setErr(e); }
     finally { setLoading(false); }

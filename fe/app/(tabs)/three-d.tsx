@@ -2549,6 +2549,15 @@ function renderText3dControls({
         colors={colors}
       />
       <Row>
+        <Text style={[styles.label, { color: colors.text }]}>Capitalize</Text>
+        <Switch
+          value={params.capitalizeText !== false}
+          onValueChange={(v) => onUpdate("capitalizeText", v)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={params.capitalizeText !== false ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
+      <Row>
         <Text style={[styles.label, { color: colors.text }]}>
           {t("equalizeWidths")}
         </Text>
@@ -5504,9 +5513,11 @@ export function ThreeDTextScreen({
   const [sequenceLineIndex, setSequenceLineIndex] = useState(0);
   const currentSequencePage =
     sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
+  const capitalizeText = mainTextParams.capitalizeText !== false;
+  const applyCapitalize = (t: string) => capitalizeText ? t.toUpperCase() : t;
   const displayText = sequenceMode
-    ? currentSequencePage.text
-    : principalText;
+    ? applyCapitalize(currentSequencePage.text)
+    : applyCapitalize(principalText);
 
   useEffect(() => {
     setSequenceLineIndex(0);

@@ -208,7 +208,7 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
                         {fmt.isPremium
                           ? <Text style={{ fontSize: 10, color: premiumColor }}>P</Text>
                           : isSelected
-                            ? <Text style={{ fontSize: 11, color: isDark ? '#000' : '#fff' }}>✓</Text>
+                            ? <Text style={{ fontSize: 11, color: '#fff' }}>✓</Text>
                             : null
                         }
                       </View>
@@ -265,8 +265,8 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
               ]}
             >
               {exporting
-                ? <ActivityIndicator size="small" color={isDark ? '#000' : '#fff'} />
-                : <Text style={{ color: isDark ? '#000' : '#fff', fontWeight: '700', fontSize: 15 }}>
+                ? <ActivityIndicator size="small" color={'#fff'} />
+                : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
                     Export ({selected.size})
                   </Text>
               }

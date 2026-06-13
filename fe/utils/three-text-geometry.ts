@@ -4,25 +4,6 @@ import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
 import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 
-/**
- * Patches a MeshStandardMaterial to discard fragments whose interpolated
- * view-space normal faces away from the camera (vNormal.z < 0).
- * This eliminates the bright bevel-edge artifact caused by smooth-shaded
- * bevel triangles whose normals shade toward the back even though the triangle
- * itself is geometrically front-facing.
- */
-function patchBackNormalDiscard(mat: THREE.MeshStandardMaterial): void {
-  mat.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <normal_fragment_begin>',
-      `#ifndef FLAT_SHADED
-        if (vNormal.z < 0.0) discard;
-      #endif
-      #include <normal_fragment_begin>`,
-    );
-  };
-  mat.customProgramCacheKey = () => 'text-back-normal-discard';
-}
 
 export interface TextGeometryOptions {
   text: string;
@@ -178,6 +159,23 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   targetWidth: 20,
   lineSpacing: 1.0,
 };
+
+/**
+ * Reflects the fragment-shader normal's z component when it points away from
+ * the camera. This cures the bevel shading artifact (smooth-shaded bevel
+ * normals that interpolate to face backward) without discarding any fragments —
+ * so geometrically front-facing side walls remain visible at oblique angles.
+ */
+function patchBevelNormalReflect(mat: THREE.MeshStandardMaterial): void {
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <normal_fragment_begin>',
+      `#include <normal_fragment_begin>
+      if (normal.z < 0.0) normal.z = -normal.z;`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'text-bevel-normal-reflect';
+}
 
 const fontCache = new Map<string, Font>();
 
@@ -399,8 +397,7 @@ export async function createTextGeometry(
       envMap: mergedOptions.envMap || undefined,
       envMapIntensity: mergedOptions.envMapIntensity,
     });
-    patchBackNormalDiscard(material);
-
+    patchBevelNormalReflect(material);
     return { geometry: mainGroup, material };
   } catch (error) {
     console.error("Failed to load font, creating fallback geometry:", error);
@@ -496,8 +493,7 @@ export async function createTextGeometry(
       envMap: mergedOptions.envMap || undefined,
       envMapIntensity: mergedOptions.envMapIntensity,
     });
-    patchBackNormalDiscard(material);
-
+    patchBevelNormalReflect(material);
     return { geometry: mainGroup, material };
   }
 }

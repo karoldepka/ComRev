@@ -196,7 +196,7 @@ export function AiEffectChatModal({
                 )}
 
                 <TouchableOpacity onPress={handleSaveSettings} style={[styles.saveBtn, { backgroundColor: c.tint }]}>
-                  <Text style={{ color: isDark ? '#000' : '#fff', fontWeight: '600' }}>Save</Text>
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>Save</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -226,7 +226,7 @@ export function AiEffectChatModal({
               >
                 <Text
                   style={{
-                    color: m.role === 'user' ? (isDark ? '#000' : '#fff') : c.text,
+                    color: m.role === 'user' ? ('#fff') : c.text,
                     fontSize: 13,
                     lineHeight: 18,
                   }}
@@ -256,7 +256,7 @@ export function AiEffectChatModal({
                   onPress={handleApply}
                   style={[styles.applyBtn, { backgroundColor: c.tint }]}
                 >
-                  <Text style={{ color: isDark ? '#000' : '#fff', fontWeight: '700', fontSize: 13 }}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
                     Apply Effect
                   </Text>
                 </TouchableOpacity>
@@ -292,7 +292,7 @@ export function AiEffectChatModal({
               disabled={loading || !input.trim()}
               style={[styles.sendBtn, { backgroundColor: c.tint, opacity: loading || !input.trim() ? 0.5 : 1 }]}
             >
-              <Text style={{ color: isDark ? '#000' : '#fff', fontWeight: '700' }}>Send</Text>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Send</Text>
             </TouchableOpacity>
           </View>
         </View>

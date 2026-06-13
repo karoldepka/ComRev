@@ -40,13 +40,16 @@ function presetMainParams(preset: PresetRecord): Record<string, unknown> {
 }
 
 function presetText(params: Record<string, unknown>): string {
+  let text: string;
   if (Array.isArray(params.textSets) && params.textSets.length > 0) {
     const sets = params.textSets as Array<{ id?: string; text?: string }>;
     const activeId = params.activeTextSetId;
     const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
-    return String((active ?? sets[0])?.text ?? "");
+    text = String((active ?? sets[0])?.text ?? "");
+  } else {
+    text = String(params.text ?? "");
   }
-  return String(params.text ?? "");
+  return params.capitalizeText !== false ? text.toUpperCase() : text;
 }
 
 function presetImages(params: Record<string, unknown>): SlideImage[] {
