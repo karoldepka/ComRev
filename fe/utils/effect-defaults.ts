@@ -214,7 +214,11 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "graphics":
       return {
         items: [], layout: "row", spacing: 4, columns: 0, gap: 0.5, scale: 1, extrudeDepth: 0.2,
-        colorOverride: false, color: 0xff6600,
+        bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 3,
+        colorOverride: false, color: 0xff6600, metalness: 0.8, roughness: 0.2,
+        bgEnabled: false, bgColor: 0x111111, bgOpacity: 0.8,
+        matImageDataUrl: undefined,
+        envMapStyle: "none", envMapIntensity: 1.5, envMapCustomDataUrl: undefined,
         posX: 0, posY: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0,
       };
     case "flatShade":      return {};

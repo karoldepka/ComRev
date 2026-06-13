@@ -1639,8 +1639,21 @@ function createDefaultEffectParams_local(
         spacing: 4,
         scale: 1,
         extrudeDepth: 0.2,
+        bevelEnabled: true,
+        bevelSize: 0.02,
+        bevelThickness: 0.02,
+        bevelSegments: 3,
         colorOverride: false,
         color: 0xff6600,
+        metalness: 0.8,
+        roughness: 0.2,
+        bgEnabled: false,
+        bgColor: 0x111111,
+        bgOpacity: 0.8,
+        matImageDataUrl: undefined,
+        envMapStyle: "none",
+        envMapIntensity: 1.5,
+        envMapCustomDataUrl: undefined,
         posX: 0,
         posY: 0,
         posZ: 0,
@@ -5174,6 +5187,66 @@ function renderEffectControls(
             onChange={(v) => onUpdate("extrudeDepth", v)}
             colors={colors}
           />
+          {/* Bevel */}
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Bevel (SVG)</Text>
+            <Switch
+              value={Boolean(params.bevelEnabled ?? true)}
+              onValueChange={(v) => onUpdate("bevelEnabled", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.bevelEnabled ?? true) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {(params.bevelEnabled ?? true) && (params.extrudeDepth as number ?? 0.2) > 0 && (
+            <>
+              <SliderRow
+                label="Bevel Size"
+                min={0}
+                max={0.5}
+                step={0.005}
+                value={(params.bevelSize as number) ?? 0.02}
+                onChange={(v) => onUpdate("bevelSize", v)}
+                colors={colors}
+              />
+              <SliderRow
+                label="Bevel Thickness"
+                min={0}
+                max={0.5}
+                step={0.005}
+                value={(params.bevelThickness as number) ?? 0.02}
+                onChange={(v) => onUpdate("bevelThickness", v)}
+                colors={colors}
+              />
+              <SliderRow
+                label="Bevel Segments"
+                min={1}
+                max={12}
+                step={1}
+                value={(params.bevelSegments as number) ?? 3}
+                onChange={(v) => onUpdate("bevelSegments", Math.round(v))}
+                colors={colors}
+              />
+            </>
+          )}
+          {/* Material */}
+          <SliderRow
+            label="Metalness"
+            min={0}
+            max={1}
+            step={0.05}
+            value={(params.metalness as number) ?? 0.8}
+            onChange={(v) => onUpdate("metalness", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label="Roughness"
+            min={0}
+            max={1}
+            step={0.05}
+            value={(params.roughness as number) ?? 0.2}
+            onChange={(v) => onUpdate("roughness", v)}
+            colors={colors}
+          />
           <Row>
             <Text style={[styles.label, { color: colors.text }]}>
               Color Override (SVG)
@@ -5192,6 +5265,125 @@ function renderEffectControls(
               onChange={(v) => onUpdate("color", v)}
               colors={colors}
             />
+          )}
+          {/* Background */}
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Background</Text>
+            <Switch
+              value={Boolean(params.bgEnabled)}
+              onValueChange={(v) => onUpdate("bgEnabled", v)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={params.bgEnabled ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {params.bgEnabled && (
+            <>
+              <ColorPickerRow
+                label="BG Color"
+                value={(params.bgColor as number) ?? 0x111111}
+                onChange={(v) => onUpdate("bgColor", v)}
+                colors={colors}
+              />
+              <SliderRow
+                label="BG Opacity"
+                min={0}
+                max={1}
+                step={0.05}
+                value={(params.bgOpacity as number) ?? 0.8}
+                onChange={(v) => onUpdate("bgOpacity", v)}
+                colors={colors}
+              />
+            </>
+          )}
+          {/* Image texture on material */}
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Image on Material</Text>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <TouchableOpacity
+                style={[styles.smallActionButton, { borderColor: colors.tint, paddingHorizontal: 8 }]}
+                onPress={() => {
+                  if (typeof document !== "undefined") {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = "image/*";
+                    input.onchange = (e: any) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.readAsDataURL(file);
+                      reader.onload = () => onUpdate("matImageDataUrl", reader.result as string);
+                    };
+                    input.click();
+                  }
+                }}
+              >
+                <Text style={[styles.buttonText, { color: colors.tint }]}>
+                  {params.matImageDataUrl ? "Change" : "Pick Image"}
+                </Text>
+              </TouchableOpacity>
+              {Boolean(params.matImageDataUrl) && (
+                <TouchableOpacity
+                  style={[styles.smallActionButton, { borderColor: "#888", paddingHorizontal: 8 }]}
+                  onPress={() => onUpdate("matImageDataUrl", undefined)}
+                >
+                  <Text style={[styles.buttonText, { color: "#888" }]}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </Row>
+          {/* Environment map */}
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Env Map</Text>
+            <CycleButton
+              value={(params.envMapStyle as string) ?? "none"}
+              options={[]}
+              onPress={() => {
+                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "custom"];
+                const idx = styles_list.indexOf((params.envMapStyle as string) ?? "none");
+                onUpdate("envMapStyle", styles_list[(idx + 1) % styles_list.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          {(params.envMapStyle as string | undefined) && (params.envMapStyle as string) !== "none" && (
+            <>
+              <SliderRow
+                label="Env Intensity"
+                min={0}
+                max={3}
+                step={0.05}
+                value={(params.envMapIntensity as number) ?? 1.5}
+                onChange={(v) => onUpdate("envMapIntensity", v)}
+                colors={colors}
+              />
+              {(params.envMapStyle as string) === "custom" && (
+                <Row>
+                  <Text style={[styles.label, { color: colors.text }]}>Custom Env Image</Text>
+                  <TouchableOpacity
+                    style={[styles.smallActionButton, { borderColor: colors.tint, paddingHorizontal: 8 }]}
+                    onPress={() => {
+                      if (typeof document !== "undefined") {
+                        const input = document.createElement("input");
+                        input.type = "file";
+                        input.accept = "image/*";
+                        input.onchange = (e: any) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.readAsDataURL(file);
+                          reader.onload = () => onUpdate("envMapCustomDataUrl", reader.result as string);
+                        };
+                        input.click();
+                      }
+                    }}
+                  >
+                    <Text style={[styles.buttonText, { color: colors.tint }]}>
+                      {params.envMapCustomDataUrl ? "Change" : "Pick"}
+                    </Text>
+                  </TouchableOpacity>
+                </Row>
+              )}
+            </>
           )}
           <SliderRow
             label="Position X"
