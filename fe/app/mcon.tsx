@@ -64,7 +64,7 @@ export default function MconScreen() {
   }, [setEffectInstances, text, textSets]);
 
   if (didApplyMantras) {
-    return <ThreeDTextScreen sequenceMode />;
+    return <ThreeDTextScreen sequenceMode skipSavedConfigLoad />;
   }
 
   return (

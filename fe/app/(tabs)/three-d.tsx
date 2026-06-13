@@ -5588,8 +5588,10 @@ async function resizeThumbnail(dataUrl: string, targetSize: number): Promise<str
 // ── Main screen ───────────────────────────────────────────────────────────────
 export function ThreeDTextScreen({
   sequenceMode = false,
+  skipSavedConfigLoad = false,
 }: {
   sequenceMode?: boolean;
+  skipSavedConfigLoad?: boolean;
 }) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
@@ -6218,7 +6220,9 @@ export function ThreeDTextScreen({
       }
     }
 
-    loadLastSavedConfig();
+    if (!skipSavedConfigLoad) {
+      loadLastSavedConfig();
+    }
     loadPresetList();
     refreshPending();
 
@@ -6241,7 +6245,7 @@ export function ThreeDTextScreen({
         window.removeEventListener("online", syncOnOnline);
       }
     };
-  }, []);
+  }, [skipSavedConfigLoad, setEffectInstances]);
 
   const refreshPending = async () => {
     try {
