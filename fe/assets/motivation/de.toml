@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "de"
+language_name = "German"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "de_quote_01"
+type = "Quote"
+text = "Kleine Versprechen, die du täglich hältst, werden zu einem Leben, dem du vertrauen kannst."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_mantra_02"
+type = "Mantra"
+text = "Beginne wieder, ruhig und ganz."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_quality_03"
+type = "Quality"
+text = "Disziplin mit Wärme."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_value_04"
+type = "Value"
+text = "Fortschritt vor Leistungsinszenierung."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_affirmation_05"
+type = "Affirmation"
+text = "Ich kann den nächsten ehrlichen Schritt gehen."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_slogan_06"
+type = "Slogan"
+text = "Baue den Tag, bevor der Tag dich baut."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_quote_07"
+type = "Quote"
+text = "Aufmerksamkeit ist die erste Form von Mut."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_mantra_08"
+type = "Mantra"
+text = "Weniger Eile, mehr Kraft."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_quality_09"
+type = "Quality"
+text = "Geduldiger Ehrgeiz."
+author_name = "Structable Studio"
+
+[[items]]
+id = "de_value_10"
+type = "Value"
+text = "Wahrheit, die Handeln ermöglicht."
+author_name = "Structable Studio"
+
+[[slides]]
+id = "de_slide_01"
+item_ids = [ "de_quote_01" ]
+multiline = false
+text = "Kleine Versprechen, die du täglich hältst, werden zu einem Leben, dem du vertrauen kannst."
+
+[[slides]]
+id = "de_slide_02"
+item_ids = [ "de_mantra_02", "de_quality_03" ]
+multiline = true
+text = "Beginne wieder, ruhig und ganz.\nDisziplin mit Wärme."
+
+[[slides]]
+id = "de_slide_03"
+item_ids = [ "de_value_04" ]
+multiline = false
+text = "Fortschritt vor Leistungsinszenierung."
+
+[[slides]]
+id = "de_slide_04"
+item_ids = [ "de_affirmation_05", "de_slogan_06", "de_quote_07" ]
+multiline = true
+text = "Ich kann den nächsten ehrlichen Schritt gehen.\nBaue den Tag, bevor der Tag dich baut.\nAufmerksamkeit ist die erste Form von Mut."
+
+[[slides]]
+id = "de_slide_05"
+item_ids = [ "de_mantra_08" ]
+multiline = false
+text = "Weniger Eile, mehr Kraft."
+
+[[slides]]
+id = "de_slide_06"
+item_ids = [ "de_quality_09", "de_value_10" ]
+multiline = true
+text = "Geduldiger Ehrgeiz.\nWahrheit, die Handeln ermöglicht."

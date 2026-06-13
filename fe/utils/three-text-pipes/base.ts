@@ -52,6 +52,9 @@ export interface PipeFrameContext extends PipeSetupContext {
 export interface EffectPipe {
   readonly name: string;
   paused?: boolean;
+  speedMultiplier?: number;
+  /** Set by createPipeFromInstance so PipelineManager can tag scene objects for tap detection. */
+  effectInstanceId?: string;
   setup(ctx: PipeSetupContext): void;
   addComposerPass?(composer: EffectComposer, ctx: PipeSetupContext): void;
   update?(ctx: PipeFrameContext): void;
@@ -109,7 +112,12 @@ export class PipelineManager {
         p.update?.({ ...ctx, time: frozenTime, delta: 0 });
       } else {
         this.frozenTimes.set(p, ctx.time);
-        p.update?.(ctx);
+        const speedMultiplier = Math.max(0, p.speedMultiplier ?? 1);
+        p.update?.({
+          ...ctx,
+          time: ctx.time * speedMultiplier,
+          delta: ctx.delta * speedMultiplier,
+        });
       }
       // After a deform pipe runs, update subsequent deform pipes' stored originals
       // so they see this pipe's output as their input (enables chaining).
@@ -123,7 +131,22 @@ export class PipelineManager {
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null) {
     if (!this.setupCtx) return;
-    for (const p of this.pipes) p.onMeshChanged?.(mesh, this.setupCtx);
+    const scene = this.setupCtx.scene;
+    for (const p of this.pipes) {
+      const before = p.effectInstanceId ? new Set(scene.children) : null;
+      p.onMeshChanged?.(mesh, this.setupCtx);
+      if (before && p.effectInstanceId) {
+        for (const child of scene.children) {
+          if (!before.has(child)) {
+            child.traverse((obj) => {
+              if (!obj.userData.effectInstanceId) {
+                obj.userData.effectInstanceId = p.effectInstanceId;
+              }
+            });
+          }
+        }
+      }
+    }
   }
 
   restoreGeometry() {

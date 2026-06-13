@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "ja"
+language_name = "Japanese"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "ja_quote_01"
+type = "Quote"
+text = "毎日守る小さな約束が、信頼できる人生をつくる。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_mantra_02"
+type = "Mantra"
+text = "落ち着いて、まるごと、もう一度始める。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_quality_03"
+type = "Quality"
+text = "温かさのある規律。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_value_04"
+type = "Value"
+text = "演じる成果より、実際の前進。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_affirmation_05"
+type = "Affirmation"
+text = "私は次の誠実な一歩を踏み出せる。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_slogan_06"
+type = "Slogan"
+text = "一日に作られる前に、一日を作ろう。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_quote_07"
+type = "Quote"
+text = "注意を向けることは、勇気の最初の形。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_mantra_08"
+type = "Mantra"
+text = "急がず、力強く。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_quality_09"
+type = "Quality"
+text = "忍耐ある野心。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "ja_value_10"
+type = "Value"
+text = "行動を助ける真実。"
+author_name = "Structable Studio"
+
+[[slides]]
+id = "ja_slide_01"
+item_ids = [ "ja_quote_01" ]
+multiline = false
+text = "毎日守る小さな約束が、信頼できる人生をつくる。"
+
+[[slides]]
+id = "ja_slide_02"
+item_ids = [ "ja_mantra_02", "ja_quality_03" ]
+multiline = true
+text = "落ち着いて、まるごと、もう一度始める。\n温かさのある規律。"
+
+[[slides]]
+id = "ja_slide_03"
+item_ids = [ "ja_value_04" ]
+multiline = false
+text = "演じる成果より、実際の前進。"
+
+[[slides]]
+id = "ja_slide_04"
+item_ids = [ "ja_affirmation_05", "ja_slogan_06", "ja_quote_07" ]
+multiline = true
+text = "私は次の誠実な一歩を踏み出せる。\n一日に作られる前に、一日を作ろう。\n注意を向けることは、勇気の最初の形。"
+
+[[slides]]
+id = "ja_slide_05"
+item_ids = [ "ja_mantra_08" ]
+multiline = false
+text = "急がず、力強く。"
+
+[[slides]]
+id = "ja_slide_06"
+item_ids = [ "ja_quality_09", "ja_value_10" ]
+multiline = true
+text = "忍耐ある野心。\n行動を助ける真実。"

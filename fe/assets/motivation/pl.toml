@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "pl"
+language_name = "Polish"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "pl_quote_01"
+type = "Quote"
+text = "Małe obietnice dotrzymywane codziennie tworzą życie, któremu możesz ufać."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_mantra_02"
+type = "Mantra"
+text = "Zacznij od nowa, spokojnie i w całości."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_quality_03"
+type = "Quality"
+text = "Dyscyplina z ciepłem."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_value_04"
+type = "Value"
+text = "Postęp zamiast teatru produktywności."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_affirmation_05"
+type = "Affirmation"
+text = "Mogę zrobić następny uczciwy krok."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_slogan_06"
+type = "Slogan"
+text = "Zbuduj dzień, zanim dzień zbuduje ciebie."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_quote_07"
+type = "Quote"
+text = "Uwaga jest pierwszą formą odwagi."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_mantra_08"
+type = "Mantra"
+text = "Mniej pośpiechu, więcej mocy."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_quality_09"
+type = "Quality"
+text = "Cierpliwa ambicja."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pl_value_10"
+type = "Value"
+text = "Prawda, która pomaga działać."
+author_name = "Structable Studio"
+
+[[slides]]
+id = "pl_slide_01"
+item_ids = [ "pl_quote_01" ]
+multiline = false
+text = "Małe obietnice dotrzymywane codziennie tworzą życie, któremu możesz ufać."
+
+[[slides]]
+id = "pl_slide_02"
+item_ids = [ "pl_mantra_02", "pl_quality_03" ]
+multiline = true
+text = "Zacznij od nowa, spokojnie i w całości.\nDyscyplina z ciepłem."
+
+[[slides]]
+id = "pl_slide_03"
+item_ids = [ "pl_value_04" ]
+multiline = false
+text = "Postęp zamiast teatru produktywności."
+
+[[slides]]
+id = "pl_slide_04"
+item_ids = [ "pl_affirmation_05", "pl_slogan_06", "pl_quote_07" ]
+multiline = true
+text = "Mogę zrobić następny uczciwy krok.\nZbuduj dzień, zanim dzień zbuduje ciebie.\nUwaga jest pierwszą formą odwagi."
+
+[[slides]]
+id = "pl_slide_05"
+item_ids = [ "pl_mantra_08" ]
+multiline = false
+text = "Mniej pośpiechu, więcej mocy."
+
+[[slides]]
+id = "pl_slide_06"
+item_ids = [ "pl_quality_09", "pl_value_10" ]
+multiline = true
+text = "Cierpliwa ambicja.\nPrawda, która pomaga działać."

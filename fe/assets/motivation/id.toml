@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "id"
+language_name = "Indonesian"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "id_quote_01"
+type = "Quote"
+text = "Janji kecil yang ditepati setiap hari membangun hidup yang bisa dipercaya."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_mantra_02"
+type = "Mantra"
+text = "Mulai lagi dengan tenang dan utuh."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_quality_03"
+type = "Quality"
+text = "Disiplin dengan kehangatan."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_value_04"
+type = "Value"
+text = "Kemajuan sebelum sandiwara performa."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_affirmation_05"
+type = "Affirmation"
+text = "Saya bisa mengambil langkah jujur berikutnya."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_slogan_06"
+type = "Slogan"
+text = "Bangun harimu sebelum hari membangunmu."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_quote_07"
+type = "Quote"
+text = "Perhatian adalah bentuk pertama keberanian."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_mantra_08"
+type = "Mantra"
+text = "Lebih sedikit tergesa, lebih banyak daya."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_quality_09"
+type = "Quality"
+text = "Ambisi yang sabar."
+author_name = "Structable Studio"
+
+[[items]]
+id = "id_value_10"
+type = "Value"
+text = "Kebenaran yang membantu tindakan."
+author_name = "Structable Studio"
+
+[[slides]]
+id = "id_slide_01"
+item_ids = [ "id_quote_01" ]
+multiline = false
+text = "Janji kecil yang ditepati setiap hari membangun hidup yang bisa dipercaya."
+
+[[slides]]
+id = "id_slide_02"
+item_ids = [ "id_mantra_02", "id_quality_03" ]
+multiline = true
+text = "Mulai lagi dengan tenang dan utuh.\nDisiplin dengan kehangatan."
+
+[[slides]]
+id = "id_slide_03"
+item_ids = [ "id_value_04" ]
+multiline = false
+text = "Kemajuan sebelum sandiwara performa."
+
+[[slides]]
+id = "id_slide_04"
+item_ids = [ "id_affirmation_05", "id_slogan_06", "id_quote_07" ]
+multiline = true
+text = "Saya bisa mengambil langkah jujur berikutnya.\nBangun harimu sebelum hari membangunmu.\nPerhatian adalah bentuk pertama keberanian."
+
+[[slides]]
+id = "id_slide_05"
+item_ids = [ "id_mantra_08" ]
+multiline = false
+text = "Lebih sedikit tergesa, lebih banyak daya."
+
+[[slides]]
+id = "id_slide_06"
+item_ids = [ "id_quality_09", "id_value_10" ]
+multiline = true
+text = "Ambisi yang sabar.\nKebenaran yang membantu tindakan."

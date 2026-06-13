@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "ru"
+language_name = "Russian"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "ru_quote_01"
+type = "Quote"
+text = "Малые обещания, выполненные каждый день, создают жизнь, которой можно доверять."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_mantra_02"
+type = "Mantra"
+text = "Начни снова: спокойно и полностью."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_quality_03"
+type = "Quality"
+text = "Дисциплина с теплом."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_value_04"
+type = "Value"
+text = "Прогресс важнее показательной продуктивности."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_affirmation_05"
+type = "Affirmation"
+text = "Я могу сделать следующий честный шаг."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_slogan_06"
+type = "Slogan"
+text = "Создай день до того, как день создаст тебя."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_quote_07"
+type = "Quote"
+text = "Внимание — первая форма смелости."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_mantra_08"
+type = "Mantra"
+text = "Меньше спешки, больше силы."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_quality_09"
+type = "Quality"
+text = "Терпеливые амбиции."
+author_name = "Structable Studio"
+
+[[items]]
+id = "ru_value_10"
+type = "Value"
+text = "Правда, которая помогает действовать."
+author_name = "Structable Studio"
+
+[[slides]]
+id = "ru_slide_01"
+item_ids = [ "ru_quote_01" ]
+multiline = false
+text = "Малые обещания, выполненные каждый день, создают жизнь, которой можно доверять."
+
+[[slides]]
+id = "ru_slide_02"
+item_ids = [ "ru_mantra_02", "ru_quality_03" ]
+multiline = true
+text = "Начни снова: спокойно и полностью.\nДисциплина с теплом."
+
+[[slides]]
+id = "ru_slide_03"
+item_ids = [ "ru_value_04" ]
+multiline = false
+text = "Прогресс важнее показательной продуктивности."
+
+[[slides]]
+id = "ru_slide_04"
+item_ids = [ "ru_affirmation_05", "ru_slogan_06", "ru_quote_07" ]
+multiline = true
+text = "Я могу сделать следующий честный шаг.\nСоздай день до того, как день создаст тебя.\nВнимание — первая форма смелости."
+
+[[slides]]
+id = "ru_slide_05"
+item_ids = [ "ru_mantra_08" ]
+multiline = false
+text = "Меньше спешки, больше силы."
+
+[[slides]]
+id = "ru_slide_06"
+item_ids = [ "ru_quality_09", "ru_value_10" ]
+multiline = true
+text = "Терпеливые амбиции.\nПравда, которая помогает действовать."

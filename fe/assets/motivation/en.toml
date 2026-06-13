@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "en"
+language_name = "English"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "en_quote_01"
+type = "Quote"
+text = "Small promises kept daily become a life you can trust."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_mantra_02"
+type = "Mantra"
+text = "Begin again, calmly and completely."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_quality_03"
+type = "Quality"
+text = "Discipline with warmth."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_value_04"
+type = "Value"
+text = "Progress over performance theater."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_affirmation_05"
+type = "Affirmation"
+text = "I can do the next honest step."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_slogan_06"
+type = "Slogan"
+text = "Build the day before it builds you."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_quote_07"
+type = "Quote"
+text = "Attention is the first form of courage."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_mantra_08"
+type = "Mantra"
+text = "Less hurry, more power."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_quality_09"
+type = "Quality"
+text = "Patient ambition."
+author_name = "Structable Studio"
+
+[[items]]
+id = "en_value_10"
+type = "Value"
+text = "Truth that helps action."
+author_name = "Structable Studio"
+
+[[slides]]
+id = "en_slide_01"
+item_ids = [ "en_quote_01" ]
+multiline = false
+text = "Small promises kept daily become a life you can trust."
+
+[[slides]]
+id = "en_slide_02"
+item_ids = [ "en_mantra_02", "en_quality_03" ]
+multiline = true
+text = "Begin again, calmly and completely.\nDiscipline with warmth."
+
+[[slides]]
+id = "en_slide_03"
+item_ids = [ "en_value_04" ]
+multiline = false
+text = "Progress over performance theater."
+
+[[slides]]
+id = "en_slide_04"
+item_ids = [ "en_affirmation_05", "en_slogan_06", "en_quote_07" ]
+multiline = true
+text = "I can do the next honest step.\nBuild the day before it builds you.\nAttention is the first form of courage."
+
+[[slides]]
+id = "en_slide_05"
+item_ids = [ "en_mantra_08" ]
+multiline = false
+text = "Less hurry, more power."
+
+[[slides]]
+id = "en_slide_06"
+item_ids = [ "en_quality_09", "en_value_10" ]
+multiline = true
+text = "Patient ambition.\nTruth that helps action."

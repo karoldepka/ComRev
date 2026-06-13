@@ -1,4 +1,5 @@
 import { AiEffectChatModal } from "@/components/AiEffectChatModal";
+import { useConfirmDialog } from "@/components/confirm-dialog";
 import { ExportModal } from "@/components/ExportModal";
 import { ImagePickerModal } from "@/components/ImagePickerModal";
 import { ThreeDText, ThreeDTextHandle } from "@/components/three-d-text";
@@ -23,6 +24,7 @@ import {
   ThreeDConfig,
 } from "@/utils/config-store";
 import { createEffectInstance, createId } from "@/utils/effect-defaults";
+import { createPipeFromInstance } from "@/utils/pipe-factory";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import {
   AVAILABLE_FONTS,
@@ -192,12 +194,11 @@ import {
   ZapPipe,
   ZoomBlurPipe,
 } from "@/utils/three-text-pipes";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -1080,6 +1081,15 @@ const EFFECT_TYPES: {
 
 const DEFAULT_HIDDEN_EFFECT_TYPES = new Set<EffectType>(["crosshatch"]);
 
+function isAnimatedEffectType(type: EffectType) {
+  return EFFECT_TYPES.some((effect) => effect.type === type && effect.animated);
+}
+
+function commonSpeedValue(params: Record<string, unknown>) {
+  const value = Number(params.commonSpeed ?? 1);
+  return Number.isFinite(value) ? value : 1;
+}
+
 // English synonym keywords for effects — searched in addition to the translated label.
 // Locale files may also provide eff_<type>_kw keys for localized synonyms.
 const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
@@ -1643,306 +1653,6 @@ function createDefaultEffectParams_local(
   }
 }
 
-function createPipeFromInstance(effect: EffectInstance): EffectPipe {
-  switch (effect.type) {
-    case "bloom":
-      return new BloomPipe(effect.params as any);
-    case "depthOfField":
-      return new DepthOfFieldPipe(effect.params as any);
-    case "chromatic":
-      return new ChromaticAberrationPipe(effect.params as any);
-    case "filmGrain":
-      return new FilmGrainPipe(effect.params as any);
-    case "glitch":
-      return new GlitchPipe(effect.params as any);
-    case "fishEye":
-      return new FishEyePipe(effect.params as any);
-    case "bend":
-      return new BendPipe(effect.params as any);
-    case "envMap":
-      return new EnvMapPipe(effect.params as any);
-    case "neonGlow":
-      return new NeonGlowPipe(effect.params as any);
-    case "metallicPreset":
-      return new MetallicPresetPipe(effect.params as any);
-    case "dust":
-      return new ParticleDustPipe(effect.params as any);
-    case "wireframe":
-      return new WireframePipe(effect.params as any);
-    case "outline":
-      return new OutlinePipe(effect.params as any);
-    case "rays":
-      return new RaysPipe(effect.params as any);
-    case "radialBlur":
-      return new RadialBlurPipe(effect.params as any);
-    case "wave":
-      return new WavePipe(effect.params as any);
-    case "twist":
-      return new TwistPipe(effect.params as any);
-    case "pulse":
-      return new PulsePipe(effect.params as any);
-    case "floatingRings":
-      return new FloatingRingsPipe(effect.params as any);
-    case "vignette":
-      return new VignettePipe(effect.params as any);
-    case "scanlines":
-      return new ScanlinesPipe(effect.params as any);
-    case "colorGrading":
-      return new ColorGradingPipe(effect.params as any);
-    case "pixelate":
-      return new PixelatePipe(effect.params as any);
-    case "circularBlur":
-      return new CircularBlurPipe(effect.params as any);
-    case "sepia":
-      return new SepiaPipe(effect.params as any);
-    case "invert":
-      return new InvertPipe(effect.params as any);
-    case "sobelEdge":
-      return new SobelEdgePipe(effect.params as any);
-    case "thermal":
-      return new ThermalPipe(effect.params as any);
-    case "nightVision":
-      return new NightVisionPipe(effect.params as any);
-    case "duotone":
-      return new DuotonePipe(effect.params as any);
-    case "posterize":
-      return new PosterizePipe(effect.params as any);
-    case "colorOverlay":
-      return new ColorOverlayPipe(effect.params as any);
-    case "halftone":
-      return new HalftonePipe(effect.params as any);
-    case "sharpen":
-      return new SharpenPipe(effect.params as any);
-    case "animChromatic":
-      return new AnimChromaticPipe(effect.params as any);
-    case "blur":
-      return new BlurPipe(effect.params as any);
-    case "lensDistort":
-      return new LensDistortPipe(effect.params as any);
-    case "mosaic":
-      return new MosaicPipe(effect.params as any);
-    case "noisePost":
-      return new NoisePostPipe(effect.params as any);
-    case "crtCurvature":
-      return new CrtCurvaturePipe(effect.params as any);
-    case "vhsTracking":
-      return new VhsTrackingPipe(effect.params as any);
-    case "glowEdge":
-      return new GlowEdgePipe(effect.params as any);
-    case "acid":
-      return new AcidPipe(effect.params as any);
-    case "kaleidoscopePost":
-      return new KaleidoscopePostPipe(effect.params as any);
-    case "oldFilm":
-      return new OldFilmPipe(effect.params as any);
-    case "zoomBlur":
-      return new ZoomBlurPipe(effect.params as any);
-    case "crosshatch":
-      return new CrosshatchPipe(effect.params as any);
-    case "glitchBlock":
-      return new GlitchBlockPipe(effect.params as any);
-    case "speedLines":
-      return new SpeedLinesPipe(effect.params as any);
-    case "rgbShift":
-      return new RgbShiftPipe(effect.params as any);
-    case "frostedGlass":
-      return new FrostedGlassPipe(effect.params as any);
-    case "waterRipple":
-      return new WaterRipplePipe(effect.params as any);
-    case "pixelShift":
-      return new PixelShiftPipe(effect.params as any);
-    case "retroTv":
-      return new RetroTvPipe(effect.params as any);
-    case "antialiasing":
-      return new AntialiasingPipe(effect.params as any);
-    case "inflate":
-      return new InflatePipe(effect.params as any);
-    case "taper":
-      return new TaperPipe(effect.params as any);
-    case "shear":
-      return new ShearPipe(effect.params as any);
-    case "spherify":
-      return new SpherifyPipe(effect.params as any);
-    case "ripple":
-      return new RipplePipe(effect.params as any);
-    case "melt":
-      return new MeltPipe(effect.params as any);
-    case "pinch":
-      return new PinchPipe(effect.params as any);
-    case "voxelize":
-      return new VoxelizePipe(effect.params as any);
-    case "crumple":
-      return new CrumplePipe(effect.params as any);
-    case "noiseWobble":
-      return new NoiseWobblePipe(effect.params as any);
-    case "spiralDeform":
-      return new SpiralDeformPipe(effect.params as any);
-    case "bulge":
-      return new BulgePipe(effect.params as any);
-    case "squish":
-      return new SquishPipe(effect.params as any);
-    case "zap":
-      return new ZapPipe(effect.params as any);
-    case "explode":
-      return new ExplodePipe(effect.params as any);
-    case "fold":
-      return new FoldPipe(effect.params as any);
-    case "spikes":
-      return new SpikesPipe(effect.params as any);
-    case "cylindrize":
-      return new CylindrizePipe(effect.params as any);
-    case "xRay":
-      return new XRayPipe(effect.params as any);
-    case "toonShading":
-      return new ToonShadingPipe(effect.params as any);
-    case "hologram":
-      return new HologramPipe(effect.params as any);
-    case "gradientMesh":
-      return new GradientMeshPipe(effect.params as any);
-    case "rainbowMesh":
-      return new RainbowMeshPipe(effect.params as any);
-    case "iridescent":
-      return new IridescentPipe(effect.params as any);
-    case "emissivePulse":
-      return new EmissivePulsePipe(effect.params as any);
-    case "dissolveAnim":
-      return new DissolveAnimPipe(effect.params as any);
-    case "glass":
-      return new GlassPipe(effect.params as any);
-    case "matcap":
-      return new MatcapPipe(effect.params as any);
-    case "spotlight":
-      return new SpotlightPipe(effect.params as any);
-    case "strobe":
-      return new StrobePipe(effect.params as any);
-    case "flicker":
-      return new FlickerPipe(effect.params as any);
-    case "colorCycleLight":
-      return new ColorCycleLightPipe(effect.params as any);
-    case "disco":
-      return new DiscoPipe(effect.params as any);
-    case "ambientPulse":
-      return new AmbientPulsePipe(effect.params as any);
-    case "rimLight":
-      return new RimLightPipe(effect.params as any);
-    case "dramaticLight":
-      return new DramaticLightPipe(effect.params as any);
-    case "lightningFlash":
-      return new LightningFlashPipe(effect.params as any);
-    case "rainbowLights":
-      return new RainbowLightsPipe(effect.params as any);
-    case "echoCopies":
-      return new EchoCopiesPipe(effect.params as any);
-    case "starField3d":
-      return new StarField3dPipe(effect.params as any);
-    case "snow":
-      return new SnowPipe(effect.params as any);
-    case "rain":
-      return new RainPipe(effect.params as any);
-    case "confetti":
-      return new ConfettiPipe(effect.params as any);
-    case "sparkle":
-      return new SparklePipe(effect.params as any);
-    case "aura":
-      return new AuraPipe(effect.params as any);
-    case "gridFloor":
-      return new GridFloorPipe(effect.params as any);
-    case "orbiter":
-      return new OrbiterPipe(effect.params as any);
-    case "portalRing":
-      return new PortalRingPipe(effect.params as any);
-    case "cometTrail":
-      return new CometTrailPipe(effect.params as any);
-    case "floatingCubes":
-      return new FloatingCubesPipe(effect.params as any);
-    case "mirrorPlane":
-      return new MirrorPlanePipe(effect.params as any);
-    case "spin":
-      return new SpinPipe(effect.params as any);
-    case "bounce":
-      return new BouncePipe(effect.params as any);
-    case "levitation":
-      return new LevitationPipe(effect.params as any);
-    case "swing":
-      return new SwingPipe(effect.params as any);
-    case "tremble":
-      return new TremplePipe(effect.params as any);
-    case "breathe":
-      return new BreathePipe(effect.params as any);
-    case "wiggle":
-      return new WigglePipe(effect.params as any);
-    case "floatDrift":
-      return new FloatDriftPipe(effect.params as any);
-    case "flipCoin":
-      return new FlipCoinPipe(effect.params as any);
-    case "grow":
-      return new GrowPipe(effect.params as any);
-    case "shrink":
-      return new ShrinkPipe(effect.params as any);
-    case "orbitAnim":
-      return new OrbitAnimPipe(effect.params as any);
-    case "rock":
-      return new RockPipe(effect.params as any);
-    case "jitter":
-      return new JitterPipe(effect.params as any);
-    case "sway":
-      return new SwayPipe(effect.params as any);
-    case "figureEight":
-      return new FigureEightPipe(effect.params as any);
-    case "pendulum":
-      return new PendulumPipe(effect.params as any);
-    case "customJs":
-      return new CustomJsPipe(effect.params as any);
-    case "mainText":
-      return new MainTextPipe(effect.params as any);
-    case "text3d":
-      return new Text3dPipe(effect.params as any);
-    case "graphics":
-      return new GraphicsPipe({ ...(effect.params as any), effectInstanceId: effect.id });
-    case "tessellate":
-      return new TessellatePipe(effect.params as any);
-    case "wings":
-      return new WingsPipe(effect.params as any);
-    case "fire":
-      return new FirePipe(effect.params as any);
-    case "smoke":
-      return new SmokePipe(effect.params as any);
-    case "skySphere":
-      return new SkySpherePipe(effect.params as any);
-    case "flatShade":
-      return new FlatShadePipe(effect.params as any);
-    case "shadowFloor":
-      return new ShadowFloorPipe(effect.params as any);
-    case "backgroundPlane":
-      return new BackgroundPlanePipe(effect.params as any);
-    case "fogEffect":
-      return new FogEffectPipe(effect.params as any);
-    case "emboss":
-      return new EmbossPipe(effect.params as any);
-    case "threshold":
-      return new ThresholdPipe(effect.params as any);
-    case "mirrorH":
-      return new MirrorHPipe(effect.params as any);
-    case "mirrorV":
-      return new MirrorVPipe(effect.params as any);
-    case "sketch":
-      return new SketchPipe(effect.params as any);
-    case "sunsetLight":
-      return new SunsetLightPipe(effect.params as any);
-    case "studioLight":
-      return new StudioLightPipe(effect.params as any);
-    case "moonLight":
-      return new MoonLightPipe(effect.params as any);
-    case "chromeEdge":
-      return new ChromeEdgePipe(effect.params as any);
-    case "colorBurn":
-      return new ColorBurnPipe(effect.params as any);
-    case "depthLines":
-      return new DepthLinesPipe(effect.params as any);
-    default:
-      return new FilmGrainPipe();
-  }
-}
 
 const CURATED_COLORS = [
   { label: "Orange", value: 0xff6600 },
@@ -2323,6 +2033,7 @@ function renderText3dControls({
   colors,
   t,
   onUpdate,
+  confirm,
   colorScheme,
   includeTransform,
 }: {
@@ -2330,6 +2041,14 @@ function renderText3dControls({
   colors: any;
   t: (key: string, options?: any) => string;
   onUpdate: (key: string, value: unknown) => void;
+  confirm: (options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    destructive?: boolean;
+    hideCancel?: boolean;
+  }) => Promise<boolean>;
   colorScheme?: "light" | "dark";
   includeTransform?: boolean;
 }) {
@@ -2376,7 +2095,7 @@ function renderText3dControls({
     commitTextSets([...textSets, nextSet], id);
   };
 
-  const deleteActiveTextSet = () => {
+  const deleteActiveTextSet = async () => {
     if (!canDeleteTextSet) return;
     const performDelete = () => {
       const index = textSets.findIndex((set) => set.id === activeTextSet.id);
@@ -2385,19 +2104,14 @@ function renderText3dControls({
         nextSets[Math.max(0, Math.min(index, nextSets.length - 1))] ?? nextSets[0];
       commitTextSets(nextSets, nextActive.id);
     };
-    const message = `Delete "${activeTextSet.name}"? This removes its multiline text set.`;
-    if (typeof window !== "undefined" && window.confirm) {
-      if (window.confirm(message)) performDelete();
-    } else {
-      Alert.alert("Delete text set", message, [
-        { text: t("cancel", "Cancel"), style: "cancel" },
-        {
-          text: t("delete", "Delete"),
-          style: "destructive",
-          onPress: performDelete,
-        },
-      ]);
-    }
+    const confirmed = await confirm({
+      title: "Delete text set",
+      message: `Delete "${activeTextSet.name}"? This removes its multiline text set.`,
+      confirmText: t("delete", "Delete"),
+      cancelText: t("cancel", "Cancel"),
+      destructive: true,
+    });
+    if (confirmed) performDelete();
   };
 
   return (
@@ -2736,6 +2450,14 @@ function renderEffectControls(
   colors: any,
   t: (key: string, options?: any) => string,
   onUpdate: (key: string, value: unknown) => void,
+  confirm: (options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    destructive?: boolean;
+    hideCancel?: boolean;
+  }) => Promise<boolean>,
   onEditCode?: (id: string, code: string, description: string) => void,
   colorScheme?: "light" | "dark",
   onPickImage?: (instanceId: string, paramKey: string) => void,
@@ -2746,7 +2468,7 @@ function renderEffectControls(
   const p = (k: string) => t(`p_${k}`);
   switch (effect.type) {
     case "mainText":
-      return renderText3dControls({ params, colors, t, onUpdate, colorScheme });
+      return renderText3dControls({ params, colors, t, onUpdate, confirm, colorScheme });
     case "bloom":
       return (
         <>
@@ -5027,6 +4749,7 @@ function renderEffectControls(
         colors,
         t,
         onUpdate,
+        confirm,
         colorScheme,
         includeTransform: true,
       });
@@ -5401,7 +5124,7 @@ async function resizeThumbnail(dataUrl: string, targetSize: number): Promise<str
       const ctx2d = canvas.getContext('2d');
       if (!ctx2d) { resolve(dataUrl); return; }
       ctx2d.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.82));
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
@@ -5417,6 +5140,7 @@ export function ThreeDTextScreen({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { t, i18n: i18nInstance } = useTranslation();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isSmallScreen = screenWidth < 600;
   const initialControlsHeight = isSmallScreen
@@ -5486,11 +5210,9 @@ export function ThreeDTextScreen({
     description: string;
   } | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [showPresetPicker, setShowPresetPicker] = useState(false);
   const [presets, setPresets] = useState<PresetRecord[]>([]);
   const [showSavePresetModal, setShowSavePresetModal] = useState(false);
   const [draftPresetName, setDraftPresetName] = useState("");
-  const [zoomedThumbnailUrl, setZoomedThumbnailUrl] = useState<string | null>(null);
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -5540,6 +5262,7 @@ export function ThreeDTextScreen({
       .map((instance) => {
         const pipe = createPipeFromInstance(instance);
         pipe.paused = !(instance.animate ?? true);
+        pipe.speedMultiplier = commonSpeedValue(instance.params);
         return pipe;
       });
   }, [effectInstances]);
@@ -5768,7 +5491,7 @@ export function ThreeDTextScreen({
       const now = new Date().toISOString();
       const rawFrame = await threeDTextRef.current?.captureFrame();
       const thumbnail = rawFrame
-        ? await resizeThumbnail(rawFrame, 600)
+        ? await resizeThumbnail(rawFrame, 1920)
         : undefined;
       const preset: PresetRecord = {
         id: nanoid(),
@@ -5789,70 +5512,23 @@ export function ThreeDTextScreen({
     }
   };
 
-  const handleLoadPreset = (preset: PresetRecord) => {
-    setEffectInstances(
-      preset.effects.map((item) => ({
-        ...item,
-        enabled: item.enabled ?? true,
-        animate: item.animate ?? true,
-        params: item.params ?? {},
-      })),
-    );
-    setShowPresetPicker(false);
-    setSaveStatus(`Loaded preset: ${preset.name}`);
-    setTimeout(() => setSaveStatus(null), 3000);
-  };
-
-  const handleDeletePreset = async (id: string) => {
-    try {
-      await deletePreset(id);
-      try {
-        await deletePresetFromBackend(API_BASE, id);
-      } catch {
-        /* ignore, best-effort */
-      }
-      setPresets((prev) => prev.filter((p) => p.id !== id));
-    } catch (err) {
-      setSaveStatus(
-        `Delete preset failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  };
-
-  const handleResetToBasic = () => {
+  const handleResetToBasic = async () => {
     const performReset = () => {
       storeResetToBasic();
       threeDTextRef.current?.resetCamera?.();
     };
 
-    if (typeof window !== "undefined" && window.confirm) {
-      if (
-        window.confirm(
-          t(
-            "resetConfirm",
-            "Are you sure you want to delete all effects except 3D text?",
-          ),
-        )
-      ) {
-        performReset();
-      }
-    } else {
-      Alert.alert(
-        t("resetToBasic", "Reset to basic settings"),
-        t(
-          "resetConfirm",
-          "Are you sure you want to delete all effects except 3D text?",
-        ),
-        [
-          { text: t("cancel", "Cancel"), style: "cancel" },
-          {
-            text: t("delete", "Delete"),
-            style: "destructive",
-            onPress: performReset,
-          },
-        ],
-      );
-    }
+    const confirmed = await confirm({
+      title: t("resetToBasic", "Reset to basic settings"),
+      message: t(
+        "resetConfirm",
+        "Are you sure you want to delete all effects except 3D text?",
+      ),
+      confirmText: t("delete", "Delete"),
+      cancelText: t("cancel", "Cancel"),
+      destructive: true,
+    });
+    if (confirmed) performReset();
   };
 
   const draggingItem = effectInstances.find(
@@ -5902,7 +5578,7 @@ export function ThreeDTextScreen({
     });
   };
 
-  const removeEffectInstance = (id: string) => {
+  const removeEffectInstance = async (id: string) => {
     const performDelete = () => {
       setEffectInstances((instances) => {
         const index = instances.findIndex((i) => i.id === id);
@@ -5929,20 +5605,14 @@ export function ThreeDTextScreen({
       t,
     );
     const confirmMsg = t("deleteEffectConfirm", { name: effectName });
-    if (typeof window !== "undefined" && window.confirm) {
-      if (window.confirm(confirmMsg)) performDelete();
-    } else if (typeof Alert !== "undefined" && Alert.alert) {
-      Alert.alert(t("deleteEffect", "Delete effect"), confirmMsg, [
-        { text: t("cancel", "Cancel"), style: "cancel" },
-        {
-          text: t("delete", "Delete"),
-          style: "destructive",
-          onPress: performDelete,
-        },
-      ]);
-    } else {
-      performDelete();
-    }
+    const confirmed = await confirm({
+      title: t("deleteEffect", "Delete effect"),
+      message: confirmMsg,
+      confirmText: t("delete", "Delete"),
+      cancelText: t("cancel", "Cancel"),
+      destructive: true,
+    });
+    if (confirmed) performDelete();
   };
 
   const undoDelete = () => {
@@ -6367,7 +6037,7 @@ export function ThreeDTextScreen({
                         styles.smallActionButton,
                         { borderColor: c.tint },
                       ]}
-                      onPress={() => setShowPresetPicker(true)}
+                      onPress={() => router.push("/(tabs)/presets")}
                     >
                       <Text style={[styles.buttonText, { color: c.tint }]}>
                         {t("loadPreset")}
@@ -6708,19 +6378,36 @@ export function ThreeDTextScreen({
                       </Row>
                     )}
                   </View>
-                  {instance.enabled &&
-                    renderEffectControls(
-                      instance,
-                      c,
-                      t,
-                      (key, value) =>
-                        updateEffectParam(instance.id, key, value),
-                      (id, code, desc) =>
-                        setAiChatTarget({ id, code, description: desc }),
-                      colorScheme ?? "light",
-                      (instanceId, paramKey) =>
-                        setImagePickerTarget({ instanceId, paramKey }),
-                    )}
+                  {instance.enabled && (
+                    <>
+                      {isAnimatedEffectType(instance.type) && (
+                        <SliderRow
+                          label="Speed"
+                          min={0}
+                          max={4}
+                          step={0.05}
+                          value={commonSpeedValue(instance.params)}
+                          onChange={(value) =>
+                            updateEffectParam(instance.id, "commonSpeed", value)
+                          }
+                          colors={c}
+                        />
+                      )}
+                      {renderEffectControls(
+                        instance,
+                        c,
+                        t,
+                        (key, value) =>
+                          updateEffectParam(instance.id, key, value),
+                        confirm,
+                        (id, code, desc) =>
+                          setAiChatTarget({ id, code, description: desc }),
+                        colorScheme ?? "light",
+                        (instanceId, paramKey) =>
+                          setImagePickerTarget({ instanceId, paramKey }),
+                      )}
+                    </>
+                  )}
                 </View>
               ))}
 
@@ -6750,6 +6437,7 @@ export function ThreeDTextScreen({
                     c,
                     t,
                     () => undefined,
+                    confirm,
                     undefined,
                     colorScheme ?? "light",
                   )}
@@ -6976,222 +6664,8 @@ export function ThreeDTextScreen({
           </View>
         </View>
       </Modal>
+      {confirmDialog}
 
-      <Modal
-        visible={showPresetPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowPresetPicker(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.55)",
-            justifyContent: "flex-end",
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: colorScheme === "dark" ? "#1a1a1a" : "#fff",
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              maxHeight: "80%",
-            }}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: 16,
-                borderBottomWidth: 1,
-                borderColor: colorScheme === "dark" ? "#2a2a2a" : "#eee",
-              }}
-            >
-              <Text style={{ color: c.text, fontWeight: "600", fontSize: 16 }}>
-                {t("loadPreset")}
-              </Text>
-              <TouchableOpacity onPress={() => setShowPresetPicker(false)}>
-                <Text style={{ color: c.tint, fontSize: 18 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            {presets.length === 0 ? (
-              <View style={{ padding: 32, alignItems: "center" }}>
-                <Text style={{ color: "#888", fontSize: 14 }}>
-                  No presets saved yet.
-                </Text>
-              </View>
-            ) : (
-              <ScrollView
-                contentContainerStyle={{
-                  padding: 10,
-                  gap: 10,
-                }}
-              >
-                {presets.map((preset) => {
-                  const chips = preset.effects.filter(
-                    (e) => e.enabled && e.type !== "mainText",
-                  );
-                  return (
-                    <TouchableOpacity
-                      key={preset.id}
-                      onPress={() => handleLoadPreset(preset)}
-                      style={{
-                        width: "100%",
-                        backgroundColor:
-                          colorScheme === "dark" ? "#252525" : "#f5f5f5",
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: colorScheme === "dark" ? "#333" : "#ddd",
-                        padding: 10,
-                        gap: 6,
-                      }}
-                    >
-                      {/* Thumbnail or effect-pill preview */}
-                      {preset.thumbnail ? (
-                        <TouchableOpacity
-                          onPress={(e) => {
-                            e.stopPropagation?.();
-                            setZoomedThumbnailUrl(preset.thumbnail!);
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          <Image
-                            source={{ uri: preset.thumbnail }}
-                            style={{
-                              width: "100%",
-                              height: 300,
-                              borderRadius: 8,
-                              resizeMode: "cover",
-                            }}
-                          />
-                        </TouchableOpacity>
-                      ) : (
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            flexWrap: "wrap",
-                            gap: 3,
-                            minHeight: 42,
-                          }}
-                        >
-                          {chips.slice(0, 9).map((e, i) => (
-                            <View
-                              key={i}
-                              style={{
-                                paddingHorizontal: 5,
-                                paddingVertical: 2,
-                                borderRadius: 4,
-                                backgroundColor: c.tint + "33",
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: c.tint,
-                                  fontSize: 9,
-                                  fontWeight: "600",
-                                }}
-                              >
-                                {effectTypeLabel(e.type, t)}
-                              </Text>
-                            </View>
-                          ))}
-                          {chips.length > 9 && (
-                            <View
-                              style={{
-                                paddingHorizontal: 5,
-                                paddingVertical: 2,
-                                borderRadius: 4,
-                                backgroundColor:
-                                  colorScheme === "dark" ? "#333" : "#e0e0e0",
-                              }}
-                            >
-                              <Text style={{ color: "#888", fontSize: 9 }}>
-                                +{chips.length - 9}
-                              </Text>
-                            </View>
-                          )}
-                          {chips.length === 0 && (
-                            <Text
-                              style={{
-                                color: "#888",
-                                fontSize: 10,
-                                fontStyle: "italic",
-                              }}
-                            >
-                              No effects
-                            </Text>
-                          )}
-                        </View>
-                      )}
-
-                      {/* Name */}
-                      <Text
-                        style={{
-                          color: c.text,
-                          fontWeight: "600",
-                          fontSize: 12,
-                        }}
-                        numberOfLines={2}
-                      >
-                        {preset.name}
-                      </Text>
-                      <Text style={{ color: "#888", fontSize: 10 }}>
-                        {new Date(
-                          preset.when_last_modified,
-                        ).toLocaleDateString()}
-                      </Text>
-
-                      {/* Load indicator */}
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginTop: 2,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: c.tint,
-                            fontSize: 11,
-                            fontWeight: "600",
-                          }}
-                        >
-                          {t("load")} →
-                        </Text>
-                        <TouchableOpacity
-                          onPress={(e) => {
-                            e.stopPropagation?.();
-                            handleDeletePreset(preset.id);
-                          }}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Text style={{ color: "#e55", fontSize: 12 }}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Thumbnail zoom modal */}
-      <Modal
-        visible={zoomedThumbnailUrl !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setZoomedThumbnailUrl(null)}
-        statusBarTranslucent
-      >
-        <ThumbnailZoomOverlay
-          url={zoomedThumbnailUrl}
-          onDismiss={() => setZoomedThumbnailUrl(null)}
-        />
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -7269,51 +6743,6 @@ function SequenceTransitionOverlay({ page }: { page: SequencePage }) {
       aria-hidden="true"
       className={`sequence-transition sequence-transition-${page.transition}`}
     />
-  );
-}
-
-function ThumbnailZoomOverlay({
-  url,
-  onDismiss,
-}: {
-  url: string | null;
-  onDismiss: () => void;
-}) {
-  const { width, height } = useWindowDimensions();
-
-  React.useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onDismiss(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onDismiss]);
-
-  if (!url) return null;
-
-  const imgSize = Math.min(width, height) * 0.85;
-
-  return (
-    <Pressable
-      onPress={onDismiss}
-      style={{
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.82)',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Pressable onPress={(e) => e.stopPropagation?.()}>
-        <Image
-          source={{ uri: url }}
-          style={{
-            width: imgSize,
-            height: imgSize,
-            borderRadius: 10,
-            resizeMode: 'contain',
-          }}
-        />
-      </Pressable>
-    </Pressable>
   );
 }
 

@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "zh"
+language_name = "Chinese"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "zh_quote_01"
+type = "Quote"
+text = "每天守住小承诺，人生就会变得可靠。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_mantra_02"
+type = "Mantra"
+text = "平静而完整地重新开始。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_quality_03"
+type = "Quality"
+text = "有温度的自律。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_value_04"
+type = "Value"
+text = "重视进步，不表演努力。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_affirmation_05"
+type = "Affirmation"
+text = "我能迈出下一个诚实的步骤。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_slogan_06"
+type = "Slogan"
+text = "先塑造今天，再让今天塑造你。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_quote_07"
+type = "Quote"
+text = "专注是勇气的第一种形式。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_mantra_08"
+type = "Mantra"
+text = "少一点匆忙，多一点力量。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_quality_09"
+type = "Quality"
+text = "耐心的雄心。"
+author_name = "Structable Studio"
+
+[[items]]
+id = "zh_value_10"
+type = "Value"
+text = "能推动行动的真相。"
+author_name = "Structable Studio"
+
+[[slides]]
+id = "zh_slide_01"
+item_ids = [ "zh_quote_01" ]
+multiline = false
+text = "每天守住小承诺，人生就会变得可靠。"
+
+[[slides]]
+id = "zh_slide_02"
+item_ids = [ "zh_mantra_02", "zh_quality_03" ]
+multiline = true
+text = "平静而完整地重新开始。\n有温度的自律。"
+
+[[slides]]
+id = "zh_slide_03"
+item_ids = [ "zh_value_04" ]
+multiline = false
+text = "重视进步，不表演努力。"
+
+[[slides]]
+id = "zh_slide_04"
+item_ids = [ "zh_affirmation_05", "zh_slogan_06", "zh_quote_07" ]
+multiline = true
+text = "我能迈出下一个诚实的步骤。\n先塑造今天，再让今天塑造你。\n专注是勇气的第一种形式。"
+
+[[slides]]
+id = "zh_slide_05"
+item_ids = [ "zh_mantra_08" ]
+multiline = false
+text = "少一点匆忙，多一点力量。"
+
+[[slides]]
+id = "zh_slide_06"
+item_ids = [ "zh_quality_09", "zh_value_10" ]
+multiline = true
+text = "耐心的雄心。\n能推动行动的真相。"

@@ -1,0 +1,101 @@
+schema_version = 1
+language_code = "pt"
+language_name = "Portuguese"
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+
+[[items]]
+id = "pt_quote_01"
+type = "Quote"
+text = "Pequenas promessas cumpridas todos os dias criam uma vida confiável."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_mantra_02"
+type = "Mantra"
+text = "Comece de novo, com calma e por inteiro."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_quality_03"
+type = "Quality"
+text = "Disciplina com calor humano."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_value_04"
+type = "Value"
+text = "Progresso antes de teatro de desempenho."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_affirmation_05"
+type = "Affirmation"
+text = "Posso dar o próximo passo honesto."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_slogan_06"
+type = "Slogan"
+text = "Construa o dia antes que o dia construa você."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_quote_07"
+type = "Quote"
+text = "A atenção é a primeira forma de coragem."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_mantra_08"
+type = "Mantra"
+text = "Menos pressa, mais força."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_quality_09"
+type = "Quality"
+text = "Ambição paciente."
+author_name = "Structable Studio"
+
+[[items]]
+id = "pt_value_10"
+type = "Value"
+text = "Verdade que ajuda a agir."
+author_name = "Structable Studio"
+
+[[slides]]
+id = "pt_slide_01"
+item_ids = [ "pt_quote_01" ]
+multiline = false
+text = "Pequenas promessas cumpridas todos os dias criam uma vida confiável."
+
+[[slides]]
+id = "pt_slide_02"
+item_ids = [ "pt_mantra_02", "pt_quality_03" ]
+multiline = true
+text = "Comece de novo, com calma e por inteiro.\nDisciplina com calor humano."
+
+[[slides]]
+id = "pt_slide_03"
+item_ids = [ "pt_value_04" ]
+multiline = false
+text = "Progresso antes de teatro de desempenho."
+
+[[slides]]
+id = "pt_slide_04"
+item_ids = [ "pt_affirmation_05", "pt_slogan_06", "pt_quote_07" ]
+multiline = true
+text = "Posso dar o próximo passo honesto.\nConstrua o dia antes que o dia construa você.\nA atenção é a primeira forma de coragem."
+
+[[slides]]
+id = "pt_slide_05"
+item_ids = [ "pt_mantra_08" ]
+multiline = false
+text = "Menos pressa, mais força."
+
+[[slides]]
+id = "pt_slide_06"
+item_ids = [ "pt_quality_09", "pt_value_10" ]
+multiline = true
+text = "Ambição paciente.\nVerdade que ajuda a agir."

@@ -1,0 +1,64 @@
+schema_version = 1
+generated_by = "scripts/generate-motivational-content.mjs"
+parser_package = "smol-toml"
+item_types = [ "Quote", "Mantra", "Quality", "Value", "Affirmation", "Slogan" ]
+
+[[languages]]
+code = "en"
+name = "English"
+
+[[languages]]
+code = "zh"
+name = "Chinese"
+
+[[languages]]
+code = "hi"
+name = "Hindi"
+
+[[languages]]
+code = "es"
+name = "Spanish"
+
+[[languages]]
+code = "ar"
+name = "Arabic"
+
+[[languages]]
+code = "fr"
+name = "French"
+
+[[languages]]
+code = "bn"
+name = "Bengali"
+
+[[languages]]
+code = "pt"
+name = "Portuguese"
+
+[[languages]]
+code = "ru"
+name = "Russian"
+
+[[languages]]
+code = "ur"
+name = "Urdu"
+
+[[languages]]
+code = "id"
+name = "Indonesian"
+
+[[languages]]
+code = "de"
+name = "German"
+
+[[languages]]
+code = "ja"
+name = "Japanese"
+
+[[languages]]
+code = "pl"
+name = "Polish"
+
+[[languages]]
+code = "ca"
+name = "Catalan"
