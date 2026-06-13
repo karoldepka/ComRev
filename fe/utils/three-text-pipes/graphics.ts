@@ -13,6 +13,10 @@ export interface GraphicsPipeParams {
   items?: GraphicItem[];
   layout?: 'grid' | 'row' | 'pile';
   spacing?: number;
+  /** Number of columns for grid layout (0 or undefined = auto) */
+  columns?: number;
+  /** Minimum edge-to-edge gap between items in grid layout */
+  gap?: number;
   scale?: number;
   extrudeDepth?: number;
   colorOverride?: boolean;
@@ -179,6 +183,8 @@ export class GraphicsPipe implements EffectPipe {
       items = [],
       layout = 'row',
       spacing = 4,
+      columns = 0,
+      gap = 0.5,
       scale = 1,
       posX = 0,
       posY = 0,
@@ -217,16 +223,51 @@ export class GraphicsPipe implements EffectPipe {
         startX += spacing;
       });
     } else if (layout === 'grid') {
-      const cols = Math.ceil(Math.sqrt(loadedMeshes.length));
+      const cols = (columns > 0) ? columns : Math.ceil(Math.sqrt(loadedMeshes.length));
       const rows = Math.ceil(loadedMeshes.length / cols);
-      const startX = -((cols - 1) * spacing) / 2;
-      const startY = ((rows - 1) * spacing) / 2;
 
-      loadedMeshes.forEach((mesh, idx) => {
-        const r = Math.floor(idx / cols);
-        const c = idx % cols;
-        mesh.position.set(startX + c * spacing, startY - r * spacing, 0);
+      // Measure each item's bounding box (respects scale already set)
+      const sizes = loadedMeshes.map((mesh) => {
+        const box = new THREE.Box3().setFromObject(mesh);
+        return box.getSize(new THREE.Vector3());
       });
+
+      // Max width per column, max height per row
+      const colWidths = Array.from({ length: cols }, (_, c) => {
+        let max = 0;
+        for (let r = 0; r < rows; r++) {
+          const idx = r * cols + c;
+          if (idx < sizes.length) max = Math.max(max, sizes[idx].x);
+        }
+        return max || spacing;
+      });
+      const rowHeights = Array.from({ length: rows }, (_, r) => {
+        let max = 0;
+        for (let c = 0; c < cols; c++) {
+          const idx = r * cols + c;
+          if (idx < sizes.length) max = Math.max(max, sizes[idx].y);
+        }
+        return max || spacing;
+      });
+
+      const totalW = colWidths.reduce((a, b) => a + b, 0) + (cols - 1) * gap;
+      const totalH = rowHeights.reduce((a, b) => a + b, 0) + (rows - 1) * gap;
+
+      let curY = totalH / 2;
+      for (let r = 0; r < rows; r++) {
+        let curX = -totalW / 2;
+        for (let c = 0; c < cols; c++) {
+          const idx = r * cols + c;
+          if (idx >= loadedMeshes.length) break;
+          loadedMeshes[idx].position.set(
+            curX + colWidths[c] / 2,
+            curY - rowHeights[r] / 2,
+            0,
+          );
+          curX += colWidths[c] + gap;
+        }
+        curY -= rowHeights[r] + gap;
+      }
     } else {
       // pile / stack
       loadedMeshes.forEach((mesh, idx) => {

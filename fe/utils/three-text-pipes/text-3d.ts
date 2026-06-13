@@ -41,6 +41,7 @@ export class Text3dPipe implements EffectPipe {
   setup(ctx: PipeSetupContext) {
     this.scene = ctx.scene;
     this.group = new THREE.Group();
+    if (this.effectInstanceId) this.group.userData.effectInstanceId = this.effectInstanceId;
     this.scene.add(this.group);
     this.rebuildMesh();
   }

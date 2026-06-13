@@ -41,6 +41,7 @@ interface ThreeDTextProps {
   pipes?: EffectPipe[];
   onPrimaryMeshClick?: () => void;
   onNonPrimaryTap?: (effectInstanceId: string) => void;
+  onObjectTranslated?: (effectInstanceId: string, x: number, y: number, z: number) => void;
 }
 
 export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
@@ -67,6 +68,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       pipes = [],
       onPrimaryMeshClick,
       onNonPrimaryTap,
+      onObjectTranslated,
     },
     ref,
   ) {
@@ -137,6 +139,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const dragModeRef = useRef<"rotate" | "translate">("rotate");
     const dragPlaneRef = useRef(new THREE.Plane());
     const dragOffsetRef = useRef(new THREE.Vector3());
+    const didTranslateRef = useRef(false);
+    const snapDisabledRef = useRef(false);
     // Pinch zoom state
     const isPinchingRef = useRef(false);
     const pinchStartDistRef = useRef(0);
@@ -372,6 +376,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
 
     const handlePointerDown = (event: any) => {
       isDraggingRef.current = true;
+      didTranslateRef.current = false;
+      snapDisabledRef.current = !!(event.nativeEvent?.ctrlKey || event.nativeEvent?.metaKey);
       const px = event.nativeEvent.pageX;
       const py = event.nativeEvent.pageY;
       lastMousePosition.current = { x: px, y: py };
@@ -452,6 +458,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
 
     const handlePointerMove = (event: any) => {
       if (!isDraggingRef.current || isPinchingRef.current) return;
+      snapDisabledRef.current = !!(event.nativeEvent?.ctrlKey || event.nativeEvent?.metaKey);
       const px = event.nativeEvent.pageX;
       const py = event.nativeEvent.pageY;
       const deltaX = px - lastMousePosition.current.x;
@@ -478,14 +485,22 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
               intersection,
             )
           ) {
-            const newPrimPos = intersection.clone().add(dragOffsetRef.current);
-            const delta = newPrimPos.clone().sub(selectedObjectRef.current.position);
-            // Move all selected objects by the same delta (includes primary)
-            selectedObjectsRef.current.forEach(obj => obj.position.add(delta));
-            // If primary not in set (safety), set it directly
-            if (!selectedObjectsRef.current.has(selectedObjectRef.current)) {
-              selectedObjectRef.current.position.copy(newPrimPos);
+            let rawPos = intersection.clone().add(dragOffsetRef.current);
+            // Snap to 0.5-unit grid unless Ctrl/Meta is held
+            if (!snapDisabledRef.current) {
+              const GRID = 0.5;
+              rawPos.x = Math.round(rawPos.x / GRID) * GRID;
+              rawPos.y = Math.round(rawPos.y / GRID) * GRID;
+              // Also snap to center lines (x=0, y=0)
+              if (Math.abs(rawPos.x) < GRID / 2) rawPos.x = 0;
+              if (Math.abs(rawPos.y) < GRID / 2) rawPos.y = 0;
             }
+            const delta = rawPos.clone().sub(selectedObjectRef.current.position);
+            selectedObjectsRef.current.forEach(obj => obj.position.add(delta));
+            if (!selectedObjectsRef.current.has(selectedObjectRef.current)) {
+              selectedObjectRef.current.position.copy(rawPos);
+            }
+            didTranslateRef.current = true;
           }
         }
       } else {
@@ -498,18 +513,30 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const handlePointerUp = (event: any) => {
       isDraggingRef.current = false;
       const hitObject = pointerDownHitRef.current;
+      const translatedObject = selectedObjectRef.current;
+      const wasTranslate = didTranslateRef.current;
       selectedObjectRef.current = null;
       pointerDownHitRef.current = null;
       dragModeRef.current = "rotate";
+      didTranslateRef.current = false;
 
       const dx = (event?.nativeEvent?.pageX ?? 0) - pointerDownPos.current.x;
       const dy = (event?.nativeEvent?.pageY ?? 0) - pointerDownPos.current.y;
       const wasTap = Math.sqrt(dx * dx + dy * dy) < 8;
 
-      if (pointerDownOnPrimary.current && wasTap) {
+      if (wasTranslate && translatedObject && onObjectTranslated) {
+        let obj: THREE.Object3D | null = translatedObject;
+        while (obj) {
+          if (obj.userData?.effectInstanceId) {
+            const pos = translatedObject.position;
+            onObjectTranslated(obj.userData.effectInstanceId, pos.x, pos.y, pos.z);
+            break;
+          }
+          obj = obj.parent;
+        }
+      } else if (pointerDownOnPrimary.current && wasTap) {
         onPrimaryMeshClick?.();
       } else if (wasTap && hitObject && onNonPrimaryTap) {
-        // Walk up the hierarchy to find the nearest effectInstanceId in userData
         let obj: THREE.Object3D | null = hitObject;
         while (obj) {
           if (obj.userData?.effectInstanceId) {

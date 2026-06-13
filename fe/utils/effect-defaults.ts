@@ -209,7 +209,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
       };
     case "graphics":
       return {
-        items: [], layout: "row", spacing: 4, scale: 1, extrudeDepth: 0.2,
+        items: [], layout: "row", spacing: 4, columns: 0, gap: 0.5, scale: 1, extrudeDepth: 0.2,
         colorOverride: false, color: 0xff6600,
         posX: 0, posY: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0,
       };

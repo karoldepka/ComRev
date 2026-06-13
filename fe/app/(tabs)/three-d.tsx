@@ -838,6 +838,7 @@ type EffectType =
   | "fire"
   | "smoke"
   | "skySphere"
+  | "fractalBackground"
   // static effects
   | "flatShade"
   | "shadowFloor"
@@ -1113,6 +1114,7 @@ const EFFECT_TYPES: {
   { type: "fire",       label: "Fire",        target: "geometry", animated: true },
   { type: "smoke",      label: "Smoke",       target: "geometry", animated: true },
   { type: "skySphere",  label: "Sky",         target: "geometry", animated: true },
+  { type: "fractalBackground", label: "Fractal",  target: "geometry", animated: true },
 ];
 
 const DEFAULT_HIDDEN_EFFECT_TYPES = new Set<EffectType>(["crosshatch"]);
@@ -1133,6 +1135,7 @@ const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
   fire:           ["flame", "blaze", "burn", "heat", "hot", "ember", "inferno"],
   smoke:          ["fog", "mist", "haze", "cloud", "vapor", "steam", "grey"],
   skySphere:      ["sky", "background", "environment", "space", "horizon", "aurora", "nebula", "night", "sunset", "day"],
+  fractalBackground: ["fractal", "mandelbrot", "julia", "plasma", "math", "chaos", "infinite", "zoom", "psychedelic", "pattern"],
   graphics:       ["image", "picture", "photo", "icon", "svg", "artwork", "logo", "texture"],
   text3d:         ["text", "words", "letters", "font", "typography", "write", "caption"],
   bloom:          ["glow", "light", "luminous", "radiance", "shine", "halo", "bright"],
@@ -1195,7 +1198,7 @@ const RANDOM_SCENE_TYPES = new Set<EffectType>([
   'dust', 'wireframe', 'outline', 'echoCopies', 'rays', 'floatingRings', 'starField3d',
   'snow', 'rain', 'confetti', 'sparkle', 'aura', 'gridFloor', 'orbiter', 'portalRing',
   'cometTrail', 'floatingCubes', 'mirrorPlane', 'shadowFloor', 'backgroundPlane',
-  'fogEffect', 'wings', 'fire', 'smoke', 'skySphere',
+  'fogEffect', 'wings', 'fire', 'smoke', 'skySphere', 'fractalBackground',
 ]);
 
 function pickOne<T extends { type: EffectType }>(
@@ -1646,6 +1649,8 @@ function createDefaultEffectParams_local(
       };
     case "wings":
       return { style: "angel", color: 0xffffff, size: 2.5, flapSpeed: 2.5, flapAmplitude: 0.45, opacity: 0.88 };
+    case "fractalBackground":
+      return { fractalType: "mandelbrot", scheme: "psychedelic", maxIter: 128, zoom: 0.35, cx: -0.5, cy: 0, juliaRe: -0.7, juliaIm: 0.27, animateJulia: true, juliaSpeed: 0.3, width: 60, height: 40, offsetZ: -8 };
     case "flatShade":
       return {};
     case "shadowFloor":
@@ -4993,15 +4998,39 @@ function renderEffectControls(
               colors={colors}
             />
           </Row>
-          <SliderRow
-            label="Spacing"
-            min={0.5}
-            max={15}
-            step={0.1}
-            value={(params.spacing as number) ?? 4}
-            onChange={(v) => onUpdate("spacing", v)}
-            colors={colors}
-          />
+          {(params.layout as string) !== "grid" && (
+            <SliderRow
+              label="Spacing"
+              min={0.5}
+              max={15}
+              step={0.1}
+              value={(params.spacing as number) ?? 4}
+              onChange={(v) => onUpdate("spacing", v)}
+              colors={colors}
+            />
+          )}
+          {(params.layout as string) === "grid" && (
+            <>
+              <SliderRow
+                label="Columns"
+                min={1}
+                max={10}
+                step={1}
+                value={(params.columns as number) || Math.ceil(Math.sqrt(((params as any).items?.length ?? 1)))}
+                onChange={(v) => onUpdate("columns", Math.round(v))}
+                colors={colors}
+              />
+              <SliderRow
+                label="Gap"
+                min={0}
+                max={8}
+                step={0.1}
+                value={(params.gap as number) ?? 0.5}
+                onChange={(v) => onUpdate("gap", v)}
+                colors={colors}
+              />
+            </>
+          )}
           <SliderRow
             label="Scale"
             min={0.1}
@@ -5326,6 +5355,86 @@ function renderEffectControls(
           </Row>
         </>
       );
+    case "fractalBackground":
+      return (
+        <>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("type")}</Text>
+            <CycleButton
+              value={(params.fractalType as string) ?? "mandelbrot"}
+              options={["mandelbrot", "julia", "burningShip", "tricorn", "plasma"]}
+              onPress={() => {
+                const opts = ["mandelbrot", "julia", "burningShip", "tricorn", "plasma"];
+                const idx = opts.indexOf((params.fractalType as string) ?? "mandelbrot");
+                onUpdate("fractalType", opts[(idx + 1) % opts.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("scheme")}</Text>
+            <CycleButton
+              value={(params.scheme as string) ?? "psychedelic"}
+              options={["psychedelic", "fire", "ice", "electric", "forest", "ocean", "sunset", "neon", "lava", "grayscale"]}
+              onPress={() => {
+                const opts = ["psychedelic", "fire", "ice", "electric", "forest", "ocean", "sunset", "neon", "lava", "grayscale"];
+                const idx = opts.indexOf((params.scheme as string) ?? "psychedelic");
+                onUpdate("scheme", opts[(idx + 1) % opts.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("iterations")}</Text>
+            <CycleButton
+              value={String((params.maxIter as number) ?? 128)}
+              options={["64", "128", "256", "512"]}
+              onPress={() => {
+                const opts = [64, 128, 256, 512];
+                const idx = opts.indexOf((params.maxIter as number) ?? 128);
+                onUpdate("maxIter", opts[(idx + 1) % opts.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          {(params.fractalType as string) !== "julia" && (params.fractalType as string) !== "plasma" && (
+            <>
+              <SliderRow label={p("zoom")} min={0.05} max={5} step={0.05}
+                value={(params.zoom as number) ?? 0.35} onChange={(v) => onUpdate("zoom", v)} colors={colors} />
+              <SliderRow label="cx" min={-2.5} max={1} step={0.01}
+                value={(params.cx as number) ?? -0.5} onChange={(v) => onUpdate("cx", v)} colors={colors} />
+              <SliderRow label="cy" min={-1.5} max={1.5} step={0.01}
+                value={(params.cy as number) ?? 0} onChange={(v) => onUpdate("cy", v)} colors={colors} />
+            </>
+          )}
+          {(params.fractalType as string) === "julia" && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>{p("animate")}</Text>
+                <Switch value={(params.animateJulia as boolean) ?? true}
+                  onValueChange={(v) => onUpdate("animateJulia", v)}
+                  trackColor={{ false: colors.border, true: colors.tint }} />
+              </Row>
+              {!(params.animateJulia ?? true) && (
+                <>
+                  <SliderRow label="Re" min={-2} max={2} step={0.01}
+                    value={(params.juliaRe as number) ?? -0.7} onChange={(v) => onUpdate("juliaRe", v)} colors={colors} />
+                  <SliderRow label="Im" min={-2} max={2} step={0.01}
+                    value={(params.juliaIm as number) ?? 0.27} onChange={(v) => onUpdate("juliaIm", v)} colors={colors} />
+                </>
+              )}
+              {(params.animateJulia ?? true) && (
+                <SliderRow label={p("speed")} min={0.05} max={3} step={0.05}
+                  value={(params.juliaSpeed as number) ?? 0.3} onChange={(v) => onUpdate("juliaSpeed", v)} colors={colors} />
+              )}
+              <SliderRow label={p("zoom")} min={0.05} max={5} step={0.05}
+                value={(params.zoom as number) ?? 0.35} onChange={(v) => onUpdate("zoom", v)} colors={colors} />
+            </>
+          )}
+          <SliderRow label={p("offsetZ")} min={-30} max={-1} step={0.5}
+            value={(params.offsetZ as number) ?? -8} onChange={(v) => onUpdate("offsetZ", v)} colors={colors} />
+        </>
+      );
     default:
       return null;
   }
@@ -5438,6 +5547,8 @@ export function ThreeDTextScreen({
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlsScrollRef = useRef<ScrollView | null>(null);
+  const effectListContainerY = useRef<number>(0);
+  const pendingScrollNewId = useRef<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const pathname = usePathname();
@@ -5616,12 +5727,10 @@ export function ThreeDTextScreen({
 
   const addEffectInstance = (type?: EffectType) => {
     const t = type ?? selectedEffectType;
-    setEffectInstances((instances) => [...instances, createEffectInstance(t)]);
+    const newInstance = createEffectInstance(t);
+    pendingScrollNewId.current = newInstance.id;
+    setEffectInstances((instances) => [...instances, newInstance]);
     markTried(t);
-    setTimeout(
-      () => controlsScrollRef.current?.scrollToEnd({ animated: true }),
-      50,
-    );
   };
 
   const [triedEffectsSet, setTriedEffectsSet] = useState<Set<string>>(new Set());
@@ -6154,7 +6263,7 @@ export function ThreeDTextScreen({
               const layout = itemLayouts.current[mainInst.id];
               if (layout)
                 controlsScrollRef.current?.scrollTo({
-                  y: layout.y,
+                  y: effectListContainerY.current + layout.y,
                   animated: true,
                 });
             }}
@@ -6162,9 +6271,18 @@ export function ThreeDTextScreen({
               const layout = itemLayouts.current[effectInstanceId];
               if (layout)
                 controlsScrollRef.current?.scrollTo({
-                  y: layout.y,
+                  y: effectListContainerY.current + layout.y,
                   animated: true,
                 });
+            }}
+            onObjectTranslated={(effectInstanceId, x, y, z) => {
+              setEffectInstances((prev) =>
+                prev.map((inst) =>
+                  inst.id === effectInstanceId
+                    ? { ...inst, params: { ...inst.params, posX: x, posY: y, posZ: z } }
+                    : inst,
+                ),
+              );
             }}
           />
           {(() => {
@@ -6273,7 +6391,7 @@ export function ThreeDTextScreen({
             <Text style={[styles.groupLabel, { color: c.text }]}>
               {t("effects")}
             </Text>
-            <View style={styles.effectListContainer}>
+            <View style={styles.effectListContainer} onLayout={(e) => { effectListContainerY.current = e.nativeEvent.layout.y; }}>
               <View
                 style={{
                   flexDirection: "row",
@@ -6585,6 +6703,11 @@ export function ThreeDTextScreen({
                       y: e.nativeEvent.layout.y,
                       height: e.nativeEvent.layout.height,
                     };
+                    if (pendingScrollNewId.current === instance.id) {
+                      pendingScrollNewId.current = null;
+                      const scrollY = effectListContainerY.current + e.nativeEvent.layout.y;
+                      setTimeout(() => controlsScrollRef.current?.scrollTo({ y: scrollY, animated: true }), 50);
+                    }
                   }}
                   style={[
                     styles.effectCard,
