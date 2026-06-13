@@ -48,7 +48,7 @@ export function useConfirmDialog() {
         <Pressable
           style={[
             styles.box,
-            { backgroundColor: dark ? "#1e1e1e" : "#fff", shadowColor: "#000" },
+            { backgroundColor: dark ? "#1e1e1e" : "#fff" },
           ]}
           onPress={() => {}}
         >
@@ -100,10 +100,7 @@ const styles = StyleSheet.create({
     width: 300,
     borderRadius: 14,
     overflow: "hidden",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
   },
   title: {
     fontSize: 17,

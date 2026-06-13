@@ -6175,10 +6175,10 @@ export function ThreeDTextScreen({
           )}
           {sequenceMode && (
             <View
-              pointerEvents="none"
               style={[
                 styles.sequenceBadge,
                 {
+                  pointerEvents: "none",
                   backgroundColor:
                     colorScheme === "dark"
                       ? "rgba(0,0,0,0.62)"
@@ -6575,10 +6575,10 @@ export function ThreeDTextScreen({
                       height: e.nativeEvent.layout.height,
                     };
                   }}
-                  pointerEvents={draggingId === instance.id ? "none" : "auto"}
                   style={[
                     styles.effectCard,
                     {
+                      pointerEvents: draggingId === instance.id ? "none" : "auto",
                       borderColor: c.tint,
                       backgroundColor:
                         colorScheme === "dark" ? "#1f1f1f" : "#fafafa",
@@ -6694,11 +6694,11 @@ export function ThreeDTextScreen({
 
               {draggingItem && (
                 <Animated.View
-                  pointerEvents="none"
                   style={[
                     styles.effectCard,
                     styles.draggingOverlay,
                     {
+                      pointerEvents: "none",
                       borderColor: c.tint,
                       backgroundColor:
                         colorScheme === "dark" ? "#1f1f1f" : "#fafafa",
@@ -7189,11 +7189,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 999,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
+    boxShadow: "0 8px 10px rgba(0,0,0,0.15)",
   },
   hiddenItem: {
     opacity: 0,
