@@ -36,15 +36,26 @@ export interface FontDef {
   isCustom?: boolean;
 }
 
+export const DEFAULT_3D_FONT_FAMILY = 'droid_sans';
+export const LATIN_EXT_SANS_3D_FONT_FAMILY = 'inter';
+
 export const AVAILABLE_FONTS: FontDef[] = [
   {
-    id: 'roboto',
-    label: 'Roboto (Latin-ext: PL, ES, CA, PT, DE)',
-    urls: [],
+    id: 'droid_sans',
+    label: 'Droid Sans',
+    urls: [
+      'https://threejs.org/examples/fonts/droid/droid_sans_regular.typeface.json',
+      'https://unpkg.com/three@latest/examples/fonts/droid/droid_sans_regular.typeface.json',
+    ],
   },
   {
     id: 'inter',
-    label: 'Inter (Latin-ext: PL, ES, CA, PT, DE)',
+    label: 'Inter (Latin-ext: PL, DE, ES)',
+    urls: [],
+  },
+  {
+    id: 'roboto',
+    label: 'Roboto (Latin-ext: PL, DE, ES)',
     urls: [],
   },
   {
@@ -93,14 +104,6 @@ export const AVAILABLE_FONTS: FontDef[] = [
     urls: [
       'https://threejs.org/examples/fonts/gentilis_bold.typeface.json',
       'https://unpkg.com/three@latest/examples/fonts/gentilis_bold.typeface.json',
-    ],
-  },
-  {
-    id: 'droid_sans',
-    label: 'Droid Sans',
-    urls: [
-      'https://threejs.org/examples/fonts/droid/droid_sans_regular.typeface.json',
-      'https://unpkg.com/three@latest/examples/fonts/droid/droid_sans_regular.typeface.json',
     ],
   },
   {
@@ -179,7 +182,7 @@ function patchBevelNormalReflect(mat: THREE.MeshStandardMaterial): void {
 
 const fontCache = new Map<string, Font>();
 
-async function loadFont(fontId = 'helvetiker'): Promise<Font> {
+async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
   if (fontCache.has(fontId)) return fontCache.get(fontId)!;
 
   const def = AVAILABLE_FONTS.find(f => f.id === fontId) ?? AVAILABLE_FONTS[0];
@@ -236,7 +239,7 @@ export async function createTextGeometry(
   const lines = mergedOptions.text!.split('\n');
 
   try {
-    const font = await loadFont(mergedOptions.fontFamily ?? 'helvetiker');
+    const font = await loadFont(mergedOptions.fontFamily ?? DEFAULT_3D_FONT_FAMILY);
 
     // Calculate line widths and equalization factors
     const lineWidths: number[] = [];

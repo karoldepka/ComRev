@@ -35,6 +35,7 @@ import { createPipeFromInstance } from "@/utils/pipe-factory";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import {
   AVAILABLE_FONTS,
+  DEFAULT_3D_FONT_FAMILY,
   registerCustomFontUrl,
 } from "@/utils/three-text-geometry";
 import {
@@ -1294,7 +1295,7 @@ function createDefaultEffectParams_local(
         ],
         activeTextSetId: "default",
         sequenceLineDurationMs: DEFAULT_SEQUENCE_LINE_DURATION_MS,
-        fontFamily: "helvetiker",
+        fontFamily: DEFAULT_3D_FONT_FAMILY,
         size: 2,
         height: 0.8,
         curveSegments: 48,
@@ -1607,7 +1608,7 @@ function createDefaultEffectParams_local(
     case "text3d":
       return {
         text: "Text 3D",
-        fontFamily: "helvetiker",
+        fontFamily: DEFAULT_3D_FONT_FAMILY,
         size: 2,
         height: 0.8,
         curveSegments: 48,
@@ -1973,7 +1974,7 @@ function FontPickerRow({
   const cycleFont = () => {
     const all = AVAILABLE_FONTS.filter((f) => !f.isCustom);
     const idx = all.findIndex(
-      (f) => f.id === (params.fontFamily ?? "helvetiker"),
+      (f) => f.id === (params.fontFamily ?? DEFAULT_3D_FONT_FAMILY),
     );
     onUpdate("fontFamily", all[(idx + 1) % all.length].id);
   };

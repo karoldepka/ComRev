@@ -21,7 +21,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
         ],
         activeTextSetId: "default",
         sequenceLineDurationMs: DEFAULT_SEQUENCE_LINE_DURATION_MS,
-        fontFamily: "helvetiker",
+        fontFamily: "droid_sans",
         size: 2,
         height: 0.8,
         curveSegments: 48,
@@ -204,7 +204,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "fractalBackground": return { fractalType: "mandelbrot", scheme: "psychedelic", maxIter: 128, zoom: 0.35, cx: -0.5, cy: 0, juliaRe: -0.7, juliaIm: 0.27, animateJulia: true, juliaSpeed: 0.3, width: 60, height: 40, offsetZ: -8 };
     case "text3d":
       return {
-        text: "Text 3D", fontFamily: "helvetiker", size: 2, height: 0.8, curveSegments: 48,
+        text: "Text 3D", fontFamily: "droid_sans", size: 2, height: 0.8, curveSegments: 48,
         bevelEnabled: true, bevelThickness: 0.15, bevelSize: 0.08, bevelOffset: 0, bevelSegments: 5,
         color: 0xff6600, metalness: 0.95, roughness: 0.15, envMapIntensity: 1.5,
         equalizeLineWidths: false, equalizationMethod: "fontSize", targetWidth: 20, lineSpacing: 1.0,
