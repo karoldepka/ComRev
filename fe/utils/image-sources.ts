@@ -293,3 +293,46 @@ export async function fetchIconSvg(icon: IconResult): Promise<string> {
   if (!res.ok) throw new Error(`Failed to fetch SVG: ${res.status}`);
   return res.text();
 }
+
+// ── SVG data-URL utilities ────────────────────────────────────────────────────
+
+export function isSvgDataUrl(url: string): boolean {
+  return url.startsWith('data:image/svg+xml');
+}
+
+/**
+ * Injects CSS fill/stroke overrides into an SVG data URL so that icon SVGs
+ * (which typically use fill="currentColor" = black) are visible on dark backgrounds.
+ */
+export function processSvgDataUrl(
+  dataUrl: string,
+  color?: string,
+  strokeWidth?: number,
+): string {
+  if (!isSvgDataUrl(dataUrl)) return dataUrl;
+  try {
+    let svgText: string;
+    if (dataUrl.includes(';base64,')) {
+      svgText = atob(dataUrl.split(';base64,')[1]);
+    } else {
+      svgText = decodeURIComponent(dataUrl.split(',')[1] ?? '');
+    }
+
+    let cssRules = '';
+    if (color) {
+      cssRules += `* { fill: ${color} !important; color: ${color} !important; } `;
+    }
+    if (strokeWidth && strokeWidth > 0 && color) {
+      cssRules += `* { stroke: ${color} !important; stroke-width: ${strokeWidth} !important; paint-order: stroke fill; } `;
+    }
+
+    if (cssRules) {
+      // Inject <style> as first child of the <svg> root element
+      svgText = svgText.replace(/(<svg[^>]*>)/, `$1<style>${cssRules}</style>`);
+    }
+
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+  } catch {
+    return dataUrl;
+  }
+}

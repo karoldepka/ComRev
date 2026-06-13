@@ -1,3 +1,4 @@
+import { SlideImage, SlideImageOverlay } from "@/components/SlideImageOverlay";
 import { ThreeDText } from "@/components/three-d-text";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { Colors } from "@/constants/theme";
@@ -33,14 +34,64 @@ function effectChips(effects: { type: string; enabled: boolean }[]) {
   return effects.filter((e) => e.enabled && e.type !== "mainText");
 }
 
+function presetMainParams(preset: PresetRecord): Record<string, unknown> {
+  const mainInst = preset.effects.find((e) => e.type === "mainText");
+  return (mainInst?.params ?? {}) as Record<string, unknown>;
+}
+
+function presetText(params: Record<string, unknown>): string {
+  if (Array.isArray(params.textSets) && params.textSets.length > 0) {
+    const sets = params.textSets as Array<{ id?: string; text?: string }>;
+    const activeId = params.activeTextSetId;
+    const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
+    return String((active ?? sets[0])?.text ?? "");
+  }
+  return String(params.text ?? "");
+}
+
+function presetImages(params: Record<string, unknown>): SlideImage[] {
+  if (Array.isArray(params.textSets) && params.textSets.length > 0) {
+    const sets = params.textSets as Array<{ id?: string; images?: SlideImage[] }>;
+    const activeId = params.activeTextSetId;
+    const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
+    const imgs = (active ?? sets[0])?.images;
+    return Array.isArray(imgs) ? imgs : [];
+  }
+  return [];
+}
+
 function PresetLivePreview({ preset }: { preset: PresetRecord }) {
+  const p = presetMainParams(preset);
+  const text = presetText(p);
+  const images = presetImages(p);
+
   const pipes = useMemo(
     () => preset.effects.filter((e) => e.enabled).map(createPipeFromInstance),
     [preset.effects],
   );
   return (
-    <View style={{ width: "100%", height: 300, borderRadius: 8, overflow: "hidden" }}>
-      <ThreeDText pipes={pipes} />
+    <View style={{ width: "100%", height: 300, borderRadius: 8, overflow: "hidden", position: "relative" }}>
+      <ThreeDText
+        text={text}
+        size={p.size as number | undefined}
+        height={p.height as number | undefined}
+        color={p.color as number | undefined}
+        metalness={p.metalness as number | undefined}
+        roughness={p.roughness as number | undefined}
+        fontFamily={p.fontFamily as string | undefined}
+        bevelEnabled={p.bevelEnabled as boolean | undefined}
+        bevelThickness={p.bevelThickness as number | undefined}
+        bevelSize={p.bevelSize as number | undefined}
+        bevelOffset={p.bevelOffset as number | undefined}
+        bevelSegments={p.bevelSegments as number | undefined}
+        envMapIntensity={p.envMapIntensity as number | undefined}
+        equalizeLineWidths={p.equalizeLineWidths as boolean | undefined}
+        equalizationMethod={p.equalizationMethod as "spacing" | "fontSize" | undefined}
+        targetWidth={p.targetWidth as number | undefined}
+        lineSpacing={p.lineSpacing as number | undefined}
+        pipes={pipes}
+      />
+      <SlideImageOverlay images={images} />
     </View>
   );
 }

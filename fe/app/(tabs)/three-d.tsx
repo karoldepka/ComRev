@@ -24,6 +24,13 @@ import {
   ThreeDConfig,
 } from "@/utils/config-store";
 import { createEffectInstance, createId } from "@/utils/effect-defaults";
+import { isSvgDataUrl, processSvgDataUrl } from "@/utils/image-sources";
+import {
+  SlideImage,
+  SlideImageOverlay,
+  SlideImagePosition,
+  slideImageStyle,
+} from "@/components/SlideImageOverlay";
 import { createPipeFromInstance } from "@/utils/pipe-factory";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import {
@@ -194,7 +201,7 @@ import {
   ZapPipe,
   ZoomBlurPipe,
 } from "@/utils/three-text-pipes";
-import { useFocusEffect, router } from "expo-router";
+import { useFocusEffect, router, usePathname } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -224,14 +231,12 @@ const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
 
-type SlideImagePosition = "background" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 type PrincipalTextSet = {
   id: string;
   name: string;
   text: string;
-  imageUrl?: string;
-  imagePosition?: SlideImagePosition;
+  images?: SlideImage[];
 };
 
 type SequencePage = {
@@ -240,8 +245,7 @@ type SequencePage = {
   text: string;
   durationMs: number;
   transition: "flare" | "slide" | "zoom" | "wipe";
-  imageUrl?: string;
-  imagePosition?: SlideImagePosition;
+  images?: SlideImage[];
 };
 
 function normalizePrincipalTextSets(
@@ -250,15 +254,36 @@ function normalizePrincipalTextSets(
   const rawSets = params.textSets;
   if (Array.isArray(rawSets) && rawSets.length > 0) {
     return rawSets.map((set, index) => {
-      const item = (set ?? {}) as Partial<PrincipalTextSet>;
+      const item = (set ?? {}) as Record<string, unknown>;
+      // Normalise images array, migrating legacy single-image fields
+      let images: SlideImage[] = [];
+      if (Array.isArray(item.images)) {
+        images = item.images
+          .filter((img: any) => typeof img?.imageUrl === "string")
+          .map((img: any) => ({
+            id: String(img.id || createId()),
+            imageUrl: img.imageUrl as string,
+            imagePosition: (img.imagePosition as SlideImagePosition) ?? "bottom-right",
+            opacity: typeof img.opacity === "number" ? img.opacity : 1,
+            contrast: typeof img.contrast === "number" ? img.contrast : 1,
+            brightness: typeof img.brightness === "number" ? img.brightness : 1,
+            scale: typeof img.scale === "number" ? img.scale : 1,
+            svgColor: typeof img.svgColor === "string" ? img.svgColor : undefined,
+            svgStrokeWidth: typeof img.svgStrokeWidth === "number" ? img.svgStrokeWidth : undefined,
+          }));
+      } else if (typeof item.imageUrl === "string") {
+        images = [{
+          id: createId(),
+          imageUrl: item.imageUrl as string,
+          imagePosition: (item.imagePosition as SlideImagePosition) ?? "bottom-right",
+          opacity: 1, contrast: 1, brightness: 1, scale: 1,
+        }];
+      }
       return {
         id: String(item.id || `set-${index + 1}`),
         name: String(item.name || `Set ${index + 1}`),
         text: String(item.text ?? ""),
-        imageUrl: typeof item.imageUrl === "string" ? item.imageUrl : undefined,
-        imagePosition: typeof item.imagePosition === "string"
-          ? item.imagePosition as SlideImagePosition
-          : undefined,
+        images,
       };
     });
   }
@@ -318,8 +343,7 @@ function getSequencePages(
       text: set.text,
       durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs),
       transition: transitions[setIndex % transitions.length],
-      imageUrl: set.imageUrl,
-      imagePosition: set.imagePosition,
+      images: set.images,
     }));
   return pages.length > 0
     ? pages
@@ -2072,7 +2096,7 @@ function renderText3dControls({
   }) => Promise<boolean>;
   colorScheme?: "light" | "dark";
   includeTransform?: boolean;
-  onPickSlideImage?: (textSetId: string) => void;
+  onPickSlideImage?: (textSetId: string, imageId?: string) => void;
 }) {
   const inputBg = colorScheme === "dark" ? "#2a2a2a" : "#f5f5f5";
   const textSets = normalizePrincipalTextSets(params);
@@ -2089,10 +2113,27 @@ function renderText3dControls({
     onUpdate("text", nextActive.text);
   };
 
-  const updateActiveSetImageField = (patch: Partial<Pick<PrincipalTextSet, "imageUrl" | "imagePosition">>) => {
+  const patchActiveSetImage = (imageId: string, patch: Partial<SlideImage>) => {
     commitTextSets(
       textSets.map((set) =>
-        set.id === activeTextSet.id ? { ...set, ...patch } : set,
+        set.id !== activeTextSet.id
+          ? set
+          : {
+              ...set,
+              images: (set.images ?? []).map((img) =>
+                img.id === imageId ? { ...img, ...patch } : img,
+              ),
+            },
+      ),
+    );
+  };
+
+  const removeActiveSetImage = (imageId: string) => {
+    commitTextSets(
+      textSets.map((set) =>
+        set.id !== activeTextSet.id
+          ? set
+          : { ...set, images: (set.images ?? []).filter((img) => img.id !== imageId) },
       ),
     );
   };
@@ -2246,57 +2287,142 @@ function renderText3dControls({
         onCommit={updateActiveTextSet}
         multiline
       />
-      {/* Slide image */}
+      {/* Slide images */}
       {onPickSlideImage && (
         <View style={{ marginHorizontal: 12, marginBottom: 8 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <Text style={[styles.label, { color: colors.text }]}>Slide image</Text>
-            {activeTextSet.imageUrl ? (
-              <img
-                src={activeTextSet.imageUrl}
-                style={{ width: 44, height: 44, borderRadius: 5, objectFit: "cover", flexShrink: 0 } as any}
-                alt="slide"
-              />
-            ) : null}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <Text style={[styles.label, { color: colors.text }]}>Slide images</Text>
             <TouchableOpacity
               style={[styles.smallActionButton, { borderColor: colors.tint }]}
               onPress={() => onPickSlideImage(activeTextSet.id)}
             >
-              <Text style={[styles.buttonText, { color: colors.tint }]}>
-                {activeTextSet.imageUrl ? "Change" : "Add image"}
-              </Text>
+              <Text style={[styles.buttonText, { color: colors.tint }]}>+ Add image</Text>
             </TouchableOpacity>
-            {activeTextSet.imageUrl && (
-              <TouchableOpacity
-                style={[styles.smallActionButton, { borderColor: "#e55" }]}
-                onPress={() => updateActiveSetImageField({ imageUrl: undefined, imagePosition: undefined })}
-              >
-                <Text style={[styles.buttonText, { color: "#e55" }]}>Remove</Text>
-              </TouchableOpacity>
-            )}
           </View>
-          {activeTextSet.imageUrl && (
-            <View style={{ flexDirection: "row", gap: 4, marginTop: 6 }}>
-              {SLIDE_IMAGE_POSITIONS.map(({ value, label }) => {
-                const active = (activeTextSet.imagePosition ?? "bottom-right") === value;
-                return (
-                  <TouchableOpacity
-                    key={value}
-                    style={{
-                      paddingHorizontal: 9,
-                      paddingVertical: 4,
-                      borderRadius: 6,
-                      borderWidth: 1,
-                      borderColor: active ? colors.tint : "#777",
-                      backgroundColor: active ? `${colors.tint}22` : "transparent",
-                    }}
-                    onPress={() => updateActiveSetImageField({ imagePosition: value })}
-                  >
-                    <Text style={{ color: active ? colors.tint : colors.text, fontSize: 12 }}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+          {(activeTextSet.images ?? []).map((img) => (
+            <View
+              key={img.id}
+              style={{
+                borderWidth: 1,
+                borderColor: colorScheme === "dark" ? "#333" : "#ddd",
+                borderRadius: 8,
+                padding: 8,
+                marginBottom: 8,
+                gap: 6,
+              }}
+            >
+              {/* Thumbnail + position + remove */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <img
+                  src={isSvgDataUrl(img.imageUrl)
+                    ? processSvgDataUrl(img.imageUrl, img.svgColor ?? '#ffffff', img.svgStrokeWidth)
+                    : img.imageUrl}
+                  style={{ width: 52, height: 52, borderRadius: 5, objectFit: isSvgDataUrl(img.imageUrl) ? "contain" : "cover", flexShrink: 0, backgroundColor: isSvgDataUrl(img.imageUrl) ? '#333' : 'transparent' } as any}
+                  alt="slide"
+                />
+                <View style={{ flex: 1, gap: 4 }}>
+                  {/* Position buttons */}
+                  <View style={{ flexDirection: "row", gap: 4, flexWrap: "wrap" }}>
+                    {SLIDE_IMAGE_POSITIONS.map(({ value, label }) => {
+                      const isActive = img.imagePosition === value;
+                      return (
+                        <TouchableOpacity
+                          key={value}
+                          style={{
+                            paddingHorizontal: 7,
+                            paddingVertical: 3,
+                            borderRadius: 5,
+                            borderWidth: 1,
+                            borderColor: isActive ? colors.tint : "#777",
+                            backgroundColor: isActive ? `${colors.tint}22` : "transparent",
+                          }}
+                          onPress={() => patchActiveSetImage(img.id, { imagePosition: value })}
+                        >
+                          <Text style={{ color: isActive ? colors.tint : colors.text, fontSize: 11 }}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {/* Replace / Remove */}
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    <TouchableOpacity
+                      style={[styles.smallActionButton, { borderColor: colors.tint }]}
+                      onPress={() => onPickSlideImage(activeTextSet.id, img.id)}
+                    >
+                      <Text style={[styles.buttonText, { color: colors.tint }]}>Replace</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.smallActionButton, { borderColor: "#e55" }]}
+                      onPress={() => removeActiveSetImage(img.id)}
+                    >
+                      <Text style={[styles.buttonText, { color: "#e55" }]}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+              {/* Per-image sliders */}
+              <SliderRow
+                label="Opacity"
+                min={0} max={1} step={0.05}
+                value={img.opacity}
+                onChange={(v) => patchActiveSetImage(img.id, { opacity: v })}
+                colors={colors}
+              />
+              <SliderRow
+                label="Contrast"
+                min={0.5} max={2} step={0.05}
+                value={img.contrast}
+                onChange={(v) => patchActiveSetImage(img.id, { contrast: v })}
+                colors={colors}
+              />
+              <SliderRow
+                label="Brightness"
+                min={0.5} max={2} step={0.05}
+                value={img.brightness}
+                onChange={(v) => patchActiveSetImage(img.id, { brightness: v })}
+                colors={colors}
+              />
+              <SliderRow
+                label="Scale"
+                min={0.1} max={3} step={0.05}
+                value={img.scale ?? 1}
+                onChange={(v) => patchActiveSetImage(img.id, { scale: v })}
+                colors={colors}
+              />
+              {isSvgDataUrl(img.imageUrl) && (
+                <>
+                  <View style={{ gap: 4 }}>
+                    <Text style={{ color: colors.text, fontSize: 11, opacity: 0.7 }}>SVG Color</Text>
+                    <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+                      {['#ffffff','#000000','#ff6b00','#00ccff','#ff3366','#44dd55','#ffcc00','#cc44ff'].map((col) => (
+                        <TouchableOpacity
+                          key={col}
+                          style={{
+                            width: 24, height: 24, borderRadius: 12,
+                            backgroundColor: col,
+                            borderWidth: (img.svgColor ?? '#ffffff') === col ? 2 : 1,
+                            borderColor: (img.svgColor ?? '#ffffff') === col ? colors.tint : '#666',
+                          }}
+                          onPress={() => patchActiveSetImage(img.id, { svgColor: col })}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  <SliderRow
+                    label="SVG Stroke"
+                    min={0} max={6} step={0.5}
+                    value={img.svgStrokeWidth ?? 0}
+                    onChange={(v) => patchActiveSetImage(img.id, { svgStrokeWidth: v })}
+                    colors={colors}
+                  />
+                </>
+              )}
             </View>
+          ))}
+          {(activeTextSet.images ?? []).length === 0 && (
+            <Text style={{ color: colorScheme === "dark" ? "#666" : "#aaa", fontSize: 12, fontStyle: "italic" }}>
+              No images — tap "+ Add image" to add one.
+            </Text>
           )}
         </View>
       )}
@@ -2545,7 +2671,7 @@ function renderEffectControls(
   onEditCode?: (id: string, code: string, description: string) => void,
   colorScheme?: "light" | "dark",
   onPickImage?: (instanceId: string, paramKey: string) => void,
-  onPickSlideImage?: (textSetId: string) => void,
+  onPickSlideImage?: (textSetId: string, imageId?: string) => void,
 ) {
   const params = effect.params as Record<string, unknown>;
   const id = effect.id;
@@ -5263,7 +5389,7 @@ export function ThreeDTextScreen({
   const [showAdvanced, setShowAdvanced] = useState(false);
   type ImagePickerTarget =
     | { mode: "effect"; instanceId: string; paramKey: string }
-    | { mode: "slide"; textSetId: string };
+    | { mode: "slide"; textSetId: string; imageId?: string };
   const [imagePickerTarget, setImagePickerTarget] = useState<ImagePickerTarget | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -5304,6 +5430,9 @@ export function ThreeDTextScreen({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlsScrollRef = useRef<ScrollView | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const pathname = usePathname();
+  const soundEnabled = !isMuted && pathname === "/line-sequence";
 
   const c = colors; // shorthand
 
@@ -5397,12 +5526,12 @@ export function ThreeDTextScreen({
   ]);
 
   useEffect(() => {
-    if (!sequenceMode) return;
+    if (!sequenceMode || !soundEnabled) return;
     playGongSound(audioContextRef);
-  }, [sequenceLineIndex, sequenceMode]);
+  }, [sequenceLineIndex, sequenceMode, soundEnabled]);
 
   useEffect(() => {
-    if (!sequenceMode || typeof window === "undefined") return;
+    if (!sequenceMode || !soundEnabled || typeof window === "undefined") return;
     const unlockAudio = () => {
       playGongSound(audioContextRef);
       window.removeEventListener("pointerdown", unlockAudio);
@@ -5414,7 +5543,7 @@ export function ThreeDTextScreen({
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
-  }, [sequenceLineIndex, sequenceMode]);
+  }, [sequenceLineIndex, sequenceMode, soundEnabled]);
 
   const reorderEffectByIndex = (from: number, to: number) => {
     if (from === to) return;
@@ -5631,14 +5760,31 @@ export function ThreeDTextScreen({
     );
   };
 
-  const updateSlideImage = (textSetId: string, imageUrl: string | undefined) => {
+  const updateSlideImage = (textSetId: string, imageUrl: string, imageId?: string) => {
     setEffectInstances((instances) =>
       instances.map((instance) => {
         if (instance.type !== "mainText") return instance;
         const sets = normalizePrincipalTextSets(instance.params as Record<string, unknown>);
-        const nextSets = sets.map((s) =>
-          s.id === textSetId ? { ...s, imageUrl } : s,
-        );
+        const nextSets = sets.map((s) => {
+          if (s.id !== textSetId) return s;
+          const existing = s.images ?? [];
+          if (imageId) {
+            // replace existing image's URL
+            return { ...s, images: existing.map((img) => img.id === imageId ? { ...img, imageUrl } : img) };
+          }
+          // add new image
+          const newImg: SlideImage = {
+            id: createId(),
+            imageUrl,
+            imagePosition: "bottom-right",
+            opacity: 1,
+            contrast: 1,
+            brightness: 1,
+            scale: 1,
+            ...(isSvgDataUrl(imageUrl) ? { svgColor: '#ffffff', svgStrokeWidth: 0 } : {}),
+          };
+          return { ...s, images: [...existing, newImg] };
+        });
         return { ...instance, params: { ...instance.params, textSets: nextSets } };
       }),
     );
@@ -6010,12 +6156,17 @@ export function ThreeDTextScreen({
                 });
             }}
           />
-          {sequenceMode && currentSequencePage.imageUrl && (
-            <SlideImageOverlay
-              key={`img-${currentSequencePage.id}`}
-              page={currentSequencePage}
-            />
-          )}
+          {(() => {
+            const imgs = sequenceMode
+              ? (currentSequencePage.images ?? [])
+              : (getActivePrincipalTextSet(mainTextParams).images ?? []);
+            return imgs.length > 0 ? (
+              <SlideImageOverlay
+                key={sequenceMode ? `img-seq-${currentSequencePage.id}` : "img-active"}
+                images={imgs}
+              />
+            ) : null;
+          })()}
           {sequenceMode && (
             <SequenceTransitionOverlay
               key={currentSequencePage.id}
@@ -6046,6 +6197,29 @@ export function ThreeDTextScreen({
                 {Math.round(currentSequencePage.durationMs / 100) / 10}s
               </Text>
             </View>
+          )}
+          {/* Mute toggle (only visible in sequence mode) */}
+          {sequenceMode && (
+            <TouchableOpacity
+              onPress={() => setIsMuted((m) => !m)}
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 52,
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                backgroundColor: isMuted ? 'rgba(200,60,60,0.75)' : 'rgba(0,0,0,0.45)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, lineHeight: 18 }}>
+                {isMuted ? '🔇' : '🔊'}
+              </Text>
+            </TouchableOpacity>
           )}
           {/* Fullscreen toggle button */}
           <TouchableOpacity
@@ -6510,8 +6684,8 @@ export function ThreeDTextScreen({
                         colorScheme ?? "light",
                         (instanceId, paramKey) =>
                           setImagePickerTarget({ mode: "effect", instanceId, paramKey }),
-                        (textSetId) =>
-                          setImagePickerTarget({ mode: "slide", textSetId }),
+                        (textSetId, imageId) =>
+                          setImagePickerTarget({ mode: "slide", textSetId, imageId }),
                       )}
                     </>
                   )}
@@ -6676,7 +6850,7 @@ export function ThreeDTextScreen({
           if (imagePickerTarget.mode === "effect") {
             updateEffectParam(imagePickerTarget.instanceId, imagePickerTarget.paramKey, dataUrl);
           } else {
-            updateSlideImage(imagePickerTarget.textSetId, dataUrl);
+            updateSlideImage(imagePickerTarget.textSetId, dataUrl, imagePickerTarget.imageId);
           }
           setImagePickerTarget(null);
         }}
@@ -6779,34 +6953,6 @@ export function ThreeDTextScreen({
 
 export default ThreeDTextScreen;
 
-function SlideImageOverlay({ page }: { page: SequencePage }) {
-  if (!page.imageUrl) return null;
-  const pos = page.imagePosition ?? "bottom-right";
-
-  const baseStyle: React.CSSProperties = {
-    position: "absolute",
-    pointerEvents: "none",
-    zIndex: 3,
-  };
-
-  const imgStyle: React.CSSProperties =
-    pos === "background"
-      ? { ...baseStyle, inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.3 }
-      : {
-          ...baseStyle,
-          width: 200,
-          height: 140,
-          objectFit: "cover",
-          borderRadius: 10,
-          boxShadow: "0 4px 18px rgba(0,0,0,0.55)",
-          ...(pos === "top-left"     ? { top: 16, left: 16 }    : {}),
-          ...(pos === "top-right"    ? { top: 16, right: 16 }   : {}),
-          ...(pos === "bottom-left"  ? { bottom: 16, left: 16 } : {}),
-          ...(pos === "bottom-right" ? { bottom: 60, right: 16 } : {}),
-        };
-
-  return <img src={page.imageUrl} style={imgStyle as any} alt="" />;
-}
 
 function SequenceTransitionOverlay({ page }: { page: SequencePage }) {
   React.useEffect(() => {

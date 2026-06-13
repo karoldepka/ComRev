@@ -111,6 +111,8 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
   const [iconSearched, setIconSearched] = useState(false);
 
   const c = { tint, text: textColor, bg: background, border: borderColor };
+  // Text colour to use ON a tint-coloured button (white tint in dark mode needs dark text).
+  const onTint = background;
   const setErr = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
 
   const accept = (dataUrl: string, type: 'image' | 'svg' = 'image') => {
@@ -304,7 +306,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
               <View style={s.centerSection}>
                 <Text style={[s.hint, { color: c.text }]}>Select an image or SVG from your device.</Text>
                 <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]} onPress={pickFile}>
-                  <Text style={s.bigBtnText}>Choose File…</Text>
+                  <Text style={[s.bigBtnText, { color: onTint }]}>Choose File…</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -443,7 +445,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
                       alt="animated preview"
                     />
                     <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]} onPress={captureAnimatedFrame}>
-                      <Text style={s.bigBtnText}>📸 Capture This Frame</Text>
+                      <Text style={[s.bigBtnText, { color: onTint }]}>📸 Capture This Frame</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -452,7 +454,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
                 {(!canAnimate || !animated) && !staticPreview && (
                   <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]}
                     onPress={generateStatic} disabled={loading}>
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.bigBtnText}>Generate</Text>}
+                    {loading ? <ActivityIndicator color={onTint} /> : <Text style={[s.bigBtnText, { color: onTint }]}>Generate</Text>}
                   </TouchableOpacity>
                 )}
 
@@ -464,11 +466,11 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       <TouchableOpacity style={[s.bigBtn, { backgroundColor: '#666' }]}
                         onPress={() => { setStaticPreview(null); if (canAnimate && animated) startAnimation(); }}>
-                        <Text style={s.bigBtnText}>↩ Regenerate</Text>
+                        <Text style={[s.bigBtnText, { color: '#fff' }]}>↩ Regenerate</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]}
                         onPress={() => accept(staticPreview)}>
-                        <Text style={s.bigBtnText}>✓ Use Image</Text>
+                        <Text style={[s.bigBtnText, { color: onTint }]}>✓ Use Image</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -495,14 +497,14 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
                 </RowPair>
                 <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]}
                   onPress={generateAi} disabled={loading || !aiPrompt.trim()}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.bigBtnText}>Generate Image</Text>}
+                  {loading ? <ActivityIndicator color={onTint} /> : <Text style={[s.bigBtnText, { color: onTint }]}>Generate Image</Text>}
                 </TouchableOpacity>
                 {staticPreview && (
                   <View style={{ alignItems: 'center', gap: 8, marginTop: 8 }}>
                     <img src={staticPreview} width={PREVIEW_SIZE} height={PREVIEW_SIZE}
                       style={{ borderRadius: 8, maxWidth: '100%' } as any} alt="preview" />
                     <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]} onPress={() => accept(staticPreview)}>
-                      <Text style={s.bigBtnText}>✓ Use Image</Text>
+                      <Text style={[s.bigBtnText, { color: onTint }]}>✓ Use Image</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -519,7 +521,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
                     value={iconQuery} onChangeText={setIconQuery}
                     onSubmitEditing={searchIcon} returnKeyType="search" />
                   <TouchableOpacity style={[s.searchBtn, { backgroundColor: c.tint }]} onPress={searchIcon} disabled={loading}>
-                    <Text style={{ color: '#fff', fontWeight: '600' }}>Search</Text>
+                    <Text style={{ color: onTint, fontWeight: '600' }}>Search</Text>
                   </TouchableOpacity>
                 </View>
                 {loading && <ActivityIndicator color={c.tint} style={{ marginTop: 16 }} />}
@@ -579,5 +581,5 @@ const s = StyleSheet.create({
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   iconCell: { width: 64, alignItems: 'center', padding: 6, borderWidth: 1, borderRadius: 8 },
   bigBtn: { paddingVertical: 11, paddingHorizontal: 20, borderRadius: 10, alignItems: 'center' },
-  bigBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  bigBtnText: { fontWeight: '600', fontSize: 14 },
 });
