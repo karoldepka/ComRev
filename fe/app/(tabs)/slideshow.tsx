@@ -1,5 +1,5 @@
 import { ThreeDTextScreen } from "./three-d";
 
-export default function LineSequenceScreen() {
+export default function SlideshowScreen() {
   return <ThreeDTextScreen sequenceMode />;
 }

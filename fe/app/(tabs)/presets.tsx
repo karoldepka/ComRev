@@ -92,6 +92,7 @@ function PresetLivePreview({ preset }: { preset: PresetRecord }) {
         equalizationMethod={p.equalizationMethod as "spacing" | "fontSize" | undefined}
         targetWidth={p.targetWidth as number | undefined}
         lineSpacing={p.lineSpacing as number | undefined}
+        perspective={p.perspective as number | undefined}
         pipes={pipes}
       />
       <SlideImageOverlay images={images} />

@@ -38,6 +38,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
         equalizationMethod: "fontSize",
         targetWidth: 20,
         lineSpacing: 1.0,
+        perspective: 1.0,
       };
     case "bloom":
       return { strength: 0.8, threshold: 0.2, radius: 0.5 };
@@ -69,6 +70,8 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
       return {
         mode: "radial", count: 24, innerThickness: 0.06, outerThickness: 0.08,
         lockThickness: true, innerMargin: 2, outerMargin: 6, heartRotation: 0,
+        crystalWidth: 0.12, thunderZigzags: 3, sineCycles: 2,
+        spiralTightness: 1.0, roseK: 4, wingsStyle: "straight",
       };
     case "radialBlur":
       return { strength: 0.12, samples: 8, center: [0.5, 0.5] };
@@ -205,11 +208,12 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
         bevelEnabled: true, bevelThickness: 0.15, bevelSize: 0.08, bevelOffset: 0, bevelSegments: 5,
         color: 0xff6600, metalness: 0.95, roughness: 0.15, envMapIntensity: 1.5,
         equalizeLineWidths: false, equalizationMethod: "fontSize", targetWidth: 20, lineSpacing: 1.0,
+        perspective: 1.0,
         posX: 0, posY: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0,
       };
     case "graphics":
       return {
-        items: [], layout: "row", spacing: 4, scale: 1, extrudeDepth: 0.2,
+        items: [], layout: "row", spacing: 4, columns: 0, gap: 0.5, scale: 1, extrudeDepth: 0.2,
         colorOverride: false, color: 0xff6600,
         posX: 0, posY: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0,
       };

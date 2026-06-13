@@ -63,9 +63,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="line-sequence"
+        name="slideshow"
         options={{
-          title: "Sequence",
+          title: "Slideshow",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="play.rectangle.fill" color={color} />
           ),

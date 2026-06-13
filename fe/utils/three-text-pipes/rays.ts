@@ -7,8 +7,8 @@ export const DEFAULT_LIGHTNING_SVG = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0i
 
 export interface RaysPipeParams {
   mode?: 'radial' | 'spaghetti' | 'chip' | 'wings' | 'heart';
-  rayShape?: 'bar' | 'spaghetti' | 'image';
-  layout?: 'radial' | 'chip' | 'wings' | 'heart';
+  rayShape?: 'bar' | 'spaghetti' | 'image' | 'crystal' | 'thunder' | 'sine' | 'petal';
+  layout?: 'radial' | 'chip' | 'wings' | 'heart' | 'cross' | 'sunburst' | 'halo' | 'spiral' | 'rose';
   count?: number;
   innerThickness?: number;
   outerThickness?: number;
@@ -18,6 +18,12 @@ export interface RaysPipeParams {
   heartRotation?: number; // degrees 0-180
   rayImage?: string;
   imageScale?: number;
+  crystalWidth?: number;
+  thunderZigzags?: number;
+  sineCycles?: number;
+  spiralTightness?: number;
+  roseK?: number;
+  wingsStyle?: 'straight' | 'angel' | 'falcon' | 'bat';
 }
 
 // Trapezoid prism geometry: x from 0 (near/inner end) to len (far/outer end),
@@ -49,6 +55,103 @@ function createTaperedRayGeo(
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.computeVertexNormals();
   return geo;
+}
+
+function createCrystalRayGeo(
+  len: number,
+  thickStart: number,
+  thickMiddle: number,
+  thickEnd: number,
+  depth = 0.4,
+): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  const midX = len * 0.35;
+  const hs = thickStart / 2;
+  const hm = thickMiddle / 2;
+  const he = thickEnd / 2;
+  const hd = depth / 2;
+
+  // 12 vertices: 0-3 = start cap, 4-7 = middle ring, 8-11 = end cap
+  const pos = new Float32Array([
+    // start cap (x=0)
+    0,    -hs, -hd,
+    0,     hs, -hd,
+    0,     hs,  hd,
+    0,    -hs,  hd,
+    // middle ring (x=midX)
+    midX, -hm, -hd,
+    midX,  hm, -hd,
+    midX,  hm,  hd,
+    midX, -hm,  hd,
+    // end cap (x=len)
+    len,  -he, -hd,
+    len,   he, -hd,
+    len,   he,  hd,
+    len,  -he,  hd,
+  ]);
+
+  const idx = new Uint16Array([
+    // start cap
+    0, 2, 1,  0, 3, 2,
+    // left segment (x=0 to x=midX)
+    0, 4, 7,  0, 7, 3, // bottom
+    1, 6, 5,  1, 2, 6, // top
+    3, 7, 6,  3, 6, 2, // front
+    0, 1, 5,  0, 5, 4, // back
+    // right segment (x=midX to x=len)
+    7, 11, 8, 7, 8, 4, // bottom
+    5, 6, 10, 5, 10, 9, // top
+    6, 7, 11, 6, 11, 10, // front
+    4, 5, 9,  4, 9, 8, // back
+    // end cap
+    8, 9, 10, 8, 10, 11,
+  ]);
+
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function createThunderRayGeo(len: number, thickness: number, zigzags = 3): THREE.BufferGeometry {
+  const curvePts: THREE.Vector3[] = [];
+  const segments = zigzags * 2;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = len * t;
+    const y = i === 0 || i === segments ? 0 : (i % 2 === 1 ? 0.35 : -0.35) * len * 0.15;
+    curvePts.push(new THREE.Vector3(x, y, 0));
+  }
+  const curve = new THREE.CatmullRomCurve3(curvePts, false, 'catmullrom', 0.0);
+  return new THREE.TubeGeometry(curve, segments * 4, thickness / 2, 5, false);
+}
+
+function createSineRayGeo(len: number, thickness: number, cycles = 2): THREE.BufferGeometry {
+  const curvePts: THREE.Vector3[] = [];
+  const segments = 24;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = len * t;
+    const y = Math.sin(t * Math.PI * 2 * cycles) * len * 0.08;
+    curvePts.push(new THREE.Vector3(x, y, 0));
+  }
+  const curve = new THREE.CatmullRomCurve3(curvePts);
+  return new THREE.TubeGeometry(curve, segments, thickness / 2, 6, false);
+}
+
+function createPetalRayGeo(len: number, thickness: number, depth = 0.2): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.quadraticCurveTo(len * 0.5, thickness, len, 0);
+  shape.quadraticCurveTo(len * 0.5, -thickness, 0, 0);
+  return new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: thickness * 0.08,
+    bevelThickness: depth * 0.2,
+  });
 }
 
 // ── Heart curve helpers ────────────────────────────────────────────────────────
@@ -157,11 +260,17 @@ export class RaysPipe implements EffectPipe {
       heartRotation = 0,
       rayImage = DEFAULT_STAR_SVG,
       imageScale = 1.0,
+      crystalWidth = 0.12,
+      thunderZigzags = 3,
+      sineCycles = 2,
+      spiralTightness = 1.0,
+      roseK = 4,
+      wingsStyle = 'straight',
     } = this.params;
 
     // Resolve shape and layout (with backward compatibility)
-    let rayShape: 'bar' | 'spaghetti' | 'image' = rawRayShape ?? 'bar';
-    let layout: 'radial' | 'chip' | 'wings' | 'heart' = rawLayout ?? 'radial';
+    let rayShape: 'bar' | 'spaghetti' | 'image' | 'crystal' | 'thunder' | 'sine' | 'petal' = rawRayShape ?? 'bar';
+    let layout: 'radial' | 'chip' | 'wings' | 'heart' | 'cross' | 'sunburst' | 'halo' | 'spiral' | 'rose' = rawLayout ?? 'radial';
 
     if (rawRayShape === undefined && rawLayout === undefined) {
       if (mode === 'spaghetti') {
@@ -239,8 +348,29 @@ export class RaysPipe implements EffectPipe {
       for (let i = 0; i < rowsPerSide; i++) {
         const t = rowsPerSide === 1 ? 0 : i / (rowsPerSide - 1);
         const y = center.y + halfH - t * ySpan;
-        const lengthFactor = 1 - t * 0.72;
-        const rayLen = outerMargin * Math.max(0.22, lengthFactor);
+
+        let lengthFactor = 1 - t * 0.72;
+        let leftAngle = Math.PI;
+        let rightAngle = 0;
+
+        if (wingsStyle === 'angel') {
+          const angleOffset = (0.28 - t * 0.75) * Math.PI / 2;
+          rightAngle = angleOffset;
+          leftAngle = Math.PI - angleOffset;
+          lengthFactor = Math.sin((1 - t * 0.8) * Math.PI / 2) * 0.8 + 0.2;
+        } else if (wingsStyle === 'falcon') {
+          const angleOffset = (-0.15 - t * 0.35) * Math.PI / 2;
+          rightAngle = angleOffset;
+          leftAngle = Math.PI - angleOffset;
+          lengthFactor = Math.pow(1 - t, 1.4) * 0.85 + 0.15;
+        } else if (wingsStyle === 'bat') {
+          const angleOffset = (-0.25 + Math.sin(t * Math.PI) * 0.3) * Math.PI / 2;
+          rightAngle = angleOffset;
+          leftAngle = Math.PI - angleOffset;
+          lengthFactor = (0.65 + 0.35 * Math.cos(t * Math.PI * 4)) * (1 - t * 0.5);
+        }
+
+        const rayLen = outerMargin * Math.max(0.15, lengthFactor);
         const thickness = THREE.MathUtils.lerp(
           outerThickness,
           innerThickness,
@@ -248,8 +378,8 @@ export class RaysPipe implements EffectPipe {
         );
         const rowInset = innerMargin * (0.12 + t * 0.18);
         const sideSpecs = [
-          { x: center.x + halfW + rowInset, angle: 0 },
-          { x: center.x - halfW - rowInset, angle: Math.PI },
+          { x: center.x + halfW + rowInset, angle: rightAngle },
+          { x: center.x - halfW - rowInset, angle: leftAngle },
         ];
         for (const side of sideSpecs) {
           instances.push({
@@ -276,6 +406,98 @@ export class RaysPipe implements EffectPipe {
           length: outerMargin,
           thickness: (innerThickness + outerThickness) / 2,
           index: globalIdx++,
+        });
+      }
+    } else if (layout === 'cross') {
+      let globalIdx = 0;
+      for (let i = 0; i < rayCount; i++) {
+        const dirIdx = i % 4;
+        const step = Math.floor(i / 4);
+        const angle = (dirIdx * Math.PI) / 2;
+        const dist = innerR + step * (outerMargin * 0.25);
+        instances.push({
+          pos: new THREE.Vector3(
+            center.x + Math.cos(angle) * dist,
+            center.y + Math.sin(angle) * dist,
+            center.z,
+          ),
+          angle,
+          length: outerMargin * 0.8,
+          thickness: (innerThickness + outerThickness) / 2,
+          index: globalIdx++,
+        });
+      }
+    } else if (layout === 'sunburst') {
+      for (let i = 0; i < rayCount; i++) {
+        const angle = (i / rayCount) * Math.PI * 2;
+        const isEven = i % 2 === 0;
+        const rayLen = outerMargin * (isEven ? 1.0 : 0.5);
+        instances.push({
+          pos: new THREE.Vector3(
+            center.x + Math.cos(angle) * innerR,
+            center.y + Math.sin(angle) * innerR,
+            center.z,
+          ),
+          angle,
+          length: rayLen,
+          thickness: isEven ? outerThickness : innerThickness,
+          index: i,
+        });
+      }
+    } else if (layout === 'halo') {
+      const rings = 2;
+      const countPerRing = Math.max(2, Math.floor(rayCount / rings));
+      let globalIdx = 0;
+      for (let ring = 0; ring < rings; ring++) {
+        const ringR = innerR + ring * (outerMargin * 0.4);
+        const offsetAngle = ring === 1 ? Math.PI / countPerRing : 0;
+        for (let i = 0; i < countPerRing; i++) {
+          const angle = (i / countPerRing) * Math.PI * 2 + offsetAngle;
+          instances.push({
+            pos: new THREE.Vector3(
+              center.x + Math.cos(angle) * ringR,
+              center.y + Math.sin(angle) * ringR,
+              center.z,
+            ),
+            angle,
+            length: outerMargin * 0.5,
+            thickness: (innerThickness + outerThickness) / 2,
+            index: globalIdx++,
+          });
+        }
+      }
+    } else if (layout === 'spiral') {
+      const goldenAngle = 137.5 * (Math.PI / 180);
+      for (let i = 0; i < rayCount; i++) {
+        const angle = i * goldenAngle * spiralTightness;
+        const dist = innerR + (i / rayCount) * outerMargin;
+        instances.push({
+          pos: new THREE.Vector3(
+            center.x + Math.cos(angle) * dist,
+            center.y + Math.sin(angle) * dist,
+            center.z,
+          ),
+          angle,
+          length: outerMargin * 0.6,
+          thickness: (innerThickness + outerThickness) / 2,
+          index: i,
+        });
+      }
+    } else if (layout === 'rose') {
+      for (let i = 0; i < rayCount; i++) {
+        const angle = (i / rayCount) * Math.PI * 2;
+        const roseFactor = Math.abs(Math.cos(roseK * angle));
+        const dist = innerR + roseFactor * outerMargin;
+        instances.push({
+          pos: new THREE.Vector3(
+            center.x + Math.cos(angle) * dist,
+            center.y + Math.sin(angle) * dist,
+            center.z,
+          ),
+          angle,
+          length: outerMargin * 0.5,
+          thickness: (innerThickness + outerThickness) / 2,
+          index: i,
         });
       }
     }
@@ -336,6 +558,43 @@ export class RaysPipe implements EffectPipe {
         const geo = new THREE.PlaneGeometry(w, h);
         geo.translate(w / 2, 0, 0); // pivot at left/inner end
         const m = new THREE.Mesh(geo, imgMat);
+        m.position.copy(inst.pos);
+        m.rotation.z = inst.angle;
+        mainGroup.add(m);
+      }
+    } else if (rayShape === 'crystal') {
+      for (const inst of instances) {
+        const thickNear = innerThickness;
+        const thickFar = outerThickness;
+        const geo = createCrystalRayGeo(inst.length, thickNear, crystalWidth, thickFar, depth);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.copy(inst.pos);
+        m.rotation.z = inst.angle;
+        mainGroup.add(m);
+      }
+    } else if (rayShape === 'thunder') {
+      const avgThick = (innerThickness + outerThickness) / 2;
+      for (const inst of instances) {
+        const geo = createThunderRayGeo(inst.length, avgThick, thunderZigzags);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.copy(inst.pos);
+        m.rotation.z = inst.angle;
+        mainGroup.add(m);
+      }
+    } else if (rayShape === 'sine') {
+      const avgThick = (innerThickness + outerThickness) / 2;
+      for (const inst of instances) {
+        const geo = createSineRayGeo(inst.length, avgThick, sineCycles);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.copy(inst.pos);
+        m.rotation.z = inst.angle;
+        mainGroup.add(m);
+      }
+    } else if (rayShape === 'petal') {
+      const avgThick = (innerThickness + outerThickness) / 2;
+      for (const inst of instances) {
+        const geo = createPetalRayGeo(inst.length, avgThick, depth);
+        const m = new THREE.Mesh(geo, mat);
         m.position.copy(inst.pos);
         m.rotation.z = inst.angle;
         mainGroup.add(m);
