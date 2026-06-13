@@ -21,6 +21,8 @@ const MAPPING = {
   'cube.fill': 'view-in-ar',
   'list.bullet': 'list',
   'play.rectangle.fill': 'slideshow',
+  'quote.bubble.fill': 'format-quote',
+  'star.fill': 'star',
 } as IconMapping;
 
 /**

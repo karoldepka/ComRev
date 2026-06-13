@@ -45,6 +45,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="inspiration"
+        options={{
+          title: "Inspire",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="quote.bubble.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="three-d"
         options={{
           title: "3D Text",

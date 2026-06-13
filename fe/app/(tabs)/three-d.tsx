@@ -224,10 +224,14 @@ const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
 
+type SlideImagePosition = "background" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 type PrincipalTextSet = {
   id: string;
   name: string;
   text: string;
+  imageUrl?: string;
+  imagePosition?: SlideImagePosition;
 };
 
 type SequencePage = {
@@ -236,6 +240,8 @@ type SequencePage = {
   text: string;
   durationMs: number;
   transition: "flare" | "slide" | "zoom" | "wipe";
+  imageUrl?: string;
+  imagePosition?: SlideImagePosition;
 };
 
 function normalizePrincipalTextSets(
@@ -249,6 +255,10 @@ function normalizePrincipalTextSets(
         id: String(item.id || `set-${index + 1}`),
         name: String(item.name || `Set ${index + 1}`),
         text: String(item.text ?? ""),
+        imageUrl: typeof item.imageUrl === "string" ? item.imageUrl : undefined,
+        imagePosition: typeof item.imagePosition === "string"
+          ? item.imagePosition as SlideImagePosition
+          : undefined,
       };
     });
   }
@@ -308,6 +318,8 @@ function getSequencePages(
       text: set.text,
       durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs),
       transition: transitions[setIndex % transitions.length],
+      imageUrl: set.imageUrl,
+      imagePosition: set.imagePosition,
     }));
   return pages.length > 0
     ? pages
@@ -2028,6 +2040,14 @@ function FontPickerRow({
   );
 }
 
+const SLIDE_IMAGE_POSITIONS: { value: SlideImagePosition; label: string }[] = [
+  { value: "background", label: "BG" },
+  { value: "top-left",   label: "↖" },
+  { value: "top-right",  label: "↗" },
+  { value: "bottom-left",  label: "↙" },
+  { value: "bottom-right", label: "↘" },
+];
+
 function renderText3dControls({
   params,
   colors,
@@ -2036,6 +2056,7 @@ function renderText3dControls({
   confirm,
   colorScheme,
   includeTransform,
+  onPickSlideImage,
 }: {
   params: Record<string, unknown>;
   colors: any;
@@ -2051,6 +2072,7 @@ function renderText3dControls({
   }) => Promise<boolean>;
   colorScheme?: "light" | "dark";
   includeTransform?: boolean;
+  onPickSlideImage?: (textSetId: string) => void;
 }) {
   const inputBg = colorScheme === "dark" ? "#2a2a2a" : "#f5f5f5";
   const textSets = normalizePrincipalTextSets(params);
@@ -2065,6 +2087,14 @@ function renderText3dControls({
     onUpdate("textSets", nextSets);
     onUpdate("activeTextSetId", nextActive.id);
     onUpdate("text", nextActive.text);
+  };
+
+  const updateActiveSetImageField = (patch: Partial<Pick<PrincipalTextSet, "imageUrl" | "imagePosition">>) => {
+    commitTextSets(
+      textSets.map((set) =>
+        set.id === activeTextSet.id ? { ...set, ...patch } : set,
+      ),
+    );
   };
 
   const renameActiveTextSet = (name: string) => {
@@ -2216,6 +2246,60 @@ function renderText3dControls({
         onCommit={updateActiveTextSet}
         multiline
       />
+      {/* Slide image */}
+      {onPickSlideImage && (
+        <View style={{ marginHorizontal: 12, marginBottom: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Text style={[styles.label, { color: colors.text }]}>Slide image</Text>
+            {activeTextSet.imageUrl ? (
+              <img
+                src={activeTextSet.imageUrl}
+                style={{ width: 44, height: 44, borderRadius: 5, objectFit: "cover", flexShrink: 0 } as any}
+                alt="slide"
+              />
+            ) : null}
+            <TouchableOpacity
+              style={[styles.smallActionButton, { borderColor: colors.tint }]}
+              onPress={() => onPickSlideImage(activeTextSet.id)}
+            >
+              <Text style={[styles.buttonText, { color: colors.tint }]}>
+                {activeTextSet.imageUrl ? "Change" : "Add image"}
+              </Text>
+            </TouchableOpacity>
+            {activeTextSet.imageUrl && (
+              <TouchableOpacity
+                style={[styles.smallActionButton, { borderColor: "#e55" }]}
+                onPress={() => updateActiveSetImageField({ imageUrl: undefined, imagePosition: undefined })}
+              >
+                <Text style={[styles.buttonText, { color: "#e55" }]}>Remove</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {activeTextSet.imageUrl && (
+            <View style={{ flexDirection: "row", gap: 4, marginTop: 6 }}>
+              {SLIDE_IMAGE_POSITIONS.map(({ value, label }) => {
+                const active = (activeTextSet.imagePosition ?? "bottom-right") === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    style={{
+                      paddingHorizontal: 9,
+                      paddingVertical: 4,
+                      borderRadius: 6,
+                      borderWidth: 1,
+                      borderColor: active ? colors.tint : "#777",
+                      backgroundColor: active ? `${colors.tint}22` : "transparent",
+                    }}
+                    onPress={() => updateActiveSetImageField({ imagePosition: value })}
+                  >
+                    <Text style={{ color: active ? colors.tint : colors.text, fontSize: 12 }}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
       <SliderRow
         label="Min read time"
         min={300}
@@ -2461,6 +2545,7 @@ function renderEffectControls(
   onEditCode?: (id: string, code: string, description: string) => void,
   colorScheme?: "light" | "dark",
   onPickImage?: (instanceId: string, paramKey: string) => void,
+  onPickSlideImage?: (textSetId: string) => void,
 ) {
   const params = effect.params as Record<string, unknown>;
   const id = effect.id;
@@ -2468,7 +2553,7 @@ function renderEffectControls(
   const p = (k: string) => t(`p_${k}`);
   switch (effect.type) {
     case "mainText":
-      return renderText3dControls({ params, colors, t, onUpdate, confirm, colorScheme });
+      return renderText3dControls({ params, colors, t, onUpdate, confirm, colorScheme, onPickSlideImage });
     case "bloom":
       return (
         <>
@@ -4752,6 +4837,7 @@ function renderEffectControls(
         confirm,
         colorScheme,
         includeTransform: true,
+        onPickSlideImage,
       });
     case "graphics":
       return (
@@ -5175,10 +5261,10 @@ export function ThreeDTextScreen({
   } | null>(null);
   const undoTimerRef = useRef<number | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [imagePickerTarget, setImagePickerTarget] = useState<{
-    instanceId: string;
-    paramKey: string;
-  } | null>(null);
+  type ImagePickerTarget =
+    | { mode: "effect"; instanceId: string; paramKey: string }
+    | { mode: "slide"; textSetId: string };
+  const [imagePickerTarget, setImagePickerTarget] = useState<ImagePickerTarget | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const savedControlsHeight = React.useRef(initialControlsHeight);
@@ -5542,6 +5628,19 @@ export function ThreeDTextScreen({
           ? { ...instance, params: { ...instance.params, [key]: value } }
           : instance,
       ),
+    );
+  };
+
+  const updateSlideImage = (textSetId: string, imageUrl: string | undefined) => {
+    setEffectInstances((instances) =>
+      instances.map((instance) => {
+        if (instance.type !== "mainText") return instance;
+        const sets = normalizePrincipalTextSets(instance.params as Record<string, unknown>);
+        const nextSets = sets.map((s) =>
+          s.id === textSetId ? { ...s, imageUrl } : s,
+        );
+        return { ...instance, params: { ...instance.params, textSets: nextSets } };
+      }),
     );
   };
 
@@ -5911,6 +6010,12 @@ export function ThreeDTextScreen({
                 });
             }}
           />
+          {sequenceMode && currentSequencePage.imageUrl && (
+            <SlideImageOverlay
+              key={`img-${currentSequencePage.id}`}
+              page={currentSequencePage}
+            />
+          )}
           {sequenceMode && (
             <SequenceTransitionOverlay
               key={currentSequencePage.id}
@@ -6404,7 +6509,9 @@ export function ThreeDTextScreen({
                           setAiChatTarget({ id, code, description: desc }),
                         colorScheme ?? "light",
                         (instanceId, paramKey) =>
-                          setImagePickerTarget({ instanceId, paramKey }),
+                          setImagePickerTarget({ mode: "effect", instanceId, paramKey }),
+                        (textSetId) =>
+                          setImagePickerTarget({ mode: "slide", textSetId }),
                       )}
                     </>
                   )}
@@ -6566,11 +6673,11 @@ export function ThreeDTextScreen({
         onClose={() => setImagePickerTarget(null)}
         onSelect={({ dataUrl }) => {
           if (!imagePickerTarget) return;
-          updateEffectParam(
-            imagePickerTarget.instanceId,
-            imagePickerTarget.paramKey,
-            dataUrl,
-          );
+          if (imagePickerTarget.mode === "effect") {
+            updateEffectParam(imagePickerTarget.instanceId, imagePickerTarget.paramKey, dataUrl);
+          } else {
+            updateSlideImage(imagePickerTarget.textSetId, dataUrl);
+          }
           setImagePickerTarget(null);
         }}
         tint={c.tint}
@@ -6671,6 +6778,35 @@ export function ThreeDTextScreen({
 }
 
 export default ThreeDTextScreen;
+
+function SlideImageOverlay({ page }: { page: SequencePage }) {
+  if (!page.imageUrl) return null;
+  const pos = page.imagePosition ?? "bottom-right";
+
+  const baseStyle: React.CSSProperties = {
+    position: "absolute",
+    pointerEvents: "none",
+    zIndex: 3,
+  };
+
+  const imgStyle: React.CSSProperties =
+    pos === "background"
+      ? { ...baseStyle, inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.3 }
+      : {
+          ...baseStyle,
+          width: 200,
+          height: 140,
+          objectFit: "cover",
+          borderRadius: 10,
+          boxShadow: "0 4px 18px rgba(0,0,0,0.55)",
+          ...(pos === "top-left"     ? { top: 16, left: 16 }    : {}),
+          ...(pos === "top-right"    ? { top: 16, right: 16 }   : {}),
+          ...(pos === "bottom-left"  ? { bottom: 16, left: 16 } : {}),
+          ...(pos === "bottom-right" ? { bottom: 60, right: 16 } : {}),
+        };
+
+  return <img src={page.imageUrl} style={imgStyle as any} alt="" />;
+}
 
 function SequenceTransitionOverlay({ page }: { page: SequencePage }) {
   React.useEffect(() => {

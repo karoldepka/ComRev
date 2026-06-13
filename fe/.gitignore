@@ -43,3 +43,6 @@ app-example
 /android
 
 .vercel
+
+# recorded videos
+recordings/
