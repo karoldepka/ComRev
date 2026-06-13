@@ -165,4 +165,5 @@ export * from './wings';
 export * from './fire';
 export * from './smoke';
 export * from './sky-sphere';
+export * from './fractal-background';
 

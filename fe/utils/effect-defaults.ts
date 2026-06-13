@@ -198,6 +198,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "fire":       return { count: 280, size: 0.85, speed: 1, spread: 1 };
     case "smoke":      return { count: 70, size: 1.6, speed: 1, opacity: 0.55, color: 0x888888 };
     case "skySphere":  return { style: "day" };
+    case "fractalBackground": return { fractalType: "mandelbrot", scheme: "psychedelic", maxIter: 128, zoom: 0.35, cx: -0.5, cy: 0, juliaRe: -0.7, juliaIm: 0.27, animateJulia: true, juliaSpeed: 0.3, width: 60, height: 40, offsetZ: -8 };
     case "text3d":
       return {
         text: "Text 3D", fontFamily: "helvetiker", size: 2, height: 0.8, curveSegments: 48,

@@ -42,6 +42,7 @@ import {
   FilmGrainPipe,
   FirePipe,
   FishEyePipe,
+  FractalBackgroundPipe,
   FlatShadePipe,
   FlickerPipe,
   FlipCoinPipe,
@@ -290,6 +291,7 @@ function buildPipe(effect: EffectInstance): EffectPipe {
     case "fire":           return new FirePipe(effect.params as any);
     case "smoke":          return new SmokePipe(effect.params as any);
     case "skySphere":      return new SkySpherePipe(effect.params as any);
+    case "fractalBackground": return new FractalBackgroundPipe(effect.params as any);
     case "flatShade":      return new FlatShadePipe(effect.params as any);
     case "shadowFloor":    return new ShadowFloorPipe(effect.params as any);
     case "backgroundPlane": return new BackgroundPlanePipe(effect.params as any);
