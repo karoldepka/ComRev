@@ -20,6 +20,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: "focus",
     style: "neon",
   },
+  "breathe well": {},
   "exploit parallelisms": {},
   "trust the system": {},
   "be good at\nfigureouting": {},

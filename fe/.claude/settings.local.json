@@ -5,7 +5,9 @@
       "Bash(node -e \"console.log\\(process.env.PATH\\)\")",
       "Bash(which npm *)",
       "Read(//c/Users/karol/AppData/Roaming/**)",
-      "Read(//c/Program Files/**)"
+      "Read(//c/Program Files/**)",
+      "Bash(git -C c:/Users/karol/my/r/ComRev/fe status)",
+      "Bash(git -C c:/Users/karol/my/r/ComRev/fe diff --stat)"
     ]
   }
 }
