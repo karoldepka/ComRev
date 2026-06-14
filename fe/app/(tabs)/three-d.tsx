@@ -6333,6 +6333,9 @@ export function ThreeDTextScreen({
         if (!active || !latest) {
           return;
         }
+        if (useThreeDStore.getState().mantraMode) {
+          return;
+        }
 
         currentConfigIdRef.current = latest.id;
         setShowAdvanced(latest.showAdvanced);

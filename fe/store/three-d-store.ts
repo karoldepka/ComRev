@@ -8,10 +8,14 @@ interface ThreeDStore {
   effectInstances: EffectInstance[];
   setEffectInstances: (arg: SetterArg) => void;
   resetToBasic: () => void;
+  mantraMode: boolean;
+  setMantraMode: (v: boolean) => void;
 }
 
 export const useThreeDStore = create<ThreeDStore>((set, get) => ({
   effectInstances: [createEffectInstance('mainText')],
+  mantraMode: false,
+  setMantraMode: (v) => set({ mantraMode: v }),
 
   setEffectInstances: (arg) => {
     if (typeof arg === 'function') {

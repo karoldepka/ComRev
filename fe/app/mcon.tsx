@@ -20,6 +20,7 @@ function getMantraSlideText(title: string, entry: MantraEntry): string {
 
 export default function MconScreen() {
   const setEffectInstances = useThreeDStore((state) => state.setEffectInstances);
+  const setMantraMode = useThreeDStore((state) => state.setMantraMode);
   const [didApplyMantras, setDidApplyMantras] = useState(false);
   const { text, textSets } = useMemo(() => {
     const mantraEntries = Object.entries(MANTRAS);
@@ -39,6 +40,7 @@ export default function MconScreen() {
   }, []);
 
   useEffect(() => {
+    setMantraMode(true);
     setEffectInstances((instances) => {
       const mainText = instances.find((instance) => instance.type === "mainText");
       const nextMainText = mainText ?? createEffectInstance("mainText");
@@ -61,7 +63,8 @@ export default function MconScreen() {
     });
 
     setDidApplyMantras(true);
-  }, [setEffectInstances, text, textSets]);
+    return () => setMantraMode(false);
+  }, [setEffectInstances, setMantraMode, text, textSets]);
 
   if (didApplyMantras) {
     return <ThreeDTextScreen sequenceMode skipSavedConfigLoad />;
