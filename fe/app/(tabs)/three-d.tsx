@@ -5948,9 +5948,15 @@ export function ThreeDTextScreen({
     ? applyCapitalize(currentSequencePage.text)
     : applyCapitalize(principalText);
 
+  // Stable key that changes only when text content changes, not when display params (bevel etc.) change.
+  const principalTextSetsKey = useMemo(
+    () => principalTextSets.map((s) => `${s.id}\x00${s.text}`).join('\x01'),
+    [principalTextSets],
+  );
+
   useEffect(() => {
     setSequenceLineIndex(0);
-  }, [principalTextSets, sequenceMode]);
+  }, [principalTextSetsKey, sequenceMode]);
 
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
