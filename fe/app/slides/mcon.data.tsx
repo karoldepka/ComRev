@@ -1,6 +1,6 @@
-import type { MantraEntry } from './mcon.config';
-export type { MantraText, MantraEntry } from './mcon.config';
-export { MCON_VISUAL_PARAMS } from './mcon.config';
+import type { MantraEntry } from '../mcon.config';
+export type { MantraText, MantraEntry } from '../mcon.config';
+export { MCON_VISUAL_PARAMS } from '../mcon.config';
 
 export const MANTRAS: Record<string, MantraEntry> = {
   "thoughts are things": {
