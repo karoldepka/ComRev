@@ -8,7 +8,7 @@ export const DEFAULT_LIGHTNING_SVG = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0i
 export interface RaysPipeParams {
   mode?: 'radial' | 'spaghetti' | 'chip' | 'wings' | 'heart';
   rayShape?: 'bar' | 'spaghetti' | 'image' | 'crystal' | 'thunder' | 'sine' | 'petal';
-  layout?: 'radial' | 'chip' | 'wings' | 'heart' | 'cross' | 'sunburst' | 'halo' | 'spiral' | 'rose';
+  layout?: 'radial' | 'chip' | 'wings' | 'heart' | 'cross' | 'sunburst' | 'halo' | 'spiral' | 'rose' | 'crystalFan' | 'triLines';
   count?: number;
   innerThickness?: number;
   outerThickness?: number;
@@ -278,7 +278,7 @@ export class RaysPipe implements EffectPipe {
 
     // Resolve shape and layout (with backward compatibility)
     let rayShape: 'bar' | 'spaghetti' | 'image' | 'crystal' | 'thunder' | 'sine' | 'petal' = rawRayShape ?? 'bar';
-    let layout: 'radial' | 'chip' | 'wings' | 'heart' | 'cross' | 'sunburst' | 'halo' | 'spiral' | 'rose' = rawLayout ?? 'radial';
+    let layout: 'radial' | 'chip' | 'wings' | 'heart' | 'cross' | 'sunburst' | 'halo' | 'spiral' | 'rose' | 'crystalFan' | 'triLines' = rawLayout ?? 'radial';
 
     if (rawRayShape === undefined && rawLayout === undefined) {
       if (mode === 'spaghetti') {
@@ -507,6 +507,61 @@ export class RaysPipe implements EffectPipe {
           thickness: (innerThickness + outerThickness) / 2,
           index: i,
         });
+      }
+    } else if (layout === 'crystalFan') {
+      // Rays spread along text top/bottom edge, all converging at a focal apex point.
+      // The apex is directly above (or below) the center at distance outerMargin from the edge.
+      const halfSpread = Math.max(size.x / 2, innerMargin * 0.5);
+      let globalIdx = 0;
+      for (let pass = 0; pass < 2; pass++) {
+        const isTop = pass === 0;
+        const edgeY = isTop
+          ? center.y + size.y / 2 + innerMargin
+          : center.y - size.y / 2 - innerMargin;
+        const apexY = isTop ? edgeY + outerMargin : edgeY - outerMargin;
+
+        for (let i = 0; i < rayCount; i++) {
+          const t = rayCount === 1 ? 0.5 : i / (rayCount - 1);
+          const x = center.x + (t - 0.5) * 2 * halfSpread;
+          const dx = center.x - x;
+          const dy = apexY - edgeY; // ±outerMargin
+          const rayLen = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx);
+          instances.push({
+            pos: new THREE.Vector3(x, edgeY, center.z),
+            angle,
+            length: rayLen,
+            thickness: (innerThickness + outerThickness) / 2,
+            index: globalIdx++,
+          });
+        }
+      }
+    } else if (layout === 'triLines') {
+      // Parallel rays pointing straight up/down, lengths forming a triangular envelope
+      // (tallest at center, shrinking linearly to zero at the text width edges).
+      const halfSpread = Math.max(size.x / 2, innerMargin * 0.5);
+      let globalIdx = 0;
+      for (let pass = 0; pass < 2; pass++) {
+        const isTop = pass === 0;
+        const edgeY = isTop
+          ? center.y + size.y / 2 + innerMargin
+          : center.y - size.y / 2 - innerMargin;
+        const dirAngle = isTop ? Math.PI / 2 : -Math.PI / 2;
+
+        for (let i = 0; i < rayCount; i++) {
+          const t = rayCount === 1 ? 0.5 : i / (rayCount - 1);
+          const x = center.x + (t - 0.5) * 2 * halfSpread;
+          const normalizedDist = halfSpread > 0 ? Math.abs(x - center.x) / halfSpread : 0;
+          const rayLen = outerMargin * (1 - normalizedDist);
+          if (rayLen < 0.05) continue;
+          instances.push({
+            pos: new THREE.Vector3(x, edgeY, center.z),
+            angle: dirAngle,
+            length: rayLen,
+            thickness: (innerThickness + outerThickness) / 2,
+            index: globalIdx++,
+          });
+        }
       }
     }
 

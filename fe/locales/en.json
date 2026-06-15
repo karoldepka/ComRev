@@ -6,6 +6,7 @@
   "searchEffects": "Search effects...",
   "noAdditionalEffects": "No additional effects. Add one to start building a pipeline.",
   "savePreset": "Save preset",
+  "duplicatePreset": "Duplicate preset",
   "loadPreset": "Load preset",
   "load": "Load",
   "resetToBasic": "Reset to basic",

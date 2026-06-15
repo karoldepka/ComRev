@@ -10,7 +10,7 @@ export interface SlideEntry {
 
 export interface PresetDefinition {
   label: string;
-  generateSlides: () => SlideEntry[];
+  generateSlides: (lang?: string) => SlideEntry[];
 }
 
 // ── mcon helpers ──────────────────────────────────────────────────────────────
@@ -38,8 +38,11 @@ function wrapMantraText(text: string, maxChars = 12): string {
   return lines.join('\n');
 }
 
-function getMantraSlideText(title: string, entry: MantraEntry): string {
-  const raw = entry.text === undefined ? title : normalizeMantraText(entry.text);
+function getMantraSlideText(title: string, entry: MantraEntry, lang?: string): string {
+  const translated = lang ? (entry.translations?.[lang] ?? undefined) : undefined;
+  const raw = translated !== undefined
+    ? normalizeMantraText(translated)
+    : entry.text === undefined ? title : normalizeMantraText(entry.text);
   return wrapMantraText(raw);
 }
 
@@ -48,11 +51,11 @@ function getMantraSlideText(title: string, entry: MantraEntry): string {
 export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
   mcon: {
     label: 'Mantras',
-    generateSlides: () =>
+    generateSlides: (lang?: string) =>
       Object.entries(MANTRAS).map(([title, entry]) => ({
         id: `mcon-${nanoid()}`,
         name: title,
-        text: getMantraSlideText(title, entry),
+        text: getMantraSlideText(title, entry, lang),
       })),
   },
 };

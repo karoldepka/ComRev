@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { createEffectInstance } from '@/utils/effect-defaults';
 import { useThreeDStore } from '@/store/three-d-store';
+import i18n from '@/utils/i18n';
 import { PRESET_REGISTRY } from '../slides/preset-registry';
 
 export function usePresetLoader(id: string) {
@@ -8,16 +10,24 @@ export function usePresetLoader(id: string) {
   const setMantraMode = useThreeDStore((s) => s.setMantraMode);
   const [ready, setReady] = useState(false);
 
+  const { lang } = useLocalSearchParams<{ lang?: string }>();
+  const displayLang = lang || undefined;
+
   const preset = PRESET_REGISTRY[id];
 
-  // Generate slide ids once on mount so they don't change on re-render.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const textSets = useMemo(() => preset?.generateSlides() ?? [], []);
+  const textSets = useMemo(
+    () => preset?.generateSlides(displayLang) ?? [],
+    // Re-generate when lang changes (URL navigation keeps same component mounted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayLang],
+  );
 
   const text = useMemo(() => textSets.map((s) => s.text).join('\n\n'), [textSets]);
 
   useEffect(() => {
     if (!preset) return;
+    const prevLang = i18n.language;
+    if (displayLang && displayLang !== prevLang) i18n.changeLanguage(displayLang);
     setMantraMode(true);
     setEffectInstances((instances) => {
       const mainText = instances.find((i) => i.type === 'mainText');
@@ -29,8 +39,11 @@ export function usePresetLoader(id: string) {
       ];
     });
     setReady(true);
-    return () => setMantraMode(false);
-  }, [preset, setEffectInstances, setMantraMode, text, textSets]);
+    return () => {
+      setMantraMode(false);
+      if (displayLang && displayLang !== prevLang) i18n.changeLanguage(prevLang);
+    };
+  }, [preset, setEffectInstances, setMantraMode, text, textSets, displayLang]);
 
   return { ready, notFound: !preset };
 }

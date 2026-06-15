@@ -6,6 +6,7 @@
   "searchEffects": "Szukaj efektów...",
   "noAdditionalEffects": "Brak dodatkowych efektów. Dodaj jeden, aby zbudować potok.",
   "savePreset": "Zapisz preset",
+  "duplicatePreset": "Duplikuj preset",
   "loadPreset": "Wczytaj preset",
   "load": "Wczytaj",
   "saveConfig": "Zapisz konfigurację",

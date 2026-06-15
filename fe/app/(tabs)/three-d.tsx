@@ -3193,7 +3193,11 @@ function renderEffectControls(
                                 ? "spiral"
                                 : layout === "spiral"
                                   ? "rose"
-                                  : "radial",
+                                  : layout === "rose"
+                                    ? "crystalFan"
+                                    : layout === "crystalFan"
+                                      ? "triLines"
+                                      : "radial",
                 )
               }
               colors={colors}
@@ -5992,6 +5996,7 @@ export function ThreeDTextScreen({
   const [presets, setPresets] = useState<PresetRecord[]>([]);
   const [showSavePresetModal, setShowSavePresetModal] = useState(false);
   const [draftPresetName, setDraftPresetName] = useState("");
+  const [loadedPresetName, setLoadedPresetName] = useState<string | null>(null);
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -6017,6 +6022,7 @@ export function ThreeDTextScreen({
             params: item.params ?? {},
           })),
         );
+        setLoadedPresetName(pending.name);
         setSaveStatus(`Loaded: ${pending.name}`);
         setTimeout(() => setSaveStatus(null), 3000);
       }
@@ -6262,6 +6268,20 @@ export function ThreeDTextScreen({
 
   const handleSavePreset = () => {
     const base = generatePresetName(effectInstances.filter((i) => i.enabled));
+    const existingNames = new Set(presets.map((p) => p.name));
+    let name = base;
+    let ordinal = 2;
+    while (existingNames.has(name)) {
+      name = `${base} ${ordinal++}`;
+    }
+    setDraftPresetName(name);
+    setShowSavePresetModal(true);
+  };
+
+  const handleDuplicatePreset = () => {
+    const base = loadedPresetName
+      ? `${loadedPresetName} copy`
+      : generatePresetName(effectInstances.filter((i) => i.enabled));
     const existingNames = new Set(presets.map((p) => p.name));
     let name = base;
     let ordinal = 2;
@@ -6899,6 +6919,14 @@ export function ThreeDTextScreen({
                   >
                     <Text style={[styles.buttonText, { color: c.tint }]}>
                       {t("savePreset")}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallActionButton, { borderColor: c.tint }]}
+                    onPress={handleDuplicatePreset}
+                  >
+                    <Text style={[styles.buttonText, { color: c.tint }]}>
+                      {t("duplicatePreset")}
                     </Text>
                   </TouchableOpacity>
                   {presets.length > 0 && (
