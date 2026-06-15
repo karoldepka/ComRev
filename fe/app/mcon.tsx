@@ -6,40 +6,43 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThreeDStore } from "@/store/three-d-store";
 import { createEffectInstance } from "@/utils/effect-defaults";
+import { ThreeDTextScreen } from "./(tabs)/three-d";
 import type { MantraEntry, MantraText } from "./slides/mcon.data";
 import { MANTRAS } from "./slides/mcon.data";
-import { ThreeDTextScreen } from "./(tabs)/three-d";
 
 function normalizeMantraText(mantra: MantraText): string {
   return Array.isArray(mantra) ? mantra.join("\n") : mantra;
 }
 
 function wrapMantraText(text: string, maxChars = 12): string {
-  if (text.includes('\n')) return text;
-  const words = text.split(' ');
+  if (text.includes("\n")) return text;
+  const words = text.split(" ");
   const lines: string[] = [];
-  let current = '';
+  let current = "";
   for (const word of words) {
     if (!current) {
       current = word;
     } else if (current.length + 1 + word.length <= maxChars) {
-      current += ' ' + word;
+      current += " " + word;
     } else {
       lines.push(current);
       current = word;
     }
   }
   if (current) lines.push(current);
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 function getMantraSlideText(title: string, entry: MantraEntry): string {
-  const raw = entry.text === undefined ? title : normalizeMantraText(entry.text);
+  const raw =
+    entry.text === undefined ? title : normalizeMantraText(entry.text);
   return wrapMantraText(raw);
 }
 
 export default function MconScreen() {
-  const setEffectInstances = useThreeDStore((state) => state.setEffectInstances);
+  const setEffectInstances = useThreeDStore(
+    (state) => state.setEffectInstances,
+  );
   const setMantraMode = useThreeDStore((state) => state.setMantraMode);
   const [didApplyMantras, setDidApplyMantras] = useState(false);
   const { text, textSets } = useMemo(() => {
@@ -68,7 +71,12 @@ export default function MconScreen() {
       return [
         {
           ...nextMainText,
-          params: { ...nextMainText.params, text, textSets, activeTextSetId: textSets[0]?.id },
+          params: {
+            ...nextMainText.params,
+            text,
+            textSets,
+            activeTextSetId: textSets[0]?.id,
+          },
         },
         ...withoutMainText,
       ];
