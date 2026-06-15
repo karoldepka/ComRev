@@ -164,20 +164,21 @@ const defaultOptions: Partial<TextGeometryOptions> = {
 };
 
 /**
- * Reflects the fragment-shader normal's z component when it points away from
- * the camera. This cures the bevel shading artifact (smooth-shaded bevel
- * normals that interpolate to face backward) without discarding any fragments —
- * so geometrically front-facing side walls remain visible at oblique angles.
+ * Clamps the fragment-shader normal to the camera-facing hemisphere.
+ * Bevel normals interpolate past zero (pointing backward) at sharp edges;
+ * simply reflecting z creates a near-forward normal that samples a bright
+ * env-map region. Redirecting to a grazing tangent avoids the hot-pixel.
+ * No fragments are discarded, so inner hole walls ("fences") stay visible.
  */
 function patchBevelNormalReflect(mat: THREE.MeshStandardMaterial): void {
   mat.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <normal_fragment_begin>',
       `#include <normal_fragment_begin>
-      if (normal.z < 0.0) normal.z = -normal.z;`,
+      if (normal.z < 0.0) normal = normalize(vec3(normal.xy, 1e-4));`,
     );
   };
-  mat.customProgramCacheKey = () => 'text-bevel-normal-reflect';
+  mat.customProgramCacheKey = () => 'text-bevel-normal-clamp';
 }
 
 const fontCache = new Map<string, Font>();

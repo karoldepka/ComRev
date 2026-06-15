@@ -3,13 +3,13 @@ export type MantraText = string | readonly string[];
 export type MantraEntry = {
   text?: MantraText;
   sentiment?:
-  | "loving"
-  | "growth"
-  | "hardcore"
-  | "dreaming"
-  | "calm"
-  | "focus"
-  | string;
+    | "loving"
+    | "growth"
+    | "hardcore"
+    | "dreaming"
+    | "calm"
+    | "focus"
+    | string;
   emotion?: string;
   style?: string;
 };
@@ -21,17 +21,26 @@ export const MANTRAS: Record<string, MantraEntry> = {
     style: "neon",
   },
   "breathe well": {},
+  "be flexible": {},
   "exploit parallelisms": {},
   "trust the system": {},
   "be good at\nfigureouting": {},
-  "9 women can't have a baby in 1 month": {},
+  "9 women can't\n have a baby\n in 1 month": {},
   "accept or overcome or workarounds": {},
   "program my mind": { sentiment: "growth", emotion: "focus", style: "neon" },
   "mind like water": { sentiment: "calm", emotion: "peace", style: "organic" },
   resilience: { sentiment: "hardcore", emotion: "grit", style: "metallic" },
   strength: { sentiment: "hardcore", emotion: "grit", style: "metallic" },
-  "push yourself": { sentiment: "hardcore", emotion: "grit", style: "metallic" },
-  "8 to be great": { sentiment: "hardcore", emotion: "grit", style: "metallic" },
+  "push yourself": {
+    sentiment: "hardcore",
+    emotion: "grit",
+    style: "metallic",
+  },
+  "8 to be great": {
+    sentiment: "hardcore",
+    emotion: "grit",
+    style: "metallic",
+  },
   tenacity: {
     sentiment: "hardcore",
     emotion: "determination",
@@ -53,7 +62,11 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: "inspiration",
     style: "warm",
   },
-  "daydreaming is good": { sentiment: "dreaming", emotion: "wonder", style: "dreamy" },
+  "daydreaming is good": {
+    sentiment: "dreaming",
+    emotion: "wonder",
+    style: "dreamy",
+  },
   "greed is good": {},
   "anarcho capitalism\nblack&yellow": {},
   "micro-protocols": {

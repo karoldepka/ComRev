@@ -14,8 +14,28 @@ function normalizeMantraText(mantra: MantraText): string {
   return Array.isArray(mantra) ? mantra.join("\n") : mantra;
 }
 
+function wrapMantraText(text: string, maxChars = 12): string {
+  if (text.includes('\n')) return text;
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if (current.length + 1 + word.length <= maxChars) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join('\n');
+}
+
 function getMantraSlideText(title: string, entry: MantraEntry): string {
-  return entry.text === undefined ? title : normalizeMantraText(entry.text);
+  const raw = entry.text === undefined ? title : normalizeMantraText(entry.text);
+  return wrapMantraText(raw);
 }
 
 export default function MconScreen() {

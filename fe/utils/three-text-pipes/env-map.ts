@@ -176,7 +176,11 @@ export class EnvMapPipe implements EffectPipe {
     };
     this.matUniforms.set(mat, u);
 
-    mat.onBeforeCompile = (shader) => {
+    // Chain with any existing onBeforeCompile (e.g. bevel-normal patch from text geometry).
+    const prevCompile = mat.onBeforeCompile;
+    const prevKey = mat.customProgramCacheKey;
+    mat.onBeforeCompile = (shader, renderer) => {
+      prevCompile(shader, renderer);
       Object.assign(shader.uniforms, u);
       shader.fragmentShader =
         'uniform sampler2D tCustomEnv;\nuniform float tCustomEnvIntensity;\n'
@@ -197,8 +201,8 @@ export class EnvMapPipe implements EffectPipe {
         + '}',
       );
     };
-    // customProgramCacheKey ensures the patched variant is cached separately.
-    mat.customProgramCacheKey = () => 'envpipe_matcap';
+    // Combine cache keys so the chained shader is compiled as a distinct variant.
+    mat.customProgramCacheKey = () => prevKey() + '|envpipe_matcap';
     mat.needsUpdate = true;
   }
 
