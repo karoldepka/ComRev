@@ -1662,7 +1662,7 @@ function createDefaultEffectParams_local(
         rotZ: 0,
       };
     case "wings":
-      return { style: "angel", color: 0xffffff, size: 2.5, flapSpeed: 2.5, flapAmplitude: 0.45, opacity: 0.88 };
+      return { style: "straight", color: 0xffffff, size: 2.5, longLength: 1.4, shortLength: 0.6, heightScale: 0.6, flapSpeed: 2.5, flapAmplitude: 0.45, opacity: 0.88 };
     case "fractalBackground":
       return { fractalType: "mandelbrot", scheme: "psychedelic", maxIter: 128, zoom: 0.35, cx: -0.5, cy: 0, juliaRe: -0.7, juliaIm: 0.27, animateJulia: true, juliaSpeed: 0.3, width: 60, height: 40, offsetZ: -8 };
     case "flatShade":
@@ -3197,6 +3197,42 @@ function renderEffectControls(
                 )
               }
               colors={colors}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("leftEnabled")}</Text>
+            <Switch
+              value={params.leftEnabled !== undefined ? Boolean(params.leftEnabled) : true}
+              onValueChange={(value) => onUpdate("leftEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.leftEnabled !== undefined ? Boolean(params.leftEnabled) : true) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("rightEnabled")}</Text>
+            <Switch
+              value={params.rightEnabled !== undefined ? Boolean(params.rightEnabled) : true}
+              onValueChange={(value) => onUpdate("rightEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.rightEnabled !== undefined ? Boolean(params.rightEnabled) : true) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("topEnabled")}</Text>
+            <Switch
+              value={params.topEnabled !== undefined ? Boolean(params.topEnabled) : true}
+              onValueChange={(value) => onUpdate("topEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.topEnabled !== undefined ? Boolean(params.topEnabled) : true) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("bottomEnabled")}</Text>
+            <Switch
+              value={params.bottomEnabled !== undefined ? Boolean(params.bottomEnabled) : true}
+              onValueChange={(value) => onUpdate("bottomEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.bottomEnabled !== undefined ? Boolean(params.bottomEnabled) : true) ? colors.tint : "#f4f3f4"}
             />
           </Row>
           {layout === "wings" && (
@@ -5571,14 +5607,72 @@ function renderEffectControls(
           <Row>
             <Text style={[styles.label, { color: colors.text }]}>{p("style")}</Text>
             <CycleButton
-              value={(params.style as string) ?? "angel"}
-              options={["angel", "butterfly", "bat"]}
+              value={(params.style as string) ?? "straight"}
+              options={["straight", "angel", "butterfly", "bat"]}
               onPress={() => {
-                const styles2 = ["angel", "butterfly", "bat"];
-                const idx = styles2.indexOf((params.style as string) ?? "angel");
+                const styles2 = ["straight", "angel", "butterfly", "bat"];
+                const idx = styles2.indexOf((params.style as string) ?? "straight");
                 onUpdate("style", styles2[(idx + 1) % styles2.length]);
               }}
               colors={colors}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("layout")}</Text>
+            <CycleButton
+              value={(params.layout as string) ?? "horizontal"}
+              options={["horizontal", "vertical", "both"]}
+              onPress={() => {
+                const layouts = ["horizontal", "vertical", "both"];
+                const idx = layouts.indexOf((params.layout as string) ?? "horizontal");
+                onUpdate("layout", layouts[(idx + 1) % layouts.length]);
+              }}
+              colors={colors}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("symmetric")}</Text>
+            <Switch
+              value={Boolean(params.symmetric)}
+              onValueChange={(value) => onUpdate("symmetric", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={Boolean(params.symmetric) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("leftEnabled")}</Text>
+            <Switch
+              value={params.leftEnabled !== undefined ? Boolean(params.leftEnabled) : ((params.layout as string) !== "vertical")}
+              onValueChange={(value) => onUpdate("leftEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.leftEnabled !== undefined ? Boolean(params.leftEnabled) : ((params.layout as string) !== "vertical")) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("rightEnabled")}</Text>
+            <Switch
+              value={params.rightEnabled !== undefined ? Boolean(params.rightEnabled) : ((params.layout as string) !== "vertical")}
+              onValueChange={(value) => onUpdate("rightEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.rightEnabled !== undefined ? Boolean(params.rightEnabled) : ((params.layout as string) !== "vertical")) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("topEnabled")}</Text>
+            <Switch
+              value={params.topEnabled !== undefined ? Boolean(params.topEnabled) : ((params.layout as string) === "vertical" || (params.layout as string) === "both")}
+              onValueChange={(value) => onUpdate("topEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.topEnabled !== undefined ? Boolean(params.topEnabled) : ((params.layout as string) === "vertical" || (params.layout as string) === "both")) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>{p("bottomEnabled")}</Text>
+            <Switch
+              value={params.bottomEnabled !== undefined ? Boolean(params.bottomEnabled) : ((params.layout as string) === "vertical" || (params.layout as string) === "both")}
+              onValueChange={(value) => onUpdate("bottomEnabled", value)}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(params.bottomEnabled !== undefined ? Boolean(params.bottomEnabled) : ((params.layout as string) === "vertical" || (params.layout as string) === "both")) ? colors.tint : "#f4f3f4"}
             />
           </Row>
           <ColorPickerRow
@@ -5594,6 +5688,33 @@ function renderEffectControls(
             step={0.1}
             value={(params.size as number) ?? 2.5}
             onChange={(v) => onUpdate("size", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("longLength")}
+            min={0.1}
+            max={3}
+            step={0.05}
+            value={(params.longLength as number) ?? 1.4}
+            onChange={(v) => onUpdate("longLength", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("shortLength")}
+            min={0.05}
+            max={2}
+            step={0.05}
+            value={(params.shortLength as number) ?? 0.6}
+            onChange={(v) => onUpdate("shortLength", v)}
+            colors={colors}
+          />
+          <SliderRow
+            label={p("heightScale")}
+            min={0.1}
+            max={1.5}
+            step={0.05}
+            value={(params.heightScale as number) ?? 0.6}
+            onChange={(v) => onUpdate("heightScale", v)}
             colors={colors}
           />
           <SliderRow

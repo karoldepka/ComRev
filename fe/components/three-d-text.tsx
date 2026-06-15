@@ -116,12 +116,21 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       },
       fitCamera: (margin = 1.18) => {
         const camera = cameraRef.current;
+        const scene = sceneRef.current;
         const mesh = meshRef.current;
-        if (!camera || !mesh) return;
+        if (!camera || !scene || !mesh) return;
         // Reset orbit so bounds are measured face-on, not on a rotated mesh.
         rotationRef.current = { x: 0, y: 0 };
         mesh.rotation.set(0, 0, 0);
-        const bbox = new THREE.Box3().setFromObject(mesh);
+        // Include all visible effect geometry (wings, rays, etc.) but skip
+        // background/sky objects which use renderOrder < 0.
+        const bbox = new THREE.Box3();
+        scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.visible && obj.renderOrder >= 0) {
+            bbox.union(new THREE.Box3().setFromObject(obj));
+          }
+        });
+        if (bbox.isEmpty()) bbox.setFromObject(mesh);
         const halfW = (bbox.max.x - bbox.min.x) / 2;
         const halfH = (bbox.max.y - bbox.min.y) / 2;
         const fovRad = (camera.fov * Math.PI) / 180;

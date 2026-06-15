@@ -24,6 +24,10 @@ export interface RaysPipeParams {
   spiralTightness?: number;
   roseK?: number;
   wingsStyle?: 'straight' | 'angel' | 'falcon' | 'bat';
+  leftEnabled?: boolean;
+  rightEnabled?: boolean;
+  topEnabled?: boolean;
+  bottomEnabled?: boolean;
 }
 
 // Trapezoid prism geometry: x from 0 (near/inner end) to len (far/outer end),
@@ -266,6 +270,10 @@ export class RaysPipe implements EffectPipe {
       spiralTightness = 1.0,
       roseK = 4,
       wingsStyle = 'straight',
+      leftEnabled = true,
+      rightEnabled = true,
+      topEnabled = true,
+      bottomEnabled = true,
     } = this.params;
 
     // Resolve shape and layout (with backward compatibility)
@@ -292,7 +300,7 @@ export class RaysPipe implements EffectPipe {
     const innerR = halfDiag + innerMargin;
 
     // Generate instances
-    const instances: Array<{
+    let instances: Array<{
       pos: THREE.Vector3;
       angle: number;
       length: number;
@@ -501,6 +509,25 @@ export class RaysPipe implements EffectPipe {
         });
       }
     }
+
+    // Filter instances based on enabled directions
+    instances = instances.filter((inst) => {
+      const rx = (inst.pos.x - center.x) / (size.x / 2 + innerMargin);
+      const ry = (inst.pos.y - center.y) / (size.y / 2 + innerMargin);
+      
+      let side: 'left' | 'right' | 'top' | 'bottom' = 'right';
+      if (Math.abs(rx) > Math.abs(ry)) {
+        side = rx > 0 ? 'right' : 'left';
+      } else {
+        side = ry > 0 ? 'top' : 'bottom';
+      }
+      
+      if (side === 'left') return leftEnabled;
+      if (side === 'right') return rightEnabled;
+      if (side === 'top') return topEnabled;
+      if (side === 'bottom') return bottomEnabled;
+      return true;
+    });
 
     // Now render based on rayShape
     if (rayShape === 'bar') {
