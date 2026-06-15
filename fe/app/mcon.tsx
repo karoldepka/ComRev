@@ -62,26 +62,17 @@ export default function MconScreen() {
   useEffect(() => {
     setMantraMode(true);
     setEffectInstances((instances) => {
-      const mainText = instances.find((instance) => instance.type === "mainText");
+      const mainText = instances.find((i) => i.type === "mainText");
       const nextMainText = mainText ?? createEffectInstance("mainText");
-      const withoutMainText = instances.filter(
-        (instance) => instance.type !== "mainText",
-      );
-
+      const withoutMainText = instances.filter((i) => i.type !== "mainText");
       return [
         {
           ...nextMainText,
-          params: {
-            ...nextMainText.params,
-            text,
-            textSets,
-            activeTextSetId: textSets[0]?.id,
-          },
+          params: { ...nextMainText.params, text, textSets, activeTextSetId: textSets[0]?.id },
         },
         ...withoutMainText,
       ];
     });
-
     setDidApplyMantras(true);
     return () => setMantraMode(false);
   }, [setEffectInstances, setMantraMode, text, textSets]);

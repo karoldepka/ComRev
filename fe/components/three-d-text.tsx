@@ -40,6 +40,7 @@ interface ThreeDTextProps {
   lineSpacing?: number;
   perspective?: number;
   pipes?: EffectPipe[];
+  onMeshReady?: () => void;
   onPrimaryMeshClick?: () => void;
   onNonPrimaryTap?: (effectInstanceId: string) => void;
   onObjectTranslated?: (effectInstanceId: string, x: number, y: number, z: number) => void;
@@ -68,6 +69,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       lineSpacing,
       perspective = 1.0,
       pipes = [],
+      onMeshReady,
       onPrimaryMeshClick,
       onNonPrimaryTap,
       onObjectTranslated,
@@ -91,6 +93,9 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const lastFrameTimeRef = useRef(0);
     const containerRef = useRef<any>(null);
 
+    const onMeshReadyRef = useRef<(() => void) | undefined>(onMeshReady);
+    onMeshReadyRef.current = onMeshReady;
+
     const capturePendingRef = useRef<((data: string | null) => void) | null>(
       null,
     );
@@ -113,6 +118,9 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         const camera = cameraRef.current;
         const mesh = meshRef.current;
         if (!camera || !mesh) return;
+        // Reset orbit so bounds are measured face-on, not on a rotated mesh.
+        rotationRef.current = { x: 0, y: 0 };
+        mesh.rotation.set(0, 0, 0);
         const bbox = new THREE.Box3().setFromObject(mesh);
         const halfW = (bbox.max.x - bbox.min.x) / 2;
         const halfH = (bbox.max.y - bbox.min.y) / 2;
@@ -397,6 +405,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         scene.add(mesh);
         meshRef.current = mesh;
         pipelineManagerRef.current?.onMeshChanged(mesh);
+        onMeshReadyRef.current?.();
       } catch (error) {
         console.error("Failed to create text geometry:", error);
       }

@@ -1771,6 +1771,7 @@ function ColorPickerRow({
     loadRecentColors(),
   );
   const [draftHex, setDraftHex] = React.useState(numToHex(value));
+  const originalValueRef = React.useRef(value);
 
   React.useEffect(() => {
     setDraftHex(numToHex(value));
@@ -1788,6 +1789,7 @@ function ColorPickerRow({
         <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
         <TouchableOpacity
           onPress={() => {
+            originalValueRef.current = value;
             setDraftHex(numToHex(value));
             setShowModal(true);
           }}
@@ -1845,7 +1847,11 @@ function ColorPickerRow({
                 <input
                   type="color"
                   value={draftHex}
-                  onChange={(e: any) => setDraftHex(e.target.value)}
+                  onChange={(e: any) => {
+                    const hex = e.target.value;
+                    setDraftHex(hex);
+                    if (/^#[0-9a-fA-F]{6}$/.test(hex)) onChange(hexToNum(hex));
+                  }}
                   style={{
                     width: 80,
                     height: 80,
@@ -1926,7 +1932,10 @@ function ColorPickerRow({
             {/* Buttons */}
             <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
               <TouchableOpacity
-                onPress={() => setShowModal(false)}
+                onPress={() => {
+                  onChange(originalValueRef.current);
+                  setShowModal(false);
+                }}
                 style={{
                   flex: 1,
                   padding: 10,
@@ -2306,6 +2315,15 @@ function renderText3dControls({
         onCommit={updateActiveTextSet}
         multiline
       />
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>Capitalize</Text>
+        <Switch
+          value={params.capitalizeText !== false}
+          onValueChange={(v) => onUpdate("capitalizeText", v)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={params.capitalizeText !== false ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
       {/* Slide images */}
       {onPickSlideImage && (
         <View style={{ marginHorizontal: 12, marginBottom: 8 }}>
@@ -2567,15 +2585,6 @@ function renderText3dControls({
         onChange={(v) => onUpdate("curveSegments", Math.round(v))}
         colors={colors}
       />
-      <Row>
-        <Text style={[styles.label, { color: colors.text }]}>Capitalize</Text>
-        <Switch
-          value={params.capitalizeText !== false}
-          onValueChange={(v) => onUpdate("capitalizeText", v)}
-          trackColor={{ false: "#767577", true: colors.tint }}
-          thumbColor={params.capitalizeText !== false ? colors.tint : "#f4f3f4"}
-        />
-      </Row>
       <Row>
         <Text style={[styles.label, { color: colors.text }]}>
           {t("equalizeWidths")}
@@ -5976,6 +5985,7 @@ export function ThreeDTextScreen({
     playGongSound(audioContextRef);
   }, [sequenceLineIndex, sequenceMode, soundEnabled]);
 
+
   useEffect(() => {
     if (!sequenceMode || !soundEnabled || typeof window === "undefined") return;
     const unlockAudio = () => {
@@ -6585,6 +6595,7 @@ export function ThreeDTextScreen({
             lineSpacing={mainTextParams.lineSpacing as number | undefined}
             perspective={mainTextParams.perspective as number | undefined}
             pipes={activePipes}
+            onMeshReady={sequenceMode ? () => threeDTextRef.current?.fitCamera() : undefined}
             onPrimaryMeshClick={() => {
               const mainInst = effectInstances.find(
                 (i) => i.type === "mainText",
