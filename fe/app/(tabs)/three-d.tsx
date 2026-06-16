@@ -2492,7 +2492,7 @@ function renderText3dControls({
         colors={colors}
       />
       <SliderRow
-        label={t("depth")}
+        label={t("extrude_depth")}
         min={0.05}
         max={3}
         step={0.05}

@@ -144,7 +144,7 @@ function fileSizeMb(filePath) {
 }
 
 // audioOpts: { beatHz, carrier, volume, durationSec } or null for no audio
-function ffmpegEncode(inputArg, extraInputArgs, outputPath, audioOpts = null) {
+function ffmpegEncode(inputArg, extraInputArgs, outputPath, audioOpts = null, outputFps = null) {
   const bitrateNum = parseInt(config.bitrate.replace('M', ''), 10);
 
   // Left ear: carrier Hz  |  Right ear: carrier + beatHz
@@ -179,6 +179,7 @@ function ffmpegEncode(inputArg, extraInputArgs, outputPath, audioOpts = null) {
     '-bufsize', `${bitrateNum * 2}M`,
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
+    ...(outputFps ? ['-r', String(outputFps)] : []),
     ...audioOutputArgs,
     outputPath,
   ];
@@ -324,6 +325,7 @@ if (frameMode) {
       ['-framerate', String(fps)],
       outputMp4,
       binauralOpts(),
+      fps,
     );
 
     if (!keepFrames) {
@@ -373,7 +375,7 @@ if (frameMode) {
     if (!hasFFmpeg()) console.log('  Install ffmpeg for MP4: winget install Gyan.FFmpeg');
   } else {
     console.log('\nConverting webm → MP4...');
-    ffmpegEncode(videoPath, ['-r', String(fps)], outputMp4, binauralOpts());
+    ffmpegEncode(videoPath, [], outputMp4, binauralOpts());
     try { unlinkSync(videoPath); } catch { /* ignore */ }
     console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
   }

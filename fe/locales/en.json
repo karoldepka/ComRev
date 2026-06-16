@@ -9,9 +9,9 @@
   "duplicatePreset": "Duplicate preset",
   "loadPreset": "Load preset",
   "load": "Load",
-  "resetToBasic": "Reset to basic",
+  "resetToBasic": "Reset to basic settings",
   "randomConfig": "Random",
-  "resetConfirm": "Remove all effects except 3D text?",
+  "resetConfirm": "Are you sure you want to delete all effects except 3D text?",
   "saveConfig": "Save Configuration",
   "syncPending": "Sync pending",
   "export": "Export / Download",
@@ -292,8 +292,6 @@
   "p_rightEnabled": "Right Side",
   "p_topEnabled": "Top Side",
   "p_bottomEnabled": "Bottom Side",
-  "resetToBasic": "Reset to basic settings",
-  "resetConfirm": "Are you sure you want to delete all effects except 3D text?",
   "eff_wings_kw": "angel bird fly feather butterfly bat flap soar",
   "eff_fire_kw": "flame blaze burn heat hot ember inferno",
   "eff_smoke_kw": "fog mist haze cloud vapor steam",
@@ -312,5 +310,6 @@
   "eff_neonGlow_kw": "neon electric bright light glow",
   "eff_toonShading_kw": "cartoon anime cel comic flat",
   "eff_xRay_kw": "xray transparent see-through skeleton",
-  "eff_glitch_kw": "distort corrupt error artifact digital"
+  "eff_glitch_kw": "distort corrupt error artifact digital",
+  "extrude_depth": "Extrude Depth"
 }

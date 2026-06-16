@@ -8,9 +8,9 @@
   "savePreset": "حفظ الإعداد المسبق",
   "loadPreset": "تحميل الإعداد المسبق",
   "load": "تحميل",
-  "resetToBasic": "إعادة التعيين إلى الأساسي",
+  "resetToBasic": "إعادة التعيين إلى الإعدادات الأساسية",
   "randomConfig": "Random",
-  "resetConfirm": "حذف جميع التأثيرات ما عدا النص ثلاثي الأبعاد؟",
+  "resetConfirm": "هل تريد حذف جميع التأثيرات باستثناء النص ثلاثي الأبعاد؟",
   "saveConfig": "حفظ الإعدادات",
   "syncPending": "المزامنة معلقة",
   "export": "تصدير / تنزيل",
@@ -279,9 +279,6 @@
   "p_customImage": "صورة مخصصة",
   "p_chooseImage": "اختر صورة",
   "p_changeImage": "تغيير الصورة",
-  "resetToBasic": "إعادة التعيين إلى الإعدادات الأساسية",
-  "randomConfig": "Random",
-  "resetConfirm": "هل تريد حذف جميع التأثيرات باستثناء النص ثلاثي الأبعاد؟",
   "eff_graphics_kw": "صورة فوتو أيقونة SVG رسومات شعار نسيج",
   "eff_text3d_kw": "نص كلمات حروف خط طباعة كتابة",
   "eff_bloom_kw": "توهج ضوء إشعاع إشراق هالة",
@@ -296,5 +293,6 @@
   "eff_neonGlow_kw": "نيون كهربائي مضيء ضوء",
   "eff_toonShading_kw": "كرتون أنيمي هزلي مسطح",
   "eff_xRay_kw": "أشعة X شفاف",
-  "eff_glitch_kw": "تشويه فساد خطأ رقمي"
+  "eff_glitch_kw": "تشويه فساد خطأ رقمي",
+  "extrude_depth": "عمق البثق"
 }

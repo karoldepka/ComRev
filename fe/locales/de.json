@@ -257,5 +257,6 @@
   "eff_dust_kw": "Partikel schwebend Atmosphäre",
   "eff_neonGlow_kw": "Neon elektrisch hell Licht Glühen",
   "eff_toonShading_kw": "Cartoon Anime Comic flach Zeichentrick",
-  "eff_xRay_kw": "Röntgen transparent durchsichtig"
+  "eff_xRay_kw": "Röntgen transparent durchsichtig",
+  "extrude_depth": "Extrusionstiefe"
 }

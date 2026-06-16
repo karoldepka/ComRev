@@ -258,5 +258,6 @@
   "eff_neonGlow_kw": "霓虹 电气 明亮 光",
   "eff_toonShading_kw": "卡通 动漫 漫画 平面",
   "eff_xRay_kw": "X射线 透明",
-  "eff_glitch_kw": "失真 损坏 错误 数字 伪像"
+  "eff_glitch_kw": "失真 损坏 错误 数字 伪像",
+  "extrude_depth": "挤出深度"
 }

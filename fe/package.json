@@ -11,7 +11,8 @@
     "lint": "expo lint",
     "generate-motivational-content": "node ./scripts/generate-motivational-content.mjs",
     "trim-images": "node ./scripts/trim-svg-margins.js",
-    "record": "node ./scripts/record-playwright.mjs"
+    "record": "node ./scripts/record-playwright.mjs",
+    "record-obs": "node ./scripts/record-obs.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -59,6 +60,7 @@
     "@types/three": "^0.184.1",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "obs-websocket-js": "^5.0.8",
     "playwright": "^1.61.0",
     "typescript": "~5.9.2",
     "vercel": "^54.12.0"

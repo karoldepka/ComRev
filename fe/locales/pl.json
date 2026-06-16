@@ -259,5 +259,6 @@
   "eff_neonGlow_kw": "neon elektryczny jasny światło",
   "eff_toonShading_kw": "kreskówka anime komiks płaski",
   "eff_xRay_kw": "rentgen przezroczyste",
-  "eff_glitch_kw": "zniekształcenie uszkodzenie błąd cyfrowe artefakt"
+  "eff_glitch_kw": "zniekształcenie uszkodzenie błąd cyfrowe artefakt",
+  "extrude_depth": "Głębokość Wytłoczenia"
 }

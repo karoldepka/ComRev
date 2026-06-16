@@ -258,5 +258,6 @@
   "eff_neonGlow_kw": "néon elétrico brilhante luz",
   "eff_toonShading_kw": "desenho animado anime quadrinhos plano",
   "eff_xRay_kw": "raios X transparente",
-  "eff_glitch_kw": "distorção corrupção erro digital artefato"
+  "eff_glitch_kw": "distorção corrupção erro digital artefato",
+  "extrude_depth": "Profundidade de extrusão"
 }

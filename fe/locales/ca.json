@@ -258,5 +258,6 @@
   "eff_neonGlow_kw": "neó elèctric brillant llum",
   "eff_toonShading_kw": "dibuixos animats anime còmic pla",
   "eff_xRay_kw": "raigs X transparent",
-  "eff_glitch_kw": "distorsió corrupció error digital artefacte"
+  "eff_glitch_kw": "distorsió corrupció error digital artefacte",
+  "extrude_depth": "Profunditat d'extrusió"
 }

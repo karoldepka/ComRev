@@ -8,9 +8,9 @@
   "savePreset": "प्रीसेट सहेजें",
   "loadPreset": "प्रीसेट लोड करें",
   "load": "लोड करें",
-  "resetToBasic": "मूल में रीसेट करें",
+  "resetToBasic": "मूल सेटिंग्स में रीसेट करें",
   "randomConfig": "Random",
-  "resetConfirm": "3D पाठ को छोड़कर सभी प्रभाव हटाएं?",
+  "resetConfirm": "क्या आप 3D पाठ को छोड़कर सभी प्रभाव हटाना चाहते हैं?",
   "saveConfig": "कॉन्फ़िगरेशन सहेजें",
   "syncPending": "सिंक लंबित",
   "export": "निर्यात / डाउनलोड",
@@ -279,9 +279,6 @@
   "p_customImage": "कस्टम छवि",
   "p_chooseImage": "छवि चुनें",
   "p_changeImage": "छवि बदलें",
-  "resetToBasic": "मूल सेटिंग्स में रीसेट करें",
-  "randomConfig": "Random",
-  "resetConfirm": "क्या आप 3D पाठ को छोड़कर सभी प्रभाव हटाना चाहते हैं?",
   "eff_graphics_kw": "छवि फोटो तस्वीर आइकन ग्राफिक लोगो",
   "eff_text3d_kw": "पाठ शब्द अक्षर फ़ॉन्ट टाइपोग्राफी लिखना",
   "eff_bloom_kw": "चमक प्रकाश रोशनी हेलो",
@@ -296,5 +293,6 @@
   "eff_neonGlow_kw": "नियॉन बिजली चमकदार रोशनी",
   "eff_toonShading_kw": "कार्टून एनीमे कॉमिक",
   "eff_xRay_kw": "एक्स रे पारदर्शी",
-  "eff_glitch_kw": "विकृति त्रुटि डिजिटल कलाकृति"
+  "eff_glitch_kw": "विकृति त्रुटि डिजिटल कलाकृति",
+  "extrude_depth": "एक्सट्रूड गहराई"
 }
