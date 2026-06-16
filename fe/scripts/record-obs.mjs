@@ -118,8 +118,9 @@ const fps             = parseInt(args.fps               ?? "60",   10);
 const binauralHz      = parseFloat(args["binaural-hz"]      ?? "0");
 const binauralCarrier = parseFloat(args["binaural-carrier"] ?? "200");
 const binauralVolume  = parseFloat(args["binaural-volume"]  ?? "0.35");
-const tab = args.tab ?? "preset/motivation/full-window";
-const baseUrl = args.url ?? "http://localhost:8081";
+const tab     = args.tab  ?? "preset/motivation/full-window";
+const lang    = args.lang ?? "";
+const baseUrl = args.url  ?? "http://localhost:8081";
 const waitMs = parseInt(args["wait-ms"] ?? "3000", 10);
 const wsUrl = args["ws-url"] ?? "ws://localhost:4455";
 const wsPassword = args["ws-password"] ?? "";
@@ -131,7 +132,7 @@ const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const outputDst = args.output ?? `../recordings/${ts}_animation_${format}.mp4`;
 mkdirSync(dirname(outputDst), { recursive: true });
 
-const fullUrl = `${baseUrl}/${tab}`;
+const fullUrl = `${baseUrl}/${tab}${lang ? `?lang=${lang}` : ""}`;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

@@ -35,6 +35,4 @@ export type MantraEntry = {
     | string;
   emotion?: string;
   style?: string;
-  /** Translations of the mantra key text keyed by language code, e.g. { pl: "myśli są rzeczami" } */
-  translations?: Partial<Record<string, MantraText>>;
 };

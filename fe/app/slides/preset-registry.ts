@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid/non-secure';
+import i18n from '@/utils/i18n';
 import type { MantraEntry, MantraText } from './mcon.data';
 import { MANTRAS as MCON_MANTRAS } from './mcon.data';
 import { MANTRAS as MOTIVATION_MANTRAS } from './motivation.data';
@@ -40,10 +41,10 @@ function wrapMantraText(text: string, maxChars = 12): string {
 }
 
 function getMantraSlideText(title: string, entry: MantraEntry, lang?: string): string {
-  const translated = lang ? (entry.translations?.[lang] ?? undefined) : undefined;
-  const raw = translated !== undefined
-    ? normalizeMantraText(translated)
-    : entry.text === undefined ? title : normalizeMantraText(entry.text);
+  const fallback = entry.text === undefined ? title : normalizeMantraText(entry.text);
+  const raw = lang
+    ? i18n.t(title, { ns: 'mantras', lng: lang, keySeparator: false, defaultValue: fallback })
+    : fallback;
   return wrapMantraText(raw);
 }
 

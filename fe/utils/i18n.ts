@@ -4,6 +4,7 @@ import * as Localization from 'expo-localization';
 
 import en from '../locales/en.json';
 import pl from '../locales/pl.json';
+import mantrasPl from '../locales/mantras.pl.json';
 import de from '../locales/de.json';
 import it from '../locales/it.json';
 import fr from '../locales/fr.json';
@@ -44,8 +45,8 @@ i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: en },
-      pl: { translation: pl },
+      en: { translation: en, mantras: {} },
+      pl: { translation: pl, mantras: mantrasPl },
       de: { translation: de },
       it: { translation: it },
       fr: { translation: fr },
@@ -58,6 +59,8 @@ i18n
     },
     lng: detectLocale(),
     fallbackLng: 'en',
+    ns: ['translation', 'mantras'],
+    defaultNS: 'translation',
     interpolation: { escapeValue: false },
   });
 

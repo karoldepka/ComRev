@@ -73,6 +73,7 @@ const args = parseArgs(process.argv.slice(2));
 const format     = args.format ?? 'yt';
 const durationSec = parseInt(args.duration ?? '2', 10);
 const tab        = args.tab ?? 'preset/mcon/full-window';
+const lang       = args.lang ?? '';
 const baseUrl    = args.url ?? 'http://localhost:8081';
 const fps        = parseInt(args.fps ?? '60', 10);
 const waitMs     = parseInt(args['wait-ms'] ?? '3000', 10);
@@ -129,7 +130,7 @@ const outputMp4 = /\.(mp4|mov|mkv|webm)$/i.test(rawOutput) ? rawOutput : `${rawO
 const outputDir = dirname(outputMp4);
 mkdirSync(outputDir, { recursive: true });
 
-const fullUrl = `${baseUrl}/${tab}`;
+const fullUrl = `${baseUrl}/${tab}${lang ? `?lang=${lang}` : ''}`;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
