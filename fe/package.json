@@ -51,7 +51,7 @@
     "react-native-worklets": "0.5.1",
     "smol-toml": "^1.6.1",
     "svgo": "^3.3.3",
-    "three": "^0.184.0",
+    "three": "^0.166.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

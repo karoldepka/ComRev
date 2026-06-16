@@ -32,14 +32,21 @@
  *   --no-resize                 Skip setting OBS canvas/output resolution & fps
  *   --scene <name>              OBS scene name to use (default: AnimationRecorder)
  *   --source <name>             OBS browser source name (default: AnimationBrowser)
- *   --binaural-hz <number>      Mix binaural beat at this frequency in Hz (e.g. 6 for theta).
- *                               Requires headphones. 0 = disabled (default).
+ *   --binaural-hz <number>      Mix binaural beat at this frequency in Hz (default: 6).
+ *                               Requires headphones. Use 0 to disable.
  *   --binaural-carrier <number> Carrier sine frequency in Hz (default: 200)
  *   --binaural-volume <0-1>     Binaural tone amplitude relative to full scale (default: 0.35)
  */
 
 import { execFileSync, execSync } from "child_process";
-import { copyFileSync, mkdirSync, renameSync, statSync, unlinkSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+} from "fs";
 import OBSWebSocket from "obs-websocket-js";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -113,14 +120,14 @@ if (!width || !height) {
 
 // ── other args ────────────────────────────────────────────────────────────────
 
-const durationSec     = parseInt(args.duration          ?? "30",   10);
-const fps             = parseInt(args.fps               ?? "60",   10);
-const binauralHz      = parseFloat(args["binaural-hz"]      ?? "0");
+const durationSec = parseInt(args.duration ?? "30", 10);
+const fps = parseInt(args.fps ?? "60", 10);
+const binauralHz = parseFloat(args["binaural-hz"] ?? "6");
 const binauralCarrier = parseFloat(args["binaural-carrier"] ?? "200");
-const binauralVolume  = parseFloat(args["binaural-volume"]  ?? "0.35");
-const tab     = args.tab  ?? "preset/motivation/full-window";
-const lang    = args.lang ?? "";
-const baseUrl = args.url  ?? "http://localhost:8081";
+const binauralVolume = parseFloat(args["binaural-volume"] ?? "0.35");
+const tab = args.tab ?? "preset/motivation/full-window";
+const lang = args.lang ?? "";
+const baseUrl = args.url ?? "http://localhost:8081";
 const waitMs = parseInt(args["wait-ms"] ?? "3000", 10);
 const wsUrl = args["ws-url"] ?? "ws://localhost:4455";
 const wsPassword = args["ws-password"] ?? "";
@@ -147,14 +154,92 @@ function fileSizeMb(path) {
 }
 
 function hasFFmpeg() {
-  try { execSync("ffmpeg -version", { stdio: "ignore" }); return true; }
-  catch { return false; }
+  try {
+    execSync("ffmpeg -version", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasAudioStream(filePath) {
+  try {
+    const output = execFileSync(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "csv=p=0",
+        filePath,
+      ],
+      { encoding: "utf8" },
+    );
+    return output.trim() === "audio";
+  } catch {
+    return false;
+  }
+}
+
+function isRetryableFsError(err) {
+  return ["EACCES", "EBUSY", "EPERM"].includes(err?.code);
+}
+
+async function retryFs(action, label) {
+  const delays = [100, 250, 500, 1000, 2000, 3000];
+  let lastError;
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return action();
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableFsError(err) || attempt === delays.length) break;
+      await sleep(delays[attempt]);
+    }
+  }
+
+  throw new Error(`${label} failed: ${lastError?.message ?? lastError}`, {
+    cause: lastError,
+  });
+}
+
+async function replaceFileWithRetry(tmpPath, finalPath) {
+  const backupPath = `${finalPath}.pre-binaural-${process.pid}-${Date.now()}.bak`;
+  let backupCreated = false;
+
+  try {
+    await retryFs(() => renameSync(finalPath, backupPath), "Moving original recording aside");
+    backupCreated = true;
+    await retryFs(() => renameSync(tmpPath, finalPath), "Moving binaural recording into place");
+
+    try {
+      unlinkSync(backupPath);
+    } catch (err) {
+      console.warn(`Could not remove backup file: ${backupPath}`);
+      console.warn(err.message);
+    }
+  } catch (err) {
+    if (backupCreated && !existsSync(finalPath)) {
+      try {
+        await retryFs(() => renameSync(backupPath, finalPath), "Restoring original recording");
+      } catch (restoreErr) {
+        console.error(`Could not restore original recording from backup: ${backupPath}`);
+        console.error(restoreErr.message);
+      }
+    }
+    throw err;
+  }
 }
 
 // Mix a synthesized binaural beat into an existing MP4 file (in-place).
 // Left ear: carrier Hz  |  Right ear: carrier + beatHz
 // The brain perceives the difference as a binaural beat at beatHz.
-function mixBinaural(filePath, { beatHz, carrier, volume, durationSec: dur }) {
+async function mixBinaural(filePath, { beatHz, carrier, volume, durationSec: dur }) {
   const aevalsrc = [
     `aevalsrc=`,
     `${volume}*sin(2*PI*${carrier}*t)`,
@@ -163,17 +248,40 @@ function mixBinaural(filePath, { beatHz, carrier, volume, durationSec: dur }) {
     `:c=stereo:s=44100`,
   ].join("");
   const tmpPath = filePath + ".binaural-tmp.mp4";
-  execFileSync("ffmpeg", [
-    "-y",
-    "-i", filePath,
-    "-f", "lavfi", "-i", aevalsrc,
-    "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:normalize=0",
-    "-c:v", "copy",
-    "-c:a", "aac", "-b:a", "192k",
-    "-t", String(dur),
-    tmpPath,
-  ], { stdio: "inherit" });
-  renameSync(tmpPath, filePath);
+  const audioArgs = hasAudioStream(filePath)
+    ? [
+        "-filter_complex",
+        "[0:a][1:a]amix=inputs=2:duration=first:normalize=0[aout]",
+        "-map",
+        "0:v:0",
+        "-map",
+        "[aout]",
+      ]
+    : ["-map", "0:v:0", "-map", "1:a:0"];
+  execFileSync(
+    "ffmpeg",
+    [
+      "-y",
+      "-i",
+      filePath,
+      "-f",
+      "lavfi",
+      "-i",
+      aevalsrc,
+      ...audioArgs,
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-t",
+      String(dur),
+      tmpPath,
+    ],
+    { stdio: "inherit" },
+  );
+  await replaceFileWithRetry(tmpPath, filePath);
 }
 
 // ── banner ────────────────────────────────────────────────────────────────────
@@ -189,7 +297,9 @@ console.log(`  Output  : ${outputDst}`);
 console.log(`  OBS WS  : ${wsUrl}`);
 console.log(`  Scene   : ${SCENE_NAME} / ${SOURCE_NAME}`);
 if (binauralHz) {
-  console.log(`  Binaural: ${binauralHz} Hz beat  (${binauralCarrier} Hz / ${binauralCarrier + binauralHz} Hz)  ⚠ headphones required`);
+  console.log(
+    `  Binaural: ${binauralHz} Hz beat  (${binauralCarrier} Hz / ${binauralCarrier + binauralHz} Hz)  ⚠ headphones required`,
+  );
 }
 console.log("══════════════════════════════════════════\n");
 
@@ -348,9 +458,16 @@ if (obsOutputPath) {
   if (binauralHz) {
     if (hasFFmpeg()) {
       console.log(`\nMixing binaural beat (${binauralHz} Hz)...`);
-      mixBinaural(outputDst, { beatHz: binauralHz, carrier: binauralCarrier, volume: binauralVolume, durationSec });
+      await mixBinaural(outputDst, {
+        beatHz: binauralHz,
+        carrier: binauralCarrier,
+        volume: binauralVolume,
+        durationSec,
+      });
     } else {
-      console.warn("ffmpeg not found — skipping binaural mix (winget install Gyan.FFmpeg)");
+      console.warn(
+        "ffmpeg not found — skipping binaural mix (winget install Gyan.FFmpeg)",
+      );
     }
   }
   console.log(`\n✓ Saved: ${outputDst}  (${fileSizeMb(outputDst)} MB)`);

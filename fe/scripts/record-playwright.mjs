@@ -33,8 +33,8 @@
  *   --jpeg-quality <1-100>      JPEG quality for intermediate frames (default: 92)
  *   --no-ffmpeg                 Keep raw output, skip MP4 conversion (realtime: .webm; frames: no-op)
  *   --keep-frames               Keep temporary frame files directory after encoding
- *   --binaural-hz <number>      Add binaural beat audio track at this frequency in Hz (e.g. 6 for theta)
- *                               Requires headphones to work. Omit or 0 to disable.
+ *   --binaural-hz <number>      Add binaural beat audio track at this frequency in Hz (default: 6).
+ *                               Requires headphones to work. Use 0 to disable.
  *   --binaural-carrier <number> Carrier sine frequency in Hz (default: 200)
  *   --binaural-volume <0-1>     Binaural tone amplitude (default: 0.35)
  *   --scale <0.1-1>             Render at this fraction of full resolution, then upscale in ffmpeg.
@@ -85,7 +85,7 @@ const usePng          = args.png === true;
 const jpegQuality     = parseInt(args['jpeg-quality'] ?? '92', 10);
 const noFfmpeg        = args['no-ffmpeg'] === true;
 const keepFrames      = args['keep-frames'] === true;
-const binauralHz      = parseFloat(args['binaural-hz'] ?? '0');
+const binauralHz      = parseFloat(args['binaural-hz'] ?? '6');
 const binauralCarrier = parseFloat(args['binaural-carrier'] ?? '200');
 const binauralVolume  = parseFloat(args['binaural-volume'] ?? '0.35');
 const renderScale     = Math.min(1, Math.max(0.1, parseFloat(args.scale ?? '1')));
