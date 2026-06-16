@@ -32,7 +32,6 @@
  *   --keep-frames               Keep temporary PNG frames directory after encoding
  */
 
-import { chromium } from 'playwright';
 import { execFileSync, execSync } from 'child_process';
 import { mkdirSync, renameSync, rmSync, unlinkSync, statSync } from 'fs';
 import { join, dirname, extname } from 'path';
@@ -168,6 +167,19 @@ if (frameMode) {
 console.log('══════════════════════════════════════════\n');
 
 // ── launch browser ────────────────────────────────────────────────────────────
+
+let playwrightMod;
+try {
+  playwrightMod = await import('playwright');
+} catch {
+  console.error(
+    'Playwright is not installed. Run:\n' +
+    '  npm install --save-dev playwright\n' +
+    '  npx playwright install chromium',
+  );
+  process.exit(1);
+}
+const { chromium } = playwrightMod;
 
 const browser = await chromium.launch({
   headless,
