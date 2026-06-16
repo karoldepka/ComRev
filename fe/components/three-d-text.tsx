@@ -741,21 +741,20 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       applyResize(cssW, cssH);
     }, [applyResize]);
 
-    // Handle browser fullscreen / window resize events (web only)
+    // ResizeObserver keeps the canvas in sync whenever the container changes size
+    // (window resize, controls panel collapsing, fullscreen toggle, etc.).
     useEffect(() => {
-      if (typeof window === 'undefined') return;
-      const onResize = () => {
-        const el = containerRef.current;
-        if (!el) return;
-        const rect = typeof el.getBoundingClientRect === 'function'
-          ? el.getBoundingClientRect()
-          : null;
-        if (rect && rect.width > 0 && rect.height > 0) {
-          applyResize(rect.width, rect.height);
+      if (typeof ResizeObserver === 'undefined') return;
+      const el = containerRef.current as HTMLElement | null;
+      if (!el) return;
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) applyResize(width, height);
         }
-      };
-      window.addEventListener('resize', onResize);
-      return () => window.removeEventListener('resize', onResize);
+      });
+      observer.observe(el);
+      return () => observer.disconnect();
     }, [applyResize]);
 
     return (

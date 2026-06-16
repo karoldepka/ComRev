@@ -6717,7 +6717,7 @@ export function ThreeDTextScreen({
 
   return (
     <SafeAreaView
-      edges={["bottom"]}
+      edges={fullWindow ? [] : ["bottom"]}
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <View style={styles.content}>
