@@ -46,3 +46,4 @@ app-example
 
 # recorded videos
 recordings/
+.frames-*

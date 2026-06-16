@@ -82,3 +82,6 @@ web/next-env.d.ts
 backend/.venv/
 
 my-project
+
+.frames-*
+

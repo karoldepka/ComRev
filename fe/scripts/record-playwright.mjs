@@ -27,6 +27,7 @@
  *   --fps <number>              Frames per second (default: 60)
  *   --wait-ms <ms>              Wait after page load before recording starts (default: 3000)
  *   --headless                  Run without a visible browser window
+ *   --headed                    Force a visible browser window (frame mode defaults to headless for speed)
  *   --frames                    Use frame-by-frame mode (clock-controlled, perfect quality)
  *   --png                       Use PNG for intermediate frames instead of JPEG (slower but lossless)
  *   --jpeg-quality <1-100>      JPEG quality for intermediate frames (default: 92)
@@ -36,6 +37,8 @@
  *                               Requires headphones to work. Omit or 0 to disable.
  *   --binaural-carrier <number> Carrier sine frequency in Hz (default: 200)
  *   --binaural-volume <0-1>     Binaural tone amplitude (default: 0.35)
+ *   --scale <0.1-1>             Render at this fraction of full resolution, then upscale in ffmpeg.
+ *                               Use 0.5 for ~4x faster test renders. (default: 1)
  */
 
 import { execFileSync, execSync } from 'child_process';
@@ -68,13 +71,15 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 
 const format     = args.format ?? 'yt';
-const durationSec = parseInt(args.duration ?? '30', 10);
+const durationSec = parseInt(args.duration ?? '2', 10);
 const tab        = args.tab ?? 'preset/mcon/full-window';
 const baseUrl    = args.url ?? 'http://localhost:8081';
 const fps        = parseInt(args.fps ?? '60', 10);
 const waitMs     = parseInt(args['wait-ms'] ?? '3000', 10);
-const headless        = args.headless === true;
 const frameMode       = args.frames === true;
+const forceHeadless   = args.headless === true;
+const forceHeaded     = args.headed === true;
+const headless        = forceHeaded ? false : (forceHeadless || frameMode);
 const usePng          = args.png === true;
 const jpegQuality     = parseInt(args['jpeg-quality'] ?? '92', 10);
 const noFfmpeg        = args['no-ffmpeg'] === true;
@@ -82,6 +87,7 @@ const keepFrames      = args['keep-frames'] === true;
 const binauralHz      = parseFloat(args['binaural-hz'] ?? '0');
 const binauralCarrier = parseFloat(args['binaural-carrier'] ?? '200');
 const binauralVolume  = parseFloat(args['binaural-volume'] ?? '0.35');
+const renderScale     = Math.min(1, Math.max(0.1, parseFloat(args.scale ?? '1')));
 
 // ── format config ─────────────────────────────────────────────────────────────
 
@@ -196,10 +202,16 @@ console.log(`  FPS     : ${fps}`);
 console.log(`  Duration: ${durationSec}s`);
 console.log(`  URL     : ${fullUrl}`);
 console.log(`  Output  : ${outputMp4}`);
+console.log(`  Browser : ${headless ? 'headless' : 'headed'}`);
 if (frameMode) {
   const totalFrames = Math.ceil(durationSec * fps);
   const frameFormat = usePng ? 'PNG' : `JPEG q${jpegQuality}`;
   console.log(`  Frames  : ${totalFrames} ${frameFormat} → MP4`);
+}
+if (renderScale < 1) {
+  const rw = Math.round(config.width * renderScale);
+  const rh = Math.round(config.height * renderScale);
+  console.log(`  Scale   : ${renderScale} (render ${rw}×${rh}, upscale in ffmpeg)`);
 }
 if (binauralHz) {
   console.log(`  Binaural: ${binauralHz} Hz beat  (${binauralCarrier} Hz / ${binauralCarrier + binauralHz} Hz)  ⚠ headphones required`);
@@ -227,13 +239,14 @@ const browser = await chromium.launch({
     '--disable-infobars',
     '--no-first-run',
     '--disable-blink-features=AutomationControlled',
+    '--ignore-gpu-blocklist',
   ],
 });
 
 // ── frame-by-frame mode ───────────────────────────────────────────────────────
 
 if (frameMode) {
-  if (!hasFFmpeg()) {
+  if (!noFfmpeg && !hasFFmpeg()) {
     console.error('ffmpeg is required for frame-by-frame mode (winget install Gyan.FFmpeg)');
     await browser.close();
     process.exit(1);
@@ -242,8 +255,10 @@ if (frameMode) {
   const framesDir = join(outputDir, `.frames-${ts}`);
   mkdirSync(framesDir, { recursive: true });
 
+  const renderWidth  = Math.round(config.width  * renderScale);
+  const renderHeight = Math.round(config.height * renderScale);
   const context = await browser.newContext({
-    viewport: { width: config.width, height: config.height },
+    viewport: { width: renderWidth, height: renderHeight },
   });
   const page = await context.newPage();
 
@@ -294,25 +309,31 @@ if (frameMode) {
     }
   }
 
-  console.log('\n\nEncoding MP4...');
+  console.log('\n');
   await context.close();
   await browser.close();
 
-  const frameExt = usePng ? 'png' : 'jpg';
-  ffmpegEncode(
-    join(framesDir, `frame-%06d.${frameExt}`),
-    ['-framerate', String(fps)],
-    outputMp4,
-    binauralOpts(),
-  );
-
-  if (!keepFrames) {
-    rmSync(framesDir, { recursive: true, force: true });
+  if (noFfmpeg) {
+    console.log(`Frames saved at: ${framesDir}`);
+    console.log('Skipping MP4 encoding because --no-ffmpeg was passed.');
   } else {
-    console.log(`Frames kept at: ${framesDir}`);
-  }
+    console.log('Encoding MP4...');
+    const frameExt = usePng ? 'png' : 'jpg';
+    ffmpegEncode(
+      join(framesDir, `frame-%06d.${frameExt}`),
+      ['-framerate', String(fps)],
+      outputMp4,
+      binauralOpts(),
+    );
 
-  console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
+    if (!keepFrames) {
+      rmSync(framesDir, { recursive: true, force: true });
+    } else {
+      console.log(`Frames kept at: ${framesDir}`);
+    }
+
+    console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
+  }
 
 // ── realtime mode ─────────────────────────────────────────────────────────────
 
@@ -320,11 +341,13 @@ if (frameMode) {
   const videoDir = join(__dirname, '../recordings/.playwright-tmp');
   mkdirSync(videoDir, { recursive: true });
 
+  const renderWidth  = Math.round(config.width  * renderScale);
+  const renderHeight = Math.round(config.height * renderScale);
   const context = await browser.newContext({
-    viewport: { width: config.width, height: config.height },
+    viewport: { width: renderWidth, height: renderHeight },
     recordVideo: {
       dir: videoDir,
-      size: { width: config.width, height: config.height },
+      size: { width: renderWidth, height: renderHeight },
     },
   });
   const page = await context.newPage();
