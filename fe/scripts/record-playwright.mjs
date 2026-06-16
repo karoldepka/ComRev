@@ -247,42 +247,20 @@ if (frameMode) {
   });
   const page = await context.newPage();
 
+  // Install the fake clock BEFORE navigation so every timer (RAF, setTimeout,
+  // setInterval, performance.now, Date) is under our control from the start.
+  // setSystemTime sets the starting timestamp without firing any callbacks.
+  await page.clock.install();
+  await page.clock.setSystemTime(Date.now());
+
   console.log(`Opening ${fullUrl} ...`);
   await page.goto(fullUrl, { waitUntil: 'load', timeout: 30_000 });
 
-  console.log(`Waiting ${waitMs}ms for animation to initialize...`);
-  await page.waitForTimeout(waitMs);
-
-  // Inject a manual RAF queue and fake performance.now into the page.
-  // After this, time only advances when Node.js calls window.__tickFrame(dt).
-  // The in-flight real RAF fires one last time, re-registers via our fake
-  // requestAnimationFrame, and then we're in full control.
-  await page.evaluate(() => {
-    const pendingRAF = [];
-    let fakeNow = performance.now();
-
-    // Shadow performance.now so THREE.js clock sees our fake timestamps.
-    window.performance.now = () => fakeNow;
-
-    // Replace RAF with a manual queue.
-    window.requestAnimationFrame = (cb) => {
-      pendingRAF.push(cb);
-      return pendingRAF.length;
-    };
-    window.cancelAnimationFrame = (id) => {
-      pendingRAF[id - 1] = null;
-    };
-
-    // Called from Node.js once per frame.
-    window.__tickFrame = (dt) => {
-      fakeNow += dt;
-      const callbacks = pendingRAF.splice(0).filter(Boolean);
-      callbacks.forEach((cb) => cb(fakeNow));
-    };
-  });
-
-  // Wait for the last real RAF to fire and re-register under our fake RAF.
-  await page.waitForTimeout(50);
+  // Advance fake time through the init period.  runFor fires RAF + setTimeout
+  // callbacks at the correct fake timestamps, so the animation and slide timers
+  // all initialize at the right pace.
+  console.log(`Advancing ${waitMs}ms of fake time for initialization...`);
+  await page.clock.runFor(waitMs);
 
   const totalFrames = Math.ceil(durationSec * fps);
   const frameDurationMs = 1000 / fps;
@@ -291,8 +269,10 @@ if (frameMode) {
   const startWall = Date.now();
 
   for (let i = 0; i < totalFrames; i++) {
-    // Advance fake time by one frame → THREE.js re-renders with correct delta.
-    await page.evaluate((dt) => window.__tickFrame(dt), frameDurationMs);
+    // Advance fake time by one frame.  Fires the pending RAF (THREE.js renders)
+    // and any setTimeout/setInterval callbacks due in this window (slide changes,
+    // sequence timers, etc.) — all perfectly in sync with the video clock.
+    await page.clock.runFor(frameDurationMs);
 
     const ext = usePng ? 'png' : 'jpg';
     const framePath = join(framesDir, `frame-${String(i).padStart(6, '0')}.${ext}`);
