@@ -256,11 +256,12 @@ if (frameMode) {
   console.log(`Opening ${fullUrl} ...`);
   await page.goto(fullUrl, { waitUntil: 'load', timeout: 30_000 });
 
-  // Advance fake time through the init period.  runFor fires RAF + setTimeout
-  // callbacks at the correct fake timestamps, so the animation and slide timers
-  // all initialize at the right pace.
-  console.log(`Advancing ${waitMs}ms of fake time for initialization...`);
-  await page.clock.runFor(waitMs);
+  // Jump the fake clock forward through the init period without firing any
+  // intermediate callbacks (no 180 THREE.js renders before recording starts).
+  // Slide timers registered during page load will still fire at the correct
+  // fake time during recording because their scheduled time is now in our past.
+  console.log(`Fast-forwarding ${waitMs}ms of fake time for initialization...`);
+  await page.clock.fastForward(waitMs);
 
   const totalFrames = Math.ceil(durationSec * fps);
   const frameDurationMs = 1000 / fps;
