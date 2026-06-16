@@ -39,7 +39,7 @@ param(
     [string]$AppUrl = 'http://localhost:8081',
 
     # Tab path to open (e.g. 'three-d', 'presets')
-    [string]$Tab = 'three-d',
+    [string]$Tab = 'preset/mcon/full-window',
 
     [switch]$StartServer,
 
@@ -159,8 +159,8 @@ $config = switch ($Format) {
 # ── output filename ────────────────────────────────────────────────────────────
 
 if (-not $Output) {
-    $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $Output = "recordings\animation_${Format}_${ts}"
+    $ts = Get-Date -Format 'yyyy-MM-dd_HH.mm.ss'
+    $Output = "recordings\${ts}_animation.${Format}.mp4"
 }
 if (-not [System.IO.Path]::HasExtension($Output)) {
     $Output = "$Output.mp4"
