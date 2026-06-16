@@ -28,8 +28,10 @@
  *   --wait-ms <ms>              Wait after page load before recording starts (default: 3000)
  *   --headless                  Run without a visible browser window
  *   --frames                    Use frame-by-frame mode (clock-controlled, perfect quality)
+ *   --png                       Use PNG for intermediate frames instead of JPEG (slower but lossless)
+ *   --jpeg-quality <1-100>      JPEG quality for intermediate frames (default: 92)
  *   --no-ffmpeg                 Keep raw output, skip MP4 conversion (realtime: .webm; frames: no-op)
- *   --keep-frames               Keep temporary PNG frames directory after encoding
+ *   --keep-frames               Keep temporary frame files directory after encoding
  */
 
 import { execFileSync, execSync } from 'child_process';
@@ -67,10 +69,12 @@ const tab        = args.tab ?? 'preset/mcon/full-window';
 const baseUrl    = args.url ?? 'http://localhost:8081';
 const fps        = parseInt(args.fps ?? '60', 10);
 const waitMs     = parseInt(args['wait-ms'] ?? '3000', 10);
-const headless   = args.headless === true;
-const frameMode  = args.frames === true;
-const noFfmpeg   = args['no-ffmpeg'] === true;
-const keepFrames = args['keep-frames'] === true;
+const headless      = args.headless === true;
+const frameMode     = args.frames === true;
+const usePng        = args.png === true;
+const jpegQuality   = parseInt(args['jpeg-quality'] ?? '92', 10);
+const noFfmpeg      = args['no-ffmpeg'] === true;
+const keepFrames    = args['keep-frames'] === true;
 
 // ── format config ─────────────────────────────────────────────────────────────
 
@@ -84,9 +88,9 @@ const FORMAT_CONFIGS = {
   },
   shorts: {
     label: 'YouTube Shorts 1080x1920',
-    width: 608,
-    height: 1080,
-    vfilter: 'scale=1080:1920:flags=lanczos',
+    width: 1080,
+    height: 1920,
+    vfilter: 'scale=1080:1920',
     bitrate: '12M',
   },
   'yt-4k': {
@@ -162,7 +166,8 @@ console.log(`  URL     : ${fullUrl}`);
 console.log(`  Output  : ${outputMp4}`);
 if (frameMode) {
   const totalFrames = Math.ceil(durationSec * fps);
-  console.log(`  Frames  : ${totalFrames} PNGs → MP4`);
+  const frameFormat = usePng ? 'PNG' : `JPEG q${jpegQuality}`;
+  console.log(`  Frames  : ${totalFrames} ${frameFormat} → MP4`);
 }
 console.log('══════════════════════════════════════════\n');
 
@@ -213,13 +218,35 @@ if (frameMode) {
   console.log(`Waiting ${waitMs}ms for animation to initialize...`);
   await page.waitForTimeout(waitMs);
 
-  // Freeze the browser clock.  From this point on, time only advances when
-  // we call page.clock.tick().  requestAnimationFrame, performance.now,
-  // Date.now, setTimeout and setInterval are all controlled by the fake clock.
-  await page.clock.install({ now: Date.now() });
+  // Inject a manual RAF queue and fake performance.now into the page.
+  // After this, time only advances when Node.js calls window.__tickFrame(dt).
+  // The in-flight real RAF fires one last time, re-registers via our fake
+  // requestAnimationFrame, and then we're in full control.
+  await page.evaluate(() => {
+    const pendingRAF = [];
+    let fakeNow = performance.now();
 
-  // Allow one real event-loop turn so any pending real RAF fires and
-  // re-registers itself under the fake clock.
+    // Shadow performance.now so THREE.js clock sees our fake timestamps.
+    window.performance.now = () => fakeNow;
+
+    // Replace RAF with a manual queue.
+    window.requestAnimationFrame = (cb) => {
+      pendingRAF.push(cb);
+      return pendingRAF.length;
+    };
+    window.cancelAnimationFrame = (id) => {
+      pendingRAF[id - 1] = null;
+    };
+
+    // Called from Node.js once per frame.
+    window.__tickFrame = (dt) => {
+      fakeNow += dt;
+      const callbacks = pendingRAF.splice(0).filter(Boolean);
+      callbacks.forEach((cb) => cb(fakeNow));
+    };
+  });
+
+  // Wait for the last real RAF to fire and re-register under our fake RAF.
   await page.waitForTimeout(50);
 
   const totalFrames = Math.ceil(durationSec * fps);
@@ -229,12 +256,16 @@ if (frameMode) {
   const startWall = Date.now();
 
   for (let i = 0; i < totalFrames; i++) {
-    // Advance fake time by exactly one frame → fires the pending RAF callback
-    // inside THREE.js, which recomputes delta from performance.now() and renders.
-    await page.clock.tick(frameDurationMs);
+    // Advance fake time by one frame → THREE.js re-renders with correct delta.
+    await page.evaluate((dt) => window.__tickFrame(dt), frameDurationMs);
 
-    const framePath = join(framesDir, `frame-${String(i).padStart(6, '0')}.png`);
-    await page.screenshot({ path: framePath, type: 'png' });
+    const ext = usePng ? 'png' : 'jpg';
+    const framePath = join(framesDir, `frame-${String(i).padStart(6, '0')}.${ext}`);
+    await page.screenshot({
+      path: framePath,
+      type: usePng ? 'png' : 'jpeg',
+      ...(usePng ? {} : { quality: jpegQuality }),
+    });
 
     // Progress line every second of animation time
     if (i % fps === fps - 1 || i === totalFrames - 1) {
@@ -251,8 +282,9 @@ if (frameMode) {
   await context.close();
   await browser.close();
 
+  const frameExt = usePng ? 'png' : 'jpg';
   ffmpegEncode(
-    join(framesDir, 'frame-%06d.png'),
+    join(framesDir, `frame-%06d.${frameExt}`),
     ['-framerate', String(fps)],
     outputMp4,
   );
