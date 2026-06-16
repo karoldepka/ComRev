@@ -2,6 +2,50 @@ import * as THREE from 'three';
 import { EffectPipe, PipeSetupContext, PipeFrameContext, makeRng } from './base';
 import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
 
+// Strip background color and full-viewport background rects from SVG before 3D extrusion.
+// These appear as opaque surfaces that hide all other geometry.
+function stripSvgBackground(svgText: string): string {
+  if (typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') return svgText;
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const svgEl = doc.documentElement;
+
+    // Remove background / background-color CSS from root <svg>
+    const style = svgEl.getAttribute('style') ?? '';
+    const cleanedStyle = style.replace(/background(-color)?\s*:\s*[^;]+;?\s*/gi, '').trim();
+    if (cleanedStyle) svgEl.setAttribute('style', cleanedStyle);
+    else svgEl.removeAttribute('style');
+
+    // Resolve viewBox dimensions
+    let vbW = 0, vbH = 0;
+    const vb = svgEl.getAttribute('viewBox');
+    if (vb) {
+      const parts = vb.trim().split(/[\s,]+/);
+      vbW = parseFloat(parts[2] ?? '0') || 0;
+      vbH = parseFloat(parts[3] ?? '0') || 0;
+    }
+    if (!vbW) vbW = parseFloat(svgEl.getAttribute('width') ?? '0') || 0;
+    if (!vbH) vbH = parseFloat(svgEl.getAttribute('height') ?? '0') || 0;
+
+    // Remove direct-child <rect> elements that cover ≥90% of the viewBox (background rects)
+    for (const child of Array.from(svgEl.children)) {
+      if (child.tagName.toLowerCase() !== 'rect') continue;
+      const x = parseFloat(child.getAttribute('x') ?? '0') || 0;
+      const y = parseFloat(child.getAttribute('y') ?? '0') || 0;
+      const w = parseFloat(child.getAttribute('width') ?? '0') || 0;
+      const h = parseFloat(child.getAttribute('height') ?? '0') || 0;
+      if (vbW > 0 && vbH > 0 && x <= 0 && y <= 0 && w >= vbW * 0.9 && h >= vbH * 0.9) {
+        svgEl.removeChild(child);
+      }
+    }
+
+    return new XMLSerializer().serializeToString(doc);
+  } catch {
+    return svgText;
+  }
+}
+
 export interface GraphicItem {
   id: string;
   name: string;
@@ -237,7 +281,7 @@ export class GraphicsPipe implements EffectPipe {
 
     if (item.type === 'svg') {
       const loader = new SVGLoader();
-      const svgData = loader.parse(item.content);
+      const svgData = loader.parse(stripSvgBackground(item.content));
       const group = new THREE.Group();
 
       for (const path of svgData.paths) {
