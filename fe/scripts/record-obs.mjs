@@ -208,6 +208,28 @@ async function retryFs(action, label) {
   });
 }
 
+async function moveFileWithRetry(sourcePath, destinationPath, label) {
+  try {
+    await retryFs(() => renameSync(sourcePath, destinationPath), label);
+    return;
+  } catch (err) {
+    const originalError = err?.cause ?? err;
+    if (originalError?.code !== "EXDEV" && !isRetryableFsError(originalError)) {
+      throw err;
+    }
+    console.warn(`${label} failed; copying instead.`);
+    console.warn(originalError.message);
+  }
+
+  await retryFs(() => copyFileSync(sourcePath, destinationPath), `Copying ${label}`);
+  try {
+    await retryFs(() => unlinkSync(sourcePath), `Removing source after ${label}`);
+  } catch (err) {
+    console.warn(`Could not remove original OBS output: ${sourcePath}`);
+    console.warn(err?.cause?.message ?? err.message);
+  }
+}
+
 async function replaceFileWithRetry(tmpPath, finalPath) {
   const backupPath = `${finalPath}.pre-binaural-${process.pid}-${Date.now()}.bak`;
   let backupCreated = false;
@@ -444,17 +466,7 @@ await obs.disconnect();
 // ── move output to recordings/ ────────────────────────────────────────────────
 
 if (obsOutputPath) {
-  try {
-    renameSync(obsOutputPath, outputDst);
-  } catch (err) {
-    if (err.code === "EXDEV") {
-      // Cross-device move (different drives) — copy then delete
-      copyFileSync(obsOutputPath, outputDst);
-      unlinkSync(obsOutputPath);
-    } else {
-      throw err;
-    }
-  }
+  await moveFileWithRetry(obsOutputPath, outputDst, "Moving OBS recording to output path");
   if (binauralHz) {
     if (hasFFmpeg()) {
       console.log(`\nMixing binaural beat (${binauralHz} Hz)...`);
