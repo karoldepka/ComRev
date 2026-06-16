@@ -17,9 +17,9 @@ export function usePresetLoader(id: string) {
 
   const textSets = useMemo(
     () => preset?.generateSlides(displayLang) ?? [],
-    // Re-generate when lang changes (URL navigation keeps same component mounted)
+    // id guards against preset change if router reuses component; displayLang for ?lang= param
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayLang],
+    [id, displayLang],
   );
 
   const text = useMemo(() => textSets.map((s) => s.text).join('\n\n'), [textSets]);

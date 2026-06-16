@@ -511,7 +511,9 @@ export class RaysPipe implements EffectPipe {
     } else if (layout === 'crystalFan') {
       // Rays spread along text top/bottom edge, all converging at a focal apex point.
       // The apex is directly above (or below) the center at distance outerMargin from the edge.
-      const halfSpread = Math.max(size.x / 2, innerMargin * 0.5);
+      // rayCount is the total across both sides.
+      const halfSpread = Math.max(size.x / 2, 1.0);
+      const raysPerSide = Math.max(1, Math.ceil(rayCount / 2));
       let globalIdx = 0;
       for (let pass = 0; pass < 2; pass++) {
         const isTop = pass === 0;
@@ -520,8 +522,8 @@ export class RaysPipe implements EffectPipe {
           : center.y - size.y / 2 - innerMargin;
         const apexY = isTop ? edgeY + outerMargin : edgeY - outerMargin;
 
-        for (let i = 0; i < rayCount; i++) {
-          const t = rayCount === 1 ? 0.5 : i / (rayCount - 1);
+        for (let i = 0; i < raysPerSide; i++) {
+          const t = raysPerSide === 1 ? 0.5 : i / (raysPerSide - 1);
           const x = center.x + (t - 0.5) * 2 * halfSpread;
           const dx = center.x - x;
           const dy = apexY - edgeY; // ±outerMargin
@@ -539,7 +541,10 @@ export class RaysPipe implements EffectPipe {
     } else if (layout === 'triLines') {
       // Parallel rays pointing straight up/down, lengths forming a triangular envelope
       // (tallest at center, shrinking linearly to zero at the text width edges).
-      const halfSpread = Math.max(size.x / 2, innerMargin * 0.5);
+      // Samples at half-step offsets to avoid zero-length edge rays.
+      // rayCount is the total across both sides.
+      const halfSpread = Math.max(size.x / 2, 1.0);
+      const raysPerSide = Math.max(1, Math.ceil(rayCount / 2));
       let globalIdx = 0;
       for (let pass = 0; pass < 2; pass++) {
         const isTop = pass === 0;
@@ -548,10 +553,11 @@ export class RaysPipe implements EffectPipe {
           : center.y - size.y / 2 - innerMargin;
         const dirAngle = isTop ? Math.PI / 2 : -Math.PI / 2;
 
-        for (let i = 0; i < rayCount; i++) {
-          const t = rayCount === 1 ? 0.5 : i / (rayCount - 1);
+        for (let i = 0; i < raysPerSide; i++) {
+          // Half-step sampling avoids zero-length rays at the exact edges.
+          const t = (i + 0.5) / raysPerSide;
           const x = center.x + (t - 0.5) * 2 * halfSpread;
-          const normalizedDist = halfSpread > 0 ? Math.abs(x - center.x) / halfSpread : 0;
+          const normalizedDist = Math.abs(x - center.x) / halfSpread;
           const rayLen = outerMargin * (1 - normalizedDist);
           if (rayLen < 0.05) continue;
           instances.push({
@@ -567,8 +573,8 @@ export class RaysPipe implements EffectPipe {
 
     // Filter instances based on enabled directions
     instances = instances.filter((inst) => {
-      const rx = (inst.pos.x - center.x) / (size.x / 2 + innerMargin);
-      const ry = (inst.pos.y - center.y) / (size.y / 2 + innerMargin);
+      const rx = (inst.pos.x - center.x) / Math.max(size.x / 2 + innerMargin, 0.001);
+      const ry = (inst.pos.y - center.y) / Math.max(size.y / 2 + innerMargin, 0.001);
       
       let side: 'left' | 'right' | 'top' | 'bottom' = 'right';
       if (Math.abs(rx) > Math.abs(ry)) {

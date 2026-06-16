@@ -227,7 +227,7 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from '@/utils/api-config';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
@@ -5916,9 +5916,12 @@ async function resizeThumbnail(dataUrl: string, targetSize: number): Promise<str
 export function ThreeDTextScreen({
   sequenceMode = false,
   skipSavedConfigLoad = false,
+  fullWindow = false,
 }: {
   sequenceMode?: boolean;
   skipSavedConfigLoad?: boolean;
+  /** Hide all controls and chrome — canvas only, no toggle button */
+  fullWindow?: boolean;
 }) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
@@ -5929,7 +5932,7 @@ export function ThreeDTextScreen({
   const initialControlsHeight = isSmallScreen
     ? Math.round(screenHeight * 0.45)
     : Math.round(screenHeight * 0.38);
-  const controlsHeightSv = useSharedValue(initialControlsHeight);
+  const controlsHeightSv = useSharedValue(fullWindow ? 0 : initialControlsHeight);
   const dividerDragBase = useSharedValue(0);
   const controlsAnimStyle = useAnimatedStyle(() => ({
     height: controlsHeightSv.value,
@@ -5963,7 +5966,7 @@ export function ThreeDTextScreen({
     | { mode: "slide"; textSetId: string; imageId?: string };
   const [imagePickerTarget, setImagePickerTarget] = useState<ImagePickerTarget | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(fullWindow);
   const savedControlsHeight = React.useRef(initialControlsHeight);
 
   const toggleFullscreen = React.useCallback(() => {
@@ -6630,22 +6633,36 @@ export function ThreeDTextScreen({
     };
   };
 
+  // Request browser fullscreen on mount when in fullWindow mode
+  useEffect(() => {
+    if (!fullWindow) return;
+    if (typeof document !== 'undefined' && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    return () => {
+      if (typeof document !== 'undefined' && document.exitFullscreen && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Auto-save on every change (debounced 800ms)
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const handler = () => {
       if (!document.fullscreenElement) {
         setIsFullscreen((prev) => {
-          if (prev) {
+          if (prev && !fullWindow) {
             controlsHeightSv.value = savedControlsHeight.current;
           }
-          return false;
+          return fullWindow ? true : false;
         });
       }
     };
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
-  }, [controlsHeightSv]);
+  }, [controlsHeightSv, fullWindow]);
 
   useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -6784,7 +6801,7 @@ export function ThreeDTextScreen({
               page={currentSequencePage}
             />
           )}
-          {sequenceMode && (
+          {sequenceMode && !fullWindow && (
             <View
               style={[
                 styles.sequenceBadge,
@@ -6809,8 +6826,8 @@ export function ThreeDTextScreen({
               </Text>
             </View>
           )}
-          {/* Mute toggle (only visible in sequence mode) */}
-          {sequenceMode && (
+          {/* Mute toggle (only visible in sequence mode, not in full-window) */}
+          {sequenceMode && !fullWindow && (
             <TouchableOpacity
               onPress={() => setIsMuted((m) => !m)}
               style={{
@@ -6832,27 +6849,29 @@ export function ThreeDTextScreen({
               </Text>
             </TouchableOpacity>
           )}
-          {/* Fullscreen toggle button */}
-          <TouchableOpacity
-            onPress={toggleFullscreen}
-            style={{
-              position: 'absolute',
-              top: 10,
-              right: 10,
-              width: 34,
-              height: 34,
-              borderRadius: 8,
-              backgroundColor: 'rgba(0,0,0,0.45)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10,
-            }}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Text style={{ color: '#fff', fontSize: 16, lineHeight: 18 }}>
-              {isFullscreen ? '⤡' : '⤢'}
-            </Text>
-          </TouchableOpacity>
+          {/* Fullscreen toggle button — hidden in full-window mode */}
+          {!fullWindow && (
+            <TouchableOpacity
+              onPress={toggleFullscreen}
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, lineHeight: 18 }}>
+                {isFullscreen ? '⤡' : '⤢'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {!isFullscreen && (

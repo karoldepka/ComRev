@@ -28,7 +28,7 @@ import {
   View,
 } from "react-native";
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from '@/utils/api-config';
 
 function effectChips(effects: { type: string; enabled: boolean }[]) {
   return effects.filter((e) => e.enabled && e.type !== "mainText");

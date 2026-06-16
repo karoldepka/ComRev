@@ -47,7 +47,7 @@ export const INSPIRATION_KIND_LABELS: Record<InspirationKind, string> = {
   quality: 'Qualities',
 };
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from './api-config';
 
 const STOP_WORDS = new Set([
   'a',

@@ -1,10 +1,9 @@
 import { nanoid } from 'nanoid/non-secure';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useThreeDStore } from '@/store/three-d-store';
 import { savePresetOfflineFirst } from '@/utils/config-store';
-
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '@/utils/api-config';
 
 interface Props {
   defaultName: string;
@@ -15,6 +14,15 @@ export function DuplicatePresetButton({ defaultName }: Props) {
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState('');
   const [status, setStatus] = useState<string | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (statusTimerRef.current) clearTimeout(statusTimerRef.current); }, []);
+
+  const showStatus = (msg: string, durationMs: number) => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    setStatus(msg);
+    statusTimerRef.current = setTimeout(() => setStatus(null), durationMs);
+  };
 
   const openModal = () => {
     setName(defaultName ? `${defaultName} copy` : 'My preset');
@@ -30,12 +38,10 @@ export function DuplicatePresetButton({ defaultName }: Props) {
         { id: nanoid(), name: finalName, when_created: now, when_last_modified: now, effects: effectInstances },
         API_BASE,
       );
-      setStatus(`Saved "${finalName}"`);
-      setTimeout(() => setStatus(null), 2500);
+      showStatus(`Saved "${finalName}"`, 2500);
     } catch (e) {
       console.error('Failed to duplicate preset', e);
-      setStatus('Save failed');
-      setTimeout(() => setStatus(null), 3000);
+      showStatus('Save failed', 3000);
     }
   };
 

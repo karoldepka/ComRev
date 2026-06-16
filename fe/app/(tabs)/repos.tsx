@@ -73,7 +73,7 @@ function buildTree(repos: Repo[]): TreeRow[] {
     }));
 }
 
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from '@/utils/api-config';
 
 export default function ReposScreen() {
   const colorScheme = useColorScheme();

@@ -235,5 +235,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     style: "neon",
     translations: { pl: "stan Flow" },
   },
-  "840": {},
+  "840": {
+    translations: { pl: "840" },
+  },
 };
