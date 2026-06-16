@@ -252,7 +252,7 @@ export async function createTextGeometry(
       const geometry = new TextGeometry(line, {
         font: font as any,
         size: mergedOptions.size,
-        height: mergedOptions.height,
+        depth: mergedOptions.height,
         curveSegments: mergedOptions.curveSegments,
         bevelEnabled: mergedOptions.bevelEnabled,
         bevelThickness: mergedOptions.bevelThickness,
@@ -295,7 +295,7 @@ export async function createTextGeometry(
         const lineGeometry = new TextGeometry(line, {
           font: font as any,
           size: mergedOptions.size! * factor,
-          height: mergedOptions.height,
+          depth: mergedOptions.height,
           curveSegments: mergedOptions.curveSegments,
           bevelEnabled: mergedOptions.bevelEnabled,
           bevelThickness: mergedOptions.bevelThickness,
@@ -340,7 +340,7 @@ export async function createTextGeometry(
           const charGeometry = new TextGeometry(char, {
             font: font as any,
             size: mergedOptions.size,
-            height: mergedOptions.height,
+            depth: mergedOptions.height,
             curveSegments: mergedOptions.curveSegments,
             bevelEnabled: mergedOptions.bevelEnabled,
             bevelThickness: mergedOptions.bevelThickness,
