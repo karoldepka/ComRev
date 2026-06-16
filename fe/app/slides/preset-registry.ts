@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid/non-secure';
 import type { MantraEntry, MantraText } from './mcon.data';
-import { MANTRAS } from './mcon.data';
+import { MANTRAS as MCON_MANTRAS } from './mcon.data';
+import { MANTRAS as MOTIVATION_MANTRAS } from './motivation.data';
 
 export interface SlideEntry {
   id: string;
@@ -48,14 +49,21 @@ function getMantraSlideText(title: string, entry: MantraEntry, lang?: string): s
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
+function makeSlides(prefix: string, mantras: Record<string, MantraEntry>, lang?: string): SlideEntry[] {
+  return Object.entries(mantras).map(([title, entry]) => ({
+    id: `${prefix}-${nanoid()}`,
+    name: title,
+    text: getMantraSlideText(title, entry, lang),
+  }));
+}
+
 export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
   mcon: {
     label: 'Mantras',
-    generateSlides: (lang?: string) =>
-      Object.entries(MANTRAS).map(([title, entry]) => ({
-        id: `mcon-${nanoid()}`,
-        name: title,
-        text: getMantraSlideText(title, entry, lang),
-      })),
+    generateSlides: (lang?: string) => makeSlides('mcon', MCON_MANTRAS, lang),
+  },
+  motivation: {
+    label: 'Motivation',
+    generateSlides: (lang?: string) => makeSlides('motivation', MOTIVATION_MANTRAS, lang),
   },
 };
