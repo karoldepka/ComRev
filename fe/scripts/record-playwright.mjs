@@ -32,6 +32,10 @@
  *   --jpeg-quality <1-100>      JPEG quality for intermediate frames (default: 92)
  *   --no-ffmpeg                 Keep raw output, skip MP4 conversion (realtime: .webm; frames: no-op)
  *   --keep-frames               Keep temporary frame files directory after encoding
+ *   --binaural-hz <number>      Add binaural beat audio track at this frequency in Hz (e.g. 6 for theta)
+ *                               Requires headphones to work. Omit or 0 to disable.
+ *   --binaural-carrier <number> Carrier sine frequency in Hz (default: 200)
+ *   --binaural-volume <0-1>     Binaural tone amplitude (default: 0.35)
  */
 
 import { execFileSync, execSync } from 'child_process';
@@ -69,12 +73,15 @@ const tab        = args.tab ?? 'preset/mcon/full-window';
 const baseUrl    = args.url ?? 'http://localhost:8081';
 const fps        = parseInt(args.fps ?? '60', 10);
 const waitMs     = parseInt(args['wait-ms'] ?? '3000', 10);
-const headless      = args.headless === true;
-const frameMode     = args.frames === true;
-const usePng        = args.png === true;
-const jpegQuality   = parseInt(args['jpeg-quality'] ?? '92', 10);
-const noFfmpeg      = args['no-ffmpeg'] === true;
-const keepFrames    = args['keep-frames'] === true;
+const headless        = args.headless === true;
+const frameMode       = args.frames === true;
+const usePng          = args.png === true;
+const jpegQuality     = parseInt(args['jpeg-quality'] ?? '92', 10);
+const noFfmpeg        = args['no-ffmpeg'] === true;
+const keepFrames      = args['keep-frames'] === true;
+const binauralHz      = parseFloat(args['binaural-hz'] ?? '0');
+const binauralCarrier = parseFloat(args['binaural-carrier'] ?? '200');
+const binauralVolume  = parseFloat(args['binaural-volume'] ?? '0.35');
 
 // ── format config ─────────────────────────────────────────────────────────────
 
@@ -130,12 +137,32 @@ function fileSizeMb(filePath) {
   catch { return '?'; }
 }
 
-function ffmpegEncode(inputArg, extraInputArgs, outputPath) {
+// audioOpts: { beatHz, carrier, volume, durationSec } or null for no audio
+function ffmpegEncode(inputArg, extraInputArgs, outputPath, audioOpts = null) {
   const bitrateNum = parseInt(config.bitrate.replace('M', ''), 10);
+
+  // Left ear: carrier Hz  |  Right ear: carrier + beatHz
+  // The brain perceives the difference as a binaural beat at beatHz.
+  const audioInputArgs = audioOpts ? [
+    '-f', 'lavfi',
+    '-i', [
+      `aevalsrc=`,
+      `${audioOpts.volume}*sin(2*PI*${audioOpts.carrier}*t)`,
+      `|`,
+      `${audioOpts.volume}*sin(2*PI*${audioOpts.carrier + audioOpts.beatHz}*t)`,
+      `:c=stereo:s=44100`,
+    ].join(''),
+  ] : [];
+
+  const audioOutputArgs = audioOpts
+    ? ['-c:a', 'aac', '-b:a', '192k', '-t', String(audioOpts.durationSec)]
+    : ['-an'];
+
   const ffmpegArgs = [
     '-y',
     ...extraInputArgs,
     '-i', inputArg,
+    ...audioInputArgs,
     '-vf', config.vfilter,
     '-c:v', 'libx264',
     '-preset', 'slow',
@@ -146,11 +173,16 @@ function ffmpegEncode(inputArg, extraInputArgs, outputPath) {
     '-bufsize', `${bitrateNum * 2}M`,
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
-    '-an',
+    ...audioOutputArgs,
     outputPath,
   ];
   console.log(`\nffmpeg ${ffmpegArgs.join(' ')}\n`);
   execFileSync('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
+}
+
+function binauralOpts() {
+  if (!binauralHz) return null;
+  return { beatHz: binauralHz, carrier: binauralCarrier, volume: binauralVolume, durationSec };
 }
 
 // ── banner ────────────────────────────────────────────────────────────────────
@@ -168,6 +200,9 @@ if (frameMode) {
   const totalFrames = Math.ceil(durationSec * fps);
   const frameFormat = usePng ? 'PNG' : `JPEG q${jpegQuality}`;
   console.log(`  Frames  : ${totalFrames} ${frameFormat} → MP4`);
+}
+if (binauralHz) {
+  console.log(`  Binaural: ${binauralHz} Hz beat  (${binauralCarrier} Hz / ${binauralCarrier + binauralHz} Hz)  ⚠ headphones required`);
 }
 console.log('══════════════════════════════════════════\n');
 
@@ -287,6 +322,7 @@ if (frameMode) {
     join(framesDir, `frame-%06d.${frameExt}`),
     ['-framerate', String(fps)],
     outputMp4,
+    binauralOpts(),
   );
 
   if (!keepFrames) {
@@ -333,7 +369,7 @@ if (frameMode) {
     if (!hasFFmpeg()) console.log('  Install ffmpeg for MP4: winget install Gyan.FFmpeg');
   } else {
     console.log('\nConverting webm → MP4...');
-    ffmpegEncode(videoPath, ['-r', String(fps)], outputMp4);
+    ffmpegEncode(videoPath, ['-r', String(fps)], outputMp4, binauralOpts());
     try { unlinkSync(videoPath); } catch { /* ignore */ }
     console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
   }
