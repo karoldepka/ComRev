@@ -111,8 +111,8 @@ if (!config) {
 // ── output paths ──────────────────────────────────────────────────────────────
 
 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const rawOutput = args.output ?? `recordings/${ts}_animation.${format}`;
-const outputMp4 = extname(rawOutput) ? rawOutput : `${rawOutput}.mp4`;
+const rawOutput = args.output ?? `recordings/${ts}_animation_${format}.mp4`;
+const outputMp4 = /\.(mp4|mov|mkv|webm)$/i.test(rawOutput) ? rawOutput : `${rawOutput}.mp4`;
 const outputDir = dirname(outputMp4);
 mkdirSync(outputDir, { recursive: true });
 
