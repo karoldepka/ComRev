@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSoundscapeStore } from '@/store/soundscape-store';
+import { getCtxState, onStateChange } from '@/utils/binaural-engine';
 
 interface WavePreset {
   label: string;
@@ -65,7 +67,13 @@ export default function SoundscapeScreen() {
   const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
     useSoundscapeStore();
 
+  const [ctxState, setCtxState] = useState<string>(getCtxState());
+  useEffect(() => onStateChange(setCtxState), []);
+
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+  const ctxOk = ctxState === 'running';
+  const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
 
   return (
     <ScrollView
@@ -84,6 +92,16 @@ export default function SoundscapeScreen() {
       >
         <Text style={styles.playLabel}>{playing ? '⏹  Stop' : '▶  Play'}</Text>
       </Pressable>
+
+      {/* AudioContext status — shows 'suspended' if browser blocked autoplay */}
+      {playing && (
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, { backgroundColor: ctxColor }]} />
+          <Text style={[styles.statusText, { color: ctxColor }]}>
+            {ctxOk ? 'Audio running' : `Audio ${ctxState} — tap Play again if silent`}
+          </Text>
+        </View>
+      )}
 
       {/* Wave presets */}
       <Text style={[styles.sectionLabel, { color: c.icon }]}>WAVE TYPE</Text>
@@ -180,6 +198,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   divider: { borderTopWidth: StyleSheet.hairlineWidth },
+
+  statusRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 8 },
+  statusDot: { borderRadius: 99, height: 8, width: 8 },
+  statusText: { fontSize: 12, fontWeight: '600' },
 
   hint: { fontSize: 12, lineHeight: 18, marginTop: 20 },
 });

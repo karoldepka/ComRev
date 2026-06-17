@@ -255,7 +255,10 @@ export class FireworksState {
 export async function generateAiImage(prompt: string, seed: number, size = 512): Promise<string> {
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${size}&height=${size}&seed=${seed}&nologo=true&model=flux`;
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`AI image generation failed: ${response.status}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`AI image generation failed: ${response.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+  }
   const blob = await response.blob();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

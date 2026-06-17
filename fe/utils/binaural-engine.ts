@@ -1,6 +1,10 @@
 // Singleton Web Audio engine for binaural beats / soundscapes.
-// start() must be called from a user-gesture handler (click/tap) so the
-// AudioContext can transition out of its initial "suspended" state.
+// startBinaural() must be called from a synchronous user-gesture handler
+// (click/tap) so ctx.resume() can unlock the AudioContext.
+//
+// Stereo routing: StereoPannerNode (pan=-1 left, pan=+1 right) is used
+// instead of ChannelMergerNode — it works reliably across browsers.
+// Headphones are required; speakers mix the two channels and cancel the beat.
 
 let audioCtx: AudioContext | null = null;
 let leftOsc: OscillatorNode | null = null;
@@ -8,12 +12,32 @@ let rightOsc: OscillatorNode | null = null;
 let gainNode: GainNode | null = null;
 let _playing = false;
 
+type StateListener = (state: AudioContextState | 'unavailable') => void;
+const stateListeners = new Set<StateListener>();
+
+function notifyState() {
+  const state = audioCtx ? audioCtx.state : 'suspended';
+  stateListeners.forEach((fn) => fn(state));
+}
+
+export function onStateChange(fn: StateListener): () => void {
+  stateListeners.add(fn);
+  return () => stateListeners.delete(fn);
+}
+
+export function getCtxState(): AudioContextState | 'unavailable' {
+  if (typeof window === 'undefined') return 'unavailable';
+  if (!audioCtx) return 'suspended';
+  return audioCtx.state;
+}
+
 function getOrCreateCtx(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
   if (!Ctor) return null;
   if (!audioCtx || audioCtx.state === 'closed') {
     audioCtx = new Ctor() as AudioContext;
+    audioCtx.onstatechange = notifyState;
   }
   return audioCtx;
 }
@@ -33,9 +57,15 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
   teardownOscillators();
 
   try {
-    const merger = ctx.createChannelMerger(2);
     gainNode = ctx.createGain();
     gainNode.gain.value = volume;
+
+    // Route each oscillator to a dedicated stereo channel via StereoPannerNode.
+    // This works more reliably across browsers than ChannelMergerNode.
+    const leftPanner = ctx.createStereoPanner();
+    leftPanner.pan.value = -1;
+    const rightPanner = ctx.createStereoPanner();
+    rightPanner.pan.value = 1;
 
     leftOsc = ctx.createOscillator();
     leftOsc.type = 'sine';
@@ -45,16 +75,15 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
     rightOsc.type = 'sine';
     rightOsc.frequency.value = carrier + beatHz;
 
-    leftOsc.connect(merger, 0, 0);
-    rightOsc.connect(merger, 0, 1);
-    merger.connect(gainNode);
+    leftOsc.connect(leftPanner).connect(gainNode);
+    rightOsc.connect(rightPanner).connect(gainNode);
     gainNode.connect(ctx.destination);
 
     leftOsc.start();
     rightOsc.start();
 
-    // resume() inside a user-gesture handler will unlock the AudioContext
-    ctx.resume().catch(() => undefined);
+    // resume() must be called synchronously within the user gesture to unlock.
+    ctx.resume().then(notifyState).catch(() => undefined);
     _playing = true;
     return true;
   } catch (err) {
@@ -65,7 +94,7 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
 
 export function stopBinaural() {
   teardownOscillators();
-  audioCtx?.suspend().catch(() => undefined);
+  audioCtx?.suspend().then(notifyState).catch(() => undefined);
   _playing = false;
 }
 
