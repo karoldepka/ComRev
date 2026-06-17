@@ -7288,7 +7288,7 @@ export function ThreeDTextScreen({
                 <View>
                   {selectedEffectSearch.length > 0 ? (
                     <View
-                      style={[styles.effectSearchList, { borderColor: c.tint }]}
+                      style={[styles.effectSearchList, { borderColor: c.tint, backgroundColor: colorScheme === "dark" ? "#1e1e1e" : "#fff" }]}
                     >
                       {EFFECT_TYPES.filter((e) => {
                         if (e.primary) return false;
@@ -7302,7 +7302,7 @@ export function ThreeDTextScreen({
                       }).map((e) => (
                         <TouchableOpacity
                           key={e.type}
-                          style={styles.effectSearchItem}
+                          style={[styles.effectSearchItem, { borderBottomColor: colorScheme === "dark" ? "#333" : "#eee" }]}
                           onPress={() => {
                             addEffectInstance(e.type);
                             setSelectedEffectSearch("");
@@ -8090,13 +8090,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     maxHeight: 180,
     overflow: "hidden",
-    backgroundColor: "#fff",
   },
   effectSearchItem: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
   },
   effectPill: {
     borderWidth: 1,
