@@ -4,6 +4,7 @@ import type { MantraEntry, MantraText } from './mcon.data';
 import { MANTRAS as MCON_MANTRAS } from './mcon.data';
 import { MANTRAS as MOTIVATION_MANTRAS } from './motivation.data';
 import type { SoundscapeConfig } from '@/store/soundscape-store';
+import type { EffectInstance } from '@/utils/config-store';
 
 export type { SoundscapeConfig };
 
@@ -13,6 +14,8 @@ export interface SlideEntry {
   text: string;
   /** Overrides the preset-level soundscape for this specific slide. */
   soundscape?: SoundscapeConfig;
+  /** Overrides the full effect pipeline for this specific slide. Off by default (null/undefined = use global). */
+  configOverride?: { effectInstances?: EffectInstance[] };
 }
 
 export interface PresetDefinition {

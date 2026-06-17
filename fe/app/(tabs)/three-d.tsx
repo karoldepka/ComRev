@@ -240,6 +240,7 @@ type PrincipalTextSet = {
   text: string;
   images?: SlideImage[];
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
+  configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
 };
 
 type SequencePage = {
@@ -249,6 +250,7 @@ type SequencePage = {
   durationMs: number;
   transition: "flare" | "slide" | "zoom" | "wipe";
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
+  configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
   images?: SlideImage[];
 };
 
@@ -289,6 +291,7 @@ function normalizePrincipalTextSets(
         text: String(item.text ?? ""),
         images,
         soundscape: (item.soundscape as any) ?? undefined,
+        configOverride: (item.configOverride as any) ?? undefined,
       };
     });
   }
@@ -350,6 +353,7 @@ function getSequencePages(
       transition: transitions[setIndex % transitions.length],
       images: set.images,
       soundscape: set.soundscape,
+      configOverride: set.configOverride,
     }));
   return pages.length > 0
     ? pages
@@ -6055,6 +6059,8 @@ export function ThreeDTextScreen({
     effectInstances,
     setEffectInstances,
     resetToBasic: storeResetToBasic,
+    slideEffectOverride,
+    setSlideEffectOverride,
   } = useThreeDStore();
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
@@ -6154,7 +6160,8 @@ export function ThreeDTextScreen({
   }));
 
   const activePipes = useMemo<EffectPipe[]>(() => {
-    return effectInstances
+    const source = sequenceMode && slideEffectOverride ? slideEffectOverride : effectInstances;
+    return source
       .filter((instance) => instance.enabled)
       .map((instance) => {
         const pipe = createPipeFromInstance(instance);
@@ -6162,7 +6169,7 @@ export function ThreeDTextScreen({
         pipe.speedMultiplier = commonSpeedValue(instance.params);
         return pipe;
       });
-  }, [effectInstances]);
+  }, [effectInstances, slideEffectOverride, sequenceMode]);
 
   const mainTextParams = useMemo(() => {
     const inst = effectInstances.find((i) => i.type === "mainText");
@@ -6227,9 +6234,13 @@ export function ThreeDTextScreen({
 
   const applySlideConfig = useSoundscapeStore((s) => s.applySlideConfig);
   useEffect(() => {
-    if (!sequenceMode) return;
+    if (!sequenceMode) {
+      setSlideEffectOverride(null);
+      return;
+    }
     applySlideConfig(currentSequencePage.soundscape);
-  }, [sequenceMode, currentSequencePage.id, applySlideConfig]);
+    setSlideEffectOverride(currentSequencePage.configOverride?.effectInstances ?? null);
+  }, [sequenceMode, currentSequencePage.id, applySlideConfig, setSlideEffectOverride]);
 
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;

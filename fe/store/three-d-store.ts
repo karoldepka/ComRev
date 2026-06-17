@@ -10,12 +10,16 @@ interface ThreeDStore {
   resetToBasic: () => void;
   mantraMode: boolean;
   setMantraMode: (v: boolean) => void;
+  slideEffectOverride: EffectInstance[] | null;
+  setSlideEffectOverride: (override: EffectInstance[] | null) => void;
 }
 
 export const useThreeDStore = create<ThreeDStore>((set, get) => ({
   effectInstances: [createEffectInstance('mainText')],
   mantraMode: false,
   setMantraMode: (v) => set({ mantraMode: v }),
+  slideEffectOverride: null,
+  setSlideEffectOverride: (override) => set({ slideEffectOverride: override }),
 
   setEffectInstances: (arg) => {
     if (typeof arg === 'function') {
