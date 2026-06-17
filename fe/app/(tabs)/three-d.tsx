@@ -3028,6 +3028,9 @@ function renderEffectControls(
                   "sunset",
                   "neon",
                   "plasma",
+                  "fire",
+                  "smoke",
+                  "noise",
                   "custom",
                 ] as EnvMapStyle[]
               ).map((s) => (
@@ -3078,30 +3081,32 @@ function renderEffectControls(
               </View>
             </Row>
           )}
-          {params.style === "plasma" && (
+          {(["plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
             <>
-              <Row>
-                <Text style={[styles.label, { color: colors.text }]}>
-                  {p("scheme")}
-                </Text>
-                <select
-                  value={(params.plasmaScheme as string) ?? "psychedelic"}
-                  onChange={(e) => onUpdate("plasmaScheme", e.target.value)}
-                  style={{
-                    background: colorScheme === "dark" ? "#222" : "#fff",
-                    color: colors.text,
-                    border: `1px solid ${colorScheme === "dark" ? "#444" : "#ccc"}`,
-                    borderRadius: 6,
-                    padding: "4px 8px",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  } as any}
-                >
-                  {["psychedelic","fire","ice","electric","forest","ocean","sunset","neon","lava","grayscale"].map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </Row>
+              {params.style === "plasma" && (
+                <Row>
+                  <Text style={[styles.label, { color: colors.text }]}>
+                    {p("scheme")}
+                  </Text>
+                  <select
+                    value={(params.plasmaScheme as string) ?? "psychedelic"}
+                    onChange={(e) => onUpdate("plasmaScheme", e.target.value)}
+                    style={{
+                      background: colorScheme === "dark" ? "#222" : "#fff",
+                      color: colors.text,
+                      border: `1px solid ${colorScheme === "dark" ? "#444" : "#ccc"}`,
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 13,
+                      cursor: "pointer",
+                    } as any}
+                  >
+                    {["psychedelic","fire","ice","electric","forest","ocean","sunset","neon","lava","grayscale"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </Row>
+              )}
               <SliderRow
                 label={p("speed")}
                 min={0.1}
@@ -3131,7 +3136,7 @@ function renderEffectControls(
             onChange={(v) => onUpdate("intensity", v)}
             colors={colors}
           />
-          {params.style !== "custom" && params.style !== "plasma" && (
+          {!(["custom","plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
             <SliderRow
               label={p("seed")}
               min={0}
@@ -5558,7 +5563,7 @@ function renderEffectControls(
               value={(params.envMapStyle as string) ?? "none"}
               options={[]}
               onPress={() => {
-                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "plasma", "custom"];
+                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "plasma", "fire", "smoke", "noise", "custom"];
                 const idx = styles_list.indexOf((params.envMapStyle as string) ?? "none");
                 onUpdate("envMapStyle", styles_list[(idx + 1) % styles_list.length]);
               }}
