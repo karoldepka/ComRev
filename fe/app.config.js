@@ -18,8 +18,13 @@ function gitInfo() {
 
     return { hash: hash + dirty, fullHash, message, date, author, branch };
   } catch {
-    // Vercel build servers have no git repo — fall back to Vercel system env vars.
-    // These are populated when the Vercel project is connected to a Git provider.
+    // No git available (Vercel cloud build).
+    // Try the pre-generated file uploaded alongside the source.
+    try {
+      return require('./git-build-info.json');
+    } catch { /* file not present */ }
+
+    // Last resort: Vercel system env vars (requires GitHub integration).
     const sha = process.env.VERCEL_GIT_COMMIT_SHA ?? '';
     return {
       hash: sha ? sha.slice(0, 7) : 'unknown',

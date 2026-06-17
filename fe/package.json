@@ -14,7 +14,7 @@
     "record": "node ./scripts/record-playwright.mjs",
     "record-obs": "node ./scripts/record-obs.mjs",
     "record-all": "node ./scripts/record-all.mjs",
-    "deploy": "vercel build && vercel deploy --prebuilt --prod"
+    "deploy": "node scripts/generate-build-info.cjs && vercel --prod"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
