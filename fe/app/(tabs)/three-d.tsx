@@ -3031,6 +3031,7 @@ function renderEffectControls(
                   "fire",
                   "smoke",
                   "noise",
+                  "fireworks",
                   "custom",
                 ] as EnvMapStyle[]
               ).map((s) => (
@@ -3080,6 +3081,28 @@ function renderEffectControls(
                 )}
               </View>
             </Row>
+          )}
+          {params.style === "fireworks" && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>{p("scheme")}</Text>
+                <select
+                  value={(params.fireworksScheme as string) ?? "neon"}
+                  onChange={(e) => onUpdate("fireworksScheme", e.target.value)}
+                  style={{ background: colorScheme === "dark" ? "#222" : "#fff", color: colors.text, border: `1px solid ${colorScheme === "dark" ? "#444" : "#ccc"}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, cursor: "pointer" } as any}
+                >
+                  {["psychedelic","fire","ice","electric","forest","ocean","sunset","neon","lava","grayscale"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </Row>
+              <SliderRow label="Particles" min={30} max={400} step={10}
+                value={(params.fireworksCount as number) ?? 120}
+                onChange={(v) => onUpdate("fireworksCount", Math.round(v))} colors={colors} />
+              <SliderRow label="Trail" min={0.02} max={0.8} step={0.01}
+                value={(params.fireworksTrail as number) ?? 0.15}
+                onChange={(v) => onUpdate("fireworksTrail", v)} colors={colors} />
+            </>
           )}
           {(["plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
             <>
@@ -3136,7 +3159,7 @@ function renderEffectControls(
             onChange={(v) => onUpdate("intensity", v)}
             colors={colors}
           />
-          {!(["custom","plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
+          {!(["custom","plasma","fire","smoke","noise","fireworks"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
             <SliderRow
               label={p("seed")}
               min={0}
@@ -5563,7 +5586,7 @@ function renderEffectControls(
               value={(params.envMapStyle as string) ?? "none"}
               options={[]}
               onPress={() => {
-                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "plasma", "fire", "smoke", "noise", "custom"];
+                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "plasma", "fire", "smoke", "noise", "fireworks", "custom"];
                 const idx = styles_list.indexOf((params.envMapStyle as string) ?? "none");
                 onUpdate("envMapStyle", styles_list[(idx + 1) % styles_list.length]);
               }}
@@ -7751,19 +7774,25 @@ export function ThreeDTextScreen({
           }
           setImagePickerTarget(null);
         }}
-        onSelectAnimated={({ scale, scheme }) => {
-          // Add or update the envMap effect with animated plasma settings.
+        onSelectAnimated={(result) => {
           setEffectInstances((instances) => {
-            const existing = instances.find((i) => i.type === 'envMap');
-            if (existing) {
-              return instances.map((i) =>
-                i.type === 'envMap'
-                  ? { ...i, params: { ...i.params, style: 'plasma', plasmaScheme: scheme, plasmaScale: scale } }
-                  : i,
-              );
+            const upsert = (newParams: Record<string, unknown>) => {
+              const existing = instances.find((i) => i.type === 'envMap');
+              if (existing) {
+                return instances.map((i) =>
+                  i.type === 'envMap' ? { ...i, params: { ...i.params, ...newParams } } : i,
+                );
+              }
+              const newInst = createEffectInstance('envMap');
+              return [...instances, { ...newInst, params: { ...newInst.params, ...newParams } }];
+            };
+            if (result.mode === 'plasma') {
+              return upsert({ style: 'plasma', plasmaScheme: result.scheme, plasmaScale: result.scale });
             }
-            const newInst = createEffectInstance('envMap');
-            return [...instances, { ...newInst, params: { ...newInst.params, style: 'plasma', plasmaScheme: scheme, plasmaScale: scale } }];
+            if (result.mode === 'fireworks') {
+              return upsert({ style: 'fireworks', fireworksScheme: result.scheme, fireworksTrail: result.trail, fireworksCount: result.count });
+            }
+            return instances;
           });
           setImagePickerTarget(null);
         }}

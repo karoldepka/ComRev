@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { makeRng } from './base';
 import { schemeUniforms } from './fractal-background';
+import { FireworksState } from '../image-sources';
 
 export type EnvMapStyle =
   | 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon'
-  | 'plasma' | 'fire' | 'smoke' | 'noise'
+  | 'plasma' | 'fire' | 'smoke' | 'noise' | 'fireworks'
   | 'custom';
 
 export interface EnvMapPipeParams {
@@ -15,6 +16,9 @@ export interface EnvMapPipeParams {
   plasmaScheme?: string;
   plasmaSpeed?: number;
   plasmaScale?: number;
+  fireworksScheme?: string;
+  fireworksTrail?: number;
+  fireworksCount?: number;
 }
 
 // ── Shared vertex shader (used by all animated offscreen effects) ─────────────
@@ -274,7 +278,7 @@ export function buildProceduralEnvTexture(
  */
 export function textureSourceKey(params: EnvMapPipeParams): string {
   const { style = 'gradient', seed = 42, customImageDataUrl = '' } = params;
-  if (style in (ANIMATED_CONFIGS as object)) return style;
+  if (style in (ANIMATED_CONFIGS as object) || style === 'fireworks') return style;
   if (style === 'custom') return `custom:${customImageDataUrl}`;
   return `${style}:${seed}`;
 }
@@ -353,6 +357,39 @@ export class AnimatedShaderSource implements TextureSource {
 }
 
 /**
+ * Runs the canvas-based FireworksState simulation each frame and exposes the
+ * result via a THREE.CanvasTexture (matcap sampler input).
+ */
+export class FireworksTextureSource implements TextureSource {
+  readonly envTexture = null;
+  readonly mapTexture: THREE.Texture;
+  private canvas: HTMLCanvasElement;
+  private state = new FireworksState();
+
+  constructor() {
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = this.canvas.height = 256;
+    const ctx = this.canvas.getContext('2d')!;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 256, 256);
+    this.mapTexture = new THREE.CanvasTexture(this.canvas);
+  }
+
+  tick(delta: number, _renderer: THREE.WebGLRenderer | null, params: EnvMapPipeParams) {
+    const fwParams = {
+      scheme: params.fireworksScheme ?? 'neon',
+      trailAlpha: params.fireworksTrail ?? 0.15,
+      particleCount: params.fireworksCount ?? 120,
+    };
+    this.state.update(256, 256, delta, fwParams);
+    this.state.render(this.canvas, fwParams);
+    (this.mapTexture as THREE.CanvasTexture).needsUpdate = true;
+  }
+
+  dispose() { this.mapTexture.dispose(); }
+}
+
+/**
  * Async-loads a data URL, producing a matcap map and a PMREM env texture.
  * Textures become available on the next frame after loading completes.
  */
@@ -424,6 +461,8 @@ export function createTextureSource(
 
   const animConfig = ANIMATED_CONFIGS[style];
   if (animConfig) return new AnimatedShaderSource(animConfig);
+
+  if (style === 'fireworks') return new FireworksTextureSource();
 
   if (style === 'custom') return new CustomImageTextureSource(customImageDataUrl, renderer);
 

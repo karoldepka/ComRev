@@ -13,9 +13,11 @@ import { preprocessSvg } from '@/utils/svg-preprocess';
 export interface ImagePickerResult { dataUrl: string; type: 'image' | 'svg'; }
 
 export interface AnimatedPickerResult {
-  mode: 'plasma';
-  scale: number;
+  mode: 'plasma' | 'fireworks';
   scheme: string;
+  scale?: number;      // plasma
+  trail?: number;      // fireworks
+  count?: number;      // fireworks
 }
 
 interface Props {
@@ -472,6 +474,17 @@ export function ImagePickerModal({ visible, onClose, onSelect, onSelectAnimated,
                           style={[s.bigBtn, { backgroundColor: '#6c3fc5' }]}
                           onPress={() => {
                             onSelectAnimated({ mode: 'plasma', scale: plasmaParams.scale, scheme: plasmaParams.scheme });
+                            onClose();
+                          }}
+                        >
+                          <Text style={[s.bigBtnText, { color: '#fff' }]}>▶ Use Animated</Text>
+                        </TouchableOpacity>
+                      )}
+                      {onSelectAnimated && genMode === 'fireworks' && (
+                        <TouchableOpacity
+                          style={[s.bigBtn, { backgroundColor: '#6c3fc5' }]}
+                          onPress={() => {
+                            onSelectAnimated({ mode: 'fireworks', scheme: fwScheme, trail: fwTrail, count: fwCount });
                             onClose();
                           }}
                         >
