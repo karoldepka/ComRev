@@ -4,7 +4,10 @@
   "framework": null,
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    { "source": "/explore", "destination": "/about", "permanent": true }
+  ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/" }
   ]
 }
