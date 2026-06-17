@@ -21,7 +21,7 @@ export interface FractalBackgroundPipeParams {
 
 // Color scheme stop data packed as [r,g,b, r,g,b, ...] with t values embedded.
 // We encode each scheme as 5 control points: t0,r0,g0,b0, t1,...
-const SCHEME_STOPS: Record<string, number[]> = {
+export const SCHEME_STOPS: Record<string, number[]> = {
   psychedelic: [0,1,0,0.5, 0.25,0,1,0.78, 0.5,0.5,0,1, 0.75,1,0.78,0, 1,1,0,0.5],
   fire:        [0,0,0,0, 0.33,0.86,0,0, 0.66,1,0.65,0, 1,1,1,0.78],
   ice:         [0,0,0,0.16, 0.5,0,0.47,0.86, 1,0.78,0.94,1],
@@ -128,7 +128,7 @@ void main() {
   gl_FragColor = vec4(palette(t), 1.0);
 }`;
 
-function schemeUniforms(schemeName: string): {
+export function schemeUniforms(schemeName: string): {
   uStop0: THREE.Vector4; uStop1: THREE.Vector4; uStop2: THREE.Vector4;
   uStop3: THREE.Vector4; uStop4: THREE.Vector4; uStopCount: number;
 } {

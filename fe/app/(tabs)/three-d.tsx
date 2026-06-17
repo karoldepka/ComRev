@@ -1079,7 +1079,7 @@ const EFFECT_TYPES: {
   { type: "mirrorPlane", label: "Mirror Plane", target: "geometry" },
   { type: "shadowFloor", label: "Shadow Floor", target: "geometry" },
   { type: "backgroundPlane", label: "Background Plane", target: "geometry" },
-  { type: "fogEffect", label: "Fog Effect", target: "geometry" },
+  { type: "fogEffect", label: "Fog", target: "geometry" },
   // Animation
   { type: "pulse", label: "Pulse", target: "geometry", animated: true },
   { type: "spin", label: "Spin", target: "geometry", animated: true },
@@ -3027,6 +3027,7 @@ function renderEffectControls(
                   "starfield",
                   "sunset",
                   "neon",
+                  "plasma",
                   "custom",
                 ] as EnvMapStyle[]
               ).map((s) => (
@@ -3077,6 +3078,50 @@ function renderEffectControls(
               </View>
             </Row>
           )}
+          {params.style === "plasma" && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  {p("scheme")}
+                </Text>
+                <select
+                  value={(params.plasmaScheme as string) ?? "psychedelic"}
+                  onChange={(e) => onUpdate("plasmaScheme", e.target.value)}
+                  style={{
+                    background: colorScheme === "dark" ? "#222" : "#fff",
+                    color: colors.text,
+                    border: `1px solid ${colorScheme === "dark" ? "#444" : "#ccc"}`,
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  } as any}
+                >
+                  {["psychedelic","fire","ice","electric","forest","ocean","sunset","neon","lava","grayscale"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </Row>
+              <SliderRow
+                label={p("speed")}
+                min={0.1}
+                max={4}
+                step={0.1}
+                value={(params.plasmaSpeed as number) ?? 1}
+                onChange={(v) => onUpdate("plasmaSpeed", v)}
+                colors={colors}
+              />
+              <SliderRow
+                label={p("scale")}
+                min={1}
+                max={30}
+                step={0.5}
+                value={(params.plasmaScale as number) ?? 8}
+                onChange={(v) => onUpdate("plasmaScale", v)}
+                colors={colors}
+              />
+            </>
+          )}
           <SliderRow
             label={p("intensity")}
             min={0}
@@ -3086,7 +3131,7 @@ function renderEffectControls(
             onChange={(v) => onUpdate("intensity", v)}
             colors={colors}
           />
-          {params.style !== "custom" && (
+          {params.style !== "custom" && params.style !== "plasma" && (
             <SliderRow
               label={p("seed")}
               min={0}
@@ -5513,7 +5558,7 @@ function renderEffectControls(
               value={(params.envMapStyle as string) ?? "none"}
               options={[]}
               onPress={() => {
-                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "custom"];
+                const styles_list = ["none", "gradient", "studio", "starfield", "sunset", "neon", "plasma", "custom"];
                 const idx = styles_list.indexOf((params.envMapStyle as string) ?? "none");
                 onUpdate("envMapStyle", styles_list[(idx + 1) % styles_list.length]);
               }}

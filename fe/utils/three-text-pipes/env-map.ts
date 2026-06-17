@@ -1,14 +1,58 @@
 import * as THREE from 'three';
 import { EffectPipe, PipeSetupContext, PipeFrameContext, makeRng } from './base';
+import { SCHEME_STOPS, schemeUniforms } from './fractal-background';
 
-export type EnvMapStyle = 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon' | 'custom';
+export type EnvMapStyle = 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon' | 'custom' | 'plasma';
 
 export interface EnvMapPipeParams {
   style?: EnvMapStyle;
   seed?: number;
   intensity?: number;
   customImageDataUrl?: string;
+  plasmaScheme?: string;
+  plasmaSpeed?: number;
+  plasmaScale?: number;
 }
+
+const PLASMA_VERT = /* glsl */`
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+`;
+
+const PLASMA_FRAG = /* glsl */`
+uniform float uTime;
+uniform float uZoom;
+uniform vec4  uStop0, uStop1, uStop2, uStop3, uStop4;
+uniform int   uStopCount;
+varying vec2  vUv;
+
+vec3 palette(float t) {
+  vec4 stops[5];
+  stops[0]=uStop0; stops[1]=uStop1; stops[2]=uStop2; stops[3]=uStop3; stops[4]=uStop4;
+  t=clamp(t,0.0,1.0);
+  vec3 lo=stops[0].yzw, hi=stops[uStopCount-1].yzw;
+  for(int i=0;i<4;i++){
+    if(i>=uStopCount-1) break;
+    float ta=stops[i].x, tb=stops[i+1].x;
+    if(t>=ta && t<=tb){
+      float f=(tb-ta)<0.0001?0.0:(t-ta)/(tb-ta);
+      lo=stops[i].yzw; hi=stops[i+1].yzw;
+      return mix(lo,hi,f);
+    }
+  }
+  return mix(lo,hi,t);
+}
+
+void main() {
+  float s=uZoom;
+  float v =sin(vUv.x*s+uTime*1.4);
+       v +=sin(vUv.y*s*0.9+uTime*1.1);
+       v +=sin((vUv.x+vUv.y)*s*0.65+uTime*0.75);
+       v +=sin(sqrt(pow(vUv.x-0.5,2.0)+pow(vUv.y-0.5,2.0))*s*2.5-uTime*1.2);
+  float t=(sin(v*1.5)+1.0)*0.5;
+  gl_FragColor=vec4(palette(t),1.0);
+}
+`;
 
 export class EnvMapPipe implements EffectPipe {
   readonly name = 'envMap';
@@ -35,6 +79,14 @@ export class EnvMapPipe implements EffectPipe {
   private lastSeed = -1;
   private lastCustomUrl = '';
   private loadingCustom = false;
+
+  // Plasma animation
+  private plasmaRT: THREE.WebGLRenderTarget | null = null;
+  private plasmaScene: THREE.Scene | null = null;
+  private plasmaCamera: THREE.OrthographicCamera | null = null;
+  private plasmaMat: THREE.ShaderMaterial | null = null;
+  private plasmaGeo: THREE.PlaneGeometry | null = null;
+  private plasmaTime = 0;
   /** Scene environment saved at setup so we can restore it on dispose. */
   private savedSceneEnv: THREE.Texture | null = null;
   /** Per-material envMap + intensity saved before this pipe overrides them. */
@@ -235,6 +287,68 @@ export class EnvMapPipe implements EffectPipe {
     });
   }
 
+  // ── Plasma helpers ──────────────────────────────────────────────────────────
+
+  private _setupPlasma() {
+    if (this.plasmaRT) return;
+    this.plasmaRT = new THREE.WebGLRenderTarget(256, 256);
+    this.plasmaScene = new THREE.Scene();
+    this.plasmaCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const stops = schemeUniforms(this.params.plasmaScheme ?? 'psychedelic');
+    this.plasmaMat = new THREE.ShaderMaterial({
+      vertexShader: PLASMA_VERT,
+      fragmentShader: PLASMA_FRAG,
+      uniforms: {
+        uTime:      { value: 0 },
+        uZoom:      { value: this.params.plasmaScale ?? 8 },
+        uStop0:     { value: stops.uStop0 },
+        uStop1:     { value: stops.uStop1 },
+        uStop2:     { value: stops.uStop2 },
+        uStop3:     { value: stops.uStop3 },
+        uStop4:     { value: stops.uStop4 },
+        uStopCount: { value: stops.uStopCount },
+      },
+    });
+    this.plasmaGeo = new THREE.PlaneGeometry(2, 2);
+    this.plasmaScene.add(new THREE.Mesh(this.plasmaGeo, this.plasmaMat));
+  }
+
+  private _renderPlasma(ctx: PipeFrameContext, intensity: number) {
+    if (!this.rendererRef) return;
+    this._setupPlasma();
+    if (!this.plasmaRT || !this.plasmaScene || !this.plasmaCamera || !this.plasmaMat) return;
+
+    this.plasmaTime += ctx.delta * (this.params.plasmaSpeed ?? 1.0);
+    const u = this.plasmaMat.uniforms;
+    u.uTime.value = this.plasmaTime;
+    u.uZoom.value = this.params.plasmaScale ?? 8;
+    const stops = schemeUniforms(this.params.plasmaScheme ?? 'psychedelic');
+    u.uStop0.value = stops.uStop0; u.uStop1.value = stops.uStop1;
+    u.uStop2.value = stops.uStop2; u.uStop3.value = stops.uStop3;
+    u.uStop4.value = stops.uStop4; u.uStopCount.value = stops.uStopCount;
+
+    const prevRT = this.rendererRef.getRenderTarget();
+    this.rendererRef.setRenderTarget(this.plasmaRT);
+    this.rendererRef.render(this.plasmaScene, this.plasmaCamera);
+    this.rendererRef.setRenderTarget(prevRT);
+
+    this.mapTexture = this.plasmaRT.texture;
+    if (ctx.mesh) this.applyToMesh(ctx.mesh, intensity);
+  }
+
+  private _teardownPlasma() {
+    if (this.mapTexture === this.plasmaRT?.texture) this.mapTexture = null;
+    this.plasmaGeo?.dispose();
+    this.plasmaMat?.dispose();
+    this.plasmaRT?.dispose();
+    this.plasmaGeo = null;
+    this.plasmaMat = null;
+    this.plasmaRT = null;
+    this.plasmaScene = null;
+    this.plasmaCamera = null;
+    this.plasmaTime = 0;
+  }
+
   // ── EffectPipe interface ────────────────────────────────────────────────────
 
   setup(ctx: PipeSetupContext) {
@@ -242,7 +356,11 @@ export class EnvMapPipe implements EffectPipe {
     this.rendererRef = ctx.renderer;
     this.savedSceneEnv = ctx.scene.environment as THREE.Texture | null;
     const { style = 'gradient', seed = 42, customImageDataUrl } = this.params;
-    if (style === 'custom') {
+    if (style === 'plasma') {
+      this.lastStyle = '';
+      this.lastSeed = -1;
+      this._setupPlasma();
+    } else if (style === 'custom') {
       this.lastStyle = '';
       this.lastSeed = -1;
       if (customImageDataUrl) this.loadCustomTexture(customImageDataUrl);
@@ -265,7 +383,13 @@ export class EnvMapPipe implements EffectPipe {
     this.meshRef = ctx.mesh;
     if (ctx.renderer && !this.rendererRef) this.rendererRef = ctx.renderer;
 
-    if (style === 'custom') {
+    if (style === 'plasma') {
+      // Tear down any static texture from a previous non-plasma style.
+      if (this.texture) { this.texture.dispose(); this.texture = null; this.lastStyle = ''; this.lastSeed = -1; }
+      if (this.mapTexture && this.mapTexture !== this.plasmaRT?.texture) { this.mapTexture.dispose(); this.mapTexture = null; }
+      this.lastCustomUrl = '';
+      this._renderPlasma(ctx, intensity);
+    } else if (style === 'custom') {
       // Invalidate procedural cache so switching back always rebuilds the texture.
       this.lastStyle = '';
       this.lastSeed = -1;
@@ -288,7 +412,8 @@ export class EnvMapPipe implements EffectPipe {
         });
       }
     } else {
-      // Switching away from custom: zero out the matcap on all mesh materials.
+      // Switching away from custom or plasma: zero out the matcap on all mesh materials.
+      this._teardownPlasma();
       if (this.mapTexture) {
         this.mapTexture.dispose();
         this.mapTexture = null;
@@ -340,7 +465,11 @@ export class EnvMapPipe implements EffectPipe {
 
     this.texture?.dispose();
     this.texture = null;
-    this.mapTexture?.dispose();
+    // Plasma RT is disposed by _teardownPlasma; don't double-dispose mapTexture if it points to RT.
+    if (this.mapTexture && this.mapTexture !== this.plasmaRT?.texture) {
+      this.mapTexture.dispose();
+    }
     this.mapTexture = null;
+    this._teardownPlasma();
   }
 }
