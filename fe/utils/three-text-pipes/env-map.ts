@@ -284,7 +284,9 @@ export class EnvMapPipe implements EffectPipe {
         u.tCustomEnv.value = isCustom ? this.mapTexture : null;
         u.tCustomEnvIntensity.value = mixFactor;
 
-        mat.envMap = this.texture;
+        // Do NOT set mat.envMap here: THREE.js auto-PMREM-processes scene.environment
+        // (set in setup/update) which produces correct PBR reflections. Setting mat.envMap
+        // to a raw non-PMREM canvas texture would override that and kill the effect.
         mat.envMapIntensity = intensity;
         mat.needsUpdate = true;
       }
@@ -378,7 +380,7 @@ export class EnvMapPipe implements EffectPipe {
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
     this.meshRef = mesh;
-    if (!mesh || !this.texture) return;
+    if (!mesh) return;
     this.applyToMesh(mesh, this.params.intensity ?? 1.5);
   }
 
