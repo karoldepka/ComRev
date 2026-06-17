@@ -204,9 +204,11 @@ export default function PresetsScreen() {
     : presets;
 
   const dark = colorScheme === "dark";
+  const { width } = useWindowDimensions();
+  const isSmall = width < 480;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: isSmall ? 12 : 48 }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Presets</Text>
         <TouchableOpacity
@@ -349,7 +351,7 @@ export default function PresetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 48 },
+  container: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",

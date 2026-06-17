@@ -174,6 +174,9 @@ export class FractalBackgroundPipe implements EffectPipe {
       width = 60, height = 40, offsetZ = -8,
     } = this.params;
 
+    // For plasma, zoom acts as scale. Default fractal zoom (0.35) looks nearly invisible for plasma.
+    const effectiveZoom = fractalType === 'plasma' && zoom < 2 ? 8.0 : zoom;
+
     const stops = schemeUniforms(scheme);
 
     this.mat = new THREE.ShaderMaterial({
@@ -182,7 +185,7 @@ export class FractalBackgroundPipe implements EffectPipe {
       uniforms: {
         uType:      { value: typeIndex(fractalType) },
         uMaxIter:   { value: maxIter },
-        uZoom:      { value: fractalType === 'plasma' ? 8.0 : zoom },
+        uZoom:      { value: effectiveZoom },
         uCx:        { value: cx },
         uCy:        { value: cy },
         uJuliRe:    { value: juliaRe },
@@ -219,7 +222,7 @@ export class FractalBackgroundPipe implements EffectPipe {
     const u = this.mat.uniforms;
     u.uType.value = typeIndex(fractalType);
     u.uMaxIter.value = maxIter;
-    u.uZoom.value = fractalType === 'plasma' ? 8.0 : zoom;
+    u.uZoom.value = fractalType === 'plasma' && zoom < 2 ? 8.0 : zoom;
     u.uCx.value = cx;
     u.uCy.value = cy;
     u.uTime.value = ctx.time;

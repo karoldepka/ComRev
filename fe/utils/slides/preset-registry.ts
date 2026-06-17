@@ -11,6 +11,8 @@ export interface SlideEntry {
   id: string;
   name: string;
   text: string;
+  /** Overrides the preset-level soundscape for this specific slide. */
+  soundscape?: SoundscapeConfig;
 }
 
 export interface PresetDefinition {

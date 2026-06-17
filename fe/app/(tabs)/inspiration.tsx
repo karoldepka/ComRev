@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -29,6 +30,8 @@ export default function InspirationScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const dark = colorScheme === 'dark';
+  const { width } = useWindowDimensions();
+  const isSmall = width < 480;
   const [prompt, setPrompt] = useState('motivation for my project');
   const [result, setResult] = useState<InspirationGenerateResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +67,7 @@ export default function InspirationScreen() {
   }[status];
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: isSmall ? 12 : 48 }]}>
       <View style={styles.topBar}>
         <View>
           <Text style={[styles.title, { color: colors.text }]}>Inspiration Generator</Text>
@@ -189,7 +192,7 @@ export default function InspirationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 48 },
+  container: { flex: 1 },
   topBar: {
     alignItems: 'flex-start',
     flexDirection: 'row',

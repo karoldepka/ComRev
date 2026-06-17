@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSoundscapeStore } from '@/store/soundscape-store';
@@ -63,6 +63,10 @@ export default function SoundscapeScreen() {
   const cs = useColorScheme() ?? 'light';
   const c = Colors[cs];
   const dark = cs === 'dark';
+  const { width } = useWindowDimensions();
+  const isSmall = width < 480;
+  const hp = isSmall ? 5 : 20;   // horizontal padding
+  const tp = isSmall ? 14 : 56;  // top padding
 
   const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
     useSoundscapeStore();
@@ -78,7 +82,7 @@ export default function SoundscapeScreen() {
   return (
     <ScrollView
       style={[styles.root, { backgroundColor: c.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { padding: hp, paddingTop: tp }]}
     >
       <Text style={[styles.title, { color: c.text }]}>Soundscape</Text>
       <Text style={[styles.subtitle, { color: c.icon }]}>
@@ -167,7 +171,7 @@ export default function SoundscapeScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { padding: 20, paddingTop: 56, gap: 8 },
+  content: { gap: 8 },
   title: { fontSize: 26, fontWeight: '800', marginBottom: 2 },
   subtitle: { fontSize: 13, marginBottom: 20 },
 

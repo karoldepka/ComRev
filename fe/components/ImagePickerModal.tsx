@@ -12,10 +12,18 @@ import { preprocessSvg } from '@/utils/svg-preprocess';
 
 export interface ImagePickerResult { dataUrl: string; type: 'image' | 'svg'; }
 
+export interface AnimatedPickerResult {
+  mode: 'plasma';
+  scale: number;
+  scheme: string;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
   onSelect: (result: ImagePickerResult) => void;
+  /** Called when user chooses "Use Animated" — the caller adds a live background effect. */
+  onSelectAnimated?: (config: AnimatedPickerResult) => void;
   tint: string;
   textColor: string;
   background: string;
@@ -77,7 +85,7 @@ function SchemePicker({ value, onChange, tint, textColor }: {
 }
 
 // ── Main modal ────────────────────────────────────────────────────────────────
-export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, background, borderColor }: Props) {
+export function ImagePickerModal({ visible, onClose, onSelect, onSelectAnimated, tint, textColor, background, borderColor }: Props) {
   const [tab, setTab] = useState<Tab>('file');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -455,9 +463,22 @@ export function ImagePickerModal({ visible, onClose, onSelect, tint, textColor, 
                       style={{ borderRadius: 8, maxWidth: '100%' } as any}
                       alt="animated preview"
                     />
-                    <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]} onPress={captureAnimatedFrame}>
-                      <Text style={[s.bigBtnText, { color: onTint }]}>📸 Capture This Frame</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <TouchableOpacity style={[s.bigBtn, { backgroundColor: c.tint }]} onPress={captureAnimatedFrame}>
+                        <Text style={[s.bigBtnText, { color: onTint }]}>📸 Capture Frame</Text>
+                      </TouchableOpacity>
+                      {onSelectAnimated && genMode === 'plasma' && (
+                        <TouchableOpacity
+                          style={[s.bigBtn, { backgroundColor: '#6c3fc5' }]}
+                          onPress={() => {
+                            onSelectAnimated({ mode: 'plasma', scale: plasmaParams.scale, scheme: plasmaParams.scheme });
+                            onClose();
+                          }}
+                        >
+                          <Text style={[s.bigBtnText, { color: '#fff' }]}>▶ Use Animated</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 )}
 

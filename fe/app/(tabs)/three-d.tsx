@@ -6,6 +6,7 @@ import { ThreeDText, ThreeDTextHandle } from "@/components/three-d-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useThreeDStore } from "@/store/three-d-store";
+import { useSoundscapeStore } from "@/store/soundscape-store";
 import {
   consumePendingPresetToLoad,
   deletePreset,
@@ -238,6 +239,7 @@ type PrincipalTextSet = {
   name: string;
   text: string;
   images?: SlideImage[];
+  soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
 };
 
 type SequencePage = {
@@ -246,6 +248,7 @@ type SequencePage = {
   text: string;
   durationMs: number;
   transition: "flare" | "slide" | "zoom" | "wipe";
+  soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
   images?: SlideImage[];
 };
 
@@ -285,6 +288,7 @@ function normalizePrincipalTextSets(
         name: String(item.name || `Set ${index + 1}`),
         text: String(item.text ?? ""),
         images,
+        soundscape: (item.soundscape as any) ?? undefined,
       };
     });
   }
@@ -345,6 +349,7 @@ function getSequencePages(
       durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs),
       transition: transitions[setIndex % transitions.length],
       images: set.images,
+      soundscape: set.soundscape,
     }));
   return pages.length > 0
     ? pages
@@ -6220,6 +6225,12 @@ export function ThreeDTextScreen({
     setSequenceLineIndex(0);
   }, [principalTextSetsKey, sequenceMode]);
 
+  const applySlideConfig = useSoundscapeStore((s) => s.applySlideConfig);
+  useEffect(() => {
+    if (!sequenceMode) return;
+    applySlideConfig(currentSequencePage.soundscape);
+  }, [sequenceMode, currentSequencePage.id, applySlideConfig]);
+
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
     if (readySequenceTransition?.key !== currentSequencePageKey) return;
@@ -7677,6 +7688,22 @@ export function ThreeDTextScreen({
           } else {
             updateSlideImage(imagePickerTarget.textSetId, dataUrl, imagePickerTarget.imageId);
           }
+          setImagePickerTarget(null);
+        }}
+        onSelectAnimated={({ scale, scheme }) => {
+          // Add or update the fractalBackground effect with animated plasma settings.
+          setEffectInstances((instances) => {
+            const existing = instances.find((i) => i.type === 'fractalBackground');
+            if (existing) {
+              return instances.map((i) =>
+                i.type === 'fractalBackground'
+                  ? { ...i, params: { ...i.params, fractalType: 'plasma', scheme, zoom: scale } }
+                  : i,
+              );
+            }
+            const newInst = createEffectInstance('fractalBackground');
+            return [...instances, { ...newInst, params: { ...newInst.params, fractalType: 'plasma', scheme, zoom: scale } }];
+          });
           setImagePickerTarget(null);
         }}
         tint={c.tint}
