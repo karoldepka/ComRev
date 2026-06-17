@@ -7747,18 +7747,18 @@ export function ThreeDTextScreen({
           setImagePickerTarget(null);
         }}
         onSelectAnimated={({ scale, scheme }) => {
-          // Add or update the fractalBackground effect with animated plasma settings.
+          // Add or update the envMap effect with animated plasma settings.
           setEffectInstances((instances) => {
-            const existing = instances.find((i) => i.type === 'fractalBackground');
+            const existing = instances.find((i) => i.type === 'envMap');
             if (existing) {
               return instances.map((i) =>
-                i.type === 'fractalBackground'
-                  ? { ...i, params: { ...i.params, fractalType: 'plasma', scheme, zoom: scale } }
+                i.type === 'envMap'
+                  ? { ...i, params: { ...i.params, style: 'plasma', plasmaScheme: scheme, plasmaScale: scale } }
                   : i,
               );
             }
-            const newInst = createEffectInstance('fractalBackground');
-            return [...instances, { ...newInst, params: { ...newInst.params, fractalType: 'plasma', scheme, zoom: scale } }];
+            const newInst = createEffectInstance('envMap');
+            return [...instances, { ...newInst, params: { ...newInst.params, style: 'plasma', plasmaScheme: scheme, plasmaScale: scale } }];
           });
           setImagePickerTarget(null);
         }}
