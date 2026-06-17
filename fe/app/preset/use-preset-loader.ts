@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { createEffectInstance } from '@/utils/effect-defaults';
 import { useThreeDStore } from '@/store/three-d-store';
 import i18n from '@/utils/i18n';
-import { PRESET_REGISTRY } from '../slides/preset-registry';
+import { PRESET_REGISTRY } from '@/utils/slides/preset-registry';
 
 export function usePresetLoader(id: string) {
   const setEffectInstances = useThreeDStore((s) => s.setEffectInstances);

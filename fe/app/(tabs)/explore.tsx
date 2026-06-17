@@ -1,112 +1,98 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
+import Constants from 'expo-constants';
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export default function TabTwoScreen() {
+const GITHUB_URL = 'https://github.com/karoldepka/ComRev';
+
+interface BuildInfo {
+  hash: string;
+  fullHash: string;
+  message: string;
+  date: string;
+  author: string;
+  branch: string;
+}
+
+export default function AboutScreen() {
+  const colorScheme = useColorScheme();
+  const c = Colors[colorScheme ?? 'light'];
+  const build: BuildInfo | undefined = Constants.expoConfig?.extra?.buildInfo;
+  const version = Constants.expoConfig?.version ?? '—';
+
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
+      headerBackgroundColor={{ light: '#f5700a', dark: '#7a3300' }}
       headerImage={
         <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
+          size={200}
+          color="rgba(255,255,255,0.18)"
+          name="info.circle.fill"
+          style={styles.headerIcon}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
+      }
+    >
+      <Text style={[styles.appName, { color: c.tint }]}>Structable / ComRev</Text>
+      <Text style={[styles.tagline, { color: c.text, opacity: 0.6 }]}>
+        Open-source table with metadata, comments &amp; notes
+      </Text>
+
+      <View style={[styles.card, { borderColor: c.tint + '44' }]}>
+        <InfoRow label="Version" value={version} c={c} />
+        {build && (
+          <>
+            <InfoRow label="Branch" value={build.branch} c={c} mono />
+            <InfoRow label="Commit" value={build.hash} c={c} mono />
+            <InfoRow label="Date"   value={build.date.slice(0, 16).replace('T', '  ')} c={c} mono />
+            <InfoRow label="Author" value={build.author} c={c} />
+            <View style={[styles.divider, { borderColor: c.tint + '33' }]} />
+            <Text style={[styles.commitMsg, { color: c.text }]}>{build.message}</Text>
+          </>
+        )}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.ghButton, { borderColor: c.tint }]}
+        onPress={() => Linking.openURL(GITHUB_URL)}
+      >
+        <Text style={[styles.ghButtonText, { color: c.tint }]}>View on GitHub ↗</Text>
+      </TouchableOpacity>
     </ParallaxScrollView>
   );
 }
 
+function InfoRow({ label, value, c, mono }: { label: string; value: string; c: any; mono?: boolean }) {
+  return (
+    <View style={styles.row}>
+      <Text style={[styles.rowLabel, { color: c.text, opacity: 0.55 }]}>{label}</Text>
+      <Text style={[styles.rowValue, { color: c.text, fontFamily: mono ? 'monospace' : undefined }]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  headerIcon: { position: 'absolute', bottom: -30, right: 20 },
+  appName:    { fontSize: 26, fontWeight: '700', letterSpacing: 0.3 },
+  tagline:    { fontSize: 13, marginTop: -4, marginBottom: 8 },
+  card: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    gap: 10,
   },
-  titleContainer: {
-    flexDirection: 'row',
-    gap: 8,
+  row:       { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  rowLabel:  { fontSize: 13, flex: 1 },
+  rowValue:  { fontSize: 13, flex: 2, textAlign: 'right' },
+  divider:   { borderTopWidth: StyleSheet.hairlineWidth, marginVertical: 2 },
+  commitMsg: { fontSize: 13, lineHeight: 18, fontStyle: 'italic' },
+  ghButton:  {
+    borderWidth: 1, borderRadius: 8,
+    paddingVertical: 9, paddingHorizontal: 18,
+    alignSelf: 'flex-start', marginTop: 4,
   },
+  ghButtonText: { fontSize: 14, fontWeight: '600' },
 });

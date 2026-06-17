@@ -7,8 +7,8 @@ import { ThemedView } from "@/components/themed-view";
 import { useThreeDStore } from "@/store/three-d-store";
 import { createEffectInstance } from "@/utils/effect-defaults";
 import { ThreeDTextScreen } from "./(tabs)/three-d";
-import type { MantraEntry, MantraText } from "./slides/mcon.data";
-import { MANTRAS } from "./slides/mcon.data";
+import type { MantraEntry, MantraText } from "@/utils/slides/mcon.data";
+import { MANTRAS } from "@/utils/slides/mcon.data";
 
 function normalizeMantraText(mantra: MantraText): string {
   return Array.isArray(mantra) ? mantra.join("\n") : mantra;

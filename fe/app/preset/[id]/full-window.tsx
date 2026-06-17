@@ -1,5 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { PRESET_REGISTRY } from '@/utils/slides/preset-registry';
+
+// Pre-render one HTML file per known preset ID at build time.
+export function generateStaticParams() {
+  return Object.keys(PRESET_REGISTRY).map((id) => ({ id }));
+}
 import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';

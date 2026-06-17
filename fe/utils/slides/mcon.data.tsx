@@ -159,7 +159,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "I have known many problems,\nmost of which never happened": {},
   "dare to dream": {},
   "constant improvement and learning": {},
-  "simplicity is the ultimate sophistication\nsimple but not primitive": {
+  "sharpen the saw": {},
+  "simplicity is the\nultimate sophistication\nsimple but\nnot primitive": {
     sentiment: "calm",
     emotion: "sophistication",
     style: "minimalist",
