@@ -7,18 +7,48 @@ export type EnvMapStyle =
   | 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon'
   | 'plasma' | 'fire' | 'smoke' | 'noise' | 'fireworks'
   | 'custom';
+export type EnvMapStyleParam = EnvMapStyle | 'none';
 
 export interface EnvMapPipeParams {
-  style?: EnvMapStyle;
+  style?: EnvMapStyleParam;
+  envMapStyle?: EnvMapStyleParam;
   seed?: number;
   intensity?: number;
+  envMapIntensity?: number;
   customImageDataUrl?: string;
+  envMapCustomDataUrl?: string;
   plasmaScheme?: string;
   plasmaSpeed?: number;
   plasmaScale?: number;
   fireworksScheme?: string;
   fireworksTrail?: number;
   fireworksCount?: number;
+}
+
+const ENV_MAP_STYLES = new Set<EnvMapStyleParam>([
+  'none',
+  'gradient',
+  'studio',
+  'starfield',
+  'sunset',
+  'neon',
+  'plasma',
+  'fire',
+  'smoke',
+  'noise',
+  'fireworks',
+  'custom',
+]);
+
+export function normalizeEnvMapPipeParams(params: EnvMapPipeParams): EnvMapPipeParams {
+  const rawStyle = params.style ?? params.envMapStyle ?? 'gradient';
+  const style = ENV_MAP_STYLES.has(rawStyle) ? rawStyle : 'gradient';
+  return {
+    ...params,
+    style,
+    intensity: params.intensity ?? params.envMapIntensity,
+    customImageDataUrl: params.customImageDataUrl ?? params.envMapCustomDataUrl,
+  };
 }
 
 // ── Shared vertex shader (used by all animated offscreen effects) ─────────────
@@ -277,7 +307,8 @@ export function buildProceduralEnvTexture(
  * Param changes within the same key (speed/scale/scheme) are handled by tick().
  */
 export function textureSourceKey(params: EnvMapPipeParams): string {
-  const { style = 'gradient', seed = 42, customImageDataUrl = '' } = params;
+  const { style = 'gradient', seed = 42, customImageDataUrl = '' } = normalizeEnvMapPipeParams(params);
+  if (style === 'none') return 'none';
   if (style in (ANIMATED_CONFIGS as object) || style === 'fireworks') return style;
   if (style === 'custom') return `custom:${customImageDataUrl}`;
   return `${style}:${seed}`;
@@ -299,6 +330,13 @@ export interface TextureSource {
 }
 
 // ── Implementations ──────────────────────────────────────────────────────────
+
+export class EmptyTextureSource implements TextureSource {
+  readonly envTexture = null;
+  readonly mapTexture = null;
+  tick() {}
+  dispose() {}
+}
 
 /** Wraps a synchronously built canvas texture. No per-frame work. */
 export class StaticTextureSource implements TextureSource {
@@ -457,7 +495,11 @@ export function createTextureSource(
   params: EnvMapPipeParams,
   renderer: THREE.WebGLRenderer | null,
 ): TextureSource {
-  const { style = 'gradient', seed = 42, customImageDataUrl = '' } = params;
+  const { style = 'gradient', seed = 42, customImageDataUrl = '' } = normalizeEnvMapPipeParams(params);
+
+  if (style === 'none') {
+    return new EmptyTextureSource();
+  }
 
   const animConfig = ANIMATED_CONFIGS[style];
   if (animConfig) return new AnimatedShaderSource(animConfig);

@@ -14,6 +14,19 @@ interface ThreeDStore {
   setSlideEffectOverride: (override: EffectInstance[] | null) => void;
 }
 
+function normalizeEffectInstance(instance: EffectInstance): EffectInstance {
+  return {
+    ...instance,
+    enabled: instance.enabled ?? true,
+    animate: instance.animate ?? true,
+    params: instance.params ?? {},
+  };
+}
+
+function normalizeEffectInstances(instances: EffectInstance[]): EffectInstance[] {
+  return instances.map(normalizeEffectInstance);
+}
+
 export const useThreeDStore = create<ThreeDStore>((set, get) => ({
   effectInstances: [createEffectInstance('mainText')],
   mantraMode: false,
@@ -23,9 +36,9 @@ export const useThreeDStore = create<ThreeDStore>((set, get) => ({
 
   setEffectInstances: (arg) => {
     if (typeof arg === 'function') {
-      set((state) => ({ effectInstances: arg(state.effectInstances) }));
+      set((state) => ({ effectInstances: normalizeEffectInstances(arg(state.effectInstances)) }));
     } else {
-      set({ effectInstances: arg });
+      set({ effectInstances: normalizeEffectInstances(arg) });
     }
   },
 

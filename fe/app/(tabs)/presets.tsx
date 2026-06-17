@@ -30,8 +30,8 @@ import {
 
 import { API_BASE } from '@/utils/api-config';
 
-function effectChips(effects: { type: string; enabled: boolean }[]) {
-  return effects.filter((e) => e.enabled && e.type !== "mainText");
+function effectChips(effects: { type: string; enabled?: boolean }[]) {
+  return effects.filter((e) => e.enabled !== false && e.type !== "mainText");
 }
 
 function presetMainParams(preset: PresetRecord): Record<string, unknown> {
@@ -69,7 +69,7 @@ function PresetLivePreview({ preset }: { preset: PresetRecord }) {
   const images = presetImages(p);
 
   const pipes = useMemo(
-    () => preset.effects.filter((e) => e.enabled).map(createPipeFromInstance),
+    () => preset.effects.filter((e) => e.enabled !== false).map(createPipeFromInstance),
     [preset.effects],
   );
   return (

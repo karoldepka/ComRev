@@ -2998,7 +2998,13 @@ function renderEffectControls(
           />
         </>
       );
-    case "envMap":
+    case "envMap": {
+      const envStyle =
+        ((params.style ?? params.envMapStyle ?? "gradient") as EnvMapStyle | "none");
+      const envIntensity =
+        ((params.intensity ?? params.envMapIntensity ?? 1.5) as number);
+      const envCustomImage =
+        (params.customImageDataUrl ?? params.envMapCustomDataUrl) as string | undefined;
       return (
         <>
           <Row>
@@ -3006,7 +3012,7 @@ function renderEffectControls(
               {p("style")}
             </Text>
             <select
-              value={(params.style as string) ?? "gradient"}
+              value={envStyle}
               onChange={(e) => onUpdate("style", e.target.value)}
               style={
                 {
@@ -3041,7 +3047,7 @@ function renderEffectControls(
               ))}
             </select>
           </Row>
-          {params.style === "custom" && (
+          {envStyle === "custom" && (
             <Row>
               <Text style={[styles.label, { color: colors.text }]}>
                 {p("customImage")}
@@ -3061,14 +3067,14 @@ function renderEffectControls(
                   onPress={() => onPickImage?.(id, "customImageDataUrl")}
                 >
                   <Text style={[styles.buttonText, { color: colors.tint }]}>
-                    {params.customImageDataUrl
+                    {envCustomImage
                       ? p("changeImage")
                       : p("chooseImage")}
                   </Text>
                 </TouchableOpacity>
-                {Boolean(params.customImageDataUrl) && (
+                {Boolean(envCustomImage) && (
                   <img
-                    src={params.customImageDataUrl as string}
+                    src={envCustomImage}
                     style={
                       {
                         width: 40,
@@ -3082,7 +3088,7 @@ function renderEffectControls(
               </View>
             </Row>
           )}
-          {params.style === "fireworks" && (
+          {envStyle === "fireworks" && (
             <>
               <Row>
                 <Text style={[styles.label, { color: colors.text }]}>{p("scheme")}</Text>
@@ -3104,9 +3110,9 @@ function renderEffectControls(
                 onChange={(v) => onUpdate("fireworksTrail", v)} colors={colors} />
             </>
           )}
-          {(["plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
+          {(["plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(envStyle as EnvMapStyle) && (
             <>
-              {params.style === "plasma" && (
+              {envStyle === "plasma" && (
                 <Row>
                   <Text style={[styles.label, { color: colors.text }]}>
                     {p("scheme")}
@@ -3155,23 +3161,24 @@ function renderEffectControls(
             min={0}
             max={3}
             step={0.05}
-            value={params.intensity as number}
+            value={envIntensity}
             onChange={(v) => onUpdate("intensity", v)}
             colors={colors}
           />
-          {!(["custom","plasma","fire","smoke","noise","fireworks"] as EnvMapStyle[]).includes(params.style as EnvMapStyle) && (
+          {!(["custom","plasma","fire","smoke","noise","fireworks"] as EnvMapStyle[]).includes(envStyle as EnvMapStyle) && (
             <SliderRow
               label={p("seed")}
               min={0}
               max={999}
               step={1}
-              value={params.seed as number}
+              value={(params.seed as number | undefined) ?? 42}
               onChange={(v) => onUpdate("seed", Math.round(v))}
               colors={colors}
             />
           )}
         </>
       );
+    }
     case "neonGlow":
       return (
         <>
@@ -6235,7 +6242,7 @@ export function ThreeDTextScreen({
   const activePipes = useMemo<EffectPipe[]>(() => {
     const source = sequenceMode && slideEffectOverride ? slideEffectOverride : effectInstances;
     return source
-      .filter((instance) => instance.enabled)
+      .filter((instance) => instance.enabled !== false)
       .map((instance) => {
         const pipe = createPipeFromInstance(instance);
         pipe.paused = !(instance.animate ?? true);
@@ -6543,7 +6550,7 @@ export function ThreeDTextScreen({
   }
 
   const handleSavePreset = () => {
-    const base = generatePresetName(effectInstances.filter((i) => i.enabled));
+    const base = generatePresetName(effectInstances.filter((i) => i.enabled !== false));
     const existingNames = new Set(presets.map((p) => p.name));
     let name = base;
     let ordinal = 2;
@@ -6557,7 +6564,7 @@ export function ThreeDTextScreen({
   const handleDuplicatePreset = () => {
     const base = loadedPresetName
       ? `${loadedPresetName} copy`
-      : generatePresetName(effectInstances.filter((i) => i.enabled));
+      : generatePresetName(effectInstances.filter((i) => i.enabled !== false));
     const existingNames = new Set(presets.map((p) => p.name));
     let name = base;
     let ordinal = 2;
@@ -6571,7 +6578,7 @@ export function ThreeDTextScreen({
   const confirmSavePreset = async () => {
     const name =
       draftPresetName.trim() ||
-      generatePresetName(effectInstances.filter((i) => i.enabled));
+      generatePresetName(effectInstances.filter((i) => i.enabled !== false));
     setShowSavePresetModal(false);
     try {
       const now = new Date().toISOString();
@@ -6665,7 +6672,7 @@ export function ThreeDTextScreen({
     setEffectInstances((instances) =>
       instances.map((instance) =>
         instance.id === id
-          ? { ...instance, enabled: !instance.enabled }
+          ? { ...instance, enabled: !(instance.enabled ?? true) }
           : instance,
       ),
     );
@@ -7519,7 +7526,7 @@ export function ThreeDTextScreen({
                     <View style={{ flex: 1 }}>
                       <SectionHeader
                         title={`${index + 1}. ${effectTypeLabel(instance.type, t)}`}
-                        enabled={instance.enabled}
+                        enabled={instance.enabled !== false}
                         onToggle={() => toggleEffectEnabled(instance.id)}
                         colors={c}
                       />
@@ -7577,7 +7584,7 @@ export function ThreeDTextScreen({
                       </Row>
                     )}
                   </View>
-                  {instance.enabled && (
+                  {instance.enabled !== false && (
                     <>
                       {isAnimatedEffectType(instance.type) && (
                         <SliderRow

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
 import {
-  EnvMapPipeParams, TextureSource, createTextureSource, textureSourceKey,
+  EnvMapPipeParams, TextureSource, createTextureSource, normalizeEnvMapPipeParams, textureSourceKey,
 } from './env-texture';
 
 export type { EnvMapStyle, EnvMapPipeParams } from './env-texture';
@@ -27,8 +27,11 @@ const MATCAP_SAMPLE =
   + '  vec3 _cvy = cross(_cvd, _cvx);\n'
   + '  vec2 _muv = vec2(dot(_cvx, normal), dot(_cvy, normal)) * 0.495 + 0.5;\n'
   + '  vec4 _ccs = texture2D(tCustomEnv, _muv);\n'
-  + '  diffuseColor.rgb = mix(diffuseColor.rgb, _ccs.rgb, clamp(tCustomEnvIntensity, 0.0, 1.0));\n'
+  + '  outgoingLight = mix(outgoingLight, _ccs.rgb, clamp(tCustomEnvIntensity, 0.0, 1.0));\n'
   + '}';
+
+const OUTGOING_LIGHT_LINE =
+  'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;';
 
 /**
  * Injects the matcap sampler into a MeshStandardMaterial, chaining with any
@@ -47,10 +50,17 @@ function patchMatcap(mat: THREE.MeshStandardMaterial): MatcapUniforms {
     origCompile(shader, renderer);
     Object.assign(shader.uniforms, u);
     shader.fragmentShader = MATCAP_UNIFORMS_DECL + shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <normal_fragment_maps>',
-      '#include <normal_fragment_maps>\n' + MATCAP_SAMPLE,
-    );
+    if (shader.fragmentShader.includes(OUTGOING_LIGHT_LINE)) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        OUTGOING_LIGHT_LINE,
+        OUTGOING_LIGHT_LINE + '\n' + MATCAP_SAMPLE,
+      );
+    } else {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        MATCAP_SAMPLE + '\n#include <opaque_fragment>',
+      );
+    }
   };
   mat.customProgramCacheKey = () => origCacheKey() + '|envpipe_matcap';
   mat.needsUpdate = true;
@@ -82,6 +92,9 @@ export class EnvMapPipe implements EffectPipe {
   // iterate it in dispose() to reach patchedMats entries.
   private patchedMats = new WeakMap<THREE.MeshStandardMaterial, MatcapUniforms>();
   private savedIntensities = new Map<THREE.MeshStandardMaterial, number>();
+  private savedEnvMaps = new Map<THREE.MeshStandardMaterial, THREE.Texture | null>();
+  private savedMeshMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  private generatedMaterials = new Set<THREE.Material>();
 
   constructor(public params: EnvMapPipeParams = {}) {}
 
@@ -93,20 +106,22 @@ export class EnvMapPipe implements EffectPipe {
   }
 
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
-    if (mesh) this._applyToMesh(mesh, this.params.intensity ?? 1.5);
+    const params = normalizeEnvMapPipeParams(this.params);
+    if (mesh) this._applyToMesh(mesh, params.intensity ?? 1.5);
   }
 
   update(ctx: PipeFrameContext) {
     if (ctx.renderer && !this.rendererRef) this.rendererRef = ctx.renderer as THREE.WebGLRenderer;
 
-    const key = textureSourceKey(this.params);
+    const params = normalizeEnvMapPipeParams(this.params);
+    const key = textureSourceKey(params);
     if (key !== this.sourceKey) {
       this.source?.dispose();
-      this.source = createTextureSource(this.params, this.rendererRef);
+      this.source = createTextureSource(params, this.rendererRef);
       this.sourceKey = key;
     }
 
-    this.source?.tick(ctx.delta, this.rendererRef, this.params);
+    this.source?.tick(ctx.delta, this.rendererRef, params);
 
     // Keep scene.environment in sync with the source's PMREM-ready texture.
     const envTex = this.source?.envTexture ?? null;
@@ -114,7 +129,7 @@ export class EnvMapPipe implements EffectPipe {
       this.sceneRef.environment = envTex;
     }
 
-    if (ctx.mesh) this._applyToMesh(ctx.mesh, this.params.intensity ?? 1.5);
+    if (ctx.mesh) this._applyToMesh(ctx.mesh, params.intensity ?? 1.5);
   }
 
   dispose() {
@@ -122,32 +137,52 @@ export class EnvMapPipe implements EffectPipe {
 
     this.savedIntensities.forEach((savedIntensity, mat) => {
       mat.envMapIntensity = savedIntensity;
+      mat.envMap = this.savedEnvMaps.get(mat) ?? null;
       const u = this.patchedMats.get(mat);
       if (u) unpatchMatcap(mat, u);
+      mat.needsUpdate = true;
     });
     this.savedIntensities.clear();
+    this.savedEnvMaps.clear();
+
+    this.savedMeshMaterials.forEach((savedMaterial, mesh) => {
+      this.disposeGeneratedMaterial(mesh.material);
+      mesh.material = savedMaterial;
+    });
+    this.savedMeshMaterials.clear();
+    this.generatedMaterials.clear();
 
     this.source?.dispose();
     this.source = null;
   }
 
   private _refreshSource() {
+    const params = normalizeEnvMapPipeParams(this.params);
     this.source?.dispose();
-    this.source = createTextureSource(this.params, this.rendererRef);
-    this.sourceKey = textureSourceKey(this.params);
+    this.source = createTextureSource(params, this.rendererRef);
+    this.sourceKey = textureSourceKey(params);
   }
 
   private _applyToMesh(mesh: THREE.Mesh | THREE.Group, intensity: number) {
     const mapTex = this.source?.mapTexture ?? null;
+    const envTex = this.source?.envTexture ?? null;
     const mixFactor = mapTex ? Math.min(intensity / 1.5, 1.0) : 0;
 
     mesh.traverse(child => {
       if (!(child instanceof THREE.Mesh)) return;
+      if (mapTex) {
+        this.applyAnimatedMaterial(child, mapTex);
+        return;
+      }
+
+      this.restoreMeshMaterial(child);
+
       const mat = child.material as THREE.MeshStandardMaterial;
       if (!mat?.isMeshStandardMaterial) return;
 
       if (!this.savedIntensities.has(mat)) {
         this.savedIntensities.set(mat, mat.envMapIntensity);
+        this.savedEnvMaps.set(mat, mat.envMap ?? null);
       }
       if (!this.patchedMats.has(mat)) {
         this.patchedMats.set(mat, patchMatcap(mat));
@@ -156,7 +191,56 @@ export class EnvMapPipe implements EffectPipe {
       const u = this.patchedMats.get(mat)!;
       u.tCustomEnv.value = mapTex;
       u.tCustomEnvIntensity.value = mixFactor;
+      if (mat.envMap !== envTex) {
+        mat.envMap = envTex;
+        mat.needsUpdate = true;
+      }
       mat.envMapIntensity = intensity;
+    });
+  }
+
+  private applyAnimatedMaterial(mesh: THREE.Mesh, matcap: THREE.Texture) {
+    if (!this.savedMeshMaterials.has(mesh)) {
+      this.savedMeshMaterials.set(mesh, mesh.material);
+    }
+
+    const current = mesh.material;
+    const currentMat = Array.isArray(current) ? null : current;
+    if (
+      currentMat instanceof THREE.MeshMatcapMaterial &&
+      currentMat.userData.envMapPipeGenerated
+    ) {
+      if (currentMat.matcap !== matcap) {
+        currentMat.matcap = matcap;
+        currentMat.needsUpdate = true;
+      }
+      return;
+    }
+
+    this.disposeGeneratedMaterial(current);
+    const next = new THREE.MeshMatcapMaterial({
+      color: 0xffffff,
+      matcap,
+    });
+    next.userData.envMapPipeGenerated = true;
+    this.generatedMaterials.add(next);
+    mesh.material = next;
+  }
+
+  private restoreMeshMaterial(mesh: THREE.Mesh) {
+    const savedMaterial = this.savedMeshMaterials.get(mesh);
+    if (!savedMaterial) return;
+    this.disposeGeneratedMaterial(mesh.material);
+    mesh.material = savedMaterial;
+    this.savedMeshMaterials.delete(mesh);
+  }
+
+  private disposeGeneratedMaterial(material: THREE.Material | THREE.Material[]) {
+    const materials = Array.isArray(material) ? material : [material];
+    materials.forEach((mat) => {
+      if (!this.generatedMaterials.has(mat)) return;
+      mat.dispose();
+      this.generatedMaterials.delete(mat);
     });
   }
 }
