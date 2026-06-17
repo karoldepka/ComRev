@@ -3,23 +3,36 @@ export { MCON_VISUAL_PARAMS } from "@/utils/mcon.config";
 export type { MantraEntry, MantraText } from "@/utils/mcon.config";
 
 export const MANTRAS: Record<string, MantraEntry> = {
+  "I program my mind": {
+    sentiment: "growth",
+    emotion: "focus",
+    style: "neon",
+  },
+  "I internalize ideas, values": {
+    sentiment: "growth",
+    emotion: "wisdom",
+    style: "classic",
+  },
+  mantras: {
+    sentiment: "focus",
+    emotion: "centering",
+    style: "minimalist",
+  },
+  affirmations: {
+    sentiment: "loving",
+    emotion: "self-love",
+    style: "dreamy",
+  },
+
   "thoughts are things": {
     sentiment: "growth",
     emotion: "focus",
     style: "neon",
   },
-  "breathe well": {},
-  "be flexible": {},
-  "exploit parallelisms": {},
-  "trust the system": {},
-  "be good at\nfigureouting": {},
-  "9 women can't\n have a baby\n in 1 month": {},
-  "accept or overcome or workarounds": {},
-  "program my mind": {
-    sentiment: "growth",
-    emotion: "focus",
-    style: "neon",
-  },
+  "I breathe well": {},
+  "I am flexible": {},
+  "I am good at\nfigureouting": {},
+  "I accept or overcome or come up with workarounds": {},
   "mind like water": {
     sentiment: "calm",
     emotion: "peace",
@@ -35,12 +48,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: "grit",
     style: "metallic",
   },
-  "push yourself": {
-    sentiment: "hardcore",
-    emotion: "grit",
-    style: "metallic",
-  },
-  "8 to be great": {
+  "I push myself": {
     sentiment: "hardcore",
     emotion: "grit",
     style: "metallic",
@@ -75,8 +83,6 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: "wonder",
     style: "dreamy",
   },
-  "greed is good": {},
-  "anarcho capitalism\nblack&yellow": {},
   "micro-protocols": {
     sentiment: "hardcore",
     emotion: "discipline",
@@ -87,65 +93,25 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: "tranquility",
     style: "organic",
   },
-  mantras: {
-    sentiment: "focus",
-    emotion: "centering",
-    style: "minimalist",
-  },
   "micro-prayers": {
     sentiment: "loving",
     emotion: "devotion",
     style: "warm",
   },
-  affirmations: {
-    sentiment: "loving",
-    emotion: "self-love",
-    style: "dreamy",
-  },
-  "«dance is the answer»": {
-    sentiment: "dreaming",
-    emotion: "joy",
-    style: "disco",
-  },
-  "will to psi power": {
-    sentiment: "hardcore",
-    emotion: "empowerment",
-    style: "neon",
-  },
-  "build habits": {
+  "I build habits": {
     sentiment: "growth",
     emotion: "persistence",
     style: "minimalist",
   },
-  "build habit chains": {
+  "I build habit chains": {
     sentiment: "growth",
     emotion: "structure",
     style: "grid",
-  },
-  "internalize ideas, values": {
-    sentiment: "growth",
-    emotion: "wisdom",
-    style: "classic",
   },
   "ora et labora": {
     sentiment: "hardcore",
     emotion: "duty",
     style: "classic",
-  },
-  "miłość\npiękno": {
-    sentiment: "loving",
-    emotion: "love & beauty",
-    style: "dreamy",
-  },
-  "muscle memory\nkeyboard shortcuts": {
-    sentiment: "focus",
-    emotion: "mastery",
-    style: "cyberpunk",
-  },
-  "form follows function": {
-    sentiment: "focus",
-    emotion: "clarity",
-    style: "minimalist",
   },
   "inner strength": {},
   "exponential growth": {},
@@ -172,5 +138,4 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: "immersion",
     style: "neon",
   },
-  "840": {},
 };

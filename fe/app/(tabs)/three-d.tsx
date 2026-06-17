@@ -2701,6 +2701,115 @@ function renderText3dControls({
   );
 }
 
+// ── Per-SVG-item bevel/extrude controls ──────────────────────────────────────
+
+interface GraphicsItemRowProps {
+  item: any;
+  globalParams: Record<string, unknown>;
+  colors: any;
+  onUpdateItem: (updated: any) => void;
+  onDelete: () => void;
+}
+
+function GraphicsItemRow({ item, globalParams, colors, onUpdateItem, onDelete }: GraphicsItemRowProps) {
+  const [expanded, setExpanded] = React.useState(false);
+  const isSvg = item.type === 'svg';
+
+  const gExtrude   = (globalParams.extrudeDepth   as number)  ?? 0.2;
+  const gBevel     = (globalParams.bevelEnabled    as boolean) ?? true;
+  const gBevelSize = (globalParams.bevelSize       as number)  ?? 0.02;
+  const gBevelThk  = (globalParams.bevelThickness  as number)  ?? 0.02;
+  const gBevelSegs = (globalParams.bevelSegments   as number)  ?? 3;
+
+  const hasOverride = isSvg && (
+    item.extrudeDepth !== undefined ||
+    item.bevelEnabled !== undefined ||
+    item.bevelSize    !== undefined ||
+    item.bevelThickness !== undefined ||
+    item.bevelSegments  !== undefined
+  );
+
+  function resetOverrides() {
+    const { extrudeDepth: _a, bevelEnabled: _b, bevelSize: _c, bevelThickness: _d, bevelSegments: _e, ...rest } = item;
+    onUpdateItem(rest);
+  }
+
+  return (
+    <View style={{ marginVertical: 2 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <Text style={{ color: colors.text, fontSize: 12, opacity: 0.8, flex: 1 }} numberOfLines={1}>
+          {item.name} ({item.type.toUpperCase()}){hasOverride ? ' ✦' : ''}
+        </Text>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          {isSvg && (
+            <TouchableOpacity onPress={() => setExpanded(e => !e)}>
+              <Text style={{ color: colors.tint, fontSize: 12 }}>{expanded ? '▲' : '▼'} 3D</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onDelete}>
+            <Text style={{ color: "#ff4444", fontSize: 12 }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {isSvg && expanded && (
+        <View style={{ paddingLeft: 8, paddingTop: 4, borderLeftWidth: 2, borderLeftColor: colors.tint + '55', marginTop: 4 }}>
+          <SliderRow
+            label="Extrude Depth"
+            min={0} max={2} step={0.05}
+            value={item.extrudeDepth ?? gExtrude}
+            onChange={(v) => onUpdateItem({ ...item, extrudeDepth: v })}
+            colors={colors}
+          />
+          <Row>
+            <Text style={[styles.label, { color: colors.text }]}>Bevel</Text>
+            <Switch
+              value={Boolean(item.bevelEnabled ?? gBevel)}
+              onValueChange={(v) => onUpdateItem({ ...item, bevelEnabled: v })}
+              trackColor={{ false: "#767577", true: colors.tint }}
+              thumbColor={(item.bevelEnabled ?? gBevel) ? colors.tint : "#f4f3f4"}
+            />
+          </Row>
+          {(item.bevelEnabled ?? gBevel) && (item.extrudeDepth ?? gExtrude) > 0 && (
+            <>
+              <SliderRow
+                label="Bevel Size"
+                min={0} max={0.5} step={0.005}
+                value={item.bevelSize ?? gBevelSize}
+                onChange={(v) => onUpdateItem({ ...item, bevelSize: v })}
+                colors={colors}
+              />
+              <SliderRow
+                label="Bevel Thickness"
+                min={0} max={0.5} step={0.005}
+                value={item.bevelThickness ?? gBevelThk}
+                onChange={(v) => onUpdateItem({ ...item, bevelThickness: v })}
+                colors={colors}
+              />
+              <SliderRow
+                label="Bevel Segments"
+                min={1} max={12} step={1}
+                value={item.bevelSegments ?? gBevelSegs}
+                onChange={(v) => onUpdateItem({ ...item, bevelSegments: Math.round(v) })}
+                colors={colors}
+              />
+            </>
+          )}
+          {hasOverride && (
+            <TouchableOpacity
+              onPress={resetOverrides}
+              style={{ alignSelf: "flex-start", marginTop: 4, paddingVertical: 2, paddingHorizontal: 6,
+                borderWidth: 1, borderColor: "#888", borderRadius: 4 }}
+            >
+              <Text style={{ color: "#888", fontSize: 11 }}>Reset to global</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function renderEffectControls(
   effect: EffectInstance,
   colors: any,
@@ -5354,13 +5463,21 @@ function renderEffectControls(
                   if (typeof document !== "undefined") {
                     const input = document.createElement("input");
                     input.type = "file";
-                    input.accept = "image/*";
+                    input.accept = "image/*,.svg";
                     input.onchange = (e: any) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       const reader = new FileReader();
-                      reader.readAsDataURL(file);
-                      reader.onload = () => onUpdate("matImageDataUrl", reader.result as string);
+                      if (file.name.toLowerCase().endsWith(".svg")) {
+                        reader.readAsText(file);
+                        reader.onload = () => {
+                          const encoded = btoa(unescape(encodeURIComponent(reader.result as string)));
+                          onUpdate("matImageDataUrl", `data:image/svg+xml;base64,${encoded}`);
+                        };
+                      } else {
+                        reader.readAsDataURL(file);
+                        reader.onload = () => onUpdate("matImageDataUrl", reader.result as string);
+                      }
                     };
                     input.click();
                   }
@@ -5414,13 +5531,21 @@ function renderEffectControls(
                       if (typeof document !== "undefined") {
                         const input = document.createElement("input");
                         input.type = "file";
-                        input.accept = "image/*";
+                        input.accept = "image/*,.svg";
                         input.onchange = (e: any) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           const reader = new FileReader();
-                          reader.readAsDataURL(file);
-                          reader.onload = () => onUpdate("envMapCustomDataUrl", reader.result as string);
+                          if (file.name.toLowerCase().endsWith(".svg")) {
+                            reader.readAsText(file);
+                            reader.onload = () => {
+                              const encoded = btoa(unescape(encodeURIComponent(reader.result as string)));
+                              onUpdate("envMapCustomDataUrl", `data:image/svg+xml;base64,${encoded}`);
+                            };
+                          } else {
+                            reader.readAsDataURL(file);
+                            reader.onload = () => onUpdate("envMapCustomDataUrl", reader.result as string);
+                          }
                         };
                         input.click();
                       }
@@ -5554,52 +5679,24 @@ function renderEffectControls(
 
           {params.items && (params.items as any[]).length > 0 && (
             <View style={{ marginTop: 8 }}>
-              <Text
-                style={{
-                  color: colors.text,
-                  fontWeight: "bold",
-                  fontSize: 13,
-                  marginBottom: 4,
-                }}
-              >
+              <Text style={{ color: colors.text, fontWeight: "bold", fontSize: 13, marginBottom: 4 }}>
                 Uploaded Files:
               </Text>
               {(params.items as any[]).map((item, idx) => (
-                <View
+                <GraphicsItemRow
                   key={item.id || idx}
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginVertical: 2,
+                  item={item}
+                  globalParams={params}
+                  colors={colors}
+                  onUpdateItem={(updated) => {
+                    const newItems = (params.items as any[]).map((x) => x.id === item.id ? updated : x);
+                    onUpdate("items", newItems);
                   }}
-                >
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: 12,
-                      opacity: 0.8,
-                      flex: 1,
-                    }}
-                    numberOfLines={1}
-                  >
-                    {item.name} ({item.type.toUpperCase()})
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const newItems = (params.items as any[]).filter(
-                        (x) => x.id !== item.id,
-                      );
-                      onUpdate("items", newItems);
-                    }}
-                  >
-                    <Text
-                      style={{ color: "#ff4444", fontSize: 12, marginLeft: 8 }}
-                    >
-                      Delete
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                  onDelete={() => {
+                    const newItems = (params.items as any[]).filter((x) => x.id !== item.id);
+                    onUpdate("items", newItems);
+                  }}
+                />
               ))}
             </View>
           )}
@@ -5917,11 +6014,14 @@ export function ThreeDTextScreen({
   sequenceMode = false,
   skipSavedConfigLoad = false,
   fullWindow = false,
+  sequenceReady = true,
 }: {
   sequenceMode?: boolean;
   skipSavedConfigLoad?: boolean;
   /** Hide all controls and chrome — canvas only, no toggle button */
   fullWindow?: boolean;
+  /** When false, hold the sequence at slide 0 until set to true (OBS sync). */
+  sequenceReady?: boolean;
 }) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
@@ -6081,6 +6181,27 @@ export function ThreeDTextScreen({
   const [sequenceLineIndex, setSequenceLineIndex] = useState(0);
   const currentSequencePage =
     sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
+  const currentSequencePageKey = sequenceMode
+    ? `${sequenceLineIndex}\x00${currentSequencePage.id}\x00${currentSequencePage.text}`
+    : "";
+  const [readySequenceTransition, setReadySequenceTransition] = useState<{
+    key: string;
+    nonce: number;
+    index: number;
+    page: SequencePage;
+  } | null>(null);
+  const readySequencePageKeyRef = useRef<string | null>(null);
+  const sequenceTransitionNonceRef = useRef(0);
+  // True once the 3D mesh has fired handleSequenceMeshReady while sequenceReady was still false
+  const meshReadyPendingRef = useRef(false);
+  const visibleSequencePage =
+    sequenceMode
+      ? (readySequenceTransition?.page ?? currentSequencePage)
+      : currentSequencePage;
+  const visibleSequenceLineIndex =
+    sequenceMode
+      ? (readySequenceTransition?.index ?? sequenceLineIndex)
+      : sequenceLineIndex;
   const capitalizeText = mainTextParams.capitalizeText !== false;
   const applyCapitalize = (t: string) => capitalizeText ? t.toUpperCase() : t;
   const displayText = sequenceMode
@@ -6094,26 +6215,83 @@ export function ThreeDTextScreen({
   );
 
   useEffect(() => {
+    readySequencePageKeyRef.current = null;
+    setReadySequenceTransition(null);
     setSequenceLineIndex(0);
   }, [principalTextSetsKey, sequenceMode]);
 
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
+    if (readySequenceTransition?.key !== currentSequencePageKey) return;
     const timer = setTimeout(() => {
       setSequenceLineIndex((index) => (index + 1) % sequencePages.length);
     }, currentSequencePage.durationMs);
     return () => clearTimeout(timer);
   }, [
     currentSequencePage.durationMs,
-    sequenceLineIndex,
+    currentSequencePageKey,
+    readySequenceTransition?.key,
     sequenceMode,
     sequencePages.length,
   ]);
 
+  const handleSequenceMeshReady = React.useCallback(() => {
+    threeDTextRef.current?.fitCamera();
+    if (!sequenceMode) return;
+    if (readySequencePageKeyRef.current === currentSequencePageKey) return;
+
+    if (!sequenceReady) {
+      // Mesh is rendered but OBS hasn't signalled start yet — remember it
+      meshReadyPendingRef.current = true;
+      return;
+    }
+
+    readySequencePageKeyRef.current = currentSequencePageKey;
+    const nonce = sequenceTransitionNonceRef.current + 1;
+    sequenceTransitionNonceRef.current = nonce;
+    setReadySequenceTransition({
+      key: currentSequencePageKey,
+      nonce,
+      index: sequenceLineIndex,
+      page: currentSequencePage,
+    });
+  }, [
+    currentSequencePage,
+    currentSequencePageKey,
+    sequenceLineIndex,
+    sequenceMode,
+    sequenceReady,
+  ]);
+
+  // When OBS sends the start signal (sequenceReady flips to true), fire the
+  // transition if the mesh was already rendered and waiting.
+  useEffect(() => {
+    if (!sequenceReady || !meshReadyPendingRef.current) return;
+    meshReadyPendingRef.current = false;
+    if (!sequenceMode) return;
+    if (readySequencePageKeyRef.current === currentSequencePageKey) return;
+    readySequencePageKeyRef.current = currentSequencePageKey;
+    const nonce = sequenceTransitionNonceRef.current + 1;
+    sequenceTransitionNonceRef.current = nonce;
+    setReadySequenceTransition({
+      key: currentSequencePageKey,
+      nonce,
+      index: sequenceLineIndex,
+      page: currentSequencePage,
+    });
+  }, [sequenceReady, sequenceMode, currentSequencePageKey, currentSequencePage, sequenceLineIndex]);
+
   useEffect(() => {
     if (!sequenceMode || !soundEnabled) return;
+    if (readySequenceTransition?.key !== currentSequencePageKey) return;
     playGongSound(audioContextRef);
-  }, [sequenceLineIndex, sequenceMode, soundEnabled]);
+  }, [
+    currentSequencePageKey,
+    readySequenceTransition?.key,
+    readySequenceTransition?.nonce,
+    sequenceMode,
+    soundEnabled,
+  ]);
 
 
   useEffect(() => {
@@ -6753,7 +6931,7 @@ export function ThreeDTextScreen({
             lineSpacing={mainTextParams.lineSpacing as number | undefined}
             perspective={mainTextParams.perspective as number | undefined}
             pipes={activePipes}
-            onMeshReady={sequenceMode ? () => threeDTextRef.current?.fitCamera() : undefined}
+            onMeshReady={sequenceMode ? handleSequenceMeshReady : undefined}
             onPrimaryMeshClick={() => {
               const mainInst = effectInstances.find(
                 (i) => i.type === "mainText",
@@ -6786,19 +6964,23 @@ export function ThreeDTextScreen({
           />
           {(() => {
             const imgs = sequenceMode
-              ? (currentSequencePage.images ?? [])
+              ? (visibleSequencePage.images ?? [])
               : (getActivePrincipalTextSet(mainTextParams).images ?? []);
             return imgs.length > 0 ? (
               <SlideImageOverlay
-                key={sequenceMode ? `img-seq-${currentSequencePage.id}` : "img-active"}
+                key={
+                  sequenceMode
+                    ? `img-seq-${readySequenceTransition?.key ?? visibleSequencePage.id}`
+                    : "img-active"
+                }
                 images={imgs}
               />
             ) : null;
           })()}
-          {sequenceMode && (
+          {sequenceMode && readySequenceTransition?.key === currentSequencePageKey && (
             <SequenceTransitionOverlay
-              key={currentSequencePage.id}
-              page={currentSequencePage}
+              key={`${readySequenceTransition.key}-${readySequenceTransition.nonce}`}
+              page={readySequenceTransition.page}
             />
           )}
           {sequenceMode && !fullWindow && (
@@ -6816,13 +6998,13 @@ export function ThreeDTextScreen({
               ]}
             >
               <Text style={{ color: c.text, fontSize: 12, fontWeight: "700" }}>
-                {sequenceLineIndex + 1}/{sequencePages.length}
+                {visibleSequenceLineIndex + 1}/{sequencePages.length}
               </Text>
               <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
-                {currentSequencePage.setName}
+                {visibleSequencePage.setName}
               </Text>
               <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
-                {Math.round(currentSequencePage.durationMs / 100) / 10}s
+                {Math.round(visibleSequencePage.durationMs / 100) / 10}s
               </Text>
             </View>
           )}

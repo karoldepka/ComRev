@@ -36,12 +36,13 @@
  *                               Requires headphones. Use 0 to disable.
  *   --binaural-carrier <number> Carrier sine frequency in Hz (default: 200)
  *   --binaural-volume <0-1>     Binaural tone amplitude relative to full scale (default: 0.35)
+ *   --obs-sync                  Pause the animation at slide 0 until OBS is ready to record,
+ *                               then signal the app to start and begin recording simultaneously.
+ *                               Requires the obs-browser plugin (bundled with OBS Studio).
  */
 
-import { execFileSync, execSync } from "child_process";
 import {
   copyFileSync,
-  existsSync,
   mkdirSync,
   renameSync,
   statSync,
@@ -132,6 +133,9 @@ const waitMs = parseInt(args["wait-ms"] ?? "3000", 10);
 const wsUrl = args["ws-url"] ?? "ws://localhost:4455";
 const wsPassword = args["ws-password"] ?? "";
 const noResize = args["no-resize"] === true;
+// --obs-sync: pause the animation until OBS signals start, then begin recording
+// and animation simultaneously.  Requires the obs-browser plugin (ships with OBS).
+const obsSync = args["obs-sync"] === true;
 const SCENE_NAME = args.scene ?? "AnimationRecorder";
 const SOURCE_NAME = args.source ?? "AnimationBrowser";
 
@@ -139,7 +143,16 @@ const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const outputDst = args.output ?? `../recordings/${ts}_animation_${format}.mp4`;
 mkdirSync(dirname(outputDst), { recursive: true });
 
-const fullUrl = `${baseUrl}/${tab}${lang ? `?lang=${lang}` : ""}`;
+// Build URL — binaural params go to the app (played via Web Audio, captured by OBS reroute_audio)
+const queryParams = new URLSearchParams();
+if (lang) queryParams.set("lang", lang);
+if (binauralHz) {
+  queryParams.set("binaural-hz", String(binauralHz));
+  queryParams.set("binaural-carrier", String(binauralCarrier));
+  queryParams.set("binaural-volume", String(binauralVolume));
+}
+if (obsSync) queryParams.set("pause-until-obs", "1");
+const fullUrl = `${baseUrl}/${tab}${queryParams.size ? `?${queryParams}` : ""}`;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -150,38 +163,6 @@ function fileSizeMb(path) {
     return (statSync(path).size / 1024 / 1024).toFixed(1);
   } catch {
     return "?";
-  }
-}
-
-function hasFFmpeg() {
-  try {
-    execSync("ffmpeg -version", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function hasAudioStream(filePath) {
-  try {
-    const output = execFileSync(
-      "ffprobe",
-      [
-        "-v",
-        "error",
-        "-select_streams",
-        "a:0",
-        "-show_entries",
-        "stream=codec_type",
-        "-of",
-        "csv=p=0",
-        filePath,
-      ],
-      { encoding: "utf8" },
-    );
-    return output.trim() === "audio";
-  } catch {
-    return false;
   }
 }
 
@@ -228,82 +209,6 @@ async function moveFileWithRetry(sourcePath, destinationPath, label) {
     console.warn(`Could not remove original OBS output: ${sourcePath}`);
     console.warn(err?.cause?.message ?? err.message);
   }
-}
-
-async function replaceFileWithRetry(tmpPath, finalPath) {
-  const backupPath = `${finalPath}.pre-binaural-${process.pid}-${Date.now()}.bak`;
-  let backupCreated = false;
-
-  try {
-    await retryFs(() => renameSync(finalPath, backupPath), "Moving original recording aside");
-    backupCreated = true;
-    await retryFs(() => renameSync(tmpPath, finalPath), "Moving binaural recording into place");
-
-    try {
-      unlinkSync(backupPath);
-    } catch (err) {
-      console.warn(`Could not remove backup file: ${backupPath}`);
-      console.warn(err.message);
-    }
-  } catch (err) {
-    if (backupCreated && !existsSync(finalPath)) {
-      try {
-        await retryFs(() => renameSync(backupPath, finalPath), "Restoring original recording");
-      } catch (restoreErr) {
-        console.error(`Could not restore original recording from backup: ${backupPath}`);
-        console.error(restoreErr.message);
-      }
-    }
-    throw err;
-  }
-}
-
-// Mix a synthesized binaural beat into an existing MP4 file (in-place).
-// Left ear: carrier Hz  |  Right ear: carrier + beatHz
-// The brain perceives the difference as a binaural beat at beatHz.
-async function mixBinaural(filePath, { beatHz, carrier, volume, durationSec: dur }) {
-  const aevalsrc = [
-    `aevalsrc=`,
-    `${volume}*sin(2*PI*${carrier}*t)`,
-    `|`,
-    `${volume}*sin(2*PI*${carrier + beatHz}*t)`,
-    `:c=stereo:s=44100`,
-  ].join("");
-  const tmpPath = filePath + ".binaural-tmp.mp4";
-  const audioArgs = hasAudioStream(filePath)
-    ? [
-        "-filter_complex",
-        "[0:a][1:a]amix=inputs=2:duration=first:normalize=0[aout]",
-        "-map",
-        "0:v:0",
-        "-map",
-        "[aout]",
-      ]
-    : ["-map", "0:v:0", "-map", "1:a:0"];
-  execFileSync(
-    "ffmpeg",
-    [
-      "-y",
-      "-i",
-      filePath,
-      "-f",
-      "lavfi",
-      "-i",
-      aevalsrc,
-      ...audioArgs,
-      "-c:v",
-      "copy",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "192k",
-      "-t",
-      String(dur),
-      tmpPath,
-    ],
-    { stdio: "inherit" },
-  );
-  await replaceFileWithRetry(tmpPath, filePath);
 }
 
 // ── banner ────────────────────────────────────────────────────────────────────
@@ -434,10 +339,53 @@ if (item) {
   });
 }
 
-// ── wait for page to settle ───────────────────────────────────────────────────
+// ── wait for page to load, refresh to frame 0, then start in sync ────────────
 
-console.log(`Waiting ${waitMs}ms for page to load and settle...`);
+console.log(`Waiting ${waitMs}ms for page to load...`);
 await sleep(waitMs);
+
+// Refresh so the animation resets to frame 0.
+// With --obs-sync the app holds at frame 0 waiting for our signal, so we only
+// need a short settle wait; without it we wait the full waitMs again.
+console.log("Refreshing browser source to reset animation to frame 0...");
+try {
+  await obs.call("PressInputPropertiesButton", {
+    inputName: SOURCE_NAME,
+    propertyName: "refreshnocache",
+  });
+} catch (err) {
+  console.warn("Could not refresh browser source:", err.message);
+}
+
+if (obsSync) {
+  // Give the page just enough time to fully render slide 0 before we fire.
+  const settleMs = Math.min(waitMs, 2000);
+  console.log(`Waiting ${settleMs}ms for slide 0 to render...`);
+  await sleep(settleMs);
+
+  // Signal the app to start the sequence, then immediately begin recording —
+  // animation and recording start at the same instant.
+  console.log("Signalling app to start sequence (obsCustomEvent: startSequence)...");
+  try {
+    await obs.call("CallVendorRequest", {
+      vendorName: "obs-browser",
+      requestType: "emit_event",
+      requestData: {
+        event_name: "obs_custom_event",
+        event_data: { action: "startSequence" },
+      },
+    });
+  } catch (err) {
+    console.warn(
+      "Could not emit obsCustomEvent — falling back to unsynced start.\n" +
+      "(Make sure the obs-browser plugin is loaded in OBS.)\n" +
+      err.message,
+    );
+  }
+} else {
+  console.log(`Waiting ${waitMs}ms for animation to reach frame 0...`);
+  await sleep(waitMs);
+}
 
 // ── record ────────────────────────────────────────────────────────────────────
 
@@ -467,21 +415,8 @@ await obs.disconnect();
 
 if (obsOutputPath) {
   await moveFileWithRetry(obsOutputPath, outputDst, "Moving OBS recording to output path");
-  if (binauralHz) {
-    if (hasFFmpeg()) {
-      console.log(`\nMixing binaural beat (${binauralHz} Hz)...`);
-      await mixBinaural(outputDst, {
-        beatHz: binauralHz,
-        carrier: binauralCarrier,
-        volume: binauralVolume,
-        durationSec,
-      });
-    } else {
-      console.warn(
-        "ffmpeg not found — skipping binaural mix (winget install Gyan.FFmpeg)",
-      );
-    }
-  }
+  // Binaural is generated by the app via Web Audio API and captured by OBS reroute_audio —
+  // no ffmpeg post-processing needed here.
   console.log(`\n✓ Saved: ${outputDst}  (${fileSizeMb(outputDst)} MB)`);
 } else {
   console.log(

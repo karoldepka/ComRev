@@ -51,6 +51,12 @@ export interface GraphicItem {
   name: string;
   type: 'svg' | 'image';
   content: string; // SVG XML string or base64 Image data URL
+  // Per-item overrides for SVG extrusion (undefined = inherit global param)
+  extrudeDepth?: number;
+  bevelEnabled?: boolean;
+  bevelSize?: number;
+  bevelThickness?: number;
+  bevelSegments?: number;
 }
 
 export type GraphicsEnvMapStyle = 'none' | 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon' | 'custom';
@@ -268,16 +274,23 @@ export class GraphicsPipe implements EffectPipe {
 
   private async createMeshForItem(item: GraphicItem): Promise<THREE.Object3D> {
     const {
-      extrudeDepth = 0.2,
-      bevelEnabled = true,
-      bevelSize = 0.02,
-      bevelThickness = 0.02,
-      bevelSegments = 3,
+      extrudeDepth: globalExtrudeDepth = 0.2,
+      bevelEnabled: globalBevelEnabled = true,
+      bevelSize: globalBevelSize = 0.02,
+      bevelThickness: globalBevelThickness = 0.02,
+      bevelSegments: globalBevelSegments = 3,
       colorOverride = false,
       color = 0xff6600,
       metalness = 0.8,
       roughness = 0.2,
     } = this.params;
+
+    // Per-item overrides take priority over global params
+    const extrudeDepth   = item.extrudeDepth   ?? globalExtrudeDepth;
+    const bevelEnabled   = item.bevelEnabled   ?? globalBevelEnabled;
+    const bevelSize      = item.bevelSize      ?? globalBevelSize;
+    const bevelThickness = item.bevelThickness ?? globalBevelThickness;
+    const bevelSegments  = item.bevelSegments  ?? globalBevelSegments;
 
     if (item.type === 'svg') {
       const loader = new SVGLoader();

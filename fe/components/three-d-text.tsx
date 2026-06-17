@@ -368,8 +368,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       const envMap = envMapRef.current;
       const thisUpdateId = ++updateIdRef.current;
 
-      removeMeshFromScene(scene);
-
       try {
         const { geometry, material } = await createTextGeometry({
           text: textContent,

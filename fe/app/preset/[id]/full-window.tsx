@@ -1,12 +1,45 @@
 import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ThreeDTextScreen } from '@/app/(tabs)/three-d';
+import { useBinauralBeat } from '@/utils/use-binaural-beat';
 import { usePresetLoader } from '../use-preset-loader';
 
 export default function PresetFullWindowScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const {
+    id,
+    'binaural-hz': binauralHzStr,
+    'binaural-carrier': binauralCarrierStr,
+    'binaural-volume': binauralVolumeStr,
+    'pause-until-obs': pauseUntilObs,
+  } = useLocalSearchParams<{
+    id: string;
+    'binaural-hz'?: string;
+    'binaural-carrier'?: string;
+    'binaural-volume'?: string;
+    'pause-until-obs'?: string;
+  }>();
+
+  // When ?pause-until-obs=1, hold the sequence at slide 0 until OBS emits the
+  // startSequence custom event — so recording and animation start simultaneously.
+  const [sequenceReady, setSequenceReady] = useState(pauseUntilObs !== '1');
+
+  useEffect(() => {
+    if (pauseUntilObs !== '1' || typeof window === 'undefined') return;
+    const handler = (e: any) => {
+      if (e.detail?.action === 'startSequence') setSequenceReady(true);
+    };
+    window.addEventListener('obsCustomEvent', handler);
+    return () => window.removeEventListener('obsCustomEvent', handler);
+  }, [pauseUntilObs]);
+
+  useBinauralBeat({
+    beatHz: parseFloat(binauralHzStr ?? '0'),
+    carrier: parseFloat(binauralCarrierStr ?? '200'),
+    volume: parseFloat(binauralVolumeStr ?? '0.35'),
+  });
   const { ready, notFound } = usePresetLoader(id);
 
   if (notFound) {
@@ -25,7 +58,7 @@ export default function PresetFullWindowScreen() {
   }
   return (
     <View style={styles.container}>
-      <ThreeDTextScreen sequenceMode fullWindow skipSavedConfigLoad />
+      <ThreeDTextScreen sequenceMode fullWindow skipSavedConfigLoad sequenceReady={sequenceReady} />
     </View>
   );
 }
