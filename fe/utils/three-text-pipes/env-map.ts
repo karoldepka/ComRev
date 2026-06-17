@@ -66,10 +66,12 @@ export class EnvMapPipe implements EffectPipe {
    * the image maps smoothly onto front-facing surfaces with no UV discontinuity.
    */
   private mapTexture: THREE.Texture | null = null;
-  /** Per-material uniform objects so we can update values without recompiling. */
+  /** Per-material uniform objects + original shader callbacks so we can restore on dispose. */
   private matUniforms = new WeakMap<THREE.MeshStandardMaterial, {
     tCustomEnv: { value: THREE.Texture | null };
     tCustomEnvIntensity: { value: number };
+    origCompile: (shader: any, renderer: any) => void;
+    origCacheKey: () => string;
   }>();
 
   private sceneRef: THREE.Scene | null = null;
@@ -222,15 +224,17 @@ export class EnvMapPipe implements EffectPipe {
   private ensurePatched(mat: THREE.MeshStandardMaterial) {
     if (this.matUniforms.has(mat)) return;
 
-    const u = {
-      tCustomEnv: { value: null as THREE.Texture | null },
-      tCustomEnvIntensity: { value: 0 },
-    };
-    this.matUniforms.set(mat, u);
-
     // Chain with any existing onBeforeCompile (e.g. bevel-normal patch from text geometry).
     const prevCompile = mat.onBeforeCompile;
     const prevKey = mat.customProgramCacheKey;
+
+    const u = {
+      tCustomEnv: { value: null as THREE.Texture | null },
+      tCustomEnvIntensity: { value: 0 },
+      origCompile: prevCompile,
+      origCacheKey: prevKey,
+    };
+    this.matUniforms.set(mat, u);
     mat.onBeforeCompile = (shader, renderer) => {
       prevCompile(shader, renderer);
       Object.assign(shader.uniforms, u);
@@ -452,13 +456,18 @@ export class EnvMapPipe implements EffectPipe {
       this.sceneRef.environment = this.savedSceneEnv;
     }
 
-    // Restore per-material envMap and envMapIntensity.
+    // Restore per-material envMap, envMapIntensity, and original shader callbacks.
     this.savedMatEnv.forEach((saved, mat) => {
       mat.envMap = saved.envMap;
       mat.envMapIntensity = saved.envMapIntensity;
-      // Zero out the matcap uniform so it no longer contributes.
       const u = this.matUniforms.get(mat);
-      if (u) { u.tCustomEnv.value = null; u.tCustomEnvIntensity.value = 0; }
+      if (u) {
+        u.tCustomEnv.value = null;
+        u.tCustomEnvIntensity.value = 0;
+        // Restore original callbacks so re-enabling the effect doesn't double-patch the shader.
+        mat.onBeforeCompile = u.origCompile;
+        mat.customProgramCacheKey = u.origCacheKey;
+      }
       mat.needsUpdate = true;
     });
     this.savedMatEnv.clear();
