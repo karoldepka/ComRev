@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { createEffectInstance } from '@/utils/effect-defaults';
 import { useThreeDStore } from '@/store/three-d-store';
+import { useSoundscapeStore } from '@/store/soundscape-store';
 import i18n from '@/utils/i18n';
 import { PRESET_REGISTRY } from '@/utils/slides/preset-registry';
 
 export function usePresetLoader(id: string) {
   const setEffectInstances = useThreeDStore((s) => s.setEffectInstances);
   const setMantraMode = useThreeDStore((s) => s.setMantraMode);
+  const applyPresetConfig = useSoundscapeStore((s) => s.applyPresetConfig);
   const [ready, setReady] = useState(false);
 
   const { lang } = useLocalSearchParams<{ lang?: string }>();
@@ -28,6 +30,7 @@ export function usePresetLoader(id: string) {
     if (!preset) return;
     const prevLang = i18n.language;
     if (displayLang && displayLang !== prevLang) i18n.changeLanguage(displayLang);
+    if (preset.soundscape) applyPresetConfig(preset.soundscape);
     setMantraMode(true);
     setEffectInstances((instances) => {
       const mainText = instances.find((i) => i.type === 'mainText');
@@ -43,7 +46,7 @@ export function usePresetLoader(id: string) {
       setMantraMode(false);
       if (displayLang && displayLang !== prevLang) i18n.changeLanguage(prevLang);
     };
-  }, [preset, setEffectInstances, setMantraMode, text, textSets, displayLang]);
+  }, [preset, setEffectInstances, setMantraMode, applyPresetConfig, text, textSets, displayLang]);
 
   return { ready, notFound: !preset };
 }

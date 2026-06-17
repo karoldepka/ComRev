@@ -3,6 +3,9 @@ import i18n from '@/utils/i18n';
 import type { MantraEntry, MantraText } from './mcon.data';
 import { MANTRAS as MCON_MANTRAS } from './mcon.data';
 import { MANTRAS as MOTIVATION_MANTRAS } from './motivation.data';
+import type { SoundscapeConfig } from '@/store/soundscape-store';
+
+export type { SoundscapeConfig };
 
 export interface SlideEntry {
   id: string;
@@ -12,6 +15,7 @@ export interface SlideEntry {
 
 export interface PresetDefinition {
   label: string;
+  soundscape?: SoundscapeConfig;
   generateSlides: (lang?: string) => SlideEntry[];
 }
 
@@ -61,10 +65,12 @@ function makeSlides(prefix: string, mantras: Record<string, MantraEntry>, lang?:
 export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
   mcon: {
     label: 'Mantras',
+    soundscape: { beatHz: 10, carrier: 200, volume: 0.35 }, // alpha — relaxed focus
     generateSlides: (lang?: string) => makeSlides('mcon', MCON_MANTRAS, lang),
   },
   motivation: {
     label: 'Motivation',
+    soundscape: { beatHz: 40, carrier: 200, volume: 0.3 }, // gamma — peak performance
     generateSlides: (lang?: string) => makeSlides('motivation', MOTIVATION_MANTRAS, lang),
   },
 };

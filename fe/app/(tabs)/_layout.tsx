@@ -80,6 +80,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="soundscape"
+        options={{
+          title: "Soundscape",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="waveform" color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

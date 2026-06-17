@@ -13,18 +13,29 @@ config.resolver.unstable_enablePackageExports = true;
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, 'node_modules')];
 
 // ── Warn logger: suppress stack traces on screen, write full details to file ──
+// The naive approach (calling the original console.warn) doesn't work because
+// Expo CLI's serverLogLikeMetro.ts replaces console.warn and re-adds the stack.
+// Fix: write to stderr directly and lock console.warn via defineProperty so
+// any later replacement attempt by Expo CLI is silently ignored.
 
 const LOG_FILE = path.resolve(__dirname, 'metro.warn.log');
 
-const _warn = console.warn.bind(console);
-console.warn = function (...args) {
+function suppressedWarn(...args) {
   const text = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
-  // Write full entry (with stack) to log file
   const stack = new Error().stack?.split('\n').slice(2).join('\n') ?? '';
-  const entry = `[${new Date().toISOString()}] WARN: ${text}\n${stack}\n\n`;
-  try { fs.appendFileSync(LOG_FILE, entry); } catch { /* ignore */ }
-  // Print only the message — no stack trace
-  _warn(text);
-};
+  try { fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] WARN: ${text}\n${stack}\n\n`); } catch { /* ignore */ }
+  process.stderr.write(`\x1b[33m WARN \x1b[0m ${text}\n`);
+}
+
+try {
+  Object.defineProperty(console, 'warn', {
+    get: () => suppressedWarn,
+    set: () => {},    // silently ignore Expo CLI's attempt to replace console.warn
+    configurable: true,
+    enumerable: true,
+  });
+} catch {
+  console.warn = suppressedWarn;
+}
 
 module.exports = config;

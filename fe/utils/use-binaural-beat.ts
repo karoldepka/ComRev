@@ -1,11 +1,6 @@
 import { useEffect } from 'react';
+import { startBinaural, stopBinaural, updateBinaural, isBinauralPlaying } from './binaural-engine';
 
-/**
- * Generates a binaural beat via Web Audio API.
- * Left ear: carrier Hz  |  Right ear: carrier + beatHz
- * The brain perceives the difference as a beat at beatHz.
- * Requires headphones to work.
- */
 export function useBinauralBeat({
   beatHz,
   carrier = 200,
@@ -16,42 +11,14 @@ export function useBinauralBeat({
   volume?: number;
 }) {
   useEffect(() => {
-    if (!beatHz || typeof window === 'undefined') return;
-
-    const AudioCtor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
-    if (!AudioCtor) return;
-
-    let ctx: AudioContext | null = null;
-    try {
-      ctx = new AudioCtor() as AudioContext;
-      ctx.resume().catch(() => undefined);
-
-      // Two oscillators routed to separate stereo channels
-      const merger = ctx.createChannelMerger(2);
-      const gain = ctx.createGain();
-      gain.gain.value = volume;
-
-      const left = ctx.createOscillator();
-      left.type = 'sine';
-      left.frequency.value = carrier;
-
-      const right = ctx.createOscillator();
-      right.type = 'sine';
-      right.frequency.value = carrier + beatHz;
-
-      left.connect(merger, 0, 0);
-      right.connect(merger, 0, 1);
-      merger.connect(gain);
-      gain.connect(ctx.destination);
-
-      left.start();
-      right.start();
-    } catch (err) {
-      console.warn('useBinauralBeat: failed to start:', err);
+    if (!beatHz) return;
+    if (isBinauralPlaying()) {
+      updateBinaural(beatHz, carrier, volume);
+    } else {
+      startBinaural(beatHz, carrier, volume);
     }
-
     return () => {
-      ctx?.close().catch(() => undefined);
+      stopBinaural();
     };
   }, [beatHz, carrier, volume]);
 }
