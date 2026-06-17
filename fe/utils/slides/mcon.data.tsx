@@ -86,6 +86,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "self-control": {},
   "self-mastery": {},
   "not time management\nbut manage\nyourself in time": {},
+  "N-minute\nrule": {},
+  kaizens: {},
   "anarcho-capitalism\nblack&yellow": {},
   "micro-protocols": {
     sentiment: "hardcore",
