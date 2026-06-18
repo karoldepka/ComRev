@@ -19,8 +19,9 @@ export default function CopilotProvider({ children }: Props) {
             "Hi! I can query your tables, explore columns, and help you understand your data.\n\nTry: *\"Show the top 10 repos by 7-day star growth\"*",
           placeholder: "Ask about your data…",
         }}
-      />
-      {children}
+      >
+        {children}
+      </CopilotSidebar>
     </CopilotKit>
   );
 }
