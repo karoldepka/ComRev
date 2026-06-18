@@ -8,12 +8,17 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "overrides": {
+    "@copilotkit/react-core": "1.60.1",
+    "@copilotkit/react-ui": "1.60.1",
+    "@copilotkit/runtime": "1.60.1"
+  },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.82",
     "@ai-sdk/react": "^3.0.201",
-    "@copilotkit/react-core": "^1.59.2",
-    "@copilotkit/react-ui": "^1.59.2",
-    "@copilotkit/runtime": "^1.59.2",
+    "@copilotkit/react-core": "1.60.1",
+    "@copilotkit/react-ui": "1.60.1",
+    "@copilotkit/runtime": "1.60.1",
     "@radix-ui/react-dialog": "^1.1.16",
     "@react-aria/focus": "^3.22.1",
     "@react-aria/interactions": "^3.28.1",
