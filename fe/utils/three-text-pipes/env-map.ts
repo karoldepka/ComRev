@@ -192,10 +192,10 @@ export class EnvMapPipe implements EffectPipe {
 
     mesh.traverse(child => {
       if (!(child instanceof THREE.Mesh)) return;
-      // Pure matcap path (no PBR env-map): swap to MeshMatcapMaterial.
-      // When envTex is also present (animated sources), fall through to the
-      // MeshStandardMaterial path so both matcap injection and PBR reflections apply.
-      if (mapTex && !envTex) {
+      // Animated sources: always use MeshMatcapMaterial to directly sample the
+      // RT texture each frame (bypasses Three.js's cube-UV cache which would
+      // freeze the animation when only scene.environment is used).
+      if (mapTex) {
         this.applyAnimatedMaterial(child, mapTex);
         return;
       }
