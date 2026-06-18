@@ -55,7 +55,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "bend":
       return { strength: 0.18, axis: "x" };
     case "envMap":
-      return { style: "plasma", plasmaScheme: "fire", plasmaScale: 8, intensity: 1.5, seed: 42, customImageDataUrl: undefined };
+      return { style: "plasma", plasmaScheme: "fire", plasmaScale: 8, intensity: 1.5, seed: 42, customImageDataUrl: undefined, showAsBackground: true, backgroundBlur: 0 };
     case "neonGlow":
       return { colorIdx: 0, intensity: 0.8, pulseSpeed: 1.0, pulseAmplitude: 0.3 };
     case "metallicPreset":

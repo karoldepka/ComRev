@@ -132,16 +132,19 @@ export class EnvMapPipe implements EffectPipe {
     }
 
     // When the source provides both an env texture and a map texture (animated
-    // shaders: fire, plasma, smoke, noise), also use it as the scene background
+    // shaders: fire, plasma, smoke, noise), optionally use it as scene.background
     // so the fire/plasma wraps the background of the 3D scene.
     if (this.sceneRef) {
       const mapTex = this.source?.mapTexture ?? null;
-      const wantBg = envTex != null && mapTex != null;
+      const showBg = params.showAsBackground !== false && envTex != null && mapTex != null;
       const currentBg = this.sceneRef.background;
-      if (wantBg && currentBg !== envTex) {
+      if (showBg && currentBg !== envTex) {
         this.sceneRef.background = envTex;
-      } else if (!wantBg && currentBg === envTex) {
+      } else if (!showBg && currentBg === envTex) {
         this.sceneRef.background = this.savedSceneBackground;
+      }
+      if (showBg) {
+        this.sceneRef.backgroundBlurriness = params.backgroundBlur ?? 0;
       }
     }
 

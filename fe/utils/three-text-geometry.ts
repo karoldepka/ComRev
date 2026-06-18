@@ -385,11 +385,15 @@ export async function createTextGeometry(
         } as any);
 
         lineGeometry.computeBoundingBox();
-        const lineWidth = (lineGeometry.boundingBox?.max.x ?? 0) - (lineGeometry.boundingBox?.min.x ?? 0);
-        // Store actual geometry extents (X-translate doesn't affect Y)
+        const minX = lineGeometry.boundingBox?.min.x ?? 0;
+        const maxX = lineGeometry.boundingBox?.max.x ?? 0;
+        const lineWidth = maxX - minX;
+        // Center using the actual geometry extents so left/right edges align
+        // precisely across all lines (bbox.min.x is non-zero for many glyphs)
+        const centerX = (minX + maxX) / 2;
         const minY = lineGeometry.boundingBox?.min.y ?? 0;
         const maxY = lineGeometry.boundingBox?.max.y ?? mergedOptions.size!;
-        lineGeometry.translate(-lineWidth / 2, 0, 0);
+        lineGeometry.translate(-centerX, 0, 0);
         lineGeometries.push({ geometry: lineGeometry, minY, maxY });
       } else {
         // Empty line in spacing mode → spacer

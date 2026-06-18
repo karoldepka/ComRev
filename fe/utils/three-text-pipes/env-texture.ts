@@ -23,6 +23,10 @@ export interface EnvMapPipeParams {
   fireworksScheme?: string;
   fireworksTrail?: number;
   fireworksCount?: number;
+  /** Show the animated texture as scene.background (panoramic bg). Default true for animated styles. */
+  showAsBackground?: boolean;
+  /** Blur amount for scene.backgroundBlurriness (0–1). Default 0. */
+  backgroundBlur?: number;
 }
 
 const ENV_MAP_STYLES = new Set<EnvMapStyleParam>([

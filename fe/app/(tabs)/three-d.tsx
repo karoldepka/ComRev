@@ -3211,6 +3211,30 @@ function renderEffectControls(
               colors={colors}
             />
           )}
+          {(["plasma","fire","smoke","noise"] as EnvMapStyle[]).includes(envStyle as EnvMapStyle) && (
+            <>
+              <Row>
+                <Text style={[styles.label, { color: colors.text }]}>{p("showAsBackground")}</Text>
+                <Switch
+                  value={(params.showAsBackground as boolean | undefined) ?? true}
+                  onValueChange={(v) => onUpdate("showAsBackground", v)}
+                  trackColor={{ false: "#767577", true: colors.tint }}
+                  thumbColor={((params.showAsBackground as boolean | undefined) ?? true) ? colors.tint : "#f4f3f4"}
+                />
+              </Row>
+              {((params.showAsBackground as boolean | undefined) ?? true) && (
+                <SliderRow
+                  label={p("backgroundBlur")}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={(params.backgroundBlur as number | undefined) ?? 0}
+                  onChange={(v) => onUpdate("backgroundBlur", v)}
+                  colors={colors}
+                />
+              )}
+            </>
+          )}
         </>
       );
     }

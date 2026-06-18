@@ -222,6 +222,8 @@
   "p_segments": "Segments",
   "p_angle": "Angle",
   "p_blur": "Blur",
+  "p_showAsBackground": "Show as Background",
+  "p_backgroundBlur": "Background Blur",
   "p_bend": "Bend",
   "p_width": "Width",
   "p_height": "Height",
