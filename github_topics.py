@@ -358,6 +358,7 @@ HARDCODED_REPOS_RAW = [
     "https://github.com/AlexAnys/ai-sub-auth",
     
     "https://github.com/andrewyng/aisuite",
+    "https://github.com/bitovi/react-to-web-component",
 
 ]
 
