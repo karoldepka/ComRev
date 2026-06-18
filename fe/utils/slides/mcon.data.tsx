@@ -90,6 +90,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "swiss-cheese": {},
   "divide and conquer": {},
   "compulsion to closure": {},
+  "software empire": {},
   "not time management\nbut manage\nyourself in time": {},
   "N-minute\nrule": {},
   "1% better a day\n= 37x a year": {},

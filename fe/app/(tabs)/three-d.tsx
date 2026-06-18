@@ -494,8 +494,15 @@ function playSequencePageSound(
 }
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
+const CompactControlsContext = React.createContext(false);
+
 function Row({ children }: { children: React.ReactNode }) {
-  return <View style={styles.controlRow}>{children}</View>;
+  const compact = React.useContext(CompactControlsContext);
+  return (
+    <View style={[styles.controlRow, compact && styles.controlRowCompact]}>
+      {children}
+    </View>
+  );
 }
 function SliderRow({
   label,
@@ -516,9 +523,10 @@ function SliderRow({
   colors: any;
   rightWidget?: React.ReactNode;
 }) {
+  const compact = React.useContext(CompactControlsContext);
   return (
-    <View style={styles.sliderRow}>
-      <Text style={[styles.label, { color: colors.text }]}>
+    <View style={[styles.sliderRow, compact && styles.sliderRowCompact]}>
+      <Text style={[styles.label, compact && styles.labelCompact, { color: colors.text }]}>
         {label}: {value.toFixed(step < 0.01 ? 5 : step < 0.1 ? 2 : 1)}
       </Text>
       <input
@@ -528,7 +536,7 @@ function SliderRow({
         step={step}
         value={value}
         onChange={(e: any) => onChange(parseFloat(e.target.value))}
-        style={{ flex: 1, marginLeft: 12 }}
+        style={{ flex: 1, marginLeft: compact ? 6 : 12 }}
       />
       {rightWidget}
     </View>
@@ -567,6 +575,7 @@ function LinkedSliderPair({
   onLockToggle: () => void;
   colors: any;
 }) {
+  const compact = React.useContext(CompactControlsContext);
   const handle1 = (v: number) => {
     onChange1(v);
     if (locked) onChange2(v);
@@ -576,7 +585,10 @@ function LinkedSliderPair({
     if (locked) onChange1(v);
   };
   const lockBtn = (
-    <TouchableOpacity onPress={onLockToggle} style={styles.smallActionButton}>
+    <TouchableOpacity
+      onPress={onLockToggle}
+      style={[styles.smallActionButton, compact && styles.smallActionButtonCompact]}
+    >
       <Text style={[styles.buttonText, { color: colors.tint }]}>
         {locked ? "🔒" : "🔓"}
       </Text>
@@ -617,16 +629,19 @@ function SectionHeader({
   onToggle: (v: boolean) => void;
   colors: any;
 }) {
+  const compact = React.useContext(CompactControlsContext);
   return (
     <View
       style={[
         styles.sectionHeader,
+        compact && styles.sectionHeaderCompact,
         { borderColor: enabled ? colors.tint : "#555" },
       ]}
     >
       <Text
         style={[
           styles.sectionTitle,
+          compact && styles.sectionTitleCompact,
           { color: enabled ? colors.tint : colors.text },
         ]}
       >
@@ -652,9 +667,10 @@ function CycleButton({
   onPress: () => void;
   colors: any;
 }) {
+  const compact = React.useContext(CompactControlsContext);
   return (
     <TouchableOpacity
-      style={[styles.methodButton, { borderColor: colors.tint }]}
+      style={[styles.methodButton, compact && styles.methodButtonCompact, { borderColor: colors.tint }]}
       onPress={onPress}
     >
       <Text style={[styles.buttonText, { color: colors.tint }]}>{value}</Text>
@@ -2118,6 +2134,7 @@ function renderText3dControls({
   colorScheme,
   includeTransform,
   onPickSlideImage,
+  compact,
 }: {
   params: Record<string, unknown>;
   colors: any;
@@ -2134,11 +2151,21 @@ function renderText3dControls({
   colorScheme?: "light" | "dark";
   includeTransform?: boolean;
   onPickSlideImage?: (textSetId: string, imageId?: string) => void;
+  compact?: boolean;
 }) {
   const inputBg = colorScheme === "dark" ? "#2a2a2a" : "#f5f5f5";
   const textSets = normalizePrincipalTextSets(params);
   const activeTextSet = getActivePrincipalTextSet(params);
   const canDeleteTextSet = textSets.length > 1;
+  const gutter = compact ? 6 : 12;
+  const gap = compact ? 4 : 8;
+  const chipGap = compact ? 4 : 6;
+  const previewSize = compact ? 44 : 52;
+  const compactButtonStyle = compact ? styles.smallActionButtonCompact : null;
+  const compactSearchInputStyle = compact ? styles.searchInputCompact : null;
+  const compactLabelStyle = compact ? styles.labelCompact : null;
+  const compactChipStyle = compact ? styles.textSetChipCompact : null;
+  const compactSlideCardStyle = compact ? styles.slideImageCardCompact : null;
 
   const commitTextSets = (
     nextSets: PrincipalTextSet[],
@@ -2224,12 +2251,12 @@ function renderText3dControls({
 
   return (
     <>
-      <View style={{ marginHorizontal: 12, marginTop: 8, gap: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Text style={[styles.label, { color: colors.text }]}>
+      <View style={{ marginHorizontal: gutter, marginTop: compact ? 6 : 8, gap }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap }}>
+          <Text style={[styles.label, compactLabelStyle, { color: colors.text }]}>
             Principal text
           </Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, flex: 1 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: chipGap, flex: 1 }}>
             {textSets.map((set) => {
               const active = set.id === activeTextSet.id;
               return (
@@ -2238,6 +2265,7 @@ function renderText3dControls({
                   onPress={() => commitTextSets(textSets, set.id)}
                   style={[
                     styles.textSetChip,
+                    compactChipStyle,
                     {
                       borderColor: active ? colors.tint : "#777",
                       backgroundColor: active
@@ -2251,7 +2279,7 @@ function renderText3dControls({
                   <Text
                     style={{
                       color: active ? colors.tint : colors.text,
-                      fontSize: 12,
+                      fontSize: compact ? 11 : 12,
                       fontWeight: active ? "700" : "500",
                     }}
                     numberOfLines={1}
@@ -2263,10 +2291,11 @@ function renderText3dControls({
             })}
           </View>
         </View>
-        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+        <View style={{ flexDirection: "row", gap, alignItems: "center" }}>
           <TextInput
             style={[
               styles.searchInput,
+              compactSearchInputStyle,
               {
                 color: colors.text,
                 borderColor: colors.tint,
@@ -2281,7 +2310,7 @@ function renderText3dControls({
             placeholderTextColor={colorScheme === "dark" ? "#777" : "#999"}
           />
           <TouchableOpacity
-            style={[styles.smallActionButton, { borderColor: colors.tint }]}
+            style={[styles.smallActionButton, compactButtonStyle, { borderColor: colors.tint }]}
             onPress={addTextSet}
           >
             <Text style={[styles.buttonText, { color: colors.tint }]}>Add</Text>
@@ -2289,6 +2318,7 @@ function renderText3dControls({
           <TouchableOpacity
             style={[
               styles.smallActionButton,
+              compactButtonStyle,
               {
                 borderColor: canDeleteTextSet ? "#e55" : "#777",
                 opacity: canDeleteTextSet ? 1 : 0.45,
@@ -2311,11 +2341,12 @@ function renderText3dControls({
       <DebouncedTextInput
         style={[
           styles.textInput,
+          compact && styles.textInputCompact,
           {
             color: colors.text,
             borderColor: colors.tint,
             backgroundColor: inputBg,
-            marginVertical: 6,
+            marginVertical: compact ? 4 : 6,
           },
         ]}
         placeholder="Enter text..."
@@ -2335,11 +2366,11 @@ function renderText3dControls({
       </Row>
       {/* Slide images */}
       {onPickSlideImage && (
-        <View style={{ marginHorizontal: 12, marginBottom: 8 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <Text style={[styles.label, { color: colors.text }]}>Slide images</Text>
+        <View style={{ marginHorizontal: gutter, marginBottom: compact ? 4 : 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: compact ? 4 : 6 }}>
+            <Text style={[styles.label, compactLabelStyle, { color: colors.text }]}>Slide images</Text>
             <TouchableOpacity
-              style={[styles.smallActionButton, { borderColor: colors.tint }]}
+              style={[styles.smallActionButton, compactButtonStyle, { borderColor: colors.tint }]}
               onPress={() => onPickSlideImage(activeTextSet.id)}
             >
               <Text style={[styles.buttonText, { color: colors.tint }]}>+ Add image</Text>
@@ -2348,22 +2379,25 @@ function renderText3dControls({
           {(activeTextSet.images ?? []).map((img) => (
             <View
               key={img.id}
-              style={{
-                borderWidth: 1,
-                borderColor: colorScheme === "dark" ? "#333" : "#ddd",
-                borderRadius: 8,
-                padding: 8,
-                marginBottom: 8,
-                gap: 6,
-              }}
+              style={[
+                {
+                  borderWidth: 1,
+                  borderColor: colorScheme === "dark" ? "#333" : "#ddd",
+                  borderRadius: 8,
+                  padding: 8,
+                  marginBottom: 8,
+                  gap: 6,
+                },
+                compactSlideCardStyle,
+              ]}
             >
               {/* Thumbnail + position + remove */}
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: compact ? 6 : 8 }}>
                 <img
                   src={isSvgDataUrl(img.imageUrl)
                     ? processSvgDataUrl(img.imageUrl, img.svgColor ?? '#ffffff', img.svgStrokeWidth)
                     : img.imageUrl}
-                  style={{ width: 52, height: 52, borderRadius: 5, objectFit: isSvgDataUrl(img.imageUrl) ? "contain" : "cover", flexShrink: 0, backgroundColor: isSvgDataUrl(img.imageUrl) ? '#333' : 'transparent' } as any}
+                  style={{ width: previewSize, height: previewSize, borderRadius: 5, objectFit: isSvgDataUrl(img.imageUrl) ? "contain" : "cover", flexShrink: 0, backgroundColor: isSvgDataUrl(img.imageUrl) ? '#333' : 'transparent' } as any}
                   alt="slide"
                 />
                 <View style={{ flex: 1, gap: 4 }}>
@@ -2375,8 +2409,8 @@ function renderText3dControls({
                         <TouchableOpacity
                           key={value}
                           style={{
-                            paddingHorizontal: 7,
-                            paddingVertical: 3,
+                            paddingHorizontal: compact ? 6 : 7,
+                            paddingVertical: compact ? 2 : 3,
                             borderRadius: 5,
                             borderWidth: 1,
                             borderColor: isActive ? colors.tint : "#777",
@@ -2384,21 +2418,21 @@ function renderText3dControls({
                           }}
                           onPress={() => patchActiveSetImage(img.id, { imagePosition: value })}
                         >
-                          <Text style={{ color: isActive ? colors.tint : colors.text, fontSize: 11 }}>{label}</Text>
+                          <Text style={{ color: isActive ? colors.tint : colors.text, fontSize: compact ? 10 : 11 }}>{label}</Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
                   {/* Replace / Remove */}
-                  <View style={{ flexDirection: "row", gap: 6 }}>
+                  <View style={{ flexDirection: "row", gap: compact ? 4 : 6 }}>
                     <TouchableOpacity
-                      style={[styles.smallActionButton, { borderColor: colors.tint }]}
+                      style={[styles.smallActionButton, compactButtonStyle, { borderColor: colors.tint }]}
                       onPress={() => onPickSlideImage(activeTextSet.id, img.id)}
                     >
                       <Text style={[styles.buttonText, { color: colors.tint }]}>Replace</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.smallActionButton, { borderColor: "#e55" }]}
+                      style={[styles.smallActionButton, compactButtonStyle, { borderColor: "#e55" }]}
                       onPress={() => removeActiveSetImage(img.id)}
                     >
                       <Text style={[styles.buttonText, { color: "#e55" }]}>Remove</Text>
@@ -2444,7 +2478,7 @@ function renderText3dControls({
                         <TouchableOpacity
                           key={col}
                           style={{
-                            width: 24, height: 24, borderRadius: 12,
+                            width: compact ? 22 : 24, height: compact ? 22 : 24, borderRadius: compact ? 11 : 12,
                             backgroundColor: col,
                             borderWidth: (img.svgColor ?? '#ffffff') === col ? 2 : 1,
                             borderColor: (img.svgColor ?? '#ffffff') === col ? colors.tint : '#666',
@@ -2466,8 +2500,8 @@ function renderText3dControls({
             </View>
           ))}
           {(activeTextSet.images ?? []).length === 0 && (
-            <Text style={{ color: colorScheme === "dark" ? "#666" : "#aaa", fontSize: 12, fontStyle: "italic" }}>
-              No images — tap "+ Add image" to add one.
+            <Text style={{ color: colorScheme === "dark" ? "#666" : "#aaa", fontSize: compact ? 11 : 12, fontStyle: "italic" }}>
+              {"No images — tap \"+ Add image\" to add one."}
             </Text>
           )}
         </View>
@@ -2598,7 +2632,7 @@ function renderText3dControls({
         <Text style={[styles.label, { color: colors.text }]}>
           {t("equalizeWidths")}
         </Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap }}>
           {Boolean(params.equalizeLineWidths) && (
             <select
               value={(params.equalizationMethod as string) ?? "fontSize"}
@@ -2836,6 +2870,7 @@ function renderEffectControls(
   colorScheme?: "light" | "dark",
   onPickImage?: (instanceId: string, paramKey: string) => void,
   onPickSlideImage?: (textSetId: string, imageId?: string) => void,
+  compact = false,
 ) {
   const params = effect.params as Record<string, unknown>;
   const id = effect.id;
@@ -2843,7 +2878,7 @@ function renderEffectControls(
   const p = (k: string) => t(`p_${k}`);
   switch (effect.type) {
     case "mainText":
-      return renderText3dControls({ params, colors, t, onUpdate, confirm, colorScheme, onPickSlideImage });
+      return renderText3dControls({ params, colors, t, onUpdate, confirm, colorScheme, onPickSlideImage, compact });
     case "bloom":
       return (
         <>
@@ -6202,6 +6237,13 @@ export function ThreeDTextScreen({
   const soundEnabled = !isMuted && sequenceMode;
 
   const c = colors; // shorthand
+  const controlsGutter = isSmallScreen ? 6 : 12;
+  const controlsGap = isSmallScreen ? 4 : 8;
+  const compactButtonStyle = isSmallScreen ? styles.smallActionButtonCompact : null;
+  const compactEffectCardStyle = isSmallScreen ? styles.effectCardCompact : null;
+  const compactEffectCardHeaderStyle = isSmallScreen
+    ? styles.effectCardHeaderCompact
+    : null;
 
   // Load preset passed from the presets gallery screen
   useFocusEffect(
@@ -7167,22 +7209,35 @@ export function ThreeDTextScreen({
         )}
 
         <Animated.View style={[styles.controls, controlsAnimStyle]}>
+          <CompactControlsContext.Provider value={isSmallScreen}>
           <ScrollView
             ref={controlsScrollRef}
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 32 }}
+            contentContainerStyle={{ paddingBottom: isSmallScreen ? 16 : 32 }}
           >
             {/* ── Effects ── */}
-            <Text style={[styles.groupLabel, { color: c.text }]}>
+            <Text
+              style={[
+                styles.groupLabel,
+                isSmallScreen && styles.groupLabelCompact,
+                { color: c.text },
+              ]}
+            >
               {t("effects")}
             </Text>
-            <View style={styles.effectListContainer} onLayout={(e) => { effectListContainerY.current = e.nativeEvent.layout.y; }}>
+            <View
+              style={[
+                styles.effectListContainer,
+                isSmallScreen && styles.effectListContainerCompact,
+              ]}
+              onLayout={(e) => { effectListContainerY.current = e.nativeEvent.layout.y; }}
+            >
               <View
                 style={{
                   flexDirection: "row",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  marginHorizontal: 12,
+                  marginHorizontal: controlsGutter,
                 }}
               >
                 <Text style={[styles.label, { color: c.text }]}>
@@ -7192,13 +7247,17 @@ export function ThreeDTextScreen({
                   style={{
                     flexDirection: "row",
                     flexWrap: "wrap",
-                    gap: 8,
+                    gap: controlsGap,
                     justifyContent: "flex-end",
                     flex: 1,
                   }}
                 >
                   <TouchableOpacity
-                    style={[styles.smallActionButton, { borderColor: c.tint, backgroundColor: c.tint + '22' }]}
+                    style={[
+                      styles.smallActionButton,
+                      compactButtonStyle,
+                      { borderColor: c.tint, backgroundColor: c.tint + '22' },
+                    ]}
                     onPress={handleRandom}
                   >
                     <Text style={[styles.buttonText, { color: c.tint, fontWeight: '700' }]}>
@@ -7209,7 +7268,7 @@ export function ThreeDTextScreen({
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.smallActionButton, { borderColor: c.tint }]}
+                    style={[styles.smallActionButton, compactButtonStyle, { borderColor: c.tint }]}
                     onPress={handleResetToBasic}
                   >
                     <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7217,7 +7276,7 @@ export function ThreeDTextScreen({
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.smallActionButton, { borderColor: c.tint }]}
+                    style={[styles.smallActionButton, compactButtonStyle, { borderColor: c.tint }]}
                     onPress={handleSavePreset}
                   >
                     <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7225,7 +7284,7 @@ export function ThreeDTextScreen({
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.smallActionButton, { borderColor: c.tint }]}
+                    style={[styles.smallActionButton, compactButtonStyle, { borderColor: c.tint }]}
                     onPress={handleDuplicatePreset}
                   >
                     <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7236,6 +7295,7 @@ export function ThreeDTextScreen({
                     <TouchableOpacity
                       style={[
                         styles.smallActionButton,
+                        compactButtonStyle,
                         { borderColor: c.tint },
                       ]}
                       onPress={() => router.push("/(tabs)/presets")}
@@ -7247,13 +7307,18 @@ export function ThreeDTextScreen({
                   )}
                 </View>
               </View>
-              <View style={{ marginHorizontal: 12, marginVertical: 8 }}>
+              <View
+                style={{
+                  marginHorizontal: controlsGutter,
+                  marginVertical: isSmallScreen ? 4 : 8,
+                }}
+              >
                 <View
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    marginBottom: 6,
-                    gap: 8,
+                    marginBottom: isSmallScreen ? 4 : 6,
+                    gap: controlsGap,
                   }}
                 >
                   <Text style={[styles.label, { color: c.text }]}>
@@ -7262,6 +7327,7 @@ export function ThreeDTextScreen({
                   <TextInput
                     style={[
                       styles.searchInput,
+                      isSmallScreen && styles.searchInputCompact,
                       {
                         borderColor: c.tint,
                         color: c.text,
@@ -7282,7 +7348,8 @@ export function ThreeDTextScreen({
                     }
                     style={[
                       styles.smallActionButton,
-                      { borderColor: c.tint, paddingHorizontal: 10 },
+                      compactButtonStyle,
+                      { borderColor: c.tint, paddingHorizontal: isSmallScreen ? 8 : 10 },
                     ]}
                   >
                     <Text
@@ -7348,7 +7415,7 @@ export function ThreeDTextScreen({
                       style={{
                         flexDirection: "row",
                         flexWrap: "wrap",
-                        marginTop: 8,
+                        marginTop: isSmallScreen ? 4 : 8,
                       }}
                     >
                       {EFFECT_TYPES.filter(
@@ -7361,6 +7428,7 @@ export function ThreeDTextScreen({
                           key={e.type}
                           style={[
                             styles.effectPill,
+                            isSmallScreen && styles.effectPillCompact,
                             {
                               borderColor: c.tint,
                               backgroundColor:
@@ -7370,7 +7438,11 @@ export function ThreeDTextScreen({
                           onPress={() => addEffectInstance(e.type)}
                         >
                           <Text
-                            style={[styles.effectPillText, { color: c.text }]}
+                            style={[
+                              styles.effectPillText,
+                              isSmallScreen && styles.effectPillTextCompact,
+                              { color: c.text },
+                            ]}
                           >
                             {t(`eff_${e.type}`)}
                           </Text>
@@ -7378,6 +7450,7 @@ export function ThreeDTextScreen({
                             <View
                               style={[
                                 styles.targetBadge,
+                                isSmallScreen && styles.targetBadgeCompact,
                                 { backgroundColor: "#ff9800" },
                               ]}
                             >
@@ -7390,6 +7463,7 @@ export function ThreeDTextScreen({
                             <View
                               style={[
                                 styles.targetBadge,
+                                isSmallScreen && styles.targetBadgeCompact,
                                 {
                                   backgroundColor:
                                     e.target === "geometry"
@@ -7417,6 +7491,7 @@ export function ThreeDTextScreen({
                         <TouchableOpacity
                           style={[
                             styles.effectPill,
+                            isSmallScreen && styles.effectPillCompact,
                             {
                               borderColor: c.tint,
                               backgroundColor:
@@ -7428,6 +7503,7 @@ export function ThreeDTextScreen({
                           <Text
                             style={[
                               styles.effectPillText,
+                              isSmallScreen && styles.effectPillTextCompact,
                               { color: c.tint, marginRight: 0 },
                             ]}
                           >
@@ -7444,11 +7520,11 @@ export function ThreeDTextScreen({
               {lastDeleted && (
                 <View
                   style={{
-                    marginHorizontal: 12,
-                    marginVertical: 6,
-                    padding: 8,
+                    marginHorizontal: controlsGutter,
+                    marginVertical: isSmallScreen ? 4 : 6,
+                    padding: isSmallScreen ? 6 : 8,
                     borderWidth: 1,
-                    borderRadius: 8,
+                    borderRadius: isSmallScreen ? 6 : 8,
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
@@ -7464,7 +7540,10 @@ export function ThreeDTextScreen({
                   </Text>
                   <TouchableOpacity
                     onPress={undoDelete}
-                    style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+                    style={{
+                      paddingHorizontal: isSmallScreen ? 8 : 10,
+                      paddingVertical: isSmallScreen ? 4 : 6,
+                    }}
                   >
                     <Text style={{ color: c.tint }}>{t("undo")}</Text>
                   </TouchableOpacity>
@@ -7479,8 +7558,8 @@ export function ThreeDTextScreen({
                     {
                       color: c.text,
                       opacity: 0.5,
-                      marginHorizontal: 12,
-                      marginVertical: 8,
+                      marginHorizontal: controlsGutter,
+                      marginVertical: isSmallScreen ? 4 : 8,
                     },
                   ]}
                 >
@@ -7504,6 +7583,7 @@ export function ThreeDTextScreen({
                   }}
                   style={[
                     styles.effectCard,
+                    compactEffectCardStyle,
                     {
                       pointerEvents: draggingId === instance.id ? "none" : "auto",
                       borderColor: c.tint,
@@ -7513,10 +7593,10 @@ export function ThreeDTextScreen({
                     draggingId === instance.id && styles.hiddenItem,
                   ]}
                 >
-                  <View style={styles.effectCardHeader}>
+                  <View style={[styles.effectCardHeader, compactEffectCardHeaderStyle]}>
                     {instance.type !== "mainText" && (
                       <GestureDetector gesture={createDragGesture(instance.id)}>
-                        <View style={styles.dragHandle}>
+                        <View style={[styles.dragHandle, isSmallScreen && styles.dragHandleCompact]}>
                           <Text style={[styles.buttonText, { color: c.tint }]}>
                             ≡
                           </Text>
@@ -7534,7 +7614,7 @@ export function ThreeDTextScreen({
                     {instance.type !== "mainText" && (
                       <Row>
                         <TouchableOpacity
-                          style={styles.smallActionButton}
+                          style={[styles.smallActionButton, compactButtonStyle]}
                           onPress={() => toggleEffectAnimate(instance.id)}
                         >
                           <Text
@@ -7550,7 +7630,7 @@ export function ThreeDTextScreen({
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.smallActionButton}
+                          style={[styles.smallActionButton, compactButtonStyle]}
                           onPress={() => duplicateEffectInstance(instance.id)}
                         >
                           <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7558,7 +7638,7 @@ export function ThreeDTextScreen({
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.smallActionButton}
+                          style={[styles.smallActionButton, compactButtonStyle]}
                           onPress={() => moveEffect(instance.id, -1)}
                         >
                           <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7566,7 +7646,7 @@ export function ThreeDTextScreen({
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.smallActionButton}
+                          style={[styles.smallActionButton, compactButtonStyle]}
                           onPress={() => moveEffect(instance.id, 1)}
                         >
                           <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7574,7 +7654,7 @@ export function ThreeDTextScreen({
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.smallActionButton}
+                          style={[styles.smallActionButton, compactButtonStyle]}
                           onPress={() => removeEffectInstance(instance.id)}
                         >
                           <Text style={[styles.buttonText, { color: c.tint }]}>
@@ -7613,6 +7693,7 @@ export function ThreeDTextScreen({
                           setImagePickerTarget({ mode: "effect", instanceId, paramKey }),
                         (textSetId, imageId) =>
                           setImagePickerTarget({ mode: "slide", textSetId, imageId }),
+                        isSmallScreen,
                       )}
                     </>
                   )}
@@ -7623,6 +7704,7 @@ export function ThreeDTextScreen({
                 <Animated.View
                   style={[
                     styles.effectCard,
+                    compactEffectCardStyle,
                     styles.draggingOverlay,
                     {
                       pointerEvents: "none",
@@ -7633,7 +7715,7 @@ export function ThreeDTextScreen({
                     dragOverlayStyle,
                   ]}
                 >
-                  <View style={styles.effectCardHeader}>
+                  <View style={[styles.effectCardHeader, compactEffectCardHeaderStyle]}>
                     <View style={{ flex: 1 }}>
                       <Text
                         style={[styles.sectionTitle, { color: c.tint }]}
@@ -7648,13 +7730,20 @@ export function ThreeDTextScreen({
                     confirm,
                     undefined,
                     colorScheme ?? "light",
+                    undefined,
+                    undefined,
+                    isSmallScreen,
                   )}
                 </Animated.View>
               )}
             </View>
 
             <TouchableOpacity
-              style={[styles.advancedToggle, { borderColor: "#555" }]}
+              style={[
+                styles.advancedToggle,
+                isSmallScreen && styles.advancedToggleCompact,
+                { borderColor: "#555" },
+              ]}
               onPress={() => setShowAdvanced((v) => !v)}
             >
               <Text style={[styles.buttonText, { color: "#888" }]}>
@@ -7665,7 +7754,13 @@ export function ThreeDTextScreen({
             </TouchableOpacity>
 
             {/* Language picker */}
-            <View style={[styles.controlRow, { marginTop: 8 }]}>
+            <View
+              style={[
+                styles.controlRow,
+                isSmallScreen && styles.controlRowCompact,
+                { marginTop: isSmallScreen ? 4 : 8 },
+              ]}
+            >
               <Text style={[styles.label, { color: c.text }]}>
                 {t("language")}
               </Text>
@@ -7682,8 +7777,8 @@ export function ThreeDTextScreen({
                       color: c.text as string,
                       border: `1px solid ${c.tint}`,
                       borderRadius: "5px",
-                      padding: "4px 8px",
-                      fontSize: "13px",
+                      padding: isSmallScreen ? "3px 6px" : "4px 8px",
+                      fontSize: isSmallScreen ? "12px" : "13px",
                       cursor: "pointer",
                       outline: "none",
                     } as any
@@ -7705,6 +7800,7 @@ export function ThreeDTextScreen({
                       onPress={() => i18nInstance.changeLanguage(lang.code)}
                       style={[
                         styles.smallActionButton,
+                        compactButtonStyle,
                         {
                           borderColor:
                             i18nInstance.language === lang.code
@@ -7736,6 +7832,7 @@ export function ThreeDTextScreen({
             <TouchableOpacity
               style={[
                 styles.advancedToggle,
+                isSmallScreen && styles.advancedToggleCompact,
                 { borderColor: c.tint, marginTop: 4 },
               ]}
               onPress={() => setShowExportModal(true)}
@@ -7745,6 +7842,7 @@ export function ThreeDTextScreen({
               </Text>
             </TouchableOpacity>
           </ScrollView>
+          </CompactControlsContext.Provider>
         </Animated.View>
       </View>
 
@@ -8013,6 +8111,13 @@ const styles = StyleSheet.create({
     margin: 12,
     marginBottom: 8,
   },
+  textInputCompact: {
+    margin: 6,
+    marginBottom: 4,
+    padding: 8,
+    minHeight: 64,
+    fontSize: 14,
+  },
   groupLabel: {
     fontSize: 11,
     fontWeight: "700",
@@ -8022,6 +8127,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 4,
     opacity: 0.6,
+  },
+  groupLabelCompact: {
+    marginHorizontal: 6,
+    marginTop: 8,
+    marginBottom: 3,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -8034,7 +8144,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 6,
   },
+  sectionHeaderCompact: {
+    marginHorizontal: 6,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   sectionTitle: { fontSize: 14, fontWeight: "600" },
+  sectionTitleCompact: { fontSize: 13 },
   controlRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -8043,6 +8160,11 @@ const styles = StyleSheet.create({
     marginVertical: 4,
     paddingHorizontal: 4,
   },
+  controlRowCompact: {
+    marginHorizontal: 6,
+    marginVertical: 2,
+    paddingHorizontal: 2,
+  },
   sliderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -8050,12 +8172,22 @@ const styles = StyleSheet.create({
     marginVertical: 3,
     paddingHorizontal: 4,
   },
+  sliderRowCompact: {
+    marginHorizontal: 6,
+    marginVertical: 2,
+    paddingHorizontal: 2,
+  },
   label: { fontSize: 13, fontWeight: "500", minWidth: 90 },
+  labelCompact: { fontSize: 12, minWidth: 72 },
   methodButton: {
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 4,
+  },
+  methodButtonCompact: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
   buttonText: { fontSize: 12, fontWeight: "500" },
   effectGrid: {
@@ -8066,6 +8198,9 @@ const styles = StyleSheet.create({
     position: "relative",
     marginHorizontal: 8,
   },
+  effectListContainerCompact: {
+    marginHorizontal: 4,
+  },
   searchInput: {
     borderWidth: 1,
     borderRadius: 8,
@@ -8074,12 +8209,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 6,
   },
+  searchInputCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    fontSize: 12,
+    marginBottom: 4,
+  },
   textSetChip: {
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
     maxWidth: 132,
+  },
+  textSetChipCompact: {
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    maxWidth: 112,
   },
   sequenceBadge: {
     position: "absolute",
@@ -8113,13 +8260,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  effectPillCompact: {
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 5,
+    marginBottom: 5,
+  },
   effectPillText: { fontSize: 13, marginRight: 8 },
+  effectPillTextCompact: { fontSize: 12, marginRight: 5 },
   targetBadge: {
     width: 18,
     height: 18,
     borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
+  },
+  targetBadgeCompact: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
   },
   dragHandle: {
     borderWidth: 1,
@@ -8130,6 +8290,11 @@ const styles = StyleSheet.create({
     borderColor: "#888",
     alignItems: "center",
     justifyContent: "center",
+  },
+  dragHandleCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginRight: 4,
   },
   draggingOverlay: {
     position: "absolute",
@@ -8148,6 +8313,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginVertical: 8,
   },
+  slideImageCardCompact: {
+    borderRadius: 6,
+    padding: 6,
+    marginBottom: 6,
+    gap: 4,
+  },
   effectCard: {
     borderWidth: 1,
     borderRadius: 10,
@@ -8155,11 +8326,20 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 10,
   },
+  effectCardCompact: {
+    borderRadius: 8,
+    padding: 6,
+    marginHorizontal: 6,
+    marginBottom: 6,
+  },
   effectCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
+  },
+  effectCardHeaderCompact: {
+    marginBottom: 4,
   },
   smallActionButton: {
     borderWidth: 1,
@@ -8167,6 +8347,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     marginLeft: 6,
+  },
+  smallActionButtonCompact: {
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginLeft: 4,
   },
   helpText: {
     marginHorizontal: 12,
@@ -8187,5 +8373,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingVertical: 8,
     alignItems: "center",
+  },
+  advancedToggleCompact: {
+    marginHorizontal: 6,
+    marginTop: 10,
+    paddingVertical: 6,
   },
 });

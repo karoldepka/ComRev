@@ -9,5 +9,12 @@
       "Bash(git -C c:/Users/karol/my/r/ComRev/fe status)",
       "Bash(git -C c:/Users/karol/my/r/ComRev/fe diff --stat)"
     ]
+  },
+
+  "mcpServers": {
+    "typescript-language-server": {
+      "command": "npx",
+      "args": ["-y", "typescript-language-server", "--stdio"]
+    }
   }
 }

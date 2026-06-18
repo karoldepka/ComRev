@@ -64,16 +64,19 @@ function presetImages(params: Record<string, unknown>): SlideImage[] {
 }
 
 function PresetLivePreview({ preset }: { preset: PresetRecord }) {
+  const { width } = useWindowDimensions();
+  const isSmall = width < 480;
   const p = presetMainParams(preset);
   const text = presetText(p);
   const images = presetImages(p);
+  const previewHeight = isSmall ? 220 : 300;
 
   const pipes = useMemo(
     () => preset.effects.filter((e) => e.enabled !== false).map(createPipeFromInstance),
     [preset.effects],
   );
   return (
-    <View style={{ width: "100%", height: 300, borderRadius: 8, overflow: "hidden", position: "relative" }}>
+    <View style={{ width: "100%", height: previewHeight, borderRadius: isSmall ? 6 : 8, overflow: "hidden", position: "relative" }}>
       <ThreeDText
         text={text}
         size={p.size as number | undefined}
@@ -208,8 +211,8 @@ export default function PresetsScreen() {
   const isSmall = width < 480;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: isSmall ? 12 : 48 }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: isSmall ? 8 : 48 }]}>
+      <View style={[styles.header, isSmall && styles.headerSmall]}>
         <Text style={[styles.title, { color: colors.text }]}>Presets</Text>
         <TouchableOpacity
           onPress={loadList}
@@ -220,7 +223,7 @@ export default function PresetsScreen() {
       </View>
 
       <TextInput
-        style={[styles.search, { borderColor: colors.tint, color: colors.text }]}
+        style={[styles.search, isSmall && styles.searchSmall, { borderColor: colors.tint, color: colors.text }]}
         placeholder="Search presets..."
         placeholderTextColor={dark ? "#666" : "#999"}
         value={search}
@@ -241,7 +244,7 @@ export default function PresetsScreen() {
         </View>
       )}
 
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView contentContainerStyle={[styles.list, isSmall && styles.listSmall]}>
         {filtered.map((preset) => {
           const chips = effectChips(preset.effects);
           return (
@@ -250,6 +253,7 @@ export default function PresetsScreen() {
               onPress={() => handleLoad(preset)}
               style={[
                 styles.card,
+                isSmall && styles.cardSmall,
                 {
                   backgroundColor: dark ? "#1f1f1f" : "#fafafa",
                   borderColor: dark ? "#333" : "#ddd",
@@ -268,7 +272,7 @@ export default function PresetsScreen() {
                     }}
                     activeOpacity={0.85}
                   >
-                    <Image source={{ uri: preset.thumbnail }} style={styles.thumbnail} />
+                    <Image source={{ uri: preset.thumbnail }} style={[styles.thumbnail, isSmall && styles.thumbnailSmall]} />
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.chipRow}>
@@ -295,6 +299,7 @@ export default function PresetsScreen() {
                   }}
                   style={[
                     styles.liveBtn,
+                    isSmall && styles.liveBtnSmall,
                     { backgroundColor: livePresetId === preset.id ? colors.tint : "rgba(0,0,0,0.45)" },
                   ]}
                 >
@@ -312,10 +317,10 @@ export default function PresetsScreen() {
                 {new Date(preset.when_last_modified).toLocaleString()}
               </Text>
 
-              <View style={styles.cardActions}>
+              <View style={[styles.cardActions, isSmall && styles.cardActionsSmall]}>
                 <TouchableOpacity
                   onPress={() => handleLoad(preset)}
-                  style={[styles.actionBtn, { backgroundColor: colors.tint }]}
+                  style={[styles.actionBtn, isSmall && styles.actionBtnSmall, { backgroundColor: colors.tint }]}
                 >
                   <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
                     Load
@@ -326,7 +331,7 @@ export default function PresetsScreen() {
                     e.stopPropagation?.();
                     handleDelete(preset.id);
                   }}
-                  style={[styles.actionBtn, styles.deleteBtn]}
+                  style={[styles.actionBtn, isSmall && styles.actionBtnSmall, styles.deleteBtn]}
                 >
                   <Text style={{ color: "#e55", fontSize: 13 }}>Delete</Text>
                 </TouchableOpacity>
@@ -359,6 +364,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 12,
   },
+  headerSmall: {
+    paddingHorizontal: 8,
+    marginBottom: 8,
+  },
   title: { fontSize: 22, fontWeight: "700" },
   refreshBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   search: {
@@ -370,8 +379,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 14,
   },
+  searchSmall: {
+    marginHorizontal: 8,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
   emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 60 },
   list: { padding: 12, gap: 14 },
+  listSmall: { padding: 8, gap: 8 },
   card: {
     width: "100%",
     borderWidth: 1,
@@ -379,11 +395,20 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
   },
+  cardSmall: {
+    borderRadius: 8,
+    padding: 8,
+    gap: 6,
+  },
   thumbnail: {
     width: "100%",
     height: 300,
     borderRadius: 8,
     resizeMode: "cover",
+  },
+  thumbnailSmall: {
+    height: 220,
+    borderRadius: 6,
   },
   liveBtn: {
     position: "absolute",
@@ -393,11 +418,19 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
+  liveBtnSmall: {
+    bottom: 6,
+    right: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, minHeight: 40 },
   chip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   cardName: { fontSize: 14, fontWeight: "600", lineHeight: 20 },
   cardDate: { fontSize: 11, color: "#888" },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  cardActionsSmall: { gap: 6, marginTop: 2 },
   actionBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  actionBtnSmall: { paddingVertical: 6, borderRadius: 6 },
   deleteBtn: { borderWidth: 1, borderColor: "#e55" },
 });

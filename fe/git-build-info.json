@@ -1,8 +1,8 @@
 {
-  "hash": "742014c+uncommitted",
-  "fullHash": "742014cc9b737f850387c7deae3aad040fc08096",
-  "message": "fix: /about URL, git info in About screen, vercel rewrite destination",
-  "date": "2026-06-17 14:20:31 +0200",
+  "hash": "70581f5+uncommitted",
+  "fullHash": "70581f5069b9092bea44fe4565d39f8fbb339db5",
+  "message": "feat: per-slide soundscape, plasma animated option, responsive mobile padding",
+  "date": "2026-06-17 14:39:55 +0200",
   "author": "Karol Depka",
   "branch": "develop"
 }
