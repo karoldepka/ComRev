@@ -6,6 +6,8 @@ from typing import Optional
 import httpx
 from langchain_core.tools import tool
 
+from structable_agent.cv_data import CV, filter_skills, search_cv, sort_skills
+
 _BACKEND = os.getenv("STRUCTABLE_BACKEND_URL", "http://localhost:3001")
 
 
@@ -79,4 +81,134 @@ async def get_row(table_id: str, row_id: str) -> dict:
     return rows[0]
 
 
-TOOLS = [list_tables, list_columns, query_rows, get_row]
+
+# ── CV tools (no HTTP calls — data is embedded) ───────────────────────────────
+
+@tool
+def get_cv_overview() -> dict:
+    """Return the top-level CV overview: name, title, location, and summary."""
+    return {
+        "name": CV["name"],
+        "title": CV["title"],
+        "email": CV["email"],
+        "location": CV["location"],
+        "github": CV["github"],
+        "summary": CV["summary"],
+    }
+
+
+@tool
+def get_cv_skills(
+    keyword: Optional[str] = None,
+    category: Optional[str] = None,
+    proficiency: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_order: str = "asc",
+) -> dict:
+    """Return skills filtered and/or sorted.
+
+    Args:
+        keyword: Filter by keyword matching name, category, or tags (e.g. "java", "ai", "rust").
+        category: Filter by category: Frontend, Backend, Language, Database, AI/ML, DevOps, Tools, Mobile.
+        proficiency: Filter by level: expert, proficient, or familiar.
+        sort_by: Sort field — one of: name, proficiency, years, category.
+        sort_order: 'asc' or 'desc'.
+    """
+    skills = filter_skills(keyword=keyword, category=category, proficiency=proficiency)
+    if sort_by:
+        skills = sort_skills(skills, sort_by, sort_order)
+    return {"count": len(skills), "skills": skills}
+
+
+@tool
+def search_cv_tool(query: str, sections: Optional[list[str]] = None) -> dict:
+    """Keyword search across CV sections (skills, experience, projects, education).
+
+    Args:
+        query: Search term.
+        sections: List of sections to search — 'skills', 'experience', 'projects', 'education', or 'all'.
+    """
+    return search_cv(query, sections)
+
+
+@tool
+def get_cv_experience(keyword: Optional[str] = None) -> dict:
+    """Return work experience entries, optionally filtered by keyword in role, company, or technologies."""
+    experience = CV["experience"]
+    if keyword:
+        q = keyword.lower()
+        experience = [
+            e for e in experience
+            if q in e["company"].lower()
+            or q in e["role"].lower()
+            or q in e["description"].lower()
+            or any(q in h.lower() for h in e.get("highlights", []))
+            or any(q in t.lower() for t in e.get("technologies", []))
+        ]
+    return {"count": len(experience), "experience": experience}
+
+
+@tool
+def get_cv_education() -> dict:
+    """Return education history."""
+    return {"education": CV["education"]}
+
+
+@tool
+def get_cv_projects(keyword: Optional[str] = None) -> dict:
+    """Return notable projects, optionally filtered by keyword in name, description, or technologies."""
+    projects = CV["projects"]
+    if keyword:
+        q = keyword.lower()
+        projects = [
+            p for p in projects
+            if q in p["name"].lower()
+            or q in p["description"].lower()
+            or any(q in t.lower() for t in p.get("technologies", []))
+            or any(q in h.lower() for h in p.get("highlights", []))
+        ]
+    return {"count": len(projects), "projects": projects}
+
+
+@tool
+def get_skill_usage_matrix(category: Optional[str] = None, keyword: Optional[str] = None) -> dict:
+    """Return a matrix of skills with project and experience counts.
+
+    Ideal for 'how many projects use X' or 'make a table of database usage' requests.
+
+    Args:
+        category: Filter by category e.g. Database, Frontend, AI/ML, Language.
+        keyword: Filter by keyword.
+    """
+    skills = filter_skills(keyword=keyword, category=category)
+    matrix = []
+    for skill in skills:
+        name_lower = skill["name"].lower()
+        proj_count = sum(
+            1 for p in CV["projects"]
+            if any(
+                name_lower in t.lower() or t.lower() in name_lower
+                for t in p.get("technologies", [])
+            )
+        )
+        exp_count = sum(
+            1 for e in CV["experience"]
+            if any(
+                name_lower in t.lower() or t.lower() in name_lower
+                for t in e.get("technologies", [])
+            )
+        )
+        matrix.append({
+            "skill": skill["name"],
+            "category": skill["category"],
+            "proficiency": skill["proficiency"],
+            "years": skill["years"],
+            "projects": proj_count,
+            "experiences": exp_count,
+        })
+    return {"count": len(matrix), "skills_usage": matrix}
+
+
+CV_TOOLS = [get_cv_overview, get_cv_skills, search_cv_tool, get_cv_experience, get_cv_education, get_cv_projects, get_skill_usage_matrix]
+
+TOOLS = [list_tables, list_columns, query_rows, get_row, *CV_TOOLS]

@@ -28,7 +28,7 @@ function normalizeEffectInstances(instances: EffectInstance[]): EffectInstance[]
 }
 
 export const useThreeDStore = create<ThreeDStore>((set, get) => ({
-  effectInstances: [createEffectInstance('mainText')],
+  effectInstances: [createEffectInstance('mainText'), createEffectInstance('envMap')],
   mantraMode: false,
   setMantraMode: (v) => set({ mantraMode: v }),
   slideEffectOverride: null,
@@ -53,6 +53,6 @@ export const useThreeDStore = create<ThreeDStore>((set, get) => ({
       sequenceLineDurationMs:
         currentParams.sequenceLineDurationMs ?? fresh.params.sequenceLineDurationMs,
     };
-    set({ effectInstances: [fresh] });
+    set({ effectInstances: [fresh, createEffectInstance('envMap')] });
   },
 }));

@@ -1,0 +1,26 @@
+{
+  "name": "@comrev/threed-text-wc",
+  "version": "0.1.0",
+  "description": "3D text Web Component — drop into any framework",
+  "type": "module",
+  "main": "dist/threed-text.umd.js",
+  "module": "dist/threed-text.js",
+  "exports": {
+    ".": {
+      "import": "./dist/threed-text.js",
+      "require": "./dist/threed-text.umd.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "dependencies": {
+    "three": "^0.166.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.166.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}

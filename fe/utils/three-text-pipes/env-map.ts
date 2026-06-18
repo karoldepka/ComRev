@@ -86,6 +86,7 @@ export class EnvMapPipe implements EffectPipe {
   private sceneRef: THREE.Scene | null = null;
   private rendererRef: THREE.WebGLRenderer | null = null;
   private savedSceneEnv: THREE.Texture | null = null;
+  private savedSceneBackground: THREE.Scene['background'] = null;
 
   // WeakMap keeps patched-material state without preventing GC.
   // savedIntensities (Map) is the canonical list of all patched materials —
@@ -102,6 +103,7 @@ export class EnvMapPipe implements EffectPipe {
     this.sceneRef = ctx.scene;
     this.rendererRef = (ctx.renderer as THREE.WebGLRenderer) ?? null;
     this.savedSceneEnv = ctx.scene.environment as THREE.Texture | null;
+    this.savedSceneBackground = ctx.scene.background;
     this._refreshSource();
   }
 
@@ -129,11 +131,28 @@ export class EnvMapPipe implements EffectPipe {
       this.sceneRef.environment = envTex;
     }
 
+    // When the source provides both an env texture and a map texture (animated
+    // shaders: fire, plasma, smoke, noise), also use it as the scene background
+    // so the fire/plasma wraps the background of the 3D scene.
+    if (this.sceneRef) {
+      const mapTex = this.source?.mapTexture ?? null;
+      const wantBg = envTex != null && mapTex != null;
+      const currentBg = this.sceneRef.background;
+      if (wantBg && currentBg !== envTex) {
+        this.sceneRef.background = envTex;
+      } else if (!wantBg && currentBg === envTex) {
+        this.sceneRef.background = this.savedSceneBackground;
+      }
+    }
+
     if (ctx.mesh) this._applyToMesh(ctx.mesh, params.intensity ?? 1.5);
   }
 
   dispose() {
-    if (this.sceneRef) this.sceneRef.environment = this.savedSceneEnv;
+    if (this.sceneRef) {
+      this.sceneRef.environment = this.savedSceneEnv;
+      this.sceneRef.background = this.savedSceneBackground;
+    }
 
     this.savedIntensities.forEach((savedIntensity, mat) => {
       mat.envMapIntensity = savedIntensity;
@@ -170,7 +189,10 @@ export class EnvMapPipe implements EffectPipe {
 
     mesh.traverse(child => {
       if (!(child instanceof THREE.Mesh)) return;
-      if (mapTex) {
+      // Pure matcap path (no PBR env-map): swap to MeshMatcapMaterial.
+      // When envTex is also present (animated sources), fall through to the
+      // MeshStandardMaterial path so both matcap injection and PBR reflections apply.
+      if (mapTex && !envTex) {
         this.applyAnimatedMaterial(child, mapTex);
         return;
       }

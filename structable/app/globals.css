@@ -1474,3 +1474,124 @@ tr.row-deleting {
   min-height: 0;
   overflow: hidden;
 }
+
+/* ── Chat mode tabs (Table / CV) ─────────────────────────────────────────────── */
+
+.chat-mode-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.chat-mode-tab {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.chat-mode-tab:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.chat-mode-tab--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* ── Suggestion chips ────────────────────────────────────────────────────────── */
+
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.chat-suggestion-chip {
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  text-align: left;
+  white-space: normal;
+}
+
+.chat-suggestion-chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.chat-suggestion-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── CV mode markdown rendering ──────────────────────────────────────────────── */
+
+/* Bold inside CV messages renders as orange highlight */
+.chat-msg-content--cv strong {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 700;
+}
+
+.chat-msg-content--cv em {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.cv-code {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.82em;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.cv-list {
+  margin: 4px 0 4px 16px;
+  padding: 0;
+  list-style: disc;
+}
+
+.cv-list li {
+  margin: 2px 0;
+}
+
+.cv-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.cv-table th,
+.cv-table td {
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border, #e0e0e0));
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.cv-table th {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cv-table tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+}

@@ -14,15 +14,19 @@ function normalizeMantraText(mantra: MantraText): string {
   return Array.isArray(mantra) ? mantra.join("\n") : mantra;
 }
 
+const stripBoldTagsForWrap = (s: string) => s.replace(/<\/?b>/gi, '');
+
 function wrapMantraText(text: string, maxChars = 12): string {
   if (text.includes("\n")) return text;
   const words = text.split(" ");
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
+    const visCurrentLen = stripBoldTagsForWrap(current).length;
+    const visWordLen = stripBoldTagsForWrap(word).length;
     if (!current) {
       current = word;
-    } else if (current.length + 1 + word.length <= maxChars) {
+    } else if (visCurrentLen + 1 + visWordLen <= maxChars) {
       current += " " + word;
     } else {
       lines.push(current);

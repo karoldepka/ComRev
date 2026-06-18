@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>threed-text Web Component demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #eee; font-family: system-ui, sans-serif; padding: 24px; }
+    h1 { font-size: 20px; margin-bottom: 8px; color: #ff6600; }
+    p  { font-size: 14px; color: #888; margin-bottom: 24px; }
+    threed-text { width: 100%; height: 420px; display: block; border-radius: 8px; }
+    .log { margin-top: 16px; font-size: 12px; color: #666; font-family: monospace; }
+  </style>
+
+  <!-- Option A: ESM import (recommended for Angular with Angular Elements) -->
+  <!-- <script type="module" src="./dist/threed-text.js"></script> -->
+
+  <!-- Option B: UMD script tag (simplest drop-in) -->
+  <!-- In dev, point at the raw source via Vite dev server or use the UMD build -->
+  <script type="module">
+    import './src/threed-text-wc.ts'; // dev only — replace with dist/threed-text.js
+  </script>
+</head>
+<body>
+  <h1>&lt;threed-text&gt; Web Component</h1>
+  <p>Drag to rotate · Scroll to zoom · Click ⚙ Configure to open the settings panel</p>
+
+  <!-- Basic usage -->
+  <threed-text
+    text="Hello\nWorld"
+    color="#ff6600"
+    font="droid_sans"
+    size="2"
+    depth="0.8"
+    metalness="0.95"
+    roughness="0.15"
+    id="demo">
+  </threed-text>
+
+  <div class="log" id="log">config-change events will appear here…</div>
+
+  <script type="module">
+    const el = document.getElementById('demo');
+    const log = document.getElementById('log');
+
+    el.addEventListener('config-change', (e) => {
+      log.textContent = 'config-change: ' + JSON.stringify(e.detail, null, 2);
+    });
+
+    // Example: update programmatically after 3s
+    // setTimeout(() => {
+    //   el.config = { text: 'Updated!\nFrom JS', color: '#00aaff' };
+    // }, 3000);
+  </script>
+</body>
+</html>

@@ -117,13 +117,14 @@ uniform float uZoom;
 varying vec2  vUv;
 ${FBM_GLSL}
 void main() {
-  vec2 p = vUv * uZoom;
-  p.y -= uTime;                         // upward flow
-  float n = clamp(fbm(p + 0.5*fbm(p + 0.5*fbm(p))), 0.0, 1.0);
-  vec3 col = mix(vec3(0.02,0.0,0.0), vec3(0.8,0.05,0.0),  smoothstep(0.00,0.30,n));
-  col = mix(col, vec3(1.0,0.40,0.00), smoothstep(0.30,0.60,n));
-  col = mix(col, vec3(1.0,0.85,0.10), smoothstep(0.60,0.80,n));
-  col = mix(col, vec3(1.0,0.98,0.85), smoothstep(0.80,1.00,n));
+  // Tile vertically so fire fills the full height (wrap around for env-map use)
+  vec2 p = vec2(vUv.x, fract(vUv.y + uTime * 0.18)) * uZoom;
+  float n = clamp(fbm(p + 0.6*fbm(p + 0.6*fbm(p))), 0.0, 1.0);
+  // Shift colour ramp so even moderate fbm values show orange/yellow
+  vec3 col = mix(vec3(0.02,0.0,0.0), vec3(0.8,0.05,0.0),  smoothstep(0.00,0.20,n));
+  col = mix(col, vec3(1.0,0.40,0.00), smoothstep(0.20,0.50,n));
+  col = mix(col, vec3(1.0,0.85,0.10), smoothstep(0.50,0.72,n));
+  col = mix(col, vec3(1.0,0.98,0.85), smoothstep(0.72,0.90,n));
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -353,14 +354,15 @@ export class StaticTextureSource implements TextureSource {
 
 /**
  * Renders an animated GLSL shader to an offscreen RenderTarget each frame.
- * Exposes the RT texture as mapTexture (matcap sampler input).
+ * Exposes the RT texture as both envTexture (equirect PBR env-map + scene.background)
+ * and mapTexture (matcap sampler injected into MeshStandardMaterial).
  * All animated env-map styles (plasma, fire, smoke, noise) use this class.
  */
 export class AnimatedShaderSource implements TextureSource {
-  readonly envTexture = null;
+  get envTexture(): THREE.Texture { return this.rt.texture; }
   get mapTexture(): THREE.Texture { return this.rt.texture; }
 
-  private rt = new THREE.WebGLRenderTarget(256, 256);
+  private rt: THREE.WebGLRenderTarget;
   private offscreenScene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private mat: THREE.ShaderMaterial;
@@ -368,6 +370,10 @@ export class AnimatedShaderSource implements TextureSource {
   private time = 0;
 
   constructor(private config: AnimatedShaderConfig) {
+    this.rt = new THREE.WebGLRenderTarget(512, 512);
+    // EquirectangularReflectionMapping enables the RT texture to be used as both
+    // scene.environment (PBR IBL reflections) and scene.background (panoramic bg).
+    this.rt.texture.mapping = THREE.EquirectangularReflectionMapping;
     this.mat = new THREE.ShaderMaterial({
       vertexShader: ANIM_VERT,
       fragmentShader: config.fragShader,

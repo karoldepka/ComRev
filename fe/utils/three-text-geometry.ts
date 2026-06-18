@@ -183,6 +183,36 @@ function patchBevelNormalReflect(mat: THREE.MeshStandardMaterial): void {
 
 const fontCache = new Map<string, Font>();
 
+function parseBoldSegments(line: string): Array<{ text: string; bold: boolean }> {
+  const segments: Array<{ text: string; bold: boolean }> = [];
+  const regex = /<b>(.*?)<\/b>/gi;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(line)) !== null) {
+    if (match.index > lastIndex) segments.push({ text: line.slice(lastIndex, match.index), bold: false });
+    if (match[1]) segments.push({ text: match[1], bold: true });
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < line.length) segments.push({ text: line.slice(lastIndex), bold: false });
+  return segments.filter(s => s.text.length > 0);
+}
+
+function stripBoldTags(text: string): string {
+  return text.replace(/<\/?b>/gi, '');
+}
+
+const BOLD_FONT_MAP: Record<string, string> = {
+  droid_sans: 'droid_sans_bold',
+  helvetiker: 'helvetiker_bold',
+  optimer: 'optimer_bold',
+  gentilis: 'gentilis_bold',
+  droid_serif: 'droid_serif_bold',
+};
+
+function getBoldFontId(fontId: string): string {
+  return BOLD_FONT_MAP[fontId] ?? fontId;
+}
+
 async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
   if (fontCache.has(fontId)) return fontCache.get(fontId)!;
 
@@ -237,10 +267,19 @@ export async function createTextGeometry(
   material: THREE.MeshStandardMaterial;
 }> {
   const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
-  const lines = mergedOptions.text!.split('\n');
+  const rawLines = mergedOptions.text!.split('\n');
+  const hasBold = rawLines.some(l => /<b>/i.test(l));
+  // Strip tags for measurement; raw lines used for bold-aware rendering below
+  const lines = rawLines.map(stripBoldTags);
 
   try {
-    const font = await loadFont(mergedOptions.fontFamily ?? DEFAULT_3D_FONT_FAMILY);
+    const fontIdToUse = mergedOptions.fontFamily ?? DEFAULT_3D_FONT_FAMILY;
+    const boldFontId = getBoldFontId(fontIdToUse);
+    const [font, boldFontOrNull] = await Promise.all([
+      loadFont(fontIdToUse),
+      hasBold && boldFontId !== fontIdToUse ? loadFont(boldFontId).catch(() => null) : Promise.resolve(null),
+    ]);
+    const boldFont = boldFontOrNull ?? font;
 
     // Calculate line widths and equalization factors
     const lineWidths: number[] = [];
@@ -292,6 +331,47 @@ export async function createTextGeometry(
           lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: emptySize * 0.8 });
           continue;
         }
+
+        // Bold-aware path: render per-segment when line contains <b> tags
+        if (/<b>/i.test(rawLines[lineIndex])) {
+          const segments = parseBoldSegments(rawLines[lineIndex]);
+          const effectiveSize = mergedOptions.size! * factor;
+          const geoParams = {
+            size: effectiveSize,
+            depth: mergedOptions.height,
+            curveSegments: mergedOptions.curveSegments,
+            bevelEnabled: mergedOptions.bevelEnabled,
+            bevelThickness: mergedOptions.bevelThickness,
+            bevelSize: mergedOptions.bevelSize! * factor,
+            bevelOffset: mergedOptions.bevelOffset,
+            bevelSegments: mergedOptions.bevelSegments,
+          };
+          const segInfos: Array<{ geo: TextGeometry; width: number; minY: number; maxY: number; startX: number }> = [];
+          let totalWidth = 0;
+          for (const seg of segments) {
+            const segFont = seg.bold ? boldFont : font;
+            const geo = new TextGeometry(seg.text, { font: segFont as any, ...geoParams } as any);
+            geo.computeBoundingBox();
+            const bbox = geo.boundingBox!;
+            const width = bbox.max.x - bbox.min.x;
+            segInfos.push({ geo, width, minY: bbox.min.y, maxY: bbox.max.y, startX: bbox.min.x });
+            totalWidth += width;
+          }
+          let cursorX = -totalWidth / 2;
+          let lineMinY = segInfos[0]?.minY ?? 0;
+          let lineMaxY = segInfos[0]?.maxY ?? effectiveSize;
+          const lineGroup = new THREE.Group();
+          for (const { geo, width, minY, maxY, startX } of segInfos) {
+            geo.translate(cursorX - startX, 0, 0);
+            lineGroup.add(new THREE.Mesh(geo));
+            cursorX += width;
+            lineMinY = Math.min(lineMinY, minY);
+            lineMaxY = Math.max(lineMaxY, maxY);
+          }
+          lineGeometries.push({ geometry: lineGroup, minY: lineMinY, maxY: lineMaxY });
+          continue;
+        }
+
         const lineGeometry = new TextGeometry(line, {
           font: font as any,
           size: mergedOptions.size! * factor,
