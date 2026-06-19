@@ -5,7 +5,7 @@
  *   text          — display text; use \n for line breaks (default: "Hello\nWorld")
  *   color         — hex color e.g. "#ff6600" (default: "#ff6600")
  *   font          — font id from AVAILABLE_FONTS (default: "droid_sans")
- *   size          — text size, float (default: "2")
+ *   font-size     — text size in CSS pixels, float (default: "120")
  *   depth         — extrusion depth, float (default: "0.8")
  *   metalness     — 0–1 (default: "0.95")
  *   roughness     — 0–1 (default: "0.15")
@@ -13,6 +13,7 @@
  *   show-config     — boolean attr; if present the config panel starts open
  *   scroll-zoom     — set to "true" to enable mouse-wheel scroll zoom; pinch-to-zoom always works (default: disabled)
  *   auto-size       — set to "false" to disable; when enabled, element height is computed from text bounding box (default: enabled)
+ *   capitalize      — boolean attr; converts displayed text to upper case (default: absent)
  *   primary-color   — hex color for UI accents + default text color (default: "#ff6600")
  *   secondary-color — hex color for secondary UI accents (default: "#0066ff")
  *
@@ -23,16 +24,16 @@
  *   config        — get/set the full config object at once
  */
 
-import * as THREE from 'three';
+import * as THREE from "three";
 import {
-  createTextGeometry,
   AVAILABLE_FONTS,
+  createTextGeometry,
   DEFAULT_3D_FONT_FAMILY,
-} from '../../utils/three-text-geometry';
+} from "../../utils/three-text-geometry";
 
 // ── Animated plasma env-map shader ───────────────────────────────────────────
 
-const PLASMA_VERT = /* glsl */`
+const PLASMA_VERT = /* glsl */ `
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
 `;
@@ -41,17 +42,25 @@ const PLASMA_STOP_COUNT = 4;
 
 // Derives plasma gradient stops from primary + secondary colors.
 // Layout: black → dark primary (ember) → full primary (flame) → secondary (corona)
-function computePlasmaStops(primary: THREE.Color, secondary: THREE.Color): THREE.Vector4[] {
+function computePlasmaStops(
+  primary: THREE.Color,
+  secondary: THREE.Color,
+): THREE.Vector4[] {
   return [
-    new THREE.Vector4(0,    0,              0,              0),
-    new THREE.Vector4(0.33, primary.r * 0.35, primary.g * 0.35, primary.b * 0.35),
-    new THREE.Vector4(0.66, primary.r,      primary.g,      primary.b),
-    new THREE.Vector4(1.0,  secondary.r,    secondary.g,    secondary.b),
-    new THREE.Vector4(0,    0,              0,              0), // padding
+    new THREE.Vector4(0, 0, 0, 0),
+    new THREE.Vector4(
+      0.33,
+      primary.r * 0.35,
+      primary.g * 0.35,
+      primary.b * 0.35,
+    ),
+    new THREE.Vector4(0.66, primary.r, primary.g, primary.b),
+    new THREE.Vector4(1.0, secondary.r, secondary.g, secondary.b),
+    new THREE.Vector4(0, 0, 0, 0), // padding
   ];
 }
 
-const PLASMA_FRAG = /* glsl */`
+const PLASMA_FRAG = /* glsl */ `
 uniform float uTime;
 uniform float uZoom;
 uniform vec4  uStop0, uStop1, uStop2, uStop3, uStop4;
@@ -90,24 +99,28 @@ export interface ThreedTextConfig {
   text: string;
   color: string;
   font: string;
-  size: number;
+  fontSize: number;
   depth: number;
   metalness: number;
   roughness: number;
   fov: number;
   envIntensity: number;
+  capitalize: boolean;
+  rotateZ: number;
 }
 
 const DEFAULTS: ThreedTextConfig = {
-  text: 'Hello\nWorld',
-  color: '#ff6600',
+  text: "Hello\nWorld",
+  color: "#ff6600",
   font: DEFAULT_3D_FONT_FAMILY,
-  size: 2,
+  fontSize: 120,
   depth: 0.8,
   metalness: 0.95,
   roughness: 0.15,
   envIntensity: 1.5,
   fov: 75,
+  capitalize: false,
+  rotateZ: 0,
 };
 
 const ZOOM_TARGET_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -221,12 +234,18 @@ const STYLES = `
 
 // ── HTML template ─────────────────────────────────────────────────────────────
 
-function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): string {
+function buildTemplate(
+  cfg: ThreedTextConfig,
+  fonts: typeof AVAILABLE_FONTS,
+): string {
   // Only include CDN-backed fonts (inter/roboto are local-only in the main app)
   const fontOptions = fonts
-    .filter(f => f.urls.length > 0)
-    .map(f => `<option value="${f.id}"${f.id === cfg.font ? ' selected' : ''}>${f.label}</option>`)
-    .join('');
+    .filter((f) => f.urls.length > 0)
+    .map(
+      (f) =>
+        `<option value="${f.id}"${f.id === cfg.font ? " selected" : ""}>${f.label}</option>`,
+    )
+    .join("");
 
   return `
     <canvas></canvas>
@@ -238,7 +257,7 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
 
       <div class="field">
         <label class="field-label" for="cfg-text">Text</label>
-        <textarea id="cfg-text" rows="3">${cfg.text.replace(/\n/g, '&#10;')}</textarea>
+        <textarea id="cfg-text" rows="3">${cfg.text.replace(/\n/g, "&#10;")}</textarea>
       </div>
 
       <div class="field">
@@ -299,6 +318,19 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
         </div>
       </div>
 
+      <div class="field">
+        <label class="field-label" style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="cfg-drag-rotate" checked style="accent-color:var(--primary-color,#ff6600);width:auto;cursor:pointer;">
+          Drag to rotate
+        </label>
+      </div>
+      <div class="field">
+        <label class="field-label" style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="cfg-capitalize" style="accent-color:var(--primary-color,#ff6600);width:auto;cursor:pointer;">
+          Capitalize
+        </label>
+      </div>
+
     </div>
   `;
 }
@@ -307,7 +339,25 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
 
 export class ThreedTextElement extends HTMLElement {
   static get observedAttributes() {
-    return ['text', 'color', 'font', 'size', 'depth', 'metalness', 'roughness', 'env-intensity', 'fov', 'show-config', 'scroll-zoom', 'primary-color', 'secondary-color', 'auto-size'];
+    return [
+      "text",
+      "color",
+      "font",
+      "font-size",
+      "depth",
+      "metalness",
+      "roughness",
+      "env-intensity",
+      "fov",
+      "show-config",
+      "scroll-zoom",
+      "primary-color",
+      "secondary-color",
+      "auto-size",
+      "drag-rotate",
+      "capitalize",
+      "rotate-z",
+    ];
   }
 
   private _cfg: ThreedTextConfig = { ...DEFAULTS };
@@ -327,11 +377,12 @@ export class ThreedTextElement extends HTMLElement {
   private _lastMouse = { x: 0, y: 0 };
   private _startTime = performance.now();
   private _scrollZoom = false;
+  private _dragRotate = true;
   private _autoSize = true;
   private _textBoundingSize: THREE.Vector3 | null = null;
   private _styleObserver: MutationObserver | null = null;
-  private _primaryColor = new THREE.Color('#ff6600');
-  private _secondaryColor = new THREE.Color('#0066ff');
+  private _primaryColor = new THREE.Color("#ff6600");
+  private _secondaryColor = new THREE.Color("#0066ff");
   // Plasma env-map
   private _plasmaRt: THREE.WebGLRenderTarget | null = null;
   private _plasmaMat: THREE.ShaderMaterial | null = null;
@@ -344,7 +395,7 @@ export class ThreedTextElement extends HTMLElement {
 
   constructor() {
     super();
-    this._shadow = this.attachShadow({ mode: 'open' });
+    this._shadow = this.attachShadow({ mode: "open" });
   }
 
   connectedCallback() {
@@ -356,44 +407,81 @@ export class ThreedTextElement extends HTMLElement {
     this._dispose();
   }
 
-  attributeChangedCallback(name: string, _old: string | null, value: string | null) {
+  attributeChangedCallback(
+    name: string,
+    _old: string | null,
+    value: string | null,
+  ) {
     if (value === null) return;
     switch (name) {
-      case 'text':         this._cfg.text = value.replace(/\\n/g, '\n'); break;
-      case 'color':        this._cfg.color = value; break;
-      case 'font':         this._cfg.font = value; break;
-      case 'size':         this._cfg.size = parseFloat(value); break;
-      case 'depth':        this._cfg.depth = parseFloat(value); break;
-      case 'metalness':    this._cfg.metalness = parseFloat(value); break;
-      case 'roughness':    this._cfg.roughness = parseFloat(value); break;
-      case 'env-intensity':this._cfg.envIntensity = parseFloat(value); break;
-      case 'fov':          this._cfg.fov = parseFloat(value); break;
-      case 'scroll-zoom':
-        this._scrollZoom = value !== 'false';
+      case "text":
+        this._cfg.text = value.replace(/\\n/g, "\n");
+        break;
+      case "color":
+        this._cfg.color = value;
+        break;
+      case "font":
+        this._cfg.font = value;
+        break;
+      case "font-size":
+        this._cfg.fontSize = parseFloat(value);
+        break;
+      case "depth":
+        this._cfg.depth = parseFloat(value);
+        break;
+      case "metalness":
+        this._cfg.metalness = parseFloat(value);
+        break;
+      case "roughness":
+        this._cfg.roughness = parseFloat(value);
+        break;
+      case "env-intensity":
+        this._cfg.envIntensity = parseFloat(value);
+        break;
+      case "fov":
+        this._cfg.fov = parseFloat(value);
+        break;
+      case "capitalize":
+        this._cfg.capitalize = value !== "false";
+        break;
+      case "rotate-z":
+        this._cfg.rotateZ = parseFloat(value);
+        break;
+      case "scroll-zoom":
+        this._scrollZoom = value !== "false";
         return;
-      case 'auto-size':
-        this._autoSize = value !== 'false';
+      case "drag-rotate":
+        this._dragRotate = value !== "false";
+        this._canvas?.style.setProperty(
+          "cursor",
+          this._dragRotate ? "grab" : "default",
+        );
+        return;
+      case "auto-size":
+        this._autoSize = value !== "false";
         if (this._autoSize && this._textBoundingSize) {
           this._applyAutoSize();
           this._fitCameraToTextSize(this._textBoundingSize);
         }
         return;
-      case 'primary-color':
-        this.style.setProperty('--primary-color', value);
+      case "primary-color":
+        this.style.setProperty("--primary-color", value);
         this._primaryColor.set(value);
         this._updatePlasmaColors();
-        if (!this.hasAttribute('color')) {
+        if (!this.hasAttribute("color")) {
           this._cfg.color = value;
           this._scheduleUpdate();
         }
         return;
-      case 'secondary-color':
-        this.style.setProperty('--secondary-color', value);
+      case "secondary-color":
+        this.style.setProperty("--secondary-color", value);
         this._secondaryColor.set(value);
         this._updatePlasmaColors();
         return;
-      case 'show-config':
-        this._shadow?.querySelector('.cfg-panel')?.classList.toggle('open', value !== 'false');
+      case "show-config":
+        this._shadow
+          ?.querySelector(".cfg-panel")
+          ?.classList.toggle("open", value !== "false");
         return;
     }
     this._scheduleUpdate();
@@ -401,7 +489,9 @@ export class ThreedTextElement extends HTMLElement {
 
   // ── Public property ────────────────────────────────────────────────────────
 
-  get config(): ThreedTextConfig { return { ...this._cfg }; }
+  get config(): ThreedTextConfig {
+    return { ...this._cfg };
+  }
   set config(value: Partial<ThreedTextConfig>) {
     Object.assign(this._cfg, value);
     this._scheduleUpdate();
@@ -410,146 +500,242 @@ export class ThreedTextElement extends HTMLElement {
   // ── DOM build ─────────────────────────────────────────────────────────────
 
   private _buildDOM() {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.textContent = STYLES;
 
-    const tpl = document.createElement('div');
+    const tpl = document.createElement("div");
     tpl.innerHTML = buildTemplate(this._cfg, AVAILABLE_FONTS);
 
     this._shadow.appendChild(style);
     while (tpl.firstChild) this._shadow.appendChild(tpl.firstChild);
 
-    this._canvas = this._shadow.querySelector('canvas')!;
+    this._canvas = this._shadow.querySelector("canvas")!;
 
-    const panel = this._shadow.querySelector('.cfg-panel') as HTMLElement;
-    const showConfig = this.hasAttribute('show-config') && this.getAttribute('show-config') !== 'false';
-    if (showConfig) panel.classList.add('open');
+    const panel = this._shadow.querySelector(".cfg-panel") as HTMLElement;
+    const showConfig =
+      this.hasAttribute("show-config") &&
+      this.getAttribute("show-config") !== "false";
+    if (showConfig) panel.classList.add("open");
 
-    const openPanel = () => panel.classList.add('open');
+    const openPanel = () => panel.classList.add("open");
 
     // Right-click opens the config panel instead of the browser context menu
-    this._canvas.addEventListener('contextmenu', (e) => {
+    this._canvas.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       openPanel();
     });
 
     // Long-press (≥500 ms) opens the config panel on touch devices
     let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-    this._canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        longPressTimer = setTimeout(() => {
-          longPressTimer = null;
-          openPanel();
-        }, 500);
-      }
-    }, { passive: true });
-    const cancelLongPress = () => {
-      if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
-    };
-    this._canvas.addEventListener('touchend',    cancelLongPress, { passive: true });
-    this._canvas.addEventListener('touchcancel', cancelLongPress, { passive: true });
-    this._canvas.addEventListener('touchmove',   cancelLongPress, { passive: true });
-
-    this._shadow.querySelector('.cfg-close')!.addEventListener('click', () =>
-      panel.classList.remove('open')
+    this._canvas.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length === 1) {
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            openPanel();
+          }, 500);
+        }
+      },
+      { passive: true },
     );
+    const cancelLongPress = () => {
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+    this._canvas.addEventListener("touchend", cancelLongPress, {
+      passive: true,
+    });
+    this._canvas.addEventListener("touchcancel", cancelLongPress, {
+      passive: true,
+    });
+    this._canvas.addEventListener("touchmove", cancelLongPress, {
+      passive: true,
+    });
 
-    this._bindControl('#cfg-text',     'input',  (v) => { this._cfg.text = v; });
-    this._bindControl('#cfg-font',     'change', (v) => { this._cfg.font = v; });
-    this._bindControl('#cfg-color',    'input',  (v) => { this._cfg.color = v; });
-    this._bindRange('#cfg-depth',      '#cfg-depth-v',    (v) => { this._cfg.depth = v; });
-    this._bindRange('#cfg-metalness',  '#cfg-metalness-v',(v) => { this._cfg.metalness = v; });
-    this._bindRange('#cfg-roughness',  '#cfg-roughness-v',(v) => { this._cfg.roughness = v; });
-    this._bindRange('#cfg-env',        '#cfg-env-v',      (v) => { this._cfg.envIntensity = v; });
-    const fovSlider = this._shadow.querySelector('#cfg-fov') as HTMLInputElement | null;
-    const fovVal    = this._shadow.querySelector('#cfg-fov-v') as HTMLElement | null;
+    this._shadow
+      .querySelector(".cfg-close")!
+      .addEventListener("click", () => panel.classList.remove("open"));
+
+    this._bindControl("#cfg-text", "input", (v) => {
+      this._cfg.text = v;
+    });
+    this._bindControl("#cfg-font", "change", (v) => {
+      this._cfg.font = v;
+    });
+    this._bindControl("#cfg-color", "input", (v) => {
+      this._cfg.color = v;
+    });
+    this._bindRange("#cfg-depth", "#cfg-depth-v", (v) => {
+      this._cfg.depth = v;
+    });
+    this._bindRange("#cfg-metalness", "#cfg-metalness-v", (v) => {
+      this._cfg.metalness = v;
+    });
+    this._bindRange("#cfg-roughness", "#cfg-roughness-v", (v) => {
+      this._cfg.roughness = v;
+    });
+    this._bindRange("#cfg-env", "#cfg-env-v", (v) => {
+      this._cfg.envIntensity = v;
+    });
+    const fovSlider = this._shadow.querySelector(
+      "#cfg-fov",
+    ) as HTMLInputElement | null;
+    const fovVal = this._shadow.querySelector(
+      "#cfg-fov-v",
+    ) as HTMLElement | null;
     if (fovSlider) {
-      fovSlider.addEventListener('input', () => {
+      fovSlider.addEventListener("input", () => {
         const v = parseInt(fovSlider.value);
         this._cfg.fov = v;
         if (fovVal) fovVal.textContent = `${v}°`;
         if (this._camera) {
           this._camera.fov = v;
           this._camera.updateProjectionMatrix();
-          if (this._textBoundingSize) this._fitCameraToTextSize(this._textBoundingSize);
+          if (this._textBoundingSize)
+            this._fitCameraToTextSize(this._textBoundingSize);
         }
         this._dispatchChange();
       });
     }
 
-    // Font-size slider — sets CSS font-size, which _applyAutoSize reads
-    const fontSizeSlider = this._shadow.querySelector('#cfg-font-size') as HTMLInputElement | null;
-    const fontSizeVal    = this._shadow.querySelector('#cfg-font-size-v') as HTMLElement | null;
+    // Font-size slider — updates _cfg.fontSize (pixels); _updateMesh syncs CSS font-size
+    const fontSizeSlider = this._shadow.querySelector(
+      "#cfg-font-size",
+    ) as HTMLInputElement | null;
+    const fontSizeVal = this._shadow.querySelector(
+      "#cfg-font-size-v",
+    ) as HTMLElement | null;
     if (fontSizeSlider) {
-      // Initialise slider to match the computed CSS font-size
-      const initial = Math.round(parseFloat(getComputedStyle(this).fontSize) || 120);
-      fontSizeSlider.value = String(initial);
-      if (fontSizeVal) fontSizeVal.textContent = `${initial}px`;
-      fontSizeSlider.addEventListener('input', () => {
+      fontSizeSlider.value = String(this._cfg.fontSize);
+      if (fontSizeVal) fontSizeVal.textContent = `${this._cfg.fontSize}px`;
+      fontSizeSlider.addEventListener("input", () => {
         const v = parseInt(fontSizeSlider.value);
         if (fontSizeVal) fontSizeVal.textContent = `${v}px`;
+        this._cfg.fontSize = v;
         this.style.fontSize = `${v}px`;
+      });
+    }
+
+    // Capitalize checkbox
+    const capitalizeCb = this._shadow.querySelector(
+      "#cfg-capitalize",
+    ) as HTMLInputElement | null;
+    if (capitalizeCb) {
+      capitalizeCb.checked = this._cfg.capitalize;
+      capitalizeCb.addEventListener("change", () => {
+        this._cfg.capitalize = capitalizeCb.checked;
+        this._scheduleUpdate();
+        this._dispatchChange();
+      });
+    }
+
+    // Drag-rotate checkbox
+    const dragRotateCb = this._shadow.querySelector(
+      "#cfg-drag-rotate",
+    ) as HTMLInputElement | null;
+    if (dragRotateCb) {
+      dragRotateCb.checked = this._dragRotate;
+      dragRotateCb.addEventListener("change", () => {
+        this._dragRotate = dragRotateCb.checked;
+        this._canvas.style.cursor = this._dragRotate ? "grab" : "default";
       });
     }
 
     // Re-apply sizing when font-size changes via inline style or class swap
     this._styleObserver = new MutationObserver(() => this._onFontSizeChange());
-    this._styleObserver.observe(this, { attributes: true, attributeFilter: ['style', 'class'] });
+    this._styleObserver.observe(this, {
+      attributes: true,
+      attributeFilter: ["style", "class"],
+    });
 
-    this._canvas.addEventListener('mousedown', (e) => {
+    this._canvas.style.cursor = "grab";
+    this._canvas.addEventListener("mousedown", (e) => {
+      if (!this._dragRotate) return;
       this._drag = true;
+      this._canvas.style.cursor = "grabbing";
       this._lastMouse = { x: e.clientX, y: e.clientY };
     });
-    window.addEventListener('mousemove', (e) => {
+    window.addEventListener("mousemove", (e) => {
       if (!this._drag) return;
       this._rotation.y += (e.clientX - this._lastMouse.x) * 0.01;
       this._rotation.x += (e.clientY - this._lastMouse.y) * 0.01;
       this._lastMouse = { x: e.clientX, y: e.clientY };
     });
-    window.addEventListener('mouseup', () => { this._drag = false; });
+    window.addEventListener("mouseup", () => {
+      if (!this._drag) return;
+      this._drag = false;
+      this._canvas.style.cursor = this._dragRotate ? "grab" : "default";
+    });
 
     // Wheel zoom — ctrlKey=true means trackpad/browser pinch gesture, always allow
-    this._canvas.addEventListener('wheel', (e) => {
-      const isPinch = e.ctrlKey;
-      if (!this._scrollZoom && !isPinch) return;
-      e.preventDefault();
-      if (!this._camera) return;
-      const factor = Math.pow(1.001, e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1));
-      this._zoomCameraAtClientPoint(e.clientX, e.clientY, factor);
-    }, { passive: false });
+    this._canvas.addEventListener(
+      "wheel",
+      (e) => {
+        const isPinch = e.ctrlKey;
+        if (!this._scrollZoom && !isPinch) return;
+        e.preventDefault();
+        if (!this._camera) return;
+        const factor = Math.pow(
+          1.001,
+          e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1),
+        );
+        this._zoomCameraAtClientPoint(e.clientX, e.clientY, factor);
+      },
+      { passive: false },
+    );
 
     // Touch pinch-to-zoom (always active, independent of scroll-zoom setting)
     let lastPinchDist = 0;
-    this._canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 2) {
-        lastPinchDist = Math.hypot(
+    this._canvas.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length === 2) {
+          lastPinchDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY,
+          );
+        }
+      },
+      { passive: true },
+    );
+    this._canvas.addEventListener(
+      "touchmove",
+      (e) => {
+        if (e.touches.length !== 2 || !this._camera) return;
+        e.preventDefault();
+        const dist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY,
         );
-      }
-    }, { passive: true });
-    this._canvas.addEventListener('touchmove', (e) => {
-      if (e.touches.length !== 2 || !this._camera) return;
-      e.preventDefault();
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY,
-      );
-      if (lastPinchDist > 0) {
-        const scale = lastPinchDist / dist;
-        this._zoomCameraAtClientPoint(
-          (e.touches[0].clientX + e.touches[1].clientX) / 2,
-          (e.touches[0].clientY + e.touches[1].clientY) / 2,
-          scale,
-        );
-      }
-      lastPinchDist = dist;
-    }, { passive: false });
-    this._canvas.addEventListener('touchend', () => { lastPinchDist = 0; }, { passive: true });
-
+        if (lastPinchDist > 0) {
+          const scale = lastPinchDist / dist;
+          this._zoomCameraAtClientPoint(
+            (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            (e.touches[0].clientY + e.touches[1].clientY) / 2,
+            scale,
+          );
+        }
+        lastPinchDist = dist;
+      },
+      { passive: false },
+    );
+    this._canvas.addEventListener(
+      "touchend",
+      () => {
+        lastPinchDist = 0;
+      },
+      { passive: true },
+    );
   }
 
-  private _zoomCameraAtClientPoint(clientX: number, clientY: number, factor: number) {
+  private _zoomCameraAtClientPoint(
+    clientX: number,
+    clientY: number,
+    factor: number,
+  ) {
     if (!this._camera) return;
     const before = this._worldPointAtClientPoint(clientX, clientY);
     const nextZ = Math.max(2, Math.min(80, this._camera.position.z * factor));
@@ -564,7 +750,10 @@ export class ThreedTextElement extends HTMLElement {
     this._camera.updateMatrixWorld(true);
   }
 
-  private _worldPointAtClientPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+  private _worldPointAtClientPoint(
+    clientX: number,
+    clientY: number,
+  ): THREE.Vector3 | null {
     if (!this._camera || !this._canvas) return null;
     const rect = this._canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
@@ -582,8 +771,16 @@ export class ThreedTextElement extends HTMLElement {
 
   // ── Control wiring ────────────────────────────────────────────────────────
 
-  private _bindControl(selector: string, event: string, setter: (v: string) => void) {
-    const el = this._shadow.querySelector(selector) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+  private _bindControl(
+    selector: string,
+    event: string,
+    setter: (v: string) => void,
+  ) {
+    const el = this._shadow.querySelector(selector) as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | HTMLTextAreaElement
+      | null;
     if (!el) return;
     el.addEventListener(event, () => {
       setter((el as HTMLInputElement).value);
@@ -592,14 +789,18 @@ export class ThreedTextElement extends HTMLElement {
     });
   }
 
-  private _bindRange(selector: string, valSelector: string, setter: (v: number) => void) {
-    const el  = this._shadow.querySelector(selector) as HTMLInputElement | null;
+  private _bindRange(
+    selector: string,
+    valSelector: string,
+    setter: (v: number) => void,
+  ) {
+    const el = this._shadow.querySelector(selector) as HTMLInputElement | null;
     const val = this._shadow.querySelector(valSelector) as HTMLElement | null;
     if (!el) return;
-    el.addEventListener('input', () => {
+    el.addEventListener("input", () => {
       const v = parseFloat(el.value);
       setter(v);
-      if (val) val.textContent = v.toFixed(el.step.includes('.0') ? 1 : 2);
+      if (val) val.textContent = v.toFixed(el.step.includes(".0") ? 1 : 2);
       this._scheduleUpdate();
       this._dispatchChange();
     });
@@ -622,11 +823,13 @@ export class ThreedTextElement extends HTMLElement {
   }
 
   private _dispatchChange() {
-    this.dispatchEvent(new CustomEvent<ThreedTextConfig>('config-change', {
-      detail: { ...this._cfg },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent<ThreedTextConfig>("config-change", {
+        detail: { ...this._cfg },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   // ── Three.js scene ────────────────────────────────────────────────────────
@@ -634,7 +837,12 @@ export class ThreedTextElement extends HTMLElement {
   private _initScene() {
     const canvas = this._canvas;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: false });
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      premultipliedAlpha: false,
+    });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
     this._renderer = renderer;
@@ -692,13 +900,18 @@ export class ThreedTextElement extends HTMLElement {
 
   private _applyAutoSize() {
     if (!this._textBoundingSize || !this._autoSize) return;
-    const fontSizePx = parseFloat(getComputedStyle(this).fontSize) || 16;
-    const textAspect = this._textBoundingSize.x / Math.max(this._textBoundingSize.y, 0.001);
-    // 1.25× matches the camera padding in _fitCameraToTextSize, so text = fontSizePx tall
-    const newH = Math.max(Math.round(fontSizePx * 1.25), 80);
-    const newW = Math.round(newH * textAspect);
-    if (Math.abs(this.offsetHeight - newH) > 1) this.style.height = `${newH}px`;
-    if (Math.abs(this.offsetWidth  - newW) > 1) this.style.width  = `${newW}px`;
+    const angleRad = this._cfg.rotateZ * (Math.PI / 180);
+    const cos = Math.abs(Math.cos(angleRad));
+    const sin = Math.abs(Math.sin(angleRad));
+    const bx = this._textBoundingSize.x;
+    const by = this._textBoundingSize.y;
+    // Axis-aligned bounding box of the rotated text rectangle
+    const rotW = bx * cos + by * sin;
+    const rotH = bx * sin + by * cos;
+    const newH = this._cfg.fontSize * (rotH / Math.max(by, 0.001));
+    const newW = this._cfg.fontSize * (rotW / Math.max(by, 0.001));
+    if (Math.abs(this.offsetHeight - newH) > 0.5) this.style.height = `${newH}px`;
+    if (Math.abs(this.offsetWidth  - newW) > 0.5) this.style.width  = `${newW}px`;
   }
 
   private _onFontSizeChange() {
@@ -710,7 +923,8 @@ export class ThreedTextElement extends HTMLElement {
       this._camera.aspect = w / h;
       this._camera.updateProjectionMatrix();
     }
-    if (this._textBoundingSize) this._fitCameraToTextSize(this._textBoundingSize);
+    if (this._textBoundingSize)
+      this._fitCameraToTextSize(this._textBoundingSize);
   }
 
   private _fitCameraToTextSize(size: THREE.Vector3) {
@@ -718,10 +932,19 @@ export class ThreedTextElement extends HTMLElement {
     const fovRad = (this._camera.fov * Math.PI) / 180;
     const halfTanFov = Math.tan(fovRad / 2);
     const aspect = this._camera.aspect;
-    const vertDist  = (size.y / 2) / halfTanFov;
-    const horizDist = (size.x / 2) / (halfTanFov * aspect);
-    const dist = Math.max(vertDist, horizDist) * 1.25 + size.z / 2;
-    this._camera.position.set(0, 0, Math.max(dist, 2));
+    // Expand size.x/y by the Z rotation so the camera frames the rotated bounding box.
+    const angleRad = this._cfg.rotateZ * (Math.PI / 180);
+    const cos = Math.abs(Math.cos(angleRad));
+    const sin = Math.abs(Math.sin(angleRad));
+    const rotW = size.x * cos + size.y * sin;
+    const rotH = size.x * sin + size.y * cos;
+    // When auto-size is on, aspect === rotW/rotH so both distances are equal;
+    // when auto-size is off, max() letterboxes the text inside the fixed canvas.
+    const vertDist = rotH / 2 / halfTanFov;
+    const horizDist = rotW / 2 / (halfTanFov * aspect);
+    // +size.z/2 keeps the front face of the extruded text exactly at vertDist from camera.
+    const dist = Math.max(vertDist, horizDist) + size.z / 2;
+    this._camera.position.set(0, 0, Math.max(dist, 0.5));
     this._camera.lookAt(0, 0, 0);
     this._camera.updateMatrixWorld(true);
   }
@@ -736,11 +959,21 @@ export class ThreedTextElement extends HTMLElement {
       this._camera.updateProjectionMatrix();
     }
 
+    // Sync CSS font-size from config so _applyAutoSize sets canvas dimensions.
+    // Guard against MutationObserver re-entry by only writing when value differs.
+    const targetFontSize = `${this._cfg.fontSize}px`;
+    if (this.style.fontSize !== targetFontSize) {
+      this.style.fontSize = targetFontSize;
+    }
+
     try {
+      const displayText = this._cfg.capitalize
+        ? this._cfg.text.toUpperCase()
+        : this._cfg.text;
       const { geometry, material } = await createTextGeometry({
-        text: this._cfg.text,
+        text: displayText,
         fontFamily: this._cfg.font,
-        size: this._cfg.size,
+        size: 2, // fixed internal 3D size — visual scale comes from camera/canvas fitting
         height: this._cfg.depth,
         color: new THREE.Color(this._cfg.color),
         metalness: this._cfg.metalness,
@@ -749,7 +982,9 @@ export class ThreedTextElement extends HTMLElement {
         envMapIntensity: this._cfg.envIntensity,
       });
 
-      if (id !== this._updateId) { return; } // stale
+      if (id !== this._updateId) {
+        return;
+      } // stale
 
       this._removeMesh();
 
@@ -791,7 +1026,7 @@ export class ThreedTextElement extends HTMLElement {
       }
       this._fitCameraToTextSize(size);
     } catch (err) {
-      console.error('[threed-text-wc] mesh update failed:', err);
+      console.error("[threed-text-wc] mesh update failed:", err);
     }
   }
 
@@ -801,7 +1036,9 @@ export class ThreedTextElement extends HTMLElement {
     this._mesh.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.geometry?.dispose();
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        const mats = Array.isArray(child.material)
+          ? child.material
+          : [child.material];
         mats.forEach((m: any) => m?.dispose());
       }
     });
@@ -815,6 +1052,7 @@ export class ThreedTextElement extends HTMLElement {
     if (this._mesh) {
       this._mesh.rotation.x = this._rotation.x;
       this._mesh.rotation.y = this._rotation.y;
+      this._mesh.rotation.z = this._cfg.rotateZ * (Math.PI / 180);
     }
     if (this._renderer && this._scene && this._camera) {
       this._renderer.render(this._scene, this._camera);
@@ -830,19 +1068,22 @@ export class ThreedTextElement extends HTMLElement {
       magFilter: THREE.LinearFilter,
     });
 
-    const initialStops = computePlasmaStops(this._primaryColor, this._secondaryColor);
+    const initialStops = computePlasmaStops(
+      this._primaryColor,
+      this._secondaryColor,
+    );
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:      { value: 0 },
-        uZoom:      { value: 8 },
-        uStop0:     { value: initialStops[0] },
-        uStop1:     { value: initialStops[1] },
-        uStop2:     { value: initialStops[2] },
-        uStop3:     { value: initialStops[3] },
-        uStop4:     { value: initialStops[4] },
+        uTime: { value: 0 },
+        uZoom: { value: 8 },
+        uStop0: { value: initialStops[0] },
+        uStop1: { value: initialStops[1] },
+        uStop2: { value: initialStops[2] },
+        uStop3: { value: initialStops[3] },
+        uStop4: { value: initialStops[4] },
         uStopCount: { value: PLASMA_STOP_COUNT },
       },
-      vertexShader:   PLASMA_VERT,
+      vertexShader: PLASMA_VERT,
       fragmentShader: PLASMA_FRAG,
     });
 
@@ -850,9 +1091,9 @@ export class ThreedTextElement extends HTMLElement {
     plasmaScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
     const plasmaCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-    this._plasmaRt     = rt;
-    this._plasmaMat    = mat;
-    this._plasmaScene  = plasmaScene;
+    this._plasmaRt = rt;
+    this._plasmaMat = mat;
+    this._plasmaScene = plasmaScene;
     this._plasmaCamera = plasmaCamera;
 
     const tex = rt.texture;
@@ -861,7 +1102,13 @@ export class ThreedTextElement extends HTMLElement {
   }
 
   private _updatePlasma(time: number) {
-    const { _plasmaRt: rt, _plasmaMat: mat, _plasmaScene: pScene, _plasmaCamera: pCam, _renderer: renderer } = this;
+    const {
+      _plasmaRt: rt,
+      _plasmaMat: mat,
+      _plasmaScene: pScene,
+      _plasmaCamera: pCam,
+      _renderer: renderer,
+    } = this;
     if (!rt || !mat || !pScene || !pCam || !renderer) return;
 
     // Render plasma shader to equirectangular RT
@@ -877,7 +1124,12 @@ export class ThreedTextElement extends HTMLElement {
       this._pmremGenerator.fromEquirectangular(rt.texture, this._pmremRt);
       // PMREMGenerator internally sets scissor/viewport; restore to full canvas before main render.
       const canvas = renderer.domElement;
-      renderer.setViewport(0, 0, canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height);
+      renderer.setViewport(
+        0,
+        0,
+        canvas.clientWidth || canvas.width,
+        canvas.clientHeight || canvas.height,
+      );
       renderer.setScissorTest(false);
     }
   }
@@ -897,6 +1149,6 @@ export class ThreedTextElement extends HTMLElement {
 
 // ── Auto-register ─────────────────────────────────────────────────────────────
 
-if (!customElements.get('threed-text')) {
-  customElements.define('threed-text', ThreedTextElement);
+if (!customElements.get("threed-text")) {
+  customElements.define("threed-text", ThreedTextElement);
 }
