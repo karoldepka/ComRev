@@ -94,6 +94,7 @@ export interface ThreedTextConfig {
   depth: number;
   metalness: number;
   roughness: number;
+  fov: number;
   envIntensity: number;
 }
 
@@ -106,6 +107,7 @@ const DEFAULTS: ThreedTextConfig = {
   metalness: 0.95,
   roughness: 0.15,
   envIntensity: 1.5,
+  fov: 75,
 };
 
 const ZOOM_TARGET_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -127,6 +129,8 @@ const STYLES = `
   }
   canvas {
     display: block;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
     width: 100%;
     height: 100%;
   }
@@ -136,14 +140,13 @@ const STYLES = `
     top: 0; right: 0;
     width: 270px;
     height: 100%;
-    background: rgba(14,14,14,0.93);
-    backdrop-filter: blur(10px);
+    background: rgba(10,10,10,0.97);
     border-left: 1px solid rgba(255,255,255,0.09);
     padding: 14px 14px 20px;
     box-sizing: border-box;
     overflow-y: auto;
     z-index: 20;
-    transform: translateX(100%);
+    transform: translateX(calc(100% + 2px));
     transition: transform 0.22s ease;
     color: #e0e0e0;
     font-size: 13px;
@@ -249,10 +252,18 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
       </div>
 
       <div class="field">
-        <label class="field-label">Depth</label>
+        <label class="field-label">Extrude</label>
         <div class="range-row">
           <input type="range" id="cfg-depth" min="0.05" max="3" step="0.05" value="${cfg.depth}">
           <span class="range-val" id="cfg-depth-v">${cfg.depth.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Perspective (FOV)</label>
+        <div class="range-row">
+          <input type="range" id="cfg-fov" min="10" max="120" step="1" value="${cfg.fov}">
+          <span class="range-val" id="cfg-fov-v">${cfg.fov}°</span>
         </div>
       </div>
 
@@ -296,7 +307,7 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
 
 export class ThreedTextElement extends HTMLElement {
   static get observedAttributes() {
-    return ['text', 'color', 'font', 'size', 'depth', 'metalness', 'roughness', 'env-intensity', 'show-config', 'scroll-zoom', 'primary-color', 'secondary-color', 'auto-size'];
+    return ['text', 'color', 'font', 'size', 'depth', 'metalness', 'roughness', 'env-intensity', 'fov', 'show-config', 'scroll-zoom', 'primary-color', 'secondary-color', 'auto-size'];
   }
 
   private _cfg: ThreedTextConfig = { ...DEFAULTS };
@@ -356,6 +367,7 @@ export class ThreedTextElement extends HTMLElement {
       case 'metalness':    this._cfg.metalness = parseFloat(value); break;
       case 'roughness':    this._cfg.roughness = parseFloat(value); break;
       case 'env-intensity':this._cfg.envIntensity = parseFloat(value); break;
+      case 'fov':          this._cfg.fov = parseFloat(value); break;
       case 'scroll-zoom':
         this._scrollZoom = value !== 'false';
         return;
@@ -449,6 +461,21 @@ export class ThreedTextElement extends HTMLElement {
     this._bindRange('#cfg-metalness',  '#cfg-metalness-v',(v) => { this._cfg.metalness = v; });
     this._bindRange('#cfg-roughness',  '#cfg-roughness-v',(v) => { this._cfg.roughness = v; });
     this._bindRange('#cfg-env',        '#cfg-env-v',      (v) => { this._cfg.envIntensity = v; });
+    const fovSlider = this._shadow.querySelector('#cfg-fov') as HTMLInputElement | null;
+    const fovVal    = this._shadow.querySelector('#cfg-fov-v') as HTMLElement | null;
+    if (fovSlider) {
+      fovSlider.addEventListener('input', () => {
+        const v = parseInt(fovSlider.value);
+        this._cfg.fov = v;
+        if (fovVal) fovVal.textContent = `${v}°`;
+        if (this._camera) {
+          this._camera.fov = v;
+          this._camera.updateProjectionMatrix();
+          if (this._textBoundingSize) this._fitCameraToTextSize(this._textBoundingSize);
+        }
+        this._dispatchChange();
+      });
+    }
 
     // Font-size slider — sets CSS font-size, which _applyAutoSize reads
     const fontSizeSlider = this._shadow.querySelector('#cfg-font-size') as HTMLInputElement | null;
@@ -607,7 +634,7 @@ export class ThreedTextElement extends HTMLElement {
   private _initScene() {
     const canvas = this._canvas;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: false });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
     this._renderer = renderer;
@@ -654,8 +681,9 @@ export class ThreedTextElement extends HTMLElement {
   private _resize() {
     const w = this.offsetWidth || 800;
     const h = this.offsetHeight || 400;
-    this._renderer?.setSize(w, h, false);
+    // setPixelRatio must come first so setSize uses the correct ratio for canvas.width/height
     this._renderer?.setPixelRatio(window.devicePixelRatio);
+    this._renderer?.setSize(w, h, false);
     if (this._camera) {
       this._camera.aspect = w / h;
       this._camera.updateProjectionMatrix();
@@ -701,6 +729,12 @@ export class ThreedTextElement extends HTMLElement {
   private async _updateMesh() {
     if (!this._scene || !this._envMap) return;
     const id = ++this._updateId;
+
+    // Apply FOV change (no geometry rebuild needed, but config setter goes through here)
+    if (this._camera && this._camera.fov !== this._cfg.fov) {
+      this._camera.fov = this._cfg.fov;
+      this._camera.updateProjectionMatrix();
+    }
 
     try {
       const { geometry, material } = await createTextGeometry({
@@ -841,6 +875,10 @@ export class ThreedTextElement extends HTMLElement {
     // Reusing _pmremRt avoids allocating a new GPU texture every frame.
     if (this._pmremGenerator && this._pmremRt) {
       this._pmremGenerator.fromEquirectangular(rt.texture, this._pmremRt);
+      // PMREMGenerator internally sets scissor/viewport; restore to full canvas before main render.
+      const canvas = renderer.domElement;
+      renderer.setViewport(0, 0, canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height);
+      renderer.setScissorTest(false);
     }
   }
 
