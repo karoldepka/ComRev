@@ -7,6 +7,7 @@ import httpx
 from langchain_core.tools import tool
 
 from structable_agent.cv_data import CV, filter_skills, search_cv, sort_skills
+from structable_agent.domain_names import find_domain_names
 
 _BACKEND = os.getenv("STRUCTABLE_BACKEND_URL", "http://localhost:3001")
 
@@ -211,4 +212,33 @@ def get_skill_usage_matrix(category: Optional[str] = None, keyword: Optional[str
 
 CV_TOOLS = [get_cv_overview, get_cv_skills, search_cv_tool, get_cv_experience, get_cv_education, get_cv_projects, get_skill_usage_matrix]
 
-TOOLS = [list_tables, list_columns, query_rows, get_row, *CV_TOOLS]
+
+# ── Domain-name research tools ───────────────────────────────────────────────
+
+@tool
+async def find_cool_domain_names(
+    idea: str,
+    extra_names: Optional[list[str]] = None,
+    max_results: int = 10,
+) -> dict:
+    """Find cool .ai domain names and research whether they are usable.
+
+    The generator is intentionally constrained:
+    - TLDs are hardcoded to .ai for now.
+    - Names must have at most 3 syllables.
+    - Names must contain both letters I and T, e.g. InTek.
+
+    Args:
+        idea: Product, project, or vibe to generate names for.
+        extra_names: Optional names or fragments to include in the candidate pool.
+        max_results: Number of checked candidates to return, up to 20.
+
+    Returns checked candidates with generated name, domain, syllable count, domain availability
+    status, and Google result-count research when Google Custom Search env vars are configured.
+    """
+    return await find_domain_names(idea=idea, extra_names=extra_names, max_results=max_results)
+
+
+DOMAIN_TOOLS = [find_cool_domain_names]
+
+TOOLS = [list_tables, list_columns, query_rows, get_row, *CV_TOOLS, *DOMAIN_TOOLS]

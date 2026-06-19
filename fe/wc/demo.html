@@ -1,57 +1,242 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>threed-text Web Component demo</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #111; color: #eee; font-family: system-ui, sans-serif; padding: 24px; }
-    h1 { font-size: 20px; margin-bottom: 8px; color: #ff6600; }
-    p  { font-size: 14px; color: #888; margin-bottom: 24px; }
-    threed-text { width: 100%; height: 420px; display: block; border-radius: 8px; }
-    .log { margin-top: 16px; font-size: 12px; color: #666; font-family: monospace; }
-  </style>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>threed-text Web Component demo</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-  <!-- Option A: ESM import (recommended for Angular with Angular Elements) -->
-  <!-- <script type="module" src="./dist/threed-text.js"></script> -->
+      body {
+        background: #111;
+        color: #eee;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        padding: 24px;
+        max-width: 960px;
+        margin: 0 auto;
+      }
 
-  <!-- Option B: UMD script tag (simplest drop-in) -->
-  <!-- In dev, point at the raw source via Vite dev server or use the UMD build -->
-  <script type="module">
-    import './src/threed-text-wc.ts'; // dev only — replace with dist/threed-text.js
-  </script>
-</head>
-<body>
-  <h1>&lt;threed-text&gt; Web Component</h1>
-  <p>Drag to rotate · Scroll to zoom · Click ⚙ Configure to open the settings panel</p>
+      h1 {
+        font-size: 22px;
+        margin-bottom: 6px;
+        color: #ff6600;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 20px;
+      }
 
-  <!-- Basic usage -->
-  <threed-text
-    text="Hello\nWorld"
-    color="#ff6600"
-    font="droid_sans"
-    size="2"
-    depth="0.8"
-    metalness="0.95"
-    roughness="0.15"
-    id="demo">
-  </threed-text>
+      threed-text {
+        border-radius: 8px;
+        font-size: 120px;
+      }
 
-  <div class="log" id="log">config-change events will appear here…</div>
+      /* ── Controls bar ── */
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
 
-  <script type="module">
-    const el = document.getElementById('demo');
-    const log = document.getElementById('log');
+      .controls-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #555;
+        margin-right: 4px;
+      }
 
-    el.addEventListener('config-change', (e) => {
-      log.textContent = 'config-change: ' + JSON.stringify(e.detail, null, 2);
-    });
+      /* ── Preset buttons ── */
+      .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
 
-    // Example: update programmatically after 3s
-    // setTimeout(() => {
-    //   el.config = { text: 'Updated!\nFrom JS', color: '#00aaff' };
-    // }, 3000);
-  </script>
-</body>
+      .preset-btn {
+        border: none;
+        border-radius: 5px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          opacity 0.15s,
+          transform 0.1s;
+        letter-spacing: 0.02em;
+      }
+      .preset-btn:hover {
+        opacity: 0.85;
+      }
+      .preset-btn:active {
+        transform: scale(0.96);
+      }
+      .preset-btn.active {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+      }
+
+      /* ── Divider ── */
+      .divider {
+        height: 1px;
+        background: #222;
+        margin: 18px 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
+          "three/examples/jsm/geometries/TextGeometry.js": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/geometries/TextGeometry.js",
+          "three/examples/jsm/loaders/FontLoader.js": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/loaders/FontLoader.js"
+        }
+      }
+    </script>
+    <script type="module" src="./dist/threed-text.js"></script>
+  </head>
+  <body>
+    <h1>&lt;threed-text&gt; Web Component</h1>
+    <p class="subtitle">
+      Drag to rotate &nbsp;·&nbsp; Ctrl+scroll or pinch to zoom &nbsp;·&nbsp;
+      Click ⚙ Configure to tweak all params
+    </p>
+
+    <!-- Controls -->
+    <div class="controls">
+      <span class="controls-label">Preset</span>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <!-- The component -->
+    <threed-text id="demo" text="Hello\nWorld"></threed-text>
+
+    <script type="module">
+      const el = document.getElementById("demo");
+      const presetsEl = document.getElementById("presets");
+
+      // ── Preset definitions ─────────────────────────────────────────────────────
+
+      const PRESETS = [
+        {
+          label: "Fire",
+          primaryColor: "#ff6600",
+          secondaryColor: "#0044ff",
+          color: "#ff6600",
+          metalness: 0.95,
+          roughness: 0.15,
+          text: "Hello\nWorld",
+          font: "droid_sans",
+          btnBg: "linear-gradient(135deg,#ff6600,#cc2200)",
+          btnColor: "#fff",
+        },
+        {
+          label: "Ice",
+          primaryColor: "#00ccff",
+          secondaryColor: "#ffffff",
+          color: "#88eeff",
+          metalness: 0.9,
+          roughness: 0.05,
+          text: "Ice2 Cold",
+          font: "droid_sans",
+          btnBg: "linear-gradient(135deg,#00ccff,#0055aa)",
+          btnColor: "#fff",
+        },
+        {
+          label: "Gold",
+          primaryColor: "#ffcc00",
+          secondaryColor: "#ff4400",
+          color: "#ffdd44",
+          metalness: 1.0,
+          roughness: 0.08,
+          text: "Pure Gold",
+          font: "helvetiker",
+          btnBg: "linear-gradient(135deg,#ffcc00,#cc7700)",
+          btnColor: "#111",
+        },
+        {
+          label: "Matrix",
+          primaryColor: "#00ff44",
+          secondaryColor: "#003311",
+          color: "#00ee33",
+          metalness: 0.7,
+          roughness: 0.3,
+          text: "Wake\nUp",
+          font: "droid_sans",
+          btnBg: "linear-gradient(135deg,#00ff44,#006622)",
+          btnColor: "#000",
+        },
+        {
+          label: "Neon",
+          primaryColor: "#ff00cc",
+          secondaryColor: "#00ffee",
+          color: "#ff44dd",
+          metalness: 0.85,
+          roughness: 0.1,
+          text: "Neon\nVibes",
+          font: "droid_sans",
+          btnBg: "linear-gradient(135deg,#ff00cc,#00ffee)",
+          btnColor: "#111",
+        },
+        {
+          label: "Royal",
+          primaryColor: "#8800ff",
+          secondaryColor: "#ffcc00",
+          color: "#aa44ff",
+          metalness: 0.98,
+          roughness: 0.05,
+          text: "Royal\nFlame",
+          font: "helvetiker",
+          btnBg: "linear-gradient(135deg,#8800ff,#ffcc00)",
+          btnColor: "#fff",
+        },
+      ];
+
+      // ── Apply a preset ─────────────────────────────────────────────────────────
+
+      function applyPreset(preset, btn) {
+        el.setAttribute("primary-color", preset.primaryColor);
+        el.setAttribute("secondary-color", preset.secondaryColor);
+        el.config = {
+          text: preset.text,
+          color: preset.color,
+          font: preset.font,
+          metalness: preset.metalness,
+          roughness: preset.roughness,
+        };
+
+        presetsEl
+          .querySelectorAll(".preset-btn")
+          .forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      }
+
+      // ── Build preset buttons ───────────────────────────────────────────────────
+
+      PRESETS.forEach((preset, i) => {
+        const btn = document.createElement("button");
+        btn.className = "preset-btn";
+        btn.textContent = preset.label;
+        btn.style.background = preset.btnBg;
+        btn.style.color = preset.btnColor;
+        btn.addEventListener("click", () => applyPreset(preset, btn));
+        presetsEl.appendChild(btn);
+
+        if (i === 0) {
+          // Apply the first preset on load
+          requestAnimationFrame(() => applyPreset(preset, btn));
+        }
+      });
+    </script>
+  </body>
 </html>

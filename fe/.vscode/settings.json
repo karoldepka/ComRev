@@ -10,5 +10,6 @@
     "mcon",
     "metaperfection",
     "Structable"
-  ]
+  ],
+  "deepscan.ignoreConfirmWarning": true
 }

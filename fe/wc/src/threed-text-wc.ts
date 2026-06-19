@@ -9,8 +9,12 @@
  *   depth         — extrusion depth, float (default: "0.8")
  *   metalness     — 0–1 (default: "0.95")
  *   roughness     — 0–1 (default: "0.15")
- *   env-intensity — env-map intensity, float (default: "1.5")
- *   show-config   — boolean attr; if present the config panel starts open
+ *   env-intensity   — env-map intensity, float (default: "1.5")
+ *   show-config     — boolean attr; if present the config panel starts open
+ *   scroll-zoom     — set to "true" to enable mouse-wheel scroll zoom; pinch-to-zoom always works (default: disabled)
+ *   auto-size       — set to "false" to disable; when enabled, element height is computed from text bounding box (default: enabled)
+ *   primary-color   — hex color for UI accents + default text color (default: "#ff6600")
+ *   secondary-color — hex color for secondary UI accents (default: "#0066ff")
  *
  * Events:
  *   config-change — CustomEvent<ThreedTextConfig>; fired on every config change
@@ -33,15 +37,19 @@ varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
 `;
 
-// Fire color stops: [t, r, g, b] — matches the main app "fire" plasma scheme
-const PLASMA_STOPS = [
-  new THREE.Vector4(0,    0,    0,    0),     // black
-  new THREE.Vector4(0.33, 0.86, 0,    0),     // dark red
-  new THREE.Vector4(0.66, 1,    0.65, 0),     // orange
-  new THREE.Vector4(1,    1,    1,    0.78),  // bright yellow-white
-  new THREE.Vector4(0,    0,    0,    0),     // unused padding (shader reads uStopCount)
-];
 const PLASMA_STOP_COUNT = 4;
+
+// Derives plasma gradient stops from primary + secondary colors.
+// Layout: black → dark primary (ember) → full primary (flame) → secondary (corona)
+function computePlasmaStops(primary: THREE.Color, secondary: THREE.Color): THREE.Vector4[] {
+  return [
+    new THREE.Vector4(0,    0,              0,              0),
+    new THREE.Vector4(0.33, primary.r * 0.35, primary.g * 0.35, primary.b * 0.35),
+    new THREE.Vector4(0.66, primary.r,      primary.g,      primary.b),
+    new THREE.Vector4(1.0,  secondary.r,    secondary.g,    secondary.b),
+    new THREE.Vector4(0,    0,              0,              0), // padding
+  ];
+}
 
 const PLASMA_FRAG = /* glsl */`
 uniform float uTime;
@@ -100,15 +108,19 @@ const DEFAULTS: ThreedTextConfig = {
   envIntensity: 1.5,
 };
 
+const ZOOM_TARGET_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
 // ── Styles (shadow DOM) ───────────────────────────────────────────────────────
 
 const STYLES = `
   :host {
-    display: block;
+    --primary-color: #ff6600;
+    --secondary-color: #0066ff;
+    display: inline-block;
     position: relative;
-    width: 100%;
+    width: 400px;
     height: 400px;
-    background: #1a1a1a;
+    background: transparent;
     border-radius: 5px;
     overflow: hidden;
     font-family: system-ui, -apple-system, sans-serif;
@@ -118,25 +130,6 @@ const STYLES = `
     width: 100%;
     height: 100%;
   }
-  /* ── Config button ── */
-  .cfg-btn {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    background: rgba(0,0,0,0.55);
-    color: #fff;
-    border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 6px;
-    padding: 6px 13px;
-    cursor: pointer;
-    font-size: 13px;
-    backdrop-filter: blur(6px);
-    z-index: 10;
-    transition: background 0.15s;
-    user-select: none;
-  }
-  .cfg-btn:hover { background: rgba(255,102,0,0.75); }
-
   /* ── Config panel ── */
   .cfg-panel {
     position: absolute;
@@ -163,7 +156,7 @@ const STYLES = `
     justify-content: space-between;
     margin-bottom: 16px;
   }
-  .cfg-title { margin: 0; font-size: 14px; color: #ff6600; font-weight: 600; }
+  .cfg-title { margin: 0; font-size: 14px; color: var(--primary-color, #ff6600); font-weight: 600; }
   .cfg-close {
     background: none; border: none;
     color: #aaa; font-size: 18px;
@@ -194,7 +187,7 @@ const STYLES = `
     outline: none;
     transition: border-color 0.15s;
   }
-  textarea:focus, select:focus { border-color: rgba(255,102,0,0.6); }
+  textarea:focus, select:focus { border-color: var(--primary-color, #ff6600); }
   textarea { resize: vertical; min-height: 72px; }
   select option { background: #1a1a1a; }
 
@@ -211,7 +204,7 @@ const STYLES = `
   }
   input[type="range"] {
     flex: 1;
-    accent-color: #ff6600;
+    accent-color: var(--primary-color, #ff6600);
     cursor: pointer;
   }
   .range-val {
@@ -234,7 +227,6 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
 
   return `
     <canvas></canvas>
-    <button class="cfg-btn" type="button">⚙ Configure</button>
     <div class="cfg-panel">
       <div class="cfg-header">
         <h3 class="cfg-title">3D Text Config</h3>
@@ -254,14 +246,6 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
       <div class="field">
         <label class="field-label" for="cfg-color">Color</label>
         <input type="color" id="cfg-color" value="${cfg.color}">
-      </div>
-
-      <div class="field">
-        <label class="field-label">Size</label>
-        <div class="range-row">
-          <input type="range" id="cfg-size" min="0.5" max="6" step="0.1" value="${cfg.size}">
-          <span class="range-val" id="cfg-size-v">${cfg.size.toFixed(1)}</span>
-        </div>
       </div>
 
       <div class="field">
@@ -295,6 +279,15 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
           <span class="range-val" id="cfg-env-v">${cfg.envIntensity.toFixed(2)}</span>
         </div>
       </div>
+
+      <div class="field">
+        <label class="field-label">Font size</label>
+        <div class="range-row">
+          <input type="range" id="cfg-font-size" min="20" max="600" step="10" value="120">
+          <span class="range-val" id="cfg-font-size-v">120px</span>
+        </div>
+      </div>
+
     </div>
   `;
 }
@@ -303,7 +296,7 @@ function buildTemplate(cfg: ThreedTextConfig, fonts: typeof AVAILABLE_FONTS): st
 
 export class ThreedTextElement extends HTMLElement {
   static get observedAttributes() {
-    return ['text', 'color', 'font', 'size', 'depth', 'metalness', 'roughness', 'env-intensity', 'show-config'];
+    return ['text', 'color', 'font', 'size', 'depth', 'metalness', 'roughness', 'env-intensity', 'show-config', 'scroll-zoom', 'primary-color', 'secondary-color', 'auto-size'];
   }
 
   private _cfg: ThreedTextConfig = { ...DEFAULTS };
@@ -322,11 +315,19 @@ export class ThreedTextElement extends HTMLElement {
   private _drag = false;
   private _lastMouse = { x: 0, y: 0 };
   private _startTime = performance.now();
+  private _scrollZoom = false;
+  private _autoSize = true;
+  private _textBoundingSize: THREE.Vector3 | null = null;
+  private _styleObserver: MutationObserver | null = null;
+  private _primaryColor = new THREE.Color('#ff6600');
+  private _secondaryColor = new THREE.Color('#0066ff');
   // Plasma env-map
   private _plasmaRt: THREE.WebGLRenderTarget | null = null;
   private _plasmaMat: THREE.ShaderMaterial | null = null;
   private _plasmaScene: THREE.Scene | null = null;
   private _plasmaCamera: THREE.OrthographicCamera | null = null;
+  private _pmremGenerator: THREE.PMREMGenerator | null = null;
+  private _pmremRt: THREE.WebGLRenderTarget | null = null;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -355,6 +356,30 @@ export class ThreedTextElement extends HTMLElement {
       case 'metalness':    this._cfg.metalness = parseFloat(value); break;
       case 'roughness':    this._cfg.roughness = parseFloat(value); break;
       case 'env-intensity':this._cfg.envIntensity = parseFloat(value); break;
+      case 'scroll-zoom':
+        this._scrollZoom = value !== 'false';
+        return;
+      case 'auto-size':
+        this._autoSize = value !== 'false';
+        if (this._autoSize && this._textBoundingSize) {
+          this._applyAutoSize();
+          this._fitCameraToTextSize(this._textBoundingSize);
+        }
+        return;
+      case 'primary-color':
+        this.style.setProperty('--primary-color', value);
+        this._primaryColor.set(value);
+        this._updatePlasmaColors();
+        if (!this.hasAttribute('color')) {
+          this._cfg.color = value;
+          this._scheduleUpdate();
+        }
+        return;
+      case 'secondary-color':
+        this.style.setProperty('--secondary-color', value);
+        this._secondaryColor.set(value);
+        this._updatePlasmaColors();
+        return;
       case 'show-config':
         this._shadow?.querySelector('.cfg-panel')?.classList.toggle('open', value !== 'false');
         return;
@@ -388,9 +413,31 @@ export class ThreedTextElement extends HTMLElement {
     const showConfig = this.hasAttribute('show-config') && this.getAttribute('show-config') !== 'false';
     if (showConfig) panel.classList.add('open');
 
-    this._shadow.querySelector('.cfg-btn')!.addEventListener('click', () =>
-      panel.classList.toggle('open')
-    );
+    const openPanel = () => panel.classList.add('open');
+
+    // Right-click opens the config panel instead of the browser context menu
+    this._canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openPanel();
+    });
+
+    // Long-press (≥500 ms) opens the config panel on touch devices
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    this._canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          openPanel();
+        }, 500);
+      }
+    }, { passive: true });
+    const cancelLongPress = () => {
+      if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
+    };
+    this._canvas.addEventListener('touchend',    cancelLongPress, { passive: true });
+    this._canvas.addEventListener('touchcancel', cancelLongPress, { passive: true });
+    this._canvas.addEventListener('touchmove',   cancelLongPress, { passive: true });
+
     this._shadow.querySelector('.cfg-close')!.addEventListener('click', () =>
       panel.classList.remove('open')
     );
@@ -398,11 +445,29 @@ export class ThreedTextElement extends HTMLElement {
     this._bindControl('#cfg-text',     'input',  (v) => { this._cfg.text = v; });
     this._bindControl('#cfg-font',     'change', (v) => { this._cfg.font = v; });
     this._bindControl('#cfg-color',    'input',  (v) => { this._cfg.color = v; });
-    this._bindRange('#cfg-size',       '#cfg-size-v',     (v) => { this._cfg.size = v; });
     this._bindRange('#cfg-depth',      '#cfg-depth-v',    (v) => { this._cfg.depth = v; });
     this._bindRange('#cfg-metalness',  '#cfg-metalness-v',(v) => { this._cfg.metalness = v; });
     this._bindRange('#cfg-roughness',  '#cfg-roughness-v',(v) => { this._cfg.roughness = v; });
     this._bindRange('#cfg-env',        '#cfg-env-v',      (v) => { this._cfg.envIntensity = v; });
+
+    // Font-size slider — sets CSS font-size, which _applyAutoSize reads
+    const fontSizeSlider = this._shadow.querySelector('#cfg-font-size') as HTMLInputElement | null;
+    const fontSizeVal    = this._shadow.querySelector('#cfg-font-size-v') as HTMLElement | null;
+    if (fontSizeSlider) {
+      // Initialise slider to match the computed CSS font-size
+      const initial = Math.round(parseFloat(getComputedStyle(this).fontSize) || 120);
+      fontSizeSlider.value = String(initial);
+      if (fontSizeVal) fontSizeVal.textContent = `${initial}px`;
+      fontSizeSlider.addEventListener('input', () => {
+        const v = parseInt(fontSizeSlider.value);
+        if (fontSizeVal) fontSizeVal.textContent = `${v}px`;
+        this.style.fontSize = `${v}px`;
+      });
+    }
+
+    // Re-apply sizing when font-size changes via inline style or class swap
+    this._styleObserver = new MutationObserver(() => this._onFontSizeChange());
+    this._styleObserver.observe(this, { attributes: true, attributeFilter: ['style', 'class'] });
 
     this._canvas.addEventListener('mousedown', (e) => {
       this._drag = true;
@@ -416,13 +481,76 @@ export class ThreedTextElement extends HTMLElement {
     });
     window.addEventListener('mouseup', () => { this._drag = false; });
 
-    // Wheel zoom
+    // Wheel zoom — ctrlKey=true means trackpad/browser pinch gesture, always allow
     this._canvas.addEventListener('wheel', (e) => {
+      const isPinch = e.ctrlKey;
+      if (!this._scrollZoom && !isPinch) return;
       e.preventDefault();
       if (!this._camera) return;
       const factor = Math.pow(1.001, e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1));
-      this._camera.position.z = Math.max(2, Math.min(80, this._camera.position.z * factor));
+      this._zoomCameraAtClientPoint(e.clientX, e.clientY, factor);
     }, { passive: false });
+
+    // Touch pinch-to-zoom (always active, independent of scroll-zoom setting)
+    let lastPinchDist = 0;
+    this._canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        lastPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY,
+        );
+      }
+    }, { passive: true });
+    this._canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 2 || !this._camera) return;
+      e.preventDefault();
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      if (lastPinchDist > 0) {
+        const scale = lastPinchDist / dist;
+        this._zoomCameraAtClientPoint(
+          (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          (e.touches[0].clientY + e.touches[1].clientY) / 2,
+          scale,
+        );
+      }
+      lastPinchDist = dist;
+    }, { passive: false });
+    this._canvas.addEventListener('touchend', () => { lastPinchDist = 0; }, { passive: true });
+
+  }
+
+  private _zoomCameraAtClientPoint(clientX: number, clientY: number, factor: number) {
+    if (!this._camera) return;
+    const before = this._worldPointAtClientPoint(clientX, clientY);
+    const nextZ = Math.max(2, Math.min(80, this._camera.position.z * factor));
+    if (nextZ === this._camera.position.z) return;
+
+    this._camera.position.z = nextZ;
+    const after = this._worldPointAtClientPoint(clientX, clientY);
+    if (!before || !after) return;
+
+    this._camera.position.x += before.x - after.x;
+    this._camera.position.y += before.y - after.y;
+    this._camera.updateMatrixWorld(true);
+  }
+
+  private _worldPointAtClientPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+    if (!this._camera || !this._canvas) return null;
+    const rect = this._canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    const point = new THREE.Vector3();
+    this._camera.updateMatrixWorld(true);
+    raycaster.setFromCamera(pointer, this._camera);
+    return raycaster.ray.intersectPlane(ZOOM_TARGET_PLANE, point);
   }
 
   // ── Control wiring ────────────────────────────────────────────────────────
@@ -450,6 +578,17 @@ export class ThreedTextElement extends HTMLElement {
     });
   }
 
+  private _updatePlasmaColors() {
+    if (!this._plasmaMat) return;
+    const stops = computePlasmaStops(this._primaryColor, this._secondaryColor);
+    const u = this._plasmaMat.uniforms;
+    u.uStop0.value = stops[0];
+    u.uStop1.value = stops[1];
+    u.uStop2.value = stops[2];
+    u.uStop3.value = stops[3];
+    u.uStop4.value = stops[4];
+  }
+
   private _scheduleUpdate() {
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
     this._debounceTimer = setTimeout(() => this._updateMesh(), 60);
@@ -468,13 +607,13 @@ export class ThreedTextElement extends HTMLElement {
   private _initScene() {
     const canvas = this._canvas;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
     this._renderer = renderer;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a1a);
+    // Background is null so the CSS background shows through (alpha channel enabled)
     this._scene = scene;
 
     const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 10000);
@@ -493,8 +632,15 @@ export class ThreedTextElement extends HTMLElement {
     p2.position.set(8, -5, 8);
     scene.add(p2);
 
-    this._envMap = this._setupPlasmaEnvMap();
-    if (this._envMap) scene.environment = this._envMap;
+    // Build plasma render target, warm it up, then bootstrap PMREM
+    const plasmaEquirect = this._setupPlasmaEnvMap();
+    this._updatePlasma(0); // render one frame so PMREM starts with real data
+
+    this._pmremGenerator = new THREE.PMREMGenerator(renderer);
+    this._pmremGenerator.compileEquirectangularShader();
+    this._pmremRt = this._pmremGenerator.fromEquirectangular(plasmaEquirect);
+    this._envMap = this._pmremRt.texture;
+    scene.environment = this._envMap;
 
     // Resize
     this._resizeOb = new ResizeObserver(() => this._resize());
@@ -514,6 +660,42 @@ export class ThreedTextElement extends HTMLElement {
       this._camera.aspect = w / h;
       this._camera.updateProjectionMatrix();
     }
+  }
+
+  private _applyAutoSize() {
+    if (!this._textBoundingSize || !this._autoSize) return;
+    const fontSizePx = parseFloat(getComputedStyle(this).fontSize) || 16;
+    const textAspect = this._textBoundingSize.x / Math.max(this._textBoundingSize.y, 0.001);
+    // 1.25× matches the camera padding in _fitCameraToTextSize, so text = fontSizePx tall
+    const newH = Math.max(Math.round(fontSizePx * 1.25), 80);
+    const newW = Math.round(newH * textAspect);
+    if (Math.abs(this.offsetHeight - newH) > 1) this.style.height = `${newH}px`;
+    if (Math.abs(this.offsetWidth  - newW) > 1) this.style.width  = `${newW}px`;
+  }
+
+  private _onFontSizeChange() {
+    if (!this._autoSize || !this._textBoundingSize) return;
+    this._applyAutoSize();
+    if (this._camera) {
+      const w = this.offsetWidth || 800;
+      const h = this.offsetHeight || 400;
+      this._camera.aspect = w / h;
+      this._camera.updateProjectionMatrix();
+    }
+    if (this._textBoundingSize) this._fitCameraToTextSize(this._textBoundingSize);
+  }
+
+  private _fitCameraToTextSize(size: THREE.Vector3) {
+    if (!this._camera) return;
+    const fovRad = (this._camera.fov * Math.PI) / 180;
+    const halfTanFov = Math.tan(fovRad / 2);
+    const aspect = this._camera.aspect;
+    const vertDist  = (size.y / 2) / halfTanFov;
+    const horizDist = (size.x / 2) / (halfTanFov * aspect);
+    const dist = Math.max(vertDist, horizDist) * 1.25 + size.z / 2;
+    this._camera.position.set(0, 0, Math.max(dist, 2));
+    this._camera.lookAt(0, 0, 0);
+    this._camera.updateMatrixWorld(true);
   }
 
   private async _updateMesh() {
@@ -536,21 +718,44 @@ export class ThreedTextElement extends HTMLElement {
       if (id !== this._updateId) { return; } // stale
 
       this._removeMesh();
-      let mesh: THREE.Mesh | THREE.Group;
+
+      // Build a wrapper Group so rotation is always around the text's visual center
+      const wrapper = new THREE.Group();
+      let inner: THREE.Mesh | THREE.Group;
       if (geometry instanceof THREE.Group) {
-        mesh = geometry;
-        mesh.traverse((child) => {
+        inner = geometry;
+        inner.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.material = material;
             child.castShadow = true;
           }
         });
       } else {
-        mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
+        inner = new THREE.Mesh(geometry, material);
+        (inner as THREE.Mesh).castShadow = true;
       }
-      this._scene!.add(mesh);
-      this._mesh = mesh;
+      wrapper.add(inner);
+      this._scene!.add(wrapper);
+      this._mesh = wrapper;
+
+      // Center inner content within wrapper so wrapper.rotation spins around text center
+      const box = new THREE.Box3().setFromObject(wrapper);
+      const center = box.getCenter(new THREE.Vector3());
+      inner.position.sub(center);
+      const size = box.getSize(new THREE.Vector3());
+      this._textBoundingSize = size;
+
+      if (this._autoSize) {
+        this._applyAutoSize();
+        // Re-read aspect after height change before fitting camera
+        if (this._camera) {
+          const w = this.offsetWidth || 800;
+          const h = this.offsetHeight || 400;
+          this._camera.aspect = w / h;
+          this._camera.updateProjectionMatrix();
+        }
+      }
+      this._fitCameraToTextSize(size);
     } catch (err) {
       console.error('[threed-text-wc] mesh update failed:', err);
     }
@@ -591,15 +796,16 @@ export class ThreedTextElement extends HTMLElement {
       magFilter: THREE.LinearFilter,
     });
 
+    const initialStops = computePlasmaStops(this._primaryColor, this._secondaryColor);
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime:      { value: 0 },
         uZoom:      { value: 8 },
-        uStop0:     { value: PLASMA_STOPS[0] },
-        uStop1:     { value: PLASMA_STOPS[1] },
-        uStop2:     { value: PLASMA_STOPS[2] },
-        uStop3:     { value: PLASMA_STOPS[3] },
-        uStop4:     { value: PLASMA_STOPS[4] },
+        uStop0:     { value: initialStops[0] },
+        uStop1:     { value: initialStops[1] },
+        uStop2:     { value: initialStops[2] },
+        uStop3:     { value: initialStops[3] },
+        uStop4:     { value: initialStops[4] },
         uStopCount: { value: PLASMA_STOP_COUNT },
       },
       vertexShader:   PLASMA_VERT,
@@ -623,19 +829,30 @@ export class ThreedTextElement extends HTMLElement {
   private _updatePlasma(time: number) {
     const { _plasmaRt: rt, _plasmaMat: mat, _plasmaScene: pScene, _plasmaCamera: pCam, _renderer: renderer } = this;
     if (!rt || !mat || !pScene || !pCam || !renderer) return;
+
+    // Render plasma shader to equirectangular RT
     mat.uniforms.uTime.value = time;
     const prev = renderer.getRenderTarget();
     renderer.setRenderTarget(rt);
     renderer.render(pScene, pCam);
     renderer.setRenderTarget(prev);
+
+    // Re-generate PMREM cube UV in the pre-allocated target so scene.environment animates.
+    // Reusing _pmremRt avoids allocating a new GPU texture every frame.
+    if (this._pmremGenerator && this._pmremRt) {
+      this._pmremGenerator.fromEquirectangular(rt.texture, this._pmremRt);
+    }
   }
 
   private _dispose() {
     if (this._animId !== null) cancelAnimationFrame(this._animId);
     this._resizeOb?.disconnect();
+    this._styleObserver?.disconnect();
     this._removeMesh();
     this._plasmaRt?.dispose();
     this._plasmaMat?.dispose();
+    this._pmremRt?.dispose();
+    this._pmremGenerator?.dispose();
     this._renderer?.dispose();
   }
 }

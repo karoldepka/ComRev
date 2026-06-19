@@ -285,25 +285,50 @@ export async function createTextGeometry(
     const lineWidths: number[] = [];
     const equalizationFactors: number[] = lines.map(() => 1);
 
-    // First pass: calculate natural widths
-    for (const line of lines) {
+    // First pass: calculate natural widths (bold-aware so equalization factors are accurate)
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
       if (!line.trim()) { lineWidths.push(0); continue; }
-      const geometry = new TextGeometry(line, {
-        font: font as any,
-        size: mergedOptions.size,
-        depth: mergedOptions.height,
-        curveSegments: mergedOptions.curveSegments,
-        bevelEnabled: mergedOptions.bevelEnabled,
-        bevelThickness: mergedOptions.bevelThickness,
-        bevelSize: mergedOptions.bevelSize,
-        bevelOffset: mergedOptions.bevelOffset,
-        bevelSegments: mergedOptions.bevelSegments,
-      } as any);
-
-      geometry.computeBoundingBox();
-      const width = (geometry.boundingBox?.max.x ?? 0) - (geometry.boundingBox?.min.x ?? 0);
-      lineWidths.push(width);
-      geometry.dispose();
+      const rawLine = rawLines[lineIndex];
+      if (/<b>/i.test(rawLine)) {
+        // Measure each segment with its proper font so bold glyphs (wider) are accounted for
+        const segments = parseBoldSegments(rawLine);
+        let totalWidth = 0;
+        for (const seg of segments) {
+          const segFont = seg.bold ? boldFont : font;
+          const geo = new TextGeometry(seg.text, {
+            font: segFont as any,
+            size: mergedOptions.size,
+            depth: mergedOptions.height,
+            curveSegments: mergedOptions.curveSegments,
+            bevelEnabled: mergedOptions.bevelEnabled,
+            bevelThickness: mergedOptions.bevelThickness,
+            bevelSize: mergedOptions.bevelSize,
+            bevelOffset: mergedOptions.bevelOffset,
+            bevelSegments: mergedOptions.bevelSegments,
+          } as any);
+          geo.computeBoundingBox();
+          totalWidth += (geo.boundingBox?.max.x ?? 0) - (geo.boundingBox?.min.x ?? 0);
+          geo.dispose();
+        }
+        lineWidths.push(totalWidth);
+      } else {
+        const geometry = new TextGeometry(line, {
+          font: font as any,
+          size: mergedOptions.size,
+          depth: mergedOptions.height,
+          curveSegments: mergedOptions.curveSegments,
+          bevelEnabled: mergedOptions.bevelEnabled,
+          bevelThickness: mergedOptions.bevelThickness,
+          bevelSize: mergedOptions.bevelSize,
+          bevelOffset: mergedOptions.bevelOffset,
+          bevelSegments: mergedOptions.bevelSegments,
+        } as any);
+        geometry.computeBoundingBox();
+        const width = (geometry.boundingBox?.max.x ?? 0) - (geometry.boundingBox?.min.x ?? 0);
+        lineWidths.push(width);
+        geometry.dispose();
+      }
     }
 
     // Calculate equalization factors
