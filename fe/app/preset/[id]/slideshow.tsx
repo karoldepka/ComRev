@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ThreeDTextScreen } from '@/app/(tabs)/three-d';
-import { usePresetLoader } from '../use-preset-loader';
+import { usePresetLoader } from '../_use-preset-loader';
 
 export default function PresetSlideshowScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
