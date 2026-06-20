@@ -95,10 +95,10 @@ const PLASMA_STOP_COUNT = 4;
 
 function computePlasmaStops(primary: Color, secondary: Color): Vector4[] {
   return [
-    new Vector4(0, 0, 0, 0),
-    new Vector4(0.33, primary.r * 0.35, primary.g * 0.35, primary.b * 0.35),
-    new Vector4(0.66, primary.r, primary.g, primary.b),
-    new Vector4(1.0, secondary.r, secondary.g, secondary.b),
+    new Vector4(0,    secondary.r * 0.4, secondary.g * 0.4, secondary.b * 0.4),
+    new Vector4(0.33, primary.r   * 0.6, primary.g   * 0.6, primary.b   * 0.6),
+    new Vector4(0.66, primary.r,          primary.g,          primary.b        ),
+    new Vector4(1.0,  secondary.r,        secondary.g,        secondary.b      ),
     new Vector4(0, 0, 0, 0),
   ];
 }
