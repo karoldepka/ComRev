@@ -7234,12 +7234,19 @@ export function ThreeDTextScreen({
             <Pressable
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 5 }}
               onPress={() => {
-                setIsPaused((prev) => !prev);
-                pauseIconOpacity.value = withSequence(
-                  withTiming(1, { duration: 200 }),
-                  withTiming(1, { duration: 600 }),
-                  withTiming(0, { duration: 200 }),
-                );
+                const nextPaused = !isPaused;
+                setIsPaused(nextPaused);
+                if (nextPaused) {
+                  // Pausing: fade in and stay
+                  pauseIconOpacity.value = withTiming(1, { duration: 200 });
+                } else {
+                  // Resuming: flash ▶ then fade out
+                  pauseIconOpacity.value = withSequence(
+                    withTiming(1, { duration: 200 }),
+                    withTiming(1, { duration: 600 }),
+                    withTiming(0, { duration: 200 }),
+                  );
+                }
               }}
             />
           )}
