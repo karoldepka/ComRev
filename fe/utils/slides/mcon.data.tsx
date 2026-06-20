@@ -204,6 +204,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "constant improvement and learning": {},
   "to earn more i gotta learn more": {},
   "sharpen the saw": {},
+  sampling: {},
+  "self-discipline but not self-oppression": {},
   "simplicity is the\nultimate sophistication\nsimple but\nnot primitive": {
     sentiment: "calm",
     emotion: "sophistication",
