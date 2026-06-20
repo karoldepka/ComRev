@@ -7250,15 +7250,15 @@ export function ThreeDTextScreen({
               }}
             />
           )}
-          {/* Pause/play icon flash — pointer-events: none so it never intercepts taps */}
+          {/* Pause/play icon flash — pointerEvents in style to avoid deprecation warning */}
           {sequenceMode && (
             <Animated.View
               style={[
                 { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  alignItems: 'center', justifyContent: 'center', zIndex: 6 },
+                  alignItems: 'center', justifyContent: 'center', zIndex: 6,
+                  pointerEvents: 'none' },
                 pauseIconStyle,
               ]}
-              pointerEvents="none"
             >
               <View style={{
                 backgroundColor: 'rgba(0,0,0,0.55)',
@@ -7268,7 +7268,8 @@ export function ThreeDTextScreen({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 32, color: '#fff' }}>
+                <Text style={{ fontSize: 32, color: '#fff', lineHeight: 72,
+                  textAlign: 'center', includeFontPadding: false }}>
                   {isPaused ? '⏸' : '▶'}
                 </Text>
               </View>
