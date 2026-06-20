@@ -1,4 +1,13 @@
-import * as THREE from "three";
+import {
+  Box3,
+  BoxGeometry,
+  Color,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  type Texture,
+  Vector3,
+} from "three";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
@@ -16,10 +25,10 @@ export interface TextGeometryOptions {
   bevelSize?: number;
   bevelOffset?: number;
   bevelSegments?: number;
-  color?: THREE.Color;
+  color?: Color;
   metalness?: number;
   roughness?: number;
-  envMap?: THREE.Texture | null;
+  envMap?: Texture | null;
   envMapIntensity?: number;
   equalizeLineWidths?: boolean;
   equalizationMethod?: 'spacing' | 'fontSize';
@@ -170,7 +179,7 @@ const defaultOptions: Partial<TextGeometryOptions> = {
  * env-map region. Redirecting to a grazing tangent avoids the hot-pixel.
  * No fragments are discarded, so inner hole walls ("fences") stay visible.
  */
-function patchBevelNormalReflect(mat: THREE.MeshStandardMaterial): void {
+function patchBevelNormalReflect(mat: MeshStandardMaterial): void {
   mat.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <normal_fragment_begin>',
@@ -263,8 +272,8 @@ async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
 export async function createTextGeometry(
   options: TextGeometryOptions,
 ): Promise<{
-  geometry: TextGeometry | THREE.Group;
-  material: THREE.MeshStandardMaterial;
+  geometry: TextGeometry | Group;
+  material: MeshStandardMaterial;
 }> {
   const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
   const rawLines = mergedOptions.text!.split('\n');
@@ -340,8 +349,8 @@ export async function createTextGeometry(
     }
 
     // Create the main group for all lines
-    const mainGroup = new THREE.Group();
-    const lineGeometries: { geometry: TextGeometry | THREE.Group; minY: number; maxY: number }[] = [];
+    const mainGroup = new Group();
+    const lineGeometries: { geometry: TextGeometry | Group; minY: number; maxY: number }[] = [];
 
     // Second pass: create geometries with equalization
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -351,7 +360,7 @@ export async function createTextGeometry(
       if (mergedOptions.equalizationMethod === 'fontSize' || !mergedOptions.equalizeLineWidths) {
         // Empty line → use a blank spacer (no visible geometry, but correct spacing)
         if (!line.trim()) {
-          const spacerGroup = new THREE.Group();
+          const spacerGroup = new Group();
           const emptySize = mergedOptions.size! * factor;
           lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: emptySize * 0.8 });
           continue;
@@ -385,10 +394,10 @@ export async function createTextGeometry(
           let cursorX = -totalWidth / 2;
           let lineMinY = segInfos[0]?.minY ?? 0;
           let lineMaxY = segInfos[0]?.maxY ?? effectiveSize;
-          const lineGroup = new THREE.Group();
+          const lineGroup = new Group();
           for (const { geo, width, minY, maxY, startX } of segInfos) {
             geo.translate(cursorX - startX, 0, 0);
-            lineGroup.add(new THREE.Mesh(geo));
+            lineGroup.add(new Mesh(geo));
             cursorX += width;
             lineMinY = Math.min(lineMinY, minY);
             lineMaxY = Math.max(lineMaxY, maxY);
@@ -423,14 +432,14 @@ export async function createTextGeometry(
       } else {
         // Empty line in spacing mode → spacer
         if (!line.trim()) {
-          const spacerGroup = new THREE.Group();
+          const spacerGroup = new Group();
           lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: mergedOptions.size! * 0.8 });
           continue;
         }
         // Spacing mode: create per-character geometries with extra gaps
         const naturalWidth = lineWidths[lineIndex];
         const extraSpace = (mergedOptions.targetWidth! - naturalWidth) / Math.max(1, line.length - 1);
-        const lineGroup = new THREE.Group();
+        const lineGroup = new Group();
         let cursorX = 0;
 
         for (let charIndex = 0; charIndex < line.length; charIndex++) {
@@ -461,15 +470,15 @@ export async function createTextGeometry(
           charGeometry.computeBoundingBox();
           const charWidth = charGeometry.boundingBox!.max.x - charGeometry.boundingBox!.min.x;
           charGeometry.translate(cursorX, 0, 0);
-          const charMesh = new THREE.Mesh(charGeometry);
+          const charMesh = new Mesh(charGeometry);
           lineGroup.add(charMesh);
           cursorX += charWidth + extraSpace;
         }
 
         // Compute actual bbox of the assembled line
         const box = lineGroup.children.length > 0
-          ? new THREE.Box3().setFromObject(lineGroup)
-          : new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, mergedOptions.size!, 0));
+          ? new Box3().setFromObject(lineGroup)
+          : new Box3(new Vector3(0, 0, 0), new Vector3(0, mergedOptions.size!, 0));
         const centerX = (box.max.x + box.min.x) / 2;
         lineGroup.position.x = -centerX;
         lineGeometries.push({ geometry: lineGroup, minY: box.min.y, maxY: box.max.y });
@@ -490,33 +499,40 @@ export async function createTextGeometry(
     for (let i = 0; i < lineGeometries.length; i++) {
       const yOrigin = origins[i] - centerY;
       const { geometry: lineGeometry } = lineGeometries[i];
-      if (lineGeometry instanceof THREE.Group) {
+      if (lineGeometry instanceof Group) {
         lineGeometry.position.y = yOrigin;
         mainGroup.add(lineGeometry);
       } else {
         lineGeometry.translate(0, yOrigin, 0);
-        const lineMesh = new THREE.Mesh(lineGeometry);
+        const lineMesh = new Mesh(lineGeometry);
         mainGroup.add(lineMesh);
       }
     }
 
     const color =
-      mergedOptions.color || new THREE.Color().setHSL(Math.random(), 0.8, 0.5);
+      mergedOptions.color || new Color().setHSL(Math.random(), 0.8, 0.5);
 
-    const material = new THREE.MeshStandardMaterial({
+    const materialOptions: any = {
       color,
-      metalness: mergedOptions.metalness,
-      roughness: mergedOptions.roughness,
-      envMap: mergedOptions.envMap || undefined,
-      envMapIntensity: mergedOptions.envMapIntensity,
-    });
+      metalness: mergedOptions.envMap
+        ? mergedOptions.metalness
+        : Math.min(mergedOptions.metalness ?? 0, 0.25),
+      roughness: mergedOptions.envMap
+        ? mergedOptions.roughness
+        : Math.max(mergedOptions.roughness ?? 0.45, 0.35),
+    };
+    if (mergedOptions.envMap) {
+      materialOptions.envMap = mergedOptions.envMap;
+      materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
+    }
+    const material = new MeshStandardMaterial(materialOptions);
     patchBevelNormalReflect(material);
     return { geometry: mainGroup, material };
   } catch (error) {
     console.error("Failed to load font, creating fallback geometry:", error);
 
     // Fallback: create simple extruded text using basic shapes
-    const mainGroup = new THREE.Group();
+    const mainGroup = new Group();
     const baseLetterSpacing = mergedOptions.size! * 0.8;
     const lineSpacing = mergedOptions.size! + mergedOptions.lineSpacing!;
 
@@ -552,7 +568,7 @@ export async function createTextGeometry(
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       const factor = equalizationFactors[lineIndex];
-      const lineGroup = new THREE.Group();
+      const lineGroup = new Group();
 
       let currentX = 0;
       const letterSpacing = mergedOptions.equalizationMethod === 'spacing'
@@ -571,13 +587,13 @@ export async function createTextGeometry(
         }
 
         // Create a simple box for each character
-        const charGeometry = new THREE.BoxGeometry(
+        const charGeometry = new BoxGeometry(
           charSize * 0.6,
           charSize,
           mergedOptions.height!,
         );
 
-        const charMesh = new THREE.Mesh(charGeometry);
+        const charMesh = new Mesh(charGeometry);
         charMesh.position.x = currentX;
         lineGroup.add(charMesh);
 
@@ -585,8 +601,8 @@ export async function createTextGeometry(
       }
 
       // Center the line horizontally
-      const box = new THREE.Box3().setFromObject(lineGroup);
-      const center = box.getCenter(new THREE.Vector3());
+      const box = new Box3().setFromObject(lineGroup);
+      const center = box.getCenter(new Vector3());
       lineGroup.position.x = -center.x;
 
       // Position vertically
@@ -597,15 +613,22 @@ export async function createTextGeometry(
     }
 
     const color =
-      mergedOptions.color || new THREE.Color().setHSL(Math.random(), 0.8, 0.5);
+      mergedOptions.color || new Color().setHSL(Math.random(), 0.8, 0.5);
 
-    const material = new THREE.MeshStandardMaterial({
+    const materialOptions: any = {
       color,
-      metalness: mergedOptions.metalness,
-      roughness: mergedOptions.roughness,
-      envMap: mergedOptions.envMap || undefined,
-      envMapIntensity: mergedOptions.envMapIntensity,
-    });
+      metalness: mergedOptions.envMap
+        ? mergedOptions.metalness
+        : Math.min(mergedOptions.metalness ?? 0, 0.25),
+      roughness: mergedOptions.envMap
+        ? mergedOptions.roughness
+        : Math.max(mergedOptions.roughness ?? 0.45, 0.35),
+    };
+    if (mergedOptions.envMap) {
+      materialOptions.envMap = mergedOptions.envMap;
+      materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
+    }
+    const material = new MeshStandardMaterial(materialOptions);
     patchBevelNormalReflect(material);
     return { geometry: mainGroup, material };
   }
@@ -613,9 +636,9 @@ export async function createTextGeometry(
 
 export function createTextMesh(
   geometry: TextGeometry,
-  material: THREE.MeshStandardMaterial,
-): THREE.Mesh {
-  const mesh = new THREE.Mesh(geometry, material);
+  material: MeshStandardMaterial,
+): Mesh {
+  const mesh = new Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;

@@ -12,7 +12,9 @@
     "noEmit": true,
     "strict": true,
     "paths": {
-      "@/*": ["../*"]
+      "@/*": ["../*"],
+      "three": ["./node_modules/@types/three"],
+      "three/examples/jsm/*": ["./node_modules/@types/three/examples/jsm/*"]
     }
   },
   "include": ["src"]
