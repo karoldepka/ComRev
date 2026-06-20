@@ -20,8 +20,15 @@ config.resolver.nodeModulesPaths = [path.resolve(__dirname, 'node_modules')];
 
 const LOG_FILE = path.resolve(__dirname, 'metro.warn.log');
 
+// Patterns for known-harmless Metro warnings that clutter the console.
+// Metro falls back correctly in all these cases; the packages just have stale exports maps.
+const SUPPRESSED_WARN_PATTERNS = [
+  /node_modules[\\/]three[\\/].*invalid package\.json/,
+];
+
 function suppressedWarn(...args) {
   const text = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  if (SUPPRESSED_WARN_PATTERNS.some((re) => re.test(text))) return;
   const stack = new Error().stack?.split('\n').slice(2).join('\n') ?? '';
   try { fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] WARN: ${text}\n${stack}\n\n`); } catch { /* ignore */ }
   process.stderr.write(`\x1b[33m WARN \x1b[0m ${text}\n`);
