@@ -226,6 +226,8 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
+  withTiming,
 } from "react-native-reanimated";
 
 import { API_BASE } from '@/utils/api-config';
@@ -6217,6 +6219,9 @@ export function ThreeDTextScreen({
   const [imagePickerTarget, setImagePickerTarget] = useState<ImagePickerTarget | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(fullWindow);
+  const [isPaused, setIsPaused] = useState(false);
+  const pauseIconOpacity = useSharedValue(0);
+  const pauseIconStyle = useAnimatedStyle(() => ({ opacity: pauseIconOpacity.value }));
   const savedControlsHeight = React.useRef(initialControlsHeight);
 
   const toggleFullscreen = React.useCallback(() => {
@@ -6390,6 +6395,7 @@ export function ThreeDTextScreen({
 
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
+    if (isPaused) return;
     if (readySequenceTransition?.key !== currentSequencePageKey) return;
     const timer = setTimeout(() => {
       setSequenceLineIndex((index) => (index + 1) % sequencePages.length);
@@ -6398,6 +6404,7 @@ export function ThreeDTextScreen({
   }, [
     currentSequencePage.durationMs,
     currentSequencePageKey,
+    isPaused,
     readySequenceTransition?.key,
     sequenceMode,
     sequencePages.length,
@@ -7221,6 +7228,44 @@ export function ThreeDTextScreen({
                 {isFullscreen ? '⤡' : '⤢'}
               </Text>
             </TouchableOpacity>
+          )}
+          {/* Tap-to-pause: transparent overlay below UI buttons (zIndex 5 < buttons' 10) */}
+          {sequenceMode && (
+            <Pressable
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 5 }}
+              onPress={() => {
+                setIsPaused((prev) => !prev);
+                pauseIconOpacity.value = withSequence(
+                  withTiming(1, { duration: 200 }),
+                  withTiming(1, { duration: 600 }),
+                  withTiming(0, { duration: 200 }),
+                );
+              }}
+            />
+          )}
+          {/* Pause/play icon flash — pointer-events: none so it never intercepts taps */}
+          {sequenceMode && (
+            <Animated.View
+              style={[
+                { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  alignItems: 'center', justifyContent: 'center', zIndex: 6 },
+                pauseIconStyle,
+              ]}
+              pointerEvents="none"
+            >
+              <View style={{
+                backgroundColor: 'rgba(0,0,0,0.55)',
+                borderRadius: 50,
+                width: 72,
+                height: 72,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 32, color: '#fff' }}>
+                  {isPaused ? '⏸' : '▶'}
+                </Text>
+              </View>
+            </Animated.View>
           )}
         </View>
 
