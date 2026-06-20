@@ -13,11 +13,20 @@ if (!fs.existsSync(pkgPath)) process.exit(0);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 const exp = pkg.exports || {};
 
-if (exp['./examples/jsm/*'] === './examples/jsm/*') {
+const alreadyPatched =
+  exp['./examples/jsm/*.js'] === './examples/jsm/*.js' &&
+  exp['./examples/jsm/*'] === './examples/jsm/*.js';
+
+if (!alreadyPatched) {
+  // Remove the broken bare wildcard that mapped bare paths to non-existent files.
+  // Replace with two ordered entries:
+  //   1. *.js → *.js  (exact match wins for imports that already have .js extension)
+  //   2. *    → *.js  (bare imports like expo-three's get the .js appended automatically)
   delete exp['./examples/jsm/*'];
   exp['./examples/jsm/*.js'] = './examples/jsm/*.js';
+  exp['./examples/jsm/*'] = './examples/jsm/*.js';
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-  console.log('patch-three-exports: replaced bare wildcard with .js wildcard');
+  console.log('patch-three-exports: patched exports wildcards');
 } else {
-  console.log('patch-three-exports: already patched or unexpected format, skipping');
+  console.log('patch-three-exports: already patched, skipping');
 }
