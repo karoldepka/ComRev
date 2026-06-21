@@ -7268,8 +7268,9 @@ export function ThreeDTextScreen({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 32, color: '#fff', lineHeight: 72,
-                  textAlign: 'center', includeFontPadding: false }}>
+                <Text style={{ fontSize: 32, color: '#fff', lineHeight: 38,
+                  textAlign: 'center', textAlignVertical: 'center',
+                  includeFontPadding: false }}>
                   {isPaused ? '⏸' : '▶'}
                 </Text>
               </View>
