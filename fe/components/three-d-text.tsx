@@ -40,6 +40,7 @@ interface ThreeDTextProps {
   lineSpacing?: number;
   perspective?: number;
   pipes?: EffectPipe[];
+  paused?: boolean;
   onMeshReady?: () => void;
   onPrimaryMeshClick?: () => void;
   onNonPrimaryTap?: (effectInstanceId: string) => void;
@@ -69,6 +70,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       lineSpacing,
       perspective = 1.0,
       pipes = [],
+      paused = false,
       onMeshReady,
       onPrimaryMeshClick,
       onNonPrimaryTap,
@@ -92,6 +94,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const startTimeRef = useRef(0);
     const lastFrameTimeRef = useRef(0);
     const containerRef = useRef<any>(null);
+    const pausedRef = useRef(paused);
+    const pauseStartRef = useRef(0);
 
     const onMeshReadyRef = useRef<(() => void) | undefined>(onMeshReady);
     onMeshReadyRef.current = onMeshReady;
@@ -268,6 +272,17 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     }, [applyZoom, getZoomTarget]);
 
     // Rebuild PipelineManager when the pipes array reference changes
+    useEffect(() => {
+      const wasPaused = pausedRef.current;
+      pausedRef.current = paused;
+      if (wasPaused && !paused) {
+        // Resuming: shift startTime forward so animation continues from freeze point
+        startTimeRef.current += performance.now() - pauseStartRef.current;
+      } else if (!wasPaused && paused) {
+        pauseStartRef.current = performance.now();
+      }
+    }, [paused]);
+
     useEffect(() => {
       pipesRef.current = pipes;
       if (!sceneRef.current || !rendererRef.current || !cameraRef.current)
@@ -654,6 +669,10 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
 
       const animate = () => {
         animationIdRef.current = requestAnimationFrame(animate);
+        if (pausedRef.current) {
+          gl.endFrameEXP();
+          return;
+        }
         if (meshRef.current) {
           meshRef.current.rotation.x = rotationRef.current.x;
           meshRef.current.rotation.y = rotationRef.current.y;

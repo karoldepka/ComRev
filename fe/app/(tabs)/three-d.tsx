@@ -7106,6 +7106,7 @@ export function ThreeDTextScreen({
             lineSpacing={mainTextParams.lineSpacing as number | undefined}
             perspective={mainTextParams.perspective as number | undefined}
             pipes={activePipes}
+            paused={isPaused}
             onMeshReady={sequenceMode ? handleSequenceMeshReady : undefined}
             onPrimaryMeshClick={() => {
               const mainInst = effectInstances.find(
