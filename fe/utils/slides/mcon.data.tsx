@@ -234,4 +234,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "minimum viable product": {},
   "release early, release often": {},
   "unique value proposition": {},
+  "have to -> want to": {},
+  "towards-state": {},
+  "Regrets minimization principle": {},
 };
