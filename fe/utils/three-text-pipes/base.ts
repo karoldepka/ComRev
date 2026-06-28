@@ -78,16 +78,20 @@ export class PipelineManager {
     const ppPipes = this.pipes.filter(p => p.addComposerPass);
     const hasExplicitSmaa = ppPipes.some(p => p.name === 'antialiasing');
 
-    // Always use EffectComposer with an 8× multisampled render target (hardware MSAA).
-    // This is equivalent to WebGLRenderer({ antialias: true, samples: 8 }) and gives
-    // the strongest anti-aliasing available in the post-processing pipeline.
-    const msaaTarget = new THREE.WebGLRenderTarget(ctx.width, ctx.height, { samples: 8 });
+    // Always use EffectComposer with a 16× multisampled render target (hardware MSAA, clamped
+    // to GPU MAX_SAMPLES which is typically 8 but future-proofs for higher-end hardware) plus
+    // SMAA for sub-pixel edge smoothing on top.
+    const msaaTarget = new THREE.WebGLRenderTarget(ctx.width, ctx.height, { samples: 16 });
     this.composer = new EffectComposer(ctx.renderer, msaaTarget);
     this.composer.addPass(new RenderPass(ctx.scene, ctx.camera));
     for (const p of ppPipes) p.addComposerPass!(this.composer, ctx);
     // Add SMAA on top for edge smoothing unless the user already added one.
+    // Call setSize immediately so the SMAA render targets are correctly sized from the first frame
+    // (the TS types omit the constructor width/height args present in the JS implementation).
     if (!hasExplicitSmaa) {
-      this.composer.addPass(new SMAAPass());
+      const smaaPass = new SMAAPass();
+      smaaPass.setSize(ctx.width, ctx.height);
+      this.composer.addPass(smaaPass);
     }
     this.composer.addPass(new OutputPass());
 

@@ -1,3 +1,4 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { AiEffectChatModal } from "@/components/AiEffectChatModal";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { ExportModal } from "@/components/ExportModal";
@@ -7269,11 +7270,11 @@ export function ThreeDTextScreen({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 32, color: '#fff', lineHeight: 38,
-                  textAlign: 'center', textAlignVertical: 'center',
-                  includeFontPadding: false }}>
-                  {isPaused ? '⏸' : '▶'}
-                </Text>
+                <MaterialIcons
+                  name={isPaused ? 'pause' : 'play-arrow'}
+                  size={40}
+                  color="#fff"
+                />
               </View>
             </Animated.View>
           )}
@@ -7696,17 +7697,11 @@ export function ThreeDTextScreen({
                           style={[styles.smallActionButton, compactButtonStyle]}
                           onPress={() => toggleEffectAnimate(instance.id)}
                         >
-                          <Text
-                            style={[
-                              styles.buttonText,
-                              {
-                                color:
-                                  (instance.animate ?? true) ? c.tint : "#666",
-                              },
-                            ]}
-                          >
-                            {(instance.animate ?? true) ? "▶" : "⏸"}
-                          </Text>
+                          <MaterialIcons
+                            name={(instance.animate ?? true) ? 'play-arrow' : 'pause'}
+                            size={14}
+                            color={(instance.animate ?? true) ? c.tint : "#666"}
+                          />
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.smallActionButton, compactButtonStyle]}

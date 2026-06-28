@@ -4,7 +4,7 @@ export type MantraText = string | readonly string[];
 export const MCON_VISUAL_PARAMS: Record<string, unknown> = {
   size: 2.5,
   height: 0.5,
-  curveSegments: 48,
+  curveSegments: 128,
   bevelEnabled: false,
   bevelThickness: 0.12,
   bevelSize: 0.06,

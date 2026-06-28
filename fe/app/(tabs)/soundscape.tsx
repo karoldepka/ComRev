@@ -1,3 +1,4 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Colors } from '@/constants/theme';
@@ -94,7 +95,8 @@ export default function SoundscapeScreen() {
         onPress={toggle}
         style={[styles.playButton, { backgroundColor: playing ? '#c0392b' : c.tint }]}
       >
-        <Text style={styles.playLabel}>{playing ? '⏹  Stop' : '▶  Play'}</Text>
+        <MaterialIcons name={playing ? 'stop' : 'play-arrow'} size={22} color="#fff" />
+        <Text style={styles.playLabel}>{playing ? 'Stop' : 'Play'}</Text>
       </Pressable>
 
       {/* AudioContext status — shows 'suspended' if browser blocked autoplay */}
@@ -176,7 +178,10 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, marginBottom: 20 },
 
   playButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     borderRadius: 12,
     marginBottom: 24,
     paddingVertical: 16,
