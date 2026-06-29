@@ -203,6 +203,7 @@ import {
   XRayPipe,
   ZapPipe,
   ZoomBlurPipe,
+  SCHEME_STOPS,
 } from "@/utils/three-text-pipes";
 import { useFocusEffect, router } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
@@ -242,14 +243,14 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [f(0), f(8), f(4)];
 }
 
-function randomPlasmaStops(): number[] {
+const PREDEFINED_PLASMA_STOP_DATA = Object.values(SCHEME_STOPS);
+
+function fullyRandomPlasmaStops(): number[] {
   const GOLDEN = 0.6180339887;
   const startHue = Math.random();
   const inner = [Math.random(), Math.random()].sort((a, b) => a - b);
   const ts = [0, ...inner, 1];
-
-  // Divide [0.15, 0.85] into 4 equal bands, pick one L per band, then shuffle —
-  // guarantees stops differ by at least ~17% luminance (no muddy same-brightness palette).
+  // Divide [0.15, 0.85] into 4 equal bands, pick one L per band, then shuffle.
   const L_MIN = 0.15, L_RANGE = 0.70, bandSize = L_RANGE / 4;
   const lightnesses = Array.from({ length: 4 }, (_, i) =>
     L_MIN + (i + Math.random()) * bandSize,
@@ -258,7 +259,6 @@ function randomPlasmaStops(): number[] {
     const j = Math.floor(Math.random() * (i + 1));
     [lightnesses[i], lightnesses[j]] = [lightnesses[j], lightnesses[i]];
   }
-
   const stops: number[] = [];
   ts.forEach((t, i) => {
     const h = (startHue + i * GOLDEN) % 1;
@@ -267,6 +267,15 @@ function randomPlasmaStops(): number[] {
     stops.push(t, r, g, b);
   });
   return stops;
+}
+
+function pickPlasmaStops(): number[] {
+  if (Math.random() < 0.5) {
+    return PREDEFINED_PLASMA_STOP_DATA[
+      Math.floor(Math.random() * PREDEFINED_PLASMA_STOP_DATA.length)
+    ];
+  }
+  return fullyRandomPlasmaStops();
 }
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
@@ -6434,7 +6443,7 @@ export function ThreeDTextScreen({
 
   useEffect(() => {
     if (!sequenceMode) return;
-    const stops = randomPlasmaStops();
+    const stops = pickPlasmaStops();
     setEffectInstances((instances) =>
       instances.map((inst) =>
         inst.type === 'envMap'
