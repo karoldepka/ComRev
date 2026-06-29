@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ThreeDTextScreen } from '@/app/(tabs)/three-d';
 import { useBinauralBeat } from '@/utils/use-binaural-beat';
-import { usePresetLoader } from '../_use-preset-loader';
+import { usePresetLoader } from '@/utils/use-preset-loader';
 import { PRESET_REGISTRY } from '@/utils/slides/preset-registry';
 
 // Pre-render one HTML file per known preset ID at build time.

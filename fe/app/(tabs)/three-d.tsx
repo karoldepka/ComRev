@@ -203,6 +203,7 @@ import {
   XRayPipe,
   ZapPipe,
   ZoomBlurPipe,
+  SCHEME_STOPS,
 } from "@/utils/three-text-pipes";
 import { useFocusEffect, router } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
@@ -233,6 +234,7 @@ import Animated, {
 
 import { API_BASE } from '@/utils/api-config';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
+const PLASMA_SCHEME_KEYS = Object.keys(SCHEME_STOPS);
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
 
@@ -6203,6 +6205,7 @@ export function ThreeDTextScreen({
     resetToBasic: storeResetToBasic,
     slideEffectOverride,
     setSlideEffectOverride,
+    mantraMode,
   } = useThreeDStore();
   const [selectedEffectType, setSelectedEffectType] =
     useState<EffectType>("bloom");
@@ -6343,6 +6346,8 @@ export function ThreeDTextScreen({
     [principalTextSets, sequenceLineDurationMs],
   );
   const [sequenceLineIndex, setSequenceLineIndex] = useState(0);
+  const [slideJumpMode, setSlideJumpMode] = useState(false);
+  const [slideJumpDraft, setSlideJumpDraft] = useState("");
   const currentSequencePage =
     sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
   const currentSequencePageKey = sequenceMode
@@ -6393,6 +6398,18 @@ export function ThreeDTextScreen({
     applySlideConfig(currentSequencePage.soundscape);
     setSlideEffectOverride(currentSequencePage.configOverride?.effectInstances ?? null);
   }, [sequenceMode, currentSequencePage.id, applySlideConfig, setSlideEffectOverride]);
+
+  useEffect(() => {
+    if (!sequenceMode) return;
+    const scheme = PLASMA_SCHEME_KEYS[Math.floor(Math.random() * PLASMA_SCHEME_KEYS.length)];
+    setEffectInstances((instances) =>
+      instances.map((inst) =>
+        inst.type === 'envMap'
+          ? { ...inst, params: { ...inst.params, plasmaScheme: scheme } }
+          : inst,
+      ),
+    );
+  }, [currentSequencePage.id, sequenceMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
@@ -7161,11 +7178,15 @@ export function ThreeDTextScreen({
             />
           )}
           {sequenceMode && !fullWindow && (
-            <View
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                setSlideJumpDraft(String(visibleSequenceLineIndex + 1));
+                setSlideJumpMode(true);
+              }}
               style={[
                 styles.sequenceBadge,
                 {
-                  pointerEvents: "none",
                   backgroundColor:
                     colorScheme === "dark"
                       ? "rgba(0,0,0,0.62)"
@@ -7174,16 +7195,56 @@ export function ThreeDTextScreen({
                 },
               ]}
             >
-              <Text style={{ color: c.text, fontSize: 12, fontWeight: "700" }}>
-                {visibleSequenceLineIndex + 1}/{sequencePages.length}
-              </Text>
-              <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
+              {slideJumpMode ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                  <TextInput
+                    autoFocus
+                    keyboardType="number-pad"
+                    value={slideJumpDraft}
+                    onChangeText={(v) => setSlideJumpDraft(v.replace(/[^0-9]/g, ""))}
+                    onSubmitEditing={() => {
+                      const n = parseInt(slideJumpDraft, 10);
+                      if (!isNaN(n)) {
+                        setSequenceLineIndex(Math.max(0, Math.min(n - 1, sequencePages.length - 1)));
+                      }
+                      setSlideJumpMode(false);
+                    }}
+                    onBlur={() => setSlideJumpMode(false)}
+                    style={{
+                      width: 36,
+                      color: c.text,
+                      fontSize: 12,
+                      fontWeight: "700",
+                      borderBottomWidth: 1,
+                      borderBottomColor: c.tint,
+                      padding: 0,
+                      textAlign: "center",
+                    }}
+                    maxLength={3}
+                    selectTextOnFocus
+                  />
+                  <Text style={{ color: c.text, fontSize: 12, fontWeight: "700" }}>
+                    /{sequencePages.length}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ color: c.text, fontSize: 12, fontWeight: "700" }}>
+                  {visibleSequenceLineIndex + 1}/{sequencePages.length}
+                </Text>
+              )}
+              <Text
+                style={{ color: c.text, fontSize: 11, opacity: 0.7 }}
+                onPress={() => {
+                  setSlideJumpDraft(String(visibleSequenceLineIndex + 1));
+                  setSlideJumpMode(true);
+                }}
+              >
                 {visibleSequencePage.setName}
               </Text>
               <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
                 {Math.round(visibleSequencePage.durationMs / 100) / 10}s
               </Text>
-            </View>
+            </TouchableOpacity>
           )}
           {/* Mute toggle (only visible in sequence mode, not in full-window) */}
           {sequenceMode && !fullWindow && (
