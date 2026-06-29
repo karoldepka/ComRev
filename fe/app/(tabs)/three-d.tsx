@@ -243,18 +243,27 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 }
 
 function randomPlasmaStops(): number[] {
-  // Spread 4 hues using golden-ratio steps from a random starting hue so no two
-  // stops share a similar color. Saturation/lightness stay in vivid ranges.
   const GOLDEN = 0.6180339887;
   const startHue = Math.random();
   const inner = [Math.random(), Math.random()].sort((a, b) => a - b);
   const ts = [0, ...inner, 1];
+
+  // Divide [0.15, 0.85] into 4 equal bands, pick one L per band, then shuffle —
+  // guarantees stops differ by at least ~17% luminance (no muddy same-brightness palette).
+  const L_MIN = 0.15, L_RANGE = 0.70, bandSize = L_RANGE / 4;
+  const lightnesses = Array.from({ length: 4 }, (_, i) =>
+    L_MIN + (i + Math.random()) * bandSize,
+  );
+  for (let i = lightnesses.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lightnesses[i], lightnesses[j]] = [lightnesses[j], lightnesses[i]];
+  }
+
   const stops: number[] = [];
   ts.forEach((t, i) => {
     const h = (startHue + i * GOLDEN) % 1;
     const s = 0.7 + Math.random() * 0.3;
-    const l = 0.35 + Math.random() * 0.35;
-    const [r, g, b] = hslToRgb(h, s, l);
+    const [r, g, b] = hslToRgb(h, s, lightnesses[i]);
     stops.push(t, r, g, b);
   });
   return stops;
