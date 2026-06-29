@@ -233,14 +233,30 @@ import Animated, {
 
 import { API_BASE } from '@/utils/api-config';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h * 12) % 12;
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [f(0), f(8), f(4)];
+}
+
 function randomPlasmaStops(): number[] {
-  // 4 stops: t=0 and t=1 fixed, two inner t values randomly placed
+  // Spread 4 hues using golden-ratio steps from a random starting hue so no two
+  // stops share a similar color. Saturation/lightness stay in vivid ranges.
+  const GOLDEN = 0.6180339887;
+  const startHue = Math.random();
   const inner = [Math.random(), Math.random()].sort((a, b) => a - b);
   const ts = [0, ...inner, 1];
   const stops: number[] = [];
-  for (const t of ts) {
-    stops.push(t, Math.random(), Math.random(), Math.random());
-  }
+  ts.forEach((t, i) => {
+    const h = (startHue + i * GOLDEN) % 1;
+    const s = 0.7 + Math.random() * 0.3;
+    const l = 0.35 + Math.random() * 0.35;
+    const [r, g, b] = hslToRgb(h, s, l);
+    stops.push(t, r, g, b);
+  });
   return stops;
 }
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
