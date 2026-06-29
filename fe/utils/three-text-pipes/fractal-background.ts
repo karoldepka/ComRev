@@ -128,11 +128,12 @@ void main() {
   gl_FragColor = vec4(palette(t), 1.0);
 }`;
 
-export function schemeUniforms(schemeName: string): {
+type SchemeUniformsResult = {
   uStop0: THREE.Vector4; uStop1: THREE.Vector4; uStop2: THREE.Vector4;
   uStop3: THREE.Vector4; uStop4: THREE.Vector4; uStopCount: number;
-} {
-  const data = SCHEME_STOPS[schemeName] ?? SCHEME_STOPS.psychedelic;
+};
+
+export function schemeUniformsFromData(data: number[]): SchemeUniformsResult {
   const n = data.length / 4;
   const toVec4 = (base: number) => base < data.length
     ? new THREE.Vector4(data[base], data[base+1], data[base+2], data[base+3])
@@ -141,6 +142,10 @@ export function schemeUniforms(schemeName: string): {
     uStop0: toVec4(0), uStop1: toVec4(4), uStop2: toVec4(8),
     uStop3: toVec4(12), uStop4: toVec4(16), uStopCount: n,
   };
+}
+
+export function schemeUniforms(schemeName: string): SchemeUniformsResult {
+  return schemeUniformsFromData(SCHEME_STOPS[schemeName] ?? SCHEME_STOPS.psychedelic);
 }
 
 function typeIndex(t: FractalType): number {

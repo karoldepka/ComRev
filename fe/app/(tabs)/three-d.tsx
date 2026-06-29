@@ -203,7 +203,6 @@ import {
   XRayPipe,
   ZapPipe,
   ZoomBlurPipe,
-  SCHEME_STOPS,
 } from "@/utils/three-text-pipes";
 import { useFocusEffect, router } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
@@ -234,7 +233,16 @@ import Animated, {
 
 import { API_BASE } from '@/utils/api-config';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
-const PLASMA_SCHEME_KEYS = Object.keys(SCHEME_STOPS);
+function randomPlasmaStops(): number[] {
+  // 4 stops: t=0 and t=1 fixed, two inner t values randomly placed
+  const inner = [Math.random(), Math.random()].sort((a, b) => a - b);
+  const ts = [0, ...inner, 1];
+  const stops: number[] = [];
+  for (const t of ts) {
+    stops.push(t, Math.random(), Math.random(), Math.random());
+  }
+  return stops;
+}
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
 
@@ -6401,11 +6409,11 @@ export function ThreeDTextScreen({
 
   useEffect(() => {
     if (!sequenceMode) return;
-    const scheme = PLASMA_SCHEME_KEYS[Math.floor(Math.random() * PLASMA_SCHEME_KEYS.length)];
+    const stops = randomPlasmaStops();
     setEffectInstances((instances) =>
       instances.map((inst) =>
         inst.type === 'envMap'
-          ? { ...inst, params: { ...inst.params, plasmaScheme: scheme } }
+          ? { ...inst, params: { ...inst.params, plasmaCustomStops: stops } }
           : inst,
       ),
     );

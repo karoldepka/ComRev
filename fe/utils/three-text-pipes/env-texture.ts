@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { makeRng } from './base';
 import { schemeUniforms } from './fractal-background';
 import { FireworksState } from '../image-sources';
+import { schemeUniformsFromData } from './fractal-background';
 
 export type EnvMapStyle =
   | 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon'
@@ -18,6 +19,8 @@ export interface EnvMapPipeParams {
   customImageDataUrl?: string;
   envMapCustomDataUrl?: string;
   plasmaScheme?: string;
+  /** Raw stop data [t,r,g,b, ...] (up to 5 stops). Overrides plasmaScheme when set. */
+  plasmaCustomStops?: number[];
   plasmaSpeed?: number;
   plasmaScale?: number;
   fireworksScheme?: string;
@@ -197,7 +200,9 @@ const PLASMA_CONFIG: AnimatedShaderConfig = {
   updateUniforms(u, time, params) {
     u.uTime.value = time;
     u.uZoom.value = params.plasmaScale ?? 8;
-    const stops = schemeUniforms(params.plasmaScheme ?? 'psychedelic');
+    const stops = params.plasmaCustomStops
+      ? schemeUniformsFromData(params.plasmaCustomStops)
+      : schemeUniforms(params.plasmaScheme ?? 'psychedelic');
     u.uStop0.value = stops.uStop0; u.uStop1.value = stops.uStop1;
     u.uStop2.value = stops.uStop2; u.uStop3.value = stops.uStop3;
     u.uStop4.value = stops.uStop4; u.uStopCount.value = stops.uStopCount;
