@@ -6361,7 +6361,17 @@ export function ThreeDTextScreen({
     return source
       .filter((instance) => instance.enabled !== false)
       .map((instance) => {
-        const pipe = createPipeFromInstance(instance);
+        const normalizedInstance =
+          instance.type === "envMap"
+            ? {
+                ...instance,
+                params: {
+                  ...(instance.params ?? {}),
+                  showAsBackground: false,
+                },
+              }
+            : instance;
+        const pipe = createPipeFromInstance(normalizedInstance);
         pipe.paused = !(instance.animate ?? true);
         pipe.speedMultiplier = commonSpeedValue(instance.params);
         return pipe;

@@ -148,7 +148,7 @@ const STYLES = `
     position: relative;
     width: 400px;
     height: 400px;
-    background: transparent;
+    background: #000;
     border-radius: 5px;
     overflow: hidden;
   }
@@ -483,7 +483,8 @@ export class ThreedTextElement extends HTMLElement {
     this._renderer = renderer;
 
     const scene = new Scene();
-    // Background is null so the CSS background shows through (alpha channel enabled)
+    // Force a solid black backdrop behind the 3D text.
+    scene.background = new Color(0x000000);
     this._scene = scene;
 
     const camera = new PerspectiveCamera(75, 1, 0.1, 10000);

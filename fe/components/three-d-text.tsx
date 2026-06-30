@@ -614,7 +614,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       heightRef.current = gl.drawingBufferHeight;
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x1a1a1a);
+      scene.background = new THREE.Color(0x000000);
       sceneRef.current = scene;
 
       const camera = new THREE.PerspectiveCamera(
