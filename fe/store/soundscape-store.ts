@@ -9,10 +9,9 @@ import {
   updateBinauralLayer,
   updateBirdsTrack,
   setTrackVolume,
-  type AmbienceKind,
 } from '@/utils/sound-engine';
 import type { NoiseColor } from '@/utils/noise-buffers';
-import { AMBIENCE_SOURCES } from '@/utils/ambience-tracks';
+import { AMBIENCE_SOURCES, type AmbienceKind, type AmbienceCategory } from '@/utils/ambience-tracks';
 
 export interface SoundscapeConfig {
   beatHz?: number;    // 0 or absent = off
@@ -41,10 +40,12 @@ export const NOISE_COLORS: { key: NoiseColor; label: string }[] = [
   { key: 'brown', label: 'Brown noise' },
 ];
 
-export const AMBIENCE_KINDS: { key: AmbienceKind; label: string }[] = AMBIENCE_SOURCES.map((s) => ({
-  key: s.kind,
-  label: s.label,
-}));
+export const AMBIENCE_KINDS: { key: AmbienceKind; label: string; category: AmbienceCategory }[] =
+  AMBIENCE_SOURCES.map((s) => ({
+    key: s.kind,
+    label: s.label,
+    category: s.category,
+  }));
 
 interface LayerState {
   playing: boolean;

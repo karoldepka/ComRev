@@ -10,7 +10,7 @@
 
 import { getOrCreateAudioContext, resumeAudioContext } from './audio-context';
 import { createNoiseBuffer, type NoiseColor } from './noise-buffers';
-import { AMBIENCE_SOURCES, resolveAssetUri } from './ambience-tracks';
+import { AMBIENCE_SOURCES, resolveAssetUri, type AmbienceKind } from './ambience-tracks';
 
 interface Track {
   stop: () => void;
@@ -68,23 +68,6 @@ export function startNoiseTrack(id: string, color: NoiseColor, volume: number): 
 // Nature ambience: forest / waterfall / waves — looped field recordings.
 // Decoded buffers are cached per kind so re-toggling never re-fetches.
 // ---------------------------------------------------------------------------
-
-export type AmbienceKind =
-  | 'forest'
-  | 'waterfall'
-  | 'waves'
-  | 'rain'
-  | 'thunderstorm'
-  | 'campfire'
-  | 'river'
-  | 'wind'
-  | 'crickets'
-  | 'cave'
-  | 'coffeeShop'
-  | 'train'
-  | 'traffic'
-  | 'windChimes'
-  | 'snow';
 
 const ambienceBufferCache = new Map<AmbienceKind, AudioBuffer>();
 const ambienceLoadTokens = new Map<string, symbol>();

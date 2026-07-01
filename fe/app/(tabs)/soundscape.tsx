@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useEffect, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
@@ -9,7 +9,20 @@ import {
   WAVE_PRESETS,
   useSoundscapeStore,
 } from '@/store/soundscape-store';
+import type { AmbienceCategory } from '@/utils/ambience-tracks';
 import { getCtxState, onStateChange } from '@/utils/binaural-engine';
+
+const CATEGORY_ORDER: AmbienceCategory[] = [
+  'Nature',
+  'Water',
+  'Weather',
+  'Animals',
+  'Urban',
+  'Interior',
+  'Transport',
+  'Cozy',
+  'Meditation',
+];
 
 function Stepper({
   label,
@@ -142,6 +155,129 @@ const layerStyles = StyleSheet.create({
   sliderRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 6 },
   volLabel: { fontSize: 11, fontWeight: '600', width: 40 },
   volValue: { fontSize: 11, fontWeight: '600', textAlign: 'right', width: 36 },
+});
+
+// Browsable, searchable, category-grouped list for the (100+ track) ambience
+// library — a flat list stops being usable at that scale, so tracks are grouped
+// by category into collapsible sections, with a search box to jump straight in.
+function AmbienceBrowser({
+  ambience,
+  toggleAmbience,
+  setAmbienceVolume,
+  c,
+  dark,
+}: {
+  ambience: Record<string, { playing: boolean; volume: number }>;
+  toggleAmbience: (key: string) => void;
+  setAmbienceVolume: (key: string, v: number) => void;
+  c: (typeof Colors)['light'];
+  dark: boolean;
+}) {
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<Set<AmbienceCategory>>(new Set());
+
+  const grouped = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const byCategory = new Map<AmbienceCategory, typeof AMBIENCE_KINDS>();
+    for (const item of AMBIENCE_KINDS) {
+      if (term && !item.label.toLowerCase().includes(term)) continue;
+      const list = byCategory.get(item.category) ?? [];
+      list.push(item);
+      byCategory.set(item.category, list);
+    }
+    return byCategory;
+  }, [search]);
+
+  const searching = search.trim().length > 0;
+
+  const toggleCategory = (cat: AmbienceCategory) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  return (
+    <View>
+      <View style={[browserStyles.searchRow, { borderColor: dark ? '#333' : '#e8e0d8' }]}>
+        <MaterialIcons name="search" size={18} color={c.icon} />
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search sounds (rain, cave, train, cafe...)"
+          placeholderTextColor={c.icon}
+          style={[browserStyles.searchInput, { color: c.text }]}
+        />
+      </View>
+
+      {CATEGORY_ORDER.filter((cat) => grouped.has(cat)).map((cat) => {
+        const items = grouped.get(cat)!;
+        const isOpen = searching || expanded.has(cat);
+        return (
+          <View key={cat} style={browserStyles.categoryBlock}>
+            <Pressable
+              onPress={() => toggleCategory(cat)}
+              style={[browserStyles.categoryHeader, { borderColor: dark ? '#333' : '#e8e0d8' }]}
+            >
+              <MaterialIcons
+                name={isOpen ? 'expand-less' : 'expand-more'}
+                size={20}
+                color={c.icon}
+              />
+              <Text style={[browserStyles.categoryTitle, { color: c.text }]}>{cat}</Text>
+              <Text style={[browserStyles.categoryCount, { color: c.icon }]}>{items.length}</Text>
+            </Pressable>
+            {isOpen &&
+              items.map((item) => {
+                const layer = ambience[item.key];
+                if (!layer) return null;
+                return (
+                  <LayerRow
+                    key={item.key}
+                    label={item.label}
+                    playing={layer.playing}
+                    volume={layer.volume}
+                    onToggle={() => toggleAmbience(item.key)}
+                    onVolumeChange={(v) => setAmbienceVolume(item.key, v)}
+                    c={c}
+                    dark={dark}
+                  />
+                );
+              })}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const browserStyles = StyleSheet.create({
+  searchRow: {
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  searchInput: { flex: 1, fontSize: 14, outlineStyle: 'none' } as any,
+  categoryBlock: { marginBottom: 4 },
+  categoryHeader: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  categoryTitle: { flex: 1, fontSize: 13, fontWeight: '700' },
+  categoryCount: { fontSize: 12, fontWeight: '600' },
 });
 
 export default function SoundscapeScreen() {
@@ -289,22 +425,9 @@ export default function SoundscapeScreen() {
       })}
 
       {/* ---------------- Nature ambience ---------------- */}
-      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>NATURE AMBIENCE</Text>
-      {AMBIENCE_KINDS.map((a) => {
-        const layer = ambience[a.key];
-        return (
-          <LayerRow
-            key={a.key}
-            label={a.label}
-            playing={layer.playing}
-            volume={layer.volume}
-            onToggle={() => toggleAmbience(a.key)}
-            onVolumeChange={(v) => setAmbienceVolume(a.key, v)}
-            c={c}
-            dark={dark}
-          />
-        );
-      })}
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
+        NATURE AMBIENCE · {AMBIENCE_KINDS.length} field recordings
+      </Text>
       <LayerRow
         label="Birds"
         sub="procedurally generated chirps"
@@ -327,10 +450,19 @@ export default function SoundscapeScreen() {
         </View>
       </LayerRow>
 
+      <AmbienceBrowser
+        ambience={ambience}
+        toggleAmbience={toggleAmbience}
+        setAmbienceVolume={setAmbienceVolume}
+        c={c}
+        dark={dark}
+      />
+
       <Text style={[styles.hint, { color: c.icon }]}>
         Binaural beats work by playing two slightly different frequencies — one per ear — so
-        headphones are required. Noise and nature ambience are synthesized live (no audio files),
-        so every layer can run indefinitely and mix freely with any other layer.
+        headphones are required. Noise is synthesized live; nature ambience plays real CC0/CC-BY
+        field recordings (credits for CC-BY ones are on the About tab). Every layer runs
+        independently and mixes freely with any other layer.
       </Text>
     </ScrollView>
   );
