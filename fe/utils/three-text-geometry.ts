@@ -527,6 +527,8 @@ export async function createTextGeometry(
     }
     const material = new MeshStandardMaterial(materialOptions);
     patchBevelNormalReflect(material);
+    // Shift so letter face is at z=0 and extrusion goes into screen (-Z)
+    mainGroup.position.z = -(mergedOptions.height! + (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0));
     return { geometry: mainGroup, material };
   } catch (error) {
     console.error("Failed to load font, creating fallback geometry:", error);
@@ -630,6 +632,8 @@ export async function createTextGeometry(
     }
     const material = new MeshStandardMaterial(materialOptions);
     patchBevelNormalReflect(material);
+    // BoxGeometry is z-centered; shift front face to z=0 so extrusion goes into screen
+    mainGroup.position.z = -(mergedOptions.height! / 2);
     return { geometry: mainGroup, material };
   }
 }
