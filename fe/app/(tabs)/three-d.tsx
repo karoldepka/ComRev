@@ -6453,14 +6453,9 @@ export function ThreeDTextScreen({
 
   useEffect(() => {
     if (!sequenceMode) return;
-    const stops = pickPlasmaStops();
-    setEffectInstances((instances) =>
-      instances.map((inst) =>
-        inst.type === 'envMap'
-          ? { ...inst, params: { ...inst.params, plasmaCustomStops: stops } }
-          : inst,
-      ),
-    );
+    // Mutate the existing pipe directly — avoids React state update → pipe rebuild
+    // → full GPU teardown/setup cycle that was causing crashes and animation freezes.
+    threeDTextRef.current?.updatePipeParams('envMap', { plasmaCustomStops: pickPlasmaStops() });
   }, [currentSequencePage.id, sequenceMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -7252,6 +7247,7 @@ export function ThreeDTextScreen({
                   <TextInput
                     autoFocus
                     keyboardType="number-pad"
+                    returnKeyType="go"
                     value={slideJumpDraft}
                     onChangeText={(v) => setSlideJumpDraft(v.replace(/[^0-9]/g, ""))}
                     onSubmitEditing={() => {
@@ -7261,7 +7257,14 @@ export function ThreeDTextScreen({
                       }
                       setSlideJumpMode(false);
                     }}
-                    onBlur={() => setSlideJumpMode(false)}
+                    onBlur={({ nativeEvent }) => {
+                      // On mobile, blur fires after submit — apply the value before closing.
+                      const n = parseInt((nativeEvent as any).text ?? slideJumpDraft, 10);
+                      if (!isNaN(n)) {
+                        setSequenceLineIndex(Math.max(0, Math.min(n - 1, sequencePages.length - 1)));
+                      }
+                      setSlideJumpMode(false);
+                    }}
                     style={{
                       width: 36,
                       color: c.text,

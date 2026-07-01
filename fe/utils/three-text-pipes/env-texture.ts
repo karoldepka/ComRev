@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { makeRng } from './base';
 import { schemeUniforms } from './fractal-background';
 import { FireworksState } from '../image-sources';
-import { schemeUniformsFromData } from './fractal-background';
+import { SCHEME_STOPS, schemeUniformsFromData } from './fractal-background';
 
 export type EnvMapStyle =
   | 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon'
@@ -200,12 +200,20 @@ const PLASMA_CONFIG: AnimatedShaderConfig = {
   updateUniforms(u, time, params) {
     u.uTime.value = time;
     u.uZoom.value = params.plasmaScale ?? 8;
-    const stops = params.plasmaCustomStops
-      ? schemeUniformsFromData(params.plasmaCustomStops)
-      : schemeUniforms(params.plasmaScheme ?? 'psychedelic');
-    u.uStop0.value = stops.uStop0; u.uStop1.value = stops.uStop1;
-    u.uStop2.value = stops.uStop2; u.uStop3.value = stops.uStop3;
-    u.uStop4.value = stops.uStop4; u.uStopCount.value = stops.uStopCount;
+    // Reuse existing Vector4 instances via .set() to avoid per-frame GC pressure.
+    const data = params.plasmaCustomStops
+      ?? (SCHEME_STOPS[params.plasmaScheme ?? 'psychedelic'] ?? SCHEME_STOPS.psychedelic);
+    const n = data.length / 4;
+    const setStop = (stop: { value: THREE.Vector4 }, base: number) =>
+      stop.value.set(
+        base < data.length ? data[base]   : 0,
+        base < data.length ? data[base+1] : 0,
+        base < data.length ? data[base+2] : 0,
+        base < data.length ? data[base+3] : 0,
+      );
+    setStop(u.uStop0, 0); setStop(u.uStop1, 4); setStop(u.uStop2, 8);
+    setStop(u.uStop3, 12); setStop(u.uStop4, 16);
+    u.uStopCount.value = n;
   },
 };
 

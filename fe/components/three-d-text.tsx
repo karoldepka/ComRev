@@ -17,6 +17,11 @@ export interface ThreeDTextHandle {
   resetCamera(): void;
   /** Adjusts camera Z so the whole mesh fits within the viewport with a margin. */
   fitCamera(margin?: number): void;
+  /**
+   * Directly mutates params on an existing named pipe without triggering a
+   * React state update or pipeline rebuild. Safe to call every slide change.
+   */
+  updatePipeParams(pipeName: string, paramsUpdate: Record<string, unknown>): void;
 }
 
 interface ThreeDTextProps {
@@ -145,6 +150,12 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         const dist = Math.max(distForHeight, distForWidth) * margin;
         camera.position.set(0, 0, Math.max(5, dist));
         camera.lookAt(0, 0, 0);
+      },
+      updatePipeParams: (pipeName, paramsUpdate) => {
+        const pm = pipelineManagerRef.current;
+        if (!pm) return;
+        const pipe = pm.pipes.find((p) => p.name === pipeName);
+        if (pipe) Object.assign((pipe as any).params, paramsUpdate);
       },
     }));
 
@@ -287,8 +298,10 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       pipesRef.current = pipes;
       if (!sceneRef.current || !rendererRef.current || !cameraRef.current)
         return;
+      const t0 = performance.now();
       pipelineManagerRef.current?.restoreGeometry();
       pipelineManagerRef.current?.dispose();
+      const t1 = performance.now();
       const pm = new PipelineManager(pipes);
       pm.setup({
         scene: sceneRef.current,
@@ -300,6 +313,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       });
       pm.onMeshChanged(meshRef.current);
       pipelineManagerRef.current = pm;
+      const t2 = performance.now();
+      console.debug(`[pipeline rebuild] dispose=${(t1-t0).toFixed(1)}ms setup=${(t2-t1).toFixed(1)}ms total=${(t2-t0).toFixed(1)}ms pipes=${pipes.length}`);
     }, [pipes]);
 
     // Update text / geometry props
