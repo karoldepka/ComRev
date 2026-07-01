@@ -195,11 +195,10 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     if (layer.playing) setTrackVolume(`noise:${color}`, volume);
   },
 
-  ambience: {
-    forest: defaultLayer(),
-    waterfall: defaultLayer(),
-    waves: defaultLayer(),
-  },
+  ambience: Object.fromEntries(AMBIENCE_SOURCES.map((s) => [s.kind, defaultLayer()])) as Record<
+    AmbienceKind,
+    LayerState
+  >,
 
   toggleAmbience: (kind) => {
     const layer = get().ambience[kind];
