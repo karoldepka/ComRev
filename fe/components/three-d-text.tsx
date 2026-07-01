@@ -140,16 +140,21 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           }
         });
         if (bbox.isEmpty()) bbox.setFromObject(mesh);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
         const halfW = (bbox.max.x - bbox.min.x) / 2;
         const halfH = (bbox.max.y - bbox.min.y) / 2;
         const fovRad = (camera.fov * Math.PI) / 180;
         const aspect = widthRef.current / Math.max(1, heightRef.current);
         const hFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
-        const distForHeight = halfH / Math.tan(fovRad / 2);
-        const distForWidth  = halfW / Math.tan(hFovRad / 2);
-        const dist = Math.max(distForHeight, distForWidth) * margin;
-        camera.position.set(0, 0, Math.max(5, dist));
-        camera.lookAt(0, 0, 0);
+        // Distance from the front face (bbox.max.z) needed to fit W and H in viewport.
+        // Using the front face (not center) ensures extruded/beveled depth doesn't clip.
+        const distFromFront = Math.max(
+          halfH / Math.tan(fovRad / 2),
+          halfW / Math.tan(hFovRad / 2),
+        ) * margin;
+        camera.position.set(center.x, center.y, Math.max(5, bbox.max.z + distFromFront));
+        camera.lookAt(center);
       },
       updatePipeParams: (pipeName, paramsUpdate) => {
         const pm = pipelineManagerRef.current;
