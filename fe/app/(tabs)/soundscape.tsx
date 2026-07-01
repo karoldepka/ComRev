@@ -1,24 +1,15 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useSoundscapeStore } from '@/store/soundscape-store';
+import {
+  AMBIENCE_KINDS,
+  NOISE_COLORS,
+  WAVE_PRESETS,
+  useSoundscapeStore,
+} from '@/store/soundscape-store';
 import { getCtxState, onStateChange } from '@/utils/binaural-engine';
-
-interface WavePreset {
-  label: string;
-  sub: string;
-  hz: number;
-}
-
-const WAVE_PRESETS: WavePreset[] = [
-  { label: 'Delta', sub: '~2 Hz · deep sleep', hz: 2 },
-  { label: 'Theta', sub: '~6 Hz · meditation', hz: 6 },
-  { label: 'Alpha', sub: '~10 Hz · relaxed focus', hz: 10 },
-  { label: 'Beta',  sub: '~20 Hz · active thinking', hz: 20 },
-  { label: 'Gamma', sub: '~40 Hz · peak performance', hz: 40 },
-];
 
 function Stepper({
   label,
@@ -60,6 +51,99 @@ const stepperStyles = StyleSheet.create({
   value: { fontSize: 14, fontWeight: '700', minWidth: 70, textAlign: 'center' },
 });
 
+// A slider that only accepts changes via the native <input type="range"> —
+// this app targets web (react-native-web), matching the SliderRow pattern in three-d.tsx.
+function InlineSlider({
+  min,
+  max,
+  step,
+  value,
+  onChange,
+  tint,
+}: {
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+  tint: string;
+}) {
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e: any) => onChange(parseFloat(e.target.value))}
+      style={{ flex: 1, accentColor: tint }}
+    />
+  );
+}
+
+// Reusable "toggle chip + volume slider (+ optional extra controls)" row used by
+// the Binaural / Noise / Nature layer sections — each layer plays independently
+// and can be mixed with any other layer, on top of any other section.
+function LayerRow({
+  label,
+  sub,
+  playing,
+  volume,
+  onToggle,
+  onVolumeChange,
+  c,
+  dark,
+  children,
+}: {
+  label: string;
+  sub?: string;
+  playing: boolean;
+  volume: number;
+  onToggle: () => void;
+  onVolumeChange: (v: number) => void;
+  c: (typeof Colors)['light'];
+  dark: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <View
+      style={[
+        layerStyles.card,
+        { borderColor: playing ? c.tint : (dark ? '#333' : '#e8e0d8') },
+      ]}
+    >
+      <Pressable onPress={onToggle} style={layerStyles.header}>
+        <MaterialIcons
+          name={playing ? 'pause-circle-filled' : 'play-circle-outline'}
+          size={26}
+          color={playing ? c.tint : c.icon}
+        />
+        <View style={layerStyles.headerText}>
+          <Text style={[layerStyles.title, { color: c.text }]}>{label}</Text>
+          {sub ? <Text style={[layerStyles.sub, { color: c.icon }]}>{sub}</Text> : null}
+        </View>
+      </Pressable>
+      <View style={layerStyles.sliderRow}>
+        <Text style={[layerStyles.volLabel, { color: c.icon }]}>Vol</Text>
+        <InlineSlider min={0} max={1} step={0.01} value={volume} onChange={onVolumeChange} tint={c.tint} />
+        <Text style={[layerStyles.volValue, { color: c.icon }]}>{Math.round(volume * 100)}%</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+const layerStyles = StyleSheet.create({
+  card: { borderRadius: 10, borderWidth: 1, marginBottom: 8, padding: 10 },
+  header: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  headerText: { flex: 1 },
+  title: { fontSize: 14, fontWeight: '700' },
+  sub: { fontSize: 11, marginTop: 1 },
+  sliderRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 6 },
+  volLabel: { fontSize: 11, fontWeight: '600', width: 40 },
+  volValue: { fontSize: 11, fontWeight: '600', textAlign: 'right', width: 36 },
+});
+
 export default function SoundscapeScreen() {
   const cs = useColorScheme() ?? 'light';
   const c = Colors[cs];
@@ -72,10 +156,35 @@ export default function SoundscapeScreen() {
   const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
     useSoundscapeStore();
 
+  const extraBinaural = useSoundscapeStore((s) => s.extraBinaural);
+  const toggleExtraBinaural = useSoundscapeStore((s) => s.toggleExtraBinaural);
+  const setExtraBinauralVolume = useSoundscapeStore((s) => s.setExtraBinauralVolume);
+
+  const noise = useSoundscapeStore((s) => s.noise);
+  const toggleNoise = useSoundscapeStore((s) => s.toggleNoise);
+  const setNoiseVolume = useSoundscapeStore((s) => s.setNoiseVolume);
+
+  const ambience = useSoundscapeStore((s) => s.ambience);
+  const toggleAmbience = useSoundscapeStore((s) => s.toggleAmbience);
+  const setAmbienceVolume = useSoundscapeStore((s) => s.setAmbienceVolume);
+
+  const birds = useSoundscapeStore((s) => s.birds);
+  const toggleBirds = useSoundscapeStore((s) => s.toggleBirds);
+  const setBirdsVolume = useSoundscapeStore((s) => s.setBirdsVolume);
+  const setBirdsPitch = useSoundscapeStore((s) => s.setBirdsPitch);
+  const setBirdsSpeed = useSoundscapeStore((s) => s.setBirdsSpeed);
+
   const [ctxState, setCtxState] = useState<string>(getCtxState());
   useEffect(() => onStateChange(setCtxState), []);
 
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+  const anyPlaying =
+    playing ||
+    Object.values(extraBinaural).some((l) => l.playing) ||
+    Object.values(noise).some((l) => l.playing) ||
+    Object.values(ambience).some((l) => l.playing) ||
+    birds.playing;
 
   const ctxOk = ctxState === 'running';
   const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
@@ -87,10 +196,21 @@ export default function SoundscapeScreen() {
     >
       <Text style={[styles.title, { color: c.text }]}>Soundscape</Text>
       <Text style={[styles.subtitle, { color: c.icon }]}>
-        Binaural beats · requires headphones
+        Mix binaural beats, noise and nature ambience — layer as many as you like at once.
       </Text>
 
-      {/* Play / Stop — must be a direct tap for AudioContext to unlock */}
+      {/* AudioContext status — shows 'suspended' if browser blocked autoplay */}
+      {anyPlaying && (
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, { backgroundColor: ctxColor }]} />
+          <Text style={[styles.statusText, { color: ctxColor }]}>
+            {ctxOk ? 'Audio running' : `Audio ${ctxState} — tap a layer again if silent`}
+          </Text>
+        </View>
+      )}
+
+      {/* ---------------- Custom binaural (single tunable layer) ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon }]}>CUSTOM BINAURAL · requires headphones</Text>
       <Pressable
         onPress={toggle}
         style={[styles.playButton, { backgroundColor: playing ? '#c0392b' : c.tint }]}
@@ -99,41 +219,6 @@ export default function SoundscapeScreen() {
         <Text style={styles.playLabel}>{playing ? 'Stop' : 'Play'}</Text>
       </Pressable>
 
-      {/* AudioContext status — shows 'suspended' if browser blocked autoplay */}
-      {playing && (
-        <View style={styles.statusRow}>
-          <View style={[styles.statusDot, { backgroundColor: ctxColor }]} />
-          <Text style={[styles.statusText, { color: ctxColor }]}>
-            {ctxOk ? 'Audio running' : `Audio ${ctxState} — tap Play again if silent`}
-          </Text>
-        </View>
-      )}
-
-      {/* Wave presets */}
-      <Text style={[styles.sectionLabel, { color: c.icon }]}>WAVE TYPE</Text>
-      {WAVE_PRESETS.map((p) => {
-        const active = Math.round(beatHz) === p.hz;
-        return (
-          <Pressable
-            key={p.label}
-            onPress={() => setBeatHz(p.hz)}
-            style={[
-              styles.presetChip,
-              {
-                borderColor: active ? c.tint : (dark ? '#444' : '#ddd'),
-                backgroundColor: active ? c.tint + '22' : 'transparent',
-              },
-            ]}
-          >
-            <Text style={[styles.presetChipTitle, { color: active ? c.tint : c.text }]}>
-              {p.label}
-            </Text>
-            <Text style={[styles.presetChipSub, { color: c.icon }]}>{p.sub}</Text>
-          </Pressable>
-        );
-      })}
-
-      {/* Fine controls */}
       <View style={[styles.card, { borderColor: dark ? '#333' : '#e8e0d8' }]}>
         <Stepper
           label="Beat frequency"
@@ -163,9 +248,89 @@ export default function SoundscapeScreen() {
         />
       </View>
 
+      {/* ---------------- Layered binaural presets (multiple at once) ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
+        BINAURAL LAYERS · stack several at once
+      </Text>
+      {WAVE_PRESETS.map((p) => {
+        const layer = extraBinaural[p.key];
+        if (!layer) return null;
+        return (
+          <LayerRow
+            key={p.key}
+            label={p.label}
+            sub={p.sub}
+            playing={layer.playing}
+            volume={layer.volume}
+            onToggle={() => toggleExtraBinaural(p.key)}
+            onVolumeChange={(v) => setExtraBinauralVolume(p.key, v)}
+            c={c}
+            dark={dark}
+          />
+        );
+      })}
+
+      {/* ---------------- Noise ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>NOISE</Text>
+      {NOISE_COLORS.map((n) => {
+        const layer = noise[n.key];
+        return (
+          <LayerRow
+            key={n.key}
+            label={n.label}
+            playing={layer.playing}
+            volume={layer.volume}
+            onToggle={() => toggleNoise(n.key)}
+            onVolumeChange={(v) => setNoiseVolume(n.key, v)}
+            c={c}
+            dark={dark}
+          />
+        );
+      })}
+
+      {/* ---------------- Nature ambience ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>NATURE AMBIENCE</Text>
+      {AMBIENCE_KINDS.map((a) => {
+        const layer = ambience[a.key];
+        return (
+          <LayerRow
+            key={a.key}
+            label={a.label}
+            playing={layer.playing}
+            volume={layer.volume}
+            onToggle={() => toggleAmbience(a.key)}
+            onVolumeChange={(v) => setAmbienceVolume(a.key, v)}
+            c={c}
+            dark={dark}
+          />
+        );
+      })}
+      <LayerRow
+        label="Birds"
+        sub="procedurally generated chirps"
+        playing={birds.playing}
+        volume={birds.volume}
+        onToggle={toggleBirds}
+        onVolumeChange={setBirdsVolume}
+        c={c}
+        dark={dark}
+      >
+        <View style={layerStyles.sliderRow}>
+          <Text style={[layerStyles.volLabel, { color: c.icon }]}>Pitch</Text>
+          <InlineSlider min={0.5} max={2} step={0.05} value={birds.pitch} onChange={setBirdsPitch} tint={c.tint} />
+          <Text style={[layerStyles.volValue, { color: c.icon }]}>{birds.pitch.toFixed(2)}x</Text>
+        </View>
+        <View style={layerStyles.sliderRow}>
+          <Text style={[layerStyles.volLabel, { color: c.icon }]}>Speed</Text>
+          <InlineSlider min={0.25} max={3} step={0.05} value={birds.speed} onChange={setBirdsSpeed} tint={c.tint} />
+          <Text style={[layerStyles.volValue, { color: c.icon }]}>{birds.speed.toFixed(2)}x</Text>
+        </View>
+      </LayerRow>
+
       <Text style={[styles.hint, { color: c.icon }]}>
-        Binaural beats work by playing two slightly different frequencies — one per ear.
-        Your brain perceives the difference as a beat at the chosen frequency.
+        Binaural beats work by playing two slightly different frequencies — one per ear — so
+        headphones are required. Noise and nature ambience are synthesized live (no audio files),
+        so every layer can run indefinitely and mix freely with any other layer.
       </Text>
     </ScrollView>
   );
@@ -183,26 +348,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     borderRadius: 12,
-    marginBottom: 24,
+    marginBottom: 12,
     paddingVertical: 16,
   },
   playLabel: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
 
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
-  presetChip: {
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  presetChipTitle: { fontSize: 15, fontWeight: '700' },
-  presetChipSub: { fontSize: 12, marginTop: 2 },
 
   card: {
     borderRadius: 10,
     borderWidth: 1,
-    marginTop: 16,
+    marginTop: 4,
+    marginBottom: 8,
     paddingHorizontal: 14,
     paddingVertical: 4,
   },

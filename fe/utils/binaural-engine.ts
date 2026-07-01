@@ -1,4 +1,9 @@
-// Singleton Web Audio engine for binaural beats / soundscapes.
+// Singleton binaural-beat engine — this is the "primary" track driven by the
+// slideshow/preset system (see soundscape-store.ts applyPresetConfig/applySlideConfig).
+// Users can layer additional simultaneous binaural/noise/nature tracks via
+// sound-engine.ts; this file is kept separate so the existing preset integration
+// (app/preset/[id]/full-window.tsx, use-preset-loader.ts) is untouched.
+//
 // startBinaural() must be called from a synchronous user-gesture handler
 // (click/tap) so ctx.resume() can unlock the AudioContext.
 //
@@ -6,41 +11,15 @@
 // instead of ChannelMergerNode — it works reliably across browsers.
 // Headphones are required; speakers mix the two channels and cancel the beat.
 
-let audioCtx: AudioContext | null = null;
+import { getOrCreateAudioContext, getAudioContextState, onAudioContextStateChange, resumeAudioContext } from './audio-context';
+
 let leftOsc: OscillatorNode | null = null;
 let rightOsc: OscillatorNode | null = null;
 let gainNode: GainNode | null = null;
 let _playing = false;
 
-type StateListener = (state: AudioContextState | 'unavailable') => void;
-const stateListeners = new Set<StateListener>();
-
-function notifyState() {
-  const state = audioCtx ? audioCtx.state : 'suspended';
-  stateListeners.forEach((fn) => fn(state));
-}
-
-export function onStateChange(fn: StateListener): () => void {
-  stateListeners.add(fn);
-  return () => stateListeners.delete(fn);
-}
-
-export function getCtxState(): AudioContextState | 'unavailable' {
-  if (typeof window === 'undefined') return 'unavailable';
-  if (!audioCtx) return 'suspended';
-  return audioCtx.state;
-}
-
-function getOrCreateCtx(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  const Ctor = (window as any).AudioContext ?? (window as any).webkitAudioContext;
-  if (!Ctor) return null;
-  if (!audioCtx || audioCtx.state === 'closed') {
-    audioCtx = new Ctor() as AudioContext;
-    audioCtx.onstatechange = notifyState;
-  }
-  return audioCtx;
-}
+export const onStateChange = onAudioContextStateChange;
+export const getCtxState = getAudioContextState;
 
 function teardownOscillators() {
   try { leftOsc?.stop(); } catch { /* already stopped */ }
@@ -51,7 +30,7 @@ function teardownOscillators() {
 }
 
 export function startBinaural(beatHz: number, carrier: number, volume: number): boolean {
-  const ctx = getOrCreateCtx();
+  const ctx = getOrCreateAudioContext();
   if (!ctx) return false;
 
   teardownOscillators();
@@ -82,8 +61,7 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
     leftOsc.start();
     rightOsc.start();
 
-    // resume() must be called synchronously within the user gesture to unlock.
-    ctx.resume().then(notifyState).catch(() => undefined);
+    resumeAudioContext();
     _playing = true;
     return true;
   } catch (err) {
@@ -94,13 +72,15 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
 
 export function stopBinaural() {
   teardownOscillators();
-  audioCtx?.suspend().then(notifyState).catch(() => undefined);
+  const ctx = getOrCreateAudioContext();
+  ctx?.suspend().catch(() => undefined);
   _playing = false;
 }
 
 export function updateBinaural(beatHz: number, carrier: number, volume: number) {
-  if (!_playing || !leftOsc || !rightOsc || !gainNode || !audioCtx) return;
-  const now = audioCtx.currentTime;
+  const ctx = getOrCreateAudioContext();
+  if (!_playing || !leftOsc || !rightOsc || !gainNode || !ctx) return;
+  const now = ctx.currentTime;
   leftOsc.frequency.setTargetAtTime(carrier, now, 0.05);
   rightOsc.frequency.setTargetAtTime(carrier + beatHz, now, 0.05);
   gainNode.gain.setTargetAtTime(volume, now, 0.05);

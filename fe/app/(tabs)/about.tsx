@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
+import { SoundAttributionsPopover } from '@/components/sound-attributions-popover';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -34,10 +35,15 @@ export default function AboutScreen() {
         />
       }
     >
-      <Text style={[styles.appName, { color: c.tint }]}>Structable / ComRev</Text>
-      <Text style={[styles.tagline, { color: c.text, opacity: 0.6 }]}>
-        Open-source table with metadata, comments &amp; notes
-      </Text>
+      <View style={styles.titleRow}>
+        <View style={styles.titleTextCol}>
+          <Text style={[styles.appName, { color: c.tint }]}>Structable / ComRev</Text>
+          <Text style={[styles.tagline, { color: c.text, opacity: 0.6 }]}>
+            Open-source table with metadata, comments &amp; notes
+          </Text>
+        </View>
+        <SoundAttributionsPopover />
+      </View>
 
       <View style={[styles.card, { borderColor: c.tint + '44' }]}>
         <InfoRow label="Version" value={version} c={c} />
@@ -76,6 +82,8 @@ function InfoRow({ label, value, c, mono }: { label: string; value: string; c: a
 
 const styles = StyleSheet.create({
   headerIcon: { position: 'absolute', bottom: -30, right: 20 },
+  titleRow:   { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  titleTextCol: { flex: 1 },
   appName:    { fontSize: 26, fontWeight: '700', letterSpacing: 0.3 },
   tagline:    { fontSize: 13, marginTop: -4, marginBottom: 8 },
   card: {

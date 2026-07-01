@@ -3,6 +3,7 @@ from collections import Counter
 
 TOPICS_RAW = [
     # general / trends
+    "baas",
     "nocode",
     "lowcode",
     "low-code",
