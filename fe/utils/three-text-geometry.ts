@@ -661,8 +661,10 @@ export async function createTextGeometry(
     const material = makeZoneMaterial(baseMaterial, extrusionZone ?? {});
 
     // Face cap (materialIndex 1) — more porous/matte by default.
-    const DEFAULT_FACE_ZONE: ZoneMaterialProps = { color: new Color(0x000000), metalness: 0.35, roughness: 1.0 };
+    const DEFAULT_FACE_ZONE: ZoneMaterialProps = { color: new Color(0x000000), metalness: 0.35, roughness: 1.0, envMapIntensity: 0 };
     const faceMaterial = makeZoneMaterial(baseMaterial, faceZone ?? DEFAULT_FACE_ZONE);
+    // Flag the face cap so the env-map pipe knows to leave it unaffected.
+    faceMaterial.userData.envMapImmune = true;
 
     // Bevel chamfer (materialIndex 2) — inherits base by default.
     const bevelMaterial = makeZoneMaterial(baseMaterial, bevelZone ?? {});

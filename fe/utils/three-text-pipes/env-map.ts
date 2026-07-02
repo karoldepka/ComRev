@@ -230,6 +230,48 @@ export class EnvMapPipe implements EffectPipe {
     }
 
     const current = mesh.material;
+    const savedMat = this.savedMeshMaterials.get(mesh)!;
+
+    // Zone-material mesh (face/bevel/extrusion split): build a per-zone array
+    // so immune zones (e.g. face cap) stay unaffected by the env map.
+    if (Array.isArray(savedMat)) {
+      const currentArr = Array.isArray(current) ? current : null;
+      // Fast-path: already replaced — just refresh matcap textures.
+      if (currentArr && currentArr.length === savedMat.length &&
+          currentArr.every(m => m.userData.envMapPipeGenerated)) {
+        currentArr.forEach(mat => {
+          if (mat instanceof THREE.MeshMatcapMaterial && mat.matcap !== matcap) {
+            mat.matcap = matcap;
+            mat.needsUpdate = true;
+          }
+        });
+        return;
+      }
+      this.disposeGeneratedMaterial(current);
+      const nextArr = savedMat.map(origMat => {
+        if (origMat.userData.envMapImmune) {
+          // Keep the immune zone as a plain matte material — no matcap.
+          const src = origMat as THREE.MeshStandardMaterial;
+          const immune = new THREE.MeshStandardMaterial({
+            color: src.color?.clone() ?? new THREE.Color(0x000000),
+            roughness: src.roughness ?? 1.0,
+            metalness: src.metalness ?? 0,
+            envMapIntensity: 0,
+          });
+          immune.userData.envMapPipeGenerated = true;
+          this.generatedMaterials.add(immune);
+          return immune;
+        }
+        const mat = new THREE.MeshMatcapMaterial({ color: 0xffffff, matcap });
+        mat.userData.envMapPipeGenerated = true;
+        this.generatedMaterials.add(mat);
+        return mat;
+      });
+      mesh.material = nextArr;
+      return;
+    }
+
+    // Single-material mesh — original behaviour.
     const currentMat = Array.isArray(current) ? null : current;
     if (
       currentMat instanceof THREE.MeshMatcapMaterial &&
