@@ -667,7 +667,7 @@ export async function createTextGeometry(
     // Pass an explicit faceZone to override with a full PBR material.
     const faceMaterial = faceZone
       ? makeZoneMaterial(baseMaterial, faceZone)
-      : new MeshBasicMaterial({ color: new Color(0x333333) });
+      : new MeshBasicMaterial({ color: new Color(0x000000) });
     // No envMapImmune flag needed — MeshBasicMaterial is naturally immune.
     faceMaterial.userData.envMapImmune = true;
 
