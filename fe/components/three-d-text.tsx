@@ -441,8 +441,9 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         if (thisUpdateId !== updateIdRef.current) return;
 
         let mesh: THREE.Mesh | THREE.Group;
-        // All three zones always have their own material (always independently controllable).
-        const zoneMaterials = [material, faceMaterial, bevelMaterial ?? material];
+        // Zone array order matches reclassifyBevelGroups output:
+        // [0]=face caps, [1]=walls, [2]=bevel
+        const zoneMaterials = [faceMaterial, material, bevelMaterial ?? material];
         if (geometry instanceof THREE.Group) {
           mesh = geometry;
           mesh.traverse((child) => {

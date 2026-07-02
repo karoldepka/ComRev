@@ -198,13 +198,15 @@ const defaultOptions: Partial<TextGeometryOptions> = {
 };
 
 /**
- * Splits ExtrudeGeometry's group 0 (walls + bevel) into two groups:
- *   0 = straight extrusion walls  (face normal nearly perpendicular to Z)
- *   2 = bevel chamfer faces       (face normal has a Z component)
- * Group 1 (caps) is unchanged.
- * Only applied when the caller requests separate bevel or extrusion zones.
+ * Classifies every triangle purely by face-normal direction — independent of
+ * Three.js’s ExtrudeGeometry materialIndex convention, which can differ across
+ * versions:
+ *   materialIndex 0 = front/back caps  (|faceNormalZ| ≥ CAP_NZ_THRESHOLD)
+ *   materialIndex 1 = straight walls   (|faceNormalZ| < BEVEL_NZ_THRESHOLD)
+ *   materialIndex 2 = bevel chamfer    (between the two thresholds)
  */
-const BEVEL_NZ_THRESHOLD = 0.15;
+const CAP_NZ_THRESHOLD   = 0.95; // faces nearly parallel to the XY plane
+const BEVEL_NZ_THRESHOLD = 0.15; // faces nearly perpendicular to Z
 
 function faceNormalZ(pos: ArrayLike<number>, i0: number, i1: number, i2: number): number {
   const ax = pos[i0*3], ay = pos[i0*3+1];
@@ -224,36 +226,35 @@ function reclassifyBevelGroups(geo: BufferGeometry): void {
   const src = geo.index.array;
   const IndexCtor = src instanceof Uint32Array ? Uint32Array : Uint16Array;
 
-  const wallIdx: number[] = [];
   const capIdx: number[] = [];
+  const wallIdx: number[] = [];
   const bevelIdx: number[] = [];
 
   for (const g of geo.groups) {
     for (let i = g.start; i < g.start + g.count; i += 3) {
       const i0 = src[i], i1 = src[i+1], i2 = src[i+2];
-      if (g.materialIndex === 1) {
-        capIdx.push(i0, i1, i2);
+      const nz = Math.abs(faceNormalZ(pos, i0, i1, i2));
+      if (nz >= CAP_NZ_THRESHOLD) {
+        capIdx.push(i0, i1, i2);   // front/back face caps
+      } else if (nz >= BEVEL_NZ_THRESHOLD) {
+        bevelIdx.push(i0, i1, i2); // bevel chamfer
       } else {
-        if (Math.abs(faceNormalZ(pos, i0, i1, i2)) > BEVEL_NZ_THRESHOLD) {
-          bevelIdx.push(i0, i1, i2);
-        } else {
-          wallIdx.push(i0, i1, i2);
-        }
+        wallIdx.push(i0, i1, i2);  // straight extrusion walls
       }
     }
   }
 
   const newIdx = new IndexCtor(src.length);
   let ptr = 0;
-  const wallStart = ptr; for (const v of wallIdx)  newIdx[ptr++] = v;
-  const capStart  = ptr; for (const v of capIdx)   newIdx[ptr++] = v;
+  const capStart   = ptr; for (const v of capIdx)   newIdx[ptr++] = v;
+  const wallStart  = ptr; for (const v of wallIdx)  newIdx[ptr++] = v;
   const bevelStart = ptr; for (const v of bevelIdx) newIdx[ptr++] = v;
 
   geo.setIndex(new BufferAttribute(newIdx, 1));
   geo.clearGroups();
-  if (wallIdx.length > 0)  geo.addGroup(wallStart,  wallIdx.length,  0);
-  if (capIdx.length > 0)   geo.addGroup(capStart,   capIdx.length,   1);
-  if (bevelIdx.length > 0) geo.addGroup(bevelStart, bevelIdx.length, 2);
+  if (capIdx.length > 0)   geo.addGroup(capStart,   capIdx.length,   0); // → zoneMaterials[0]
+  if (wallIdx.length > 0)  geo.addGroup(wallStart,  wallIdx.length,  1); // → zoneMaterials[1]
+  if (bevelIdx.length > 0) geo.addGroup(bevelStart, bevelIdx.length, 2); // → zoneMaterials[2]
 }
 
 function makeZoneMaterial(
