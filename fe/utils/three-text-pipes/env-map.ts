@@ -225,53 +225,56 @@ export class EnvMapPipe implements EffectPipe {
   }
 
   private applyAnimatedMaterial(mesh: THREE.Mesh, matcap: THREE.Texture) {
+    const savedMat = this.savedMeshMaterials.has(mesh)
+      ? this.savedMeshMaterials.get(mesh)!
+      : mesh.material;
     if (!this.savedMeshMaterials.has(mesh)) {
       this.savedMeshMaterials.set(mesh, mesh.material);
     }
 
-    const current = mesh.material;
-    const savedMat = this.savedMeshMaterials.get(mesh)!;
-
-    // Zone-material mesh (face/bevel/extrusion split): build a per-zone array
-    // so immune zones (e.g. face cap) stay unaffected by the env map.
+    // Zone-material mesh: patch non-immune zones in-place with the matcap shader
+    // (preserves their original MeshStandardMaterial so normals/colors are correct);
+    // replace immune slots (face cap) with a plain MeshBasicMaterial that is
+    // completely unaffected by lights, env maps, and scene.environment.
     if (Array.isArray(savedMat)) {
-      const currentArr = Array.isArray(current) ? current : null;
-      // Fast-path: already replaced — just refresh matcap textures.
-      if (currentArr && currentArr.length === savedMat.length &&
-          currentArr.every(m => m.userData.envMapPipeGenerated)) {
-        currentArr.forEach(mat => {
-          if (mat instanceof THREE.MeshMatcapMaterial && mat.matcap !== matcap) {
-            mat.matcap = matcap;
-            mat.needsUpdate = true;
+      let workArr = mesh.material as THREE.Material[];
+      if (workArr === savedMat) {
+        // First call: build a copy of the zone array with immune slots swapped out.
+        workArr = [...savedMat];
+        for (let i = 0; i < savedMat.length; i++) {
+          const origMat = savedMat[i];
+          if (origMat.userData.envMapImmune) {
+            const src = origMat as THREE.MeshStandardMaterial;
+            const immune = new THREE.MeshBasicMaterial({
+              color: src.color?.clone() ?? new THREE.Color(0x333333),
+            });
+            immune.userData.envMapPipeGenerated = true;
+            this.generatedMaterials.add(immune);
+            workArr[i] = immune;
           }
-        });
-        return;
-      }
-      this.disposeGeneratedMaterial(current);
-      const nextArr = savedMat.map(origMat => {
-        if (origMat.userData.envMapImmune) {
-          // Keep the immune zone as a plain matte material — no matcap.
-          const src = origMat as THREE.MeshStandardMaterial;
-          const immune = new THREE.MeshStandardMaterial({
-            color: src.color?.clone() ?? new THREE.Color(0x000000),
-            roughness: src.roughness ?? 1.0,
-            metalness: src.metalness ?? 0,
-            envMapIntensity: 0,
-          });
-          immune.userData.envMapPipeGenerated = true;
-          this.generatedMaterials.add(immune);
-          return immune;
         }
-        const mat = new THREE.MeshMatcapMaterial({ color: 0xffffff, matcap });
-        mat.userData.envMapPipeGenerated = true;
-        this.generatedMaterials.add(mat);
-        return mat;
-      });
-      mesh.material = nextArr;
+        mesh.material = workArr;
+      }
+      // Apply / refresh matcap patch on non-immune zones every frame.
+      for (let i = 0; i < savedMat.length; i++) {
+        const origMat = savedMat[i];
+        if (origMat.userData.envMapImmune) continue;
+        const mat = origMat as THREE.MeshStandardMaterial;
+        if (!mat.isMeshStandardMaterial) continue;
+        if (!this.savedIntensities.has(mat)) {
+          this.savedIntensities.set(mat, mat.envMapIntensity);
+          this.savedEnvMaps.set(mat, mat.envMap ?? null);
+          this.patchedMats.set(mat, patchMatcap(mat));
+        }
+        const u = this.patchedMats.get(mat)!;
+        u.tCustomEnv.value = matcap;
+        u.tCustomEnvIntensity.value = 1.0;
+      }
       return;
     }
 
     // Single-material mesh — original behaviour.
+    const current = mesh.material;
     const currentMat = Array.isArray(current) ? null : current;
     if (
       currentMat instanceof THREE.MeshMatcapMaterial &&
