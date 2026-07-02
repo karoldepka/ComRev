@@ -441,7 +441,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         if (thisUpdateId !== updateIdRef.current) return;
 
         let mesh: THREE.Mesh | THREE.Group;
-        // faceMaterial is always defined (face cap always has its own material).
+        // All three zones always have their own material (always independently controllable).
         const zoneMaterials = [material, faceMaterial, bevelMaterial ?? material];
         if (geometry instanceof THREE.Group) {
           mesh = geometry;

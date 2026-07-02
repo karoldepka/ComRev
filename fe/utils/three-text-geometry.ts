@@ -397,7 +397,9 @@ export async function createTextGeometry(
 ): Promise<CreateTextGeometryResult> {
   const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
   const { faceZone, bevelZone, extrusionZone } = options;
-  const needsReclassify = !!bevelZone;
+  // Always reclassify so each zone has its own materialIndex regardless of
+  // whether the caller supplied explicit zone overrides.
+  const needsReclassify = true;
   const rawLines = mergedOptions.text!.split('\n');
   const hasBold = rawLines.some(l => /<b>/i.test(l));
   // Strip tags for measurement; raw lines used for bold-aware rendering below
@@ -650,21 +652,22 @@ export async function createTextGeometry(
       materialOptions.envMap = mergedOptions.envMap;
       materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
     }
-    if (extrusionZone) {
-      if (extrusionZone.color) materialOptions.color = extrusionZone.color;
-      if (extrusionZone.metalness !== undefined) materialOptions.metalness = extrusionZone.metalness;
-      if (extrusionZone.roughness !== undefined) materialOptions.roughness = extrusionZone.roughness;
-      if (extrusionZone.envMapIntensity !== undefined) materialOptions.envMapIntensity = extrusionZone.envMapIntensity;
-    }
-    const material = new MeshStandardMaterial(materialOptions);
-    patchBevelNormalReflect(material);
-    // Face cap (materialIndex 1) always gets its own material so it can be
-    // tweaked independently from the extrusion walls.  When no explicit
-    // faceZone is supplied the defaults lean toward a more diffuse, porous
-    // look: less metallic, more rough compared to the shiny walls.
+    // Build a template material that captures base color/envMap settings.
+    // Each zone then gets its own material via makeZoneMaterial so all three
+    // can be tweaked independently at any time.
+    const baseMaterial = new MeshStandardMaterial(materialOptions);
+
+    // Extrusion walls (materialIndex 0) — shiny metallic by default.
+    const material = makeZoneMaterial(baseMaterial, extrusionZone ?? {});
+
+    // Face cap (materialIndex 1) — more porous/matte by default.
     const DEFAULT_FACE_ZONE: ZoneMaterialProps = { metalness: 0.35, roughness: 0.60 };
-    const faceMaterial = makeZoneMaterial(material, faceZone ?? DEFAULT_FACE_ZONE);
-    const bevelMaterial = bevelZone ? makeZoneMaterial(material, bevelZone) : undefined;
+    const faceMaterial = makeZoneMaterial(baseMaterial, faceZone ?? DEFAULT_FACE_ZONE);
+
+    // Bevel chamfer (materialIndex 2) — inherits base by default.
+    const bevelMaterial = makeZoneMaterial(baseMaterial, bevelZone ?? {});
+
+    baseMaterial.dispose();
     // Shift so letter face is at z=0 and extrusion goes into screen (-Z)
     mainGroup.position.z = -(mergedOptions.height! + (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0));
     return { geometry: mainGroup, material, faceMaterial, bevelMaterial };
