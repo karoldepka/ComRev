@@ -225,48 +225,21 @@ export class EnvMapPipe implements EffectPipe {
   }
 
   private applyAnimatedMaterial(mesh: THREE.Mesh, matcap: THREE.Texture) {
-    const savedMat = this.savedMeshMaterials.has(mesh)
-      ? this.savedMeshMaterials.get(mesh)!
-      : mesh.material;
-    if (!this.savedMeshMaterials.has(mesh)) {
-      this.savedMeshMaterials.set(mesh, mesh.material);
-    }
+    const currentMat = mesh.material;
 
-    // Zone-material mesh: patch non-immune zones in-place with the matcap shader
-    // (preserves their original MeshStandardMaterial so normals/colors are correct);
-    // replace immune slots (face cap) with a plain MeshBasicMaterial that is
-    // completely unaffected by lights, env maps, and scene.environment.
-    if (Array.isArray(savedMat)) {
-      let workArr = mesh.material as THREE.Material[];
-      if (workArr === savedMat) {
-        // First call: build a copy of the zone array with immune slots swapped out.
-        workArr = [...savedMat];
-        for (let i = 0; i < savedMat.length; i++) {
-          const origMat = savedMat[i];
-          if (origMat.userData.envMapImmune) {
-            const src = origMat as THREE.MeshStandardMaterial;
-            const immune = new THREE.MeshBasicMaterial({
-              color: src.color?.clone() ?? new THREE.Color(0x333333),
-            });
-            immune.userData.envMapPipeGenerated = true;
-            this.generatedMaterials.add(immune);
-            workArr[i] = immune;
-          }
+    // Zone-material mesh: patch MeshStandardMaterial slots in-place with the
+    // matcap shader; MeshBasicMaterial slots (face cap) are skipped — they are
+    // naturally immune to scene.environment and don't need special handling.
+    if (Array.isArray(currentMat)) {
+      for (const mat of currentMat) {
+        const stdMat = mat as THREE.MeshStandardMaterial;
+        if (!stdMat.isMeshStandardMaterial) continue;
+        if (!this.savedIntensities.has(stdMat)) {
+          this.savedIntensities.set(stdMat, stdMat.envMapIntensity);
+          this.savedEnvMaps.set(stdMat, stdMat.envMap ?? null);
+          this.patchedMats.set(stdMat, patchMatcap(stdMat));
         }
-        mesh.material = workArr;
-      }
-      // Apply / refresh matcap patch on non-immune zones every frame.
-      for (let i = 0; i < savedMat.length; i++) {
-        const origMat = savedMat[i];
-        if (origMat.userData.envMapImmune) continue;
-        const mat = origMat as THREE.MeshStandardMaterial;
-        if (!mat.isMeshStandardMaterial) continue;
-        if (!this.savedIntensities.has(mat)) {
-          this.savedIntensities.set(mat, mat.envMapIntensity);
-          this.savedEnvMaps.set(mat, mat.envMap ?? null);
-          this.patchedMats.set(mat, patchMatcap(mat));
-        }
-        const u = this.patchedMats.get(mat)!;
+        const u = this.patchedMats.get(stdMat)!;
         u.tCustomEnv.value = matcap;
         u.tCustomEnvIntensity.value = 1.0;
       }
@@ -274,20 +247,21 @@ export class EnvMapPipe implements EffectPipe {
     }
 
     // Single-material mesh — original behaviour.
-    const current = mesh.material;
-    const currentMat = Array.isArray(current) ? null : current;
+    if (!this.savedMeshMaterials.has(mesh)) {
+      this.savedMeshMaterials.set(mesh, currentMat);
+    }
+    const currentSingle = Array.isArray(currentMat) ? null : currentMat;
     if (
-      currentMat instanceof THREE.MeshMatcapMaterial &&
-      currentMat.userData.envMapPipeGenerated
+      currentSingle instanceof THREE.MeshMatcapMaterial &&
+      currentSingle.userData.envMapPipeGenerated
     ) {
-      if (currentMat.matcap !== matcap) {
-        currentMat.matcap = matcap;
-        currentMat.needsUpdate = true;
+      if (currentSingle.matcap !== matcap) {
+        currentSingle.matcap = matcap;
+        currentSingle.needsUpdate = true;
       }
       return;
     }
-
-    this.disposeGeneratedMaterial(current);
+    this.disposeGeneratedMaterial(currentMat);
     const next = new THREE.MeshMatcapMaterial({
       color: 0xffffff,
       matcap,

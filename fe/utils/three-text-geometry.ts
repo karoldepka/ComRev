@@ -5,6 +5,7 @@ import {
   Color,
   Group,
   Mesh,
+  MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   type Texture,
@@ -660,10 +661,13 @@ export async function createTextGeometry(
     // Extrusion walls (materialIndex 0) — shiny metallic by default.
     const material = makeZoneMaterial(baseMaterial, extrusionZone ?? {});
 
-    // Face cap (materialIndex 1) — more porous/matte by default.
-    const DEFAULT_FACE_ZONE: ZoneMaterialProps = { color: new Color(0x333333), metalness: 0.35, roughness: 1.0, envMapIntensity: 0 };
-    const faceMaterial = makeZoneMaterial(baseMaterial, faceZone ?? DEFAULT_FACE_ZONE);
-    // Flag the face cap so the env-map pipe knows to leave it unaffected.
+    // Face cap (materialIndex 1) — MeshBasicMaterial is completely unaffected
+    // by scene.environment, lights, or env-map pipe patches.
+    // Pass an explicit faceZone to override with a full PBR material.
+    const faceMaterial = faceZone
+      ? makeZoneMaterial(baseMaterial, faceZone)
+      : new MeshBasicMaterial({ color: new Color(0x333333) });
+    // No envMapImmune flag needed — MeshBasicMaterial is naturally immune.
     faceMaterial.userData.envMapImmune = true;
 
     // Bevel chamfer (materialIndex 2) — inherits base by default.
