@@ -441,20 +441,19 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         if (thisUpdateId !== updateIdRef.current) return;
 
         let mesh: THREE.Mesh | THREE.Group;
-        const zoneMaterials = (faceMaterial || bevelMaterial)
-          ? [material, faceMaterial ?? material, bevelMaterial ?? material]
-          : null;
+        // faceMaterial is always defined (face cap always has its own material).
+        const zoneMaterials = [material, faceMaterial, bevelMaterial ?? material];
         if (geometry instanceof THREE.Group) {
           mesh = geometry;
           mesh.traverse((child) => {
             if (child instanceof THREE.Mesh) {
-              child.material = zoneMaterials ?? material;
+              child.material = zoneMaterials;
               child.castShadow = true;
               child.receiveShadow = true;
             }
           });
         } else {
-          mesh = new THREE.Mesh(geometry, (zoneMaterials ?? material) as any);
+          mesh = new THREE.Mesh(geometry, zoneMaterials as any);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
         }

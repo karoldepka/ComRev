@@ -658,7 +658,12 @@ export async function createTextGeometry(
     }
     const material = new MeshStandardMaterial(materialOptions);
     patchBevelNormalReflect(material);
-    const faceMaterial = faceZone ? makeZoneMaterial(material, faceZone) : undefined;
+    // Face cap (materialIndex 1) always gets its own material so it can be
+    // tweaked independently from the extrusion walls.  When no explicit
+    // faceZone is supplied the defaults lean toward a more diffuse, porous
+    // look: less metallic, more rough compared to the shiny walls.
+    const DEFAULT_FACE_ZONE: ZoneMaterialProps = { metalness: 0.35, roughness: 0.60 };
+    const faceMaterial = makeZoneMaterial(material, faceZone ?? DEFAULT_FACE_ZONE);
     const bevelMaterial = bevelZone ? makeZoneMaterial(material, bevelZone) : undefined;
     // Shift so letter face is at z=0 and extrusion goes into screen (-Z)
     mainGroup.position.z = -(mergedOptions.height! + (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0));
