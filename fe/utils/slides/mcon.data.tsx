@@ -3,6 +3,10 @@ export { MCON_VISUAL_PARAMS } from "@/utils/mcon.config";
 export type { MantraEntry, MantraText } from "@/utils/mcon.config";
 
 export const MANTRAS: Record<string, MantraEntry> = {
+  "Be honest with myself, instead of in denial or ignorance": {
+    examples:
+      "Am I running like a headless chicken and constantly changing music, instead of steady focus?",
+  },
   "thoughts are things": {
     sentiment: "growth",
     emotion: "focus",

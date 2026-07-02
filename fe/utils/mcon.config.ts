@@ -25,6 +25,7 @@ export const MCON_VISUAL_PARAMS: Record<string, unknown> = {
 
 export type MantraEntry = {
   text?: MantraText;
+  examples?: string;
   author?: string;
   sentiment?:
     | "loving"
