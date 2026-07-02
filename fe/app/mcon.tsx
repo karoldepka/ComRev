@@ -58,6 +58,7 @@ export default function MconScreen() {
       id: `mcon-${nanoid()}`,
       name: mantraEntries[index]?.[0] ?? "Mantra",
       text,
+      author: mantraEntries[index]?.[1]?.author,
     }));
 
     return {

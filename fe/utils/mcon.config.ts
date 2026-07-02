@@ -15,7 +15,7 @@ export const MCON_VISUAL_PARAMS: Record<string, unknown> = {
   roughness: 0.25,
   envMapIntensity: 1.5,
   equalizeLineWidths: false,
-  equalizationMethod: 'fontSize',
+  equalizationMethod: "fontSize",
   targetWidth: 20,
   lineSpacing: 1.0,
   perspective: 1.0,
@@ -25,6 +25,7 @@ export const MCON_VISUAL_PARAMS: Record<string, unknown> = {
 
 export type MantraEntry = {
   text?: MantraText;
+  author?: string;
   sentiment?:
     | "loving"
     | "growth"

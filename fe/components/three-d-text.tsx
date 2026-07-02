@@ -1,4 +1,4 @@
-import { createTextGeometry } from "@/utils/three-text-geometry";
+import { createTextGeometry, type ZoneMaterialProps } from "@/utils/three-text-geometry";
 import { EffectPipe, PipelineManager } from "@/utils/three-text-pipes";
 import { GLView } from "expo-gl";
 import { Renderer } from "expo-three";
@@ -43,6 +43,12 @@ interface ThreeDTextProps {
   equalizationMethod?: "spacing" | "fontSize";
   targetWidth?: number;
   lineSpacing?: number;
+  /** Material override for the front letter-face cap. */
+  faceZone?: ZoneMaterialProps;
+  /** Material override for the bevel chamfer. */
+  bevelZone?: ZoneMaterialProps;
+  /** Material override for the straight extrusion walls. */
+  extrusionZone?: ZoneMaterialProps;
   perspective?: number;
   pipes?: EffectPipe[];
   paused?: boolean;
@@ -73,6 +79,9 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       equalizationMethod = "fontSize",
       targetWidth = 20,
       lineSpacing,
+      faceZone,
+      bevelZone,
+      extrusionZone,
       perspective = 1.0,
       pipes = [],
       paused = false,
@@ -404,7 +413,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       const thisUpdateId = ++updateIdRef.current;
 
       try {
-        const { geometry, material } = await createTextGeometry({
+        const { geometry, material, faceMaterial, bevelMaterial } = await createTextGeometry({
           text: textContent,
           fontFamily,
           size,
@@ -424,22 +433,28 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           equalizationMethod,
           targetWidth,
           lineSpacing,
+          faceZone,
+          bevelZone,
+          extrusionZone,
         });
 
         if (thisUpdateId !== updateIdRef.current) return;
 
         let mesh: THREE.Mesh | THREE.Group;
+        const zoneMaterials = (faceMaterial || bevelMaterial)
+          ? [material, faceMaterial ?? material, bevelMaterial ?? material]
+          : null;
         if (geometry instanceof THREE.Group) {
           mesh = geometry;
           mesh.traverse((child) => {
             if (child instanceof THREE.Mesh) {
-              child.material = material;
+              child.material = zoneMaterials ?? material;
               child.castShadow = true;
               child.receiveShadow = true;
             }
           });
         } else {
-          mesh = new THREE.Mesh(geometry, material);
+          mesh = new THREE.Mesh(geometry, (zoneMaterials ?? material) as any);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
         }

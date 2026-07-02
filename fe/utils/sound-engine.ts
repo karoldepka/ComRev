@@ -8,7 +8,7 @@
 // chirp synth so pitch/speed can be tuned live — real recordings can't do that
 // without a pitch-shifter, which is out of scope here.
 
-import { getOrCreateAudioContext, resumeAudioContext } from './audio-context';
+import { getOrCreateAudioContext, getMasterBus, resumeAudioContext } from './audio-context';
 import { createNoiseBuffer, type NoiseColor } from './noise-buffers';
 import { AMBIENCE_SOURCES, resolveAssetUri, type AmbienceKind } from './ambience-tracks';
 
@@ -49,7 +49,7 @@ export function startNoiseTrack(id: string, color: NoiseColor, volume: number): 
   const gain = ctx.createGain();
   gain.gain.value = volume;
 
-  source.connect(gain).connect(ctx.destination);
+  source.connect(gain).connect(getMasterBus() ?? ctx.destination);
   source.start();
   resumeAudioContext();
 
@@ -110,7 +110,7 @@ export async function startAmbienceTrack(id: string, kind: AmbienceKind, volume:
   const gain = ctx.createGain();
   gain.gain.value = volume;
 
-  source.connect(gain).connect(ctx.destination);
+  source.connect(gain).connect(getMasterBus() ?? ctx.destination);
   source.start();
   resumeAudioContext();
 
@@ -140,7 +140,7 @@ export function startBirdsTrack(id: string, volume: number, pitch: number, speed
 
   const gain = ctx.createGain();
   gain.gain.value = volume;
-  gain.connect(ctx.destination);
+  gain.connect(getMasterBus() ?? ctx.destination);
 
   const params: BirdsLiveParams = { pitch, speed };
   birdsParams.set(id, params);
@@ -235,7 +235,7 @@ export function startBinauralLayer(id: string, beatHz: number, carrier: number, 
 
   leftOsc.connect(leftPanner).connect(gain);
   rightOsc.connect(rightPanner).connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getMasterBus() ?? ctx.destination);
 
   leftOsc.start();
   rightOsc.start();

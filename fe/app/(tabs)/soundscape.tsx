@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useConfirmDialog } from '@/components/confirm-dialog';
 import {
   AMBIENCE_KINDS,
   NOISE_COLORS,
@@ -280,6 +281,55 @@ const browserStyles = StyleSheet.create({
   categoryCount: { fontSize: 12, fontWeight: '600' },
 });
 
+const presetStyles = StyleSheet.create({
+  saveRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  input: {
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    fontSize: 13,
+    outlineStyle: 'none',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  } as any,
+  saveBtn: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  saveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  status: { fontSize: 12, marginTop: 6 },
+  empty: { fontSize: 12, lineHeight: 17, marginTop: 8 },
+  row: {
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  rowMain: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 8 },
+  rowLabel: { flex: 1, fontSize: 13, fontWeight: '600' },
+});
+
+const fxStyles = StyleSheet.create({
+  swipeRow: { flexDirection: 'row', gap: 8 },
+  swipeBtn: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  swipeBtnText: { fontSize: 13, fontWeight: '700' },
+  gateHeader: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+});
+
 export default function SoundscapeScreen() {
   const cs = useColorScheme() ?? 'light';
   const c = Colors[cs];
@@ -304,11 +354,63 @@ export default function SoundscapeScreen() {
   const toggleAmbience = useSoundscapeStore((s) => s.toggleAmbience);
   const setAmbienceVolume = useSoundscapeStore((s) => s.setAmbienceVolume);
 
+  const triggerBassSwipe = useSoundscapeStore((s) => s.triggerBassSwipe);
+  const stutterGate = useSoundscapeStore((s) => s.stutterGate);
+  const toggleStutterGate = useSoundscapeStore((s) => s.toggleStutterGate);
+  const setStutterGateBpm = useSoundscapeStore((s) => s.setStutterGateBpm);
+
   const birds = useSoundscapeStore((s) => s.birds);
   const toggleBirds = useSoundscapeStore((s) => s.toggleBirds);
   const setBirdsVolume = useSoundscapeStore((s) => s.setBirdsVolume);
   const setBirdsPitch = useSoundscapeStore((s) => s.setBirdsPitch);
   const setBirdsSpeed = useSoundscapeStore((s) => s.setBirdsSpeed);
+
+  const presets = useSoundscapeStore((s) => s.presets);
+  const loadedPresetId = useSoundscapeStore((s) => s.loadedPresetId);
+  const loadPresetList = useSoundscapeStore((s) => s.loadPresetList);
+  const saveCurrentAsPreset = useSoundscapeStore((s) => s.saveCurrentAsPreset);
+  const loadPresetById = useSoundscapeStore((s) => s.loadPresetById);
+  const removePreset = useSoundscapeStore((s) => s.removePreset);
+
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const [draftPresetName, setDraftPresetName] = useState('');
+  const [presetStatus, setPresetStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadPresetList();
+  }, [loadPresetList]);
+
+  const defaultPresetName = () => {
+    const base = 'My preset';
+    const existing = new Set(presets.map((p) => p.name));
+    let name = base;
+    let ordinal = 2;
+    while (existing.has(name)) name = `${base} ${ordinal++}`;
+    return name;
+  };
+
+  const handleSavePreset = async () => {
+    const name = draftPresetName.trim() || defaultPresetName();
+    try {
+      await saveCurrentAsPreset(name);
+      setDraftPresetName('');
+      setPresetStatus(`Saved: ${name}`);
+      setTimeout(() => setPresetStatus(null), 2500);
+    } catch (err) {
+      setPresetStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleDeletePreset = async (id: string, name: string) => {
+    const confirmed = await confirm({
+      title: 'Delete preset',
+      message: `Delete "${name}"? This can't be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) await removePreset(id);
+  };
 
   const [ctxState, setCtxState] = useState<string>(getCtxState());
   useEffect(() => onStateChange(setCtxState), []);
@@ -334,6 +436,49 @@ export default function SoundscapeScreen() {
       <Text style={[styles.subtitle, { color: c.icon }]}>
         Mix binaural beats, noise and nature ambience — layer as many as you like at once.
       </Text>
+
+      {/* ---------------- Saved presets ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon }]}>MY PRESETS</Text>
+      <View style={[styles.card, { borderColor: dark ? '#333' : '#e8e0d8', paddingVertical: 10 }]}>
+        <View style={presetStyles.saveRow}>
+          <TextInput
+            value={draftPresetName}
+            onChangeText={setDraftPresetName}
+            placeholder={defaultPresetName()}
+            placeholderTextColor={c.icon}
+            style={[presetStyles.input, { color: c.text, borderColor: dark ? '#333' : '#e8e0d8' }]}
+          />
+          <Pressable onPress={handleSavePreset} style={[presetStyles.saveBtn, { backgroundColor: c.tint }]}>
+            <MaterialIcons name="save" size={16} color="#fff" />
+            <Text style={presetStyles.saveBtnText}>Save preset</Text>
+          </Pressable>
+        </View>
+        {presetStatus ? <Text style={[presetStyles.status, { color: c.icon }]}>{presetStatus}</Text> : null}
+
+        {presets.length === 0 ? (
+          <Text style={[presetStyles.empty, { color: c.icon }]}>
+            No saved presets yet — dial in a blend below, then save it here to recall it later.
+          </Text>
+        ) : (
+          presets.map((p) => (
+            <View key={p.id} style={[presetStyles.row, { borderColor: dark ? '#333' : '#eee' }]}>
+              <Pressable onPress={() => loadPresetById(p.id)} style={presetStyles.rowMain}>
+                <MaterialIcons
+                  name={loadedPresetId === p.id ? 'radio-button-checked' : 'radio-button-unchecked'}
+                  size={18}
+                  color={loadedPresetId === p.id ? c.tint : c.icon}
+                />
+                <Text style={[presetStyles.rowLabel, { color: c.text }]} numberOfLines={1}>
+                  {p.name}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => handleDeletePreset(p.id, p.name)} hitSlop={8}>
+                <MaterialIcons name="delete-outline" size={18} color={c.icon} />
+              </Pressable>
+            </View>
+          ))
+        )}
+      </View>
 
       {/* AudioContext status — shows 'suspended' if browser blocked autoplay */}
       {anyPlaying && (
@@ -424,6 +569,53 @@ export default function SoundscapeScreen() {
         );
       })}
 
+      {/* ---------------- Sound effects & modifiers ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>SOUND EFFECTS</Text>
+      <View style={[styles.card, { borderColor: dark ? '#333' : '#e8e0d8', paddingVertical: 10 }]}>
+        <View style={fxStyles.swipeRow}>
+          <Pressable
+            onPress={() => triggerBassSwipe('up')}
+            style={[fxStyles.swipeBtn, { borderColor: c.tint }]}
+          >
+            <MaterialIcons name="trending-up" size={18} color={c.tint} />
+            <Text style={[fxStyles.swipeBtnText, { color: c.tint }]}>Bass swipe up</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => triggerBassSwipe('down')}
+            style={[fxStyles.swipeBtn, { borderColor: c.tint }]}
+          >
+            <MaterialIcons name="trending-down" size={18} color={c.tint} />
+            <Text style={[fxStyles.swipeBtnText, { color: c.tint }]}>Bass swipe down</Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.divider, { borderColor: dark ? '#333' : '#eee', marginVertical: 10 }]} />
+
+        <Pressable onPress={toggleStutterGate} style={fxStyles.gateHeader}>
+          <MaterialIcons
+            name={stutterGate.enabled ? 'pause-circle-filled' : 'play-circle-outline'}
+            size={26}
+            color={stutterGate.enabled ? c.tint : c.icon}
+          />
+          <View style={layerStyles.headerText}>
+            <Text style={[layerStyles.title, { color: c.text }]}>Stutter gate</Text>
+            <Text style={[layerStyles.sub, { color: c.icon }]}>chops the whole mix rhythmically</Text>
+          </View>
+        </Pressable>
+        <View style={layerStyles.sliderRow}>
+          <Text style={[layerStyles.volLabel, { color: c.icon }]}>BPM</Text>
+          <InlineSlider
+            min={60}
+            max={200}
+            step={1}
+            value={stutterGate.bpm}
+            onChange={setStutterGateBpm}
+            tint={c.tint}
+          />
+          <Text style={[layerStyles.volValue, { color: c.icon }]}>{stutterGate.bpm}</Text>
+        </View>
+      </View>
+
       {/* ---------------- Nature ambience ---------------- */}
       <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
         NATURE AMBIENCE · {AMBIENCE_KINDS.length} field recordings
@@ -464,6 +656,7 @@ export default function SoundscapeScreen() {
         field recordings (credits for CC-BY ones are on the About tab). Every layer runs
         independently and mixes freely with any other layer.
       </Text>
+      {confirmDialog}
     </ScrollView>
   );
 }

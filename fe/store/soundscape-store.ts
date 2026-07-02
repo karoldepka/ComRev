@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { nanoid } from 'nanoid/non-secure';
 import { startBinaural, stopBinaural, updateBinaural } from '@/utils/binaural-engine';
 import {
   startAmbienceTrack,
@@ -12,6 +13,22 @@ import {
 } from '@/utils/sound-engine';
 import type { NoiseColor } from '@/utils/noise-buffers';
 import { AMBIENCE_SOURCES, type AmbienceKind, type AmbienceCategory } from '@/utils/ambience-tracks';
+import {
+  startStutterGate,
+  stopStutterGate,
+  triggerBassSwipe as triggerBassSwipeFx,
+  type SweepDirection,
+} from '@/utils/sound-fx';
+import { API_BASE } from '@/utils/api-config';
+import {
+  deleteSoundscapePreset as deleteSoundscapePresetLocal,
+  deleteSoundscapePresetFromBackend,
+  getSoundscapePresets as getSoundscapePresetsLocal,
+  loadSoundscapePresetsFromBackend,
+  saveSoundscapePreset as saveSoundscapePresetLocal,
+  saveSoundscapePresetOfflineFirst,
+  type SoundscapePreset,
+} from '@/utils/config-store';
 
 export interface SoundscapeConfig {
   beatHz?: number;    // 0 or absent = off
@@ -47,14 +64,19 @@ export const AMBIENCE_KINDS: { key: AmbienceKind; label: string; category: Ambie
     category: s.category,
   }));
 
-interface LayerState {
+export interface LayerState {
   playing: boolean;
   volume: number;
 }
 
-interface BirdsState extends LayerState {
+export interface BirdsState extends LayerState {
   pitch: number; // 1 = natural pitch
   speed: number; // 1 = natural chirp rate
+}
+
+export interface StutterGateState {
+  enabled: boolean;
+  bpm: number;
 }
 
 interface SoundscapeState {
@@ -91,6 +113,24 @@ interface SoundscapeState {
   setBirdsVolume: (volume: number) => void;
   setBirdsPitch: (pitch: number) => void;
   setBirdsSpeed: (speed: number) => void;
+
+  // --- One-shot bass swipe FX (riser / drop stab) ---
+  triggerBassSwipe: (direction: SweepDirection) => void;
+
+  // --- Stutter gate: rhythmically chops the whole mix (see utils/sound-fx.ts) ---
+  stutterGate: StutterGateState;
+  toggleStutterGate: () => void;
+  setStutterGateBpm: (bpm: number) => void;
+
+  // --- Full-mixer presets: save/recall the entire layered mix, synced offline-first ---
+  presets: SoundscapePreset[];
+  loadedPresetId: string | null;
+  loadedPresetName: string | null;
+  loadPresetList: () => Promise<void>;
+  saveCurrentAsPreset: (name: string) => Promise<SoundscapePreset>;
+  applyPreset: (preset: SoundscapePreset) => void;
+  loadPresetById: (id: string) => void;
+  removePreset: (id: string) => Promise<void>;
 }
 
 const defaultLayer = (): LayerState => ({ playing: false, volume: 0.35 });
@@ -249,5 +289,157 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     const layer = get().birds;
     set({ birds: { ...layer, speed } });
     if (layer.playing) updateBirdsTrack('birds', layer.pitch, speed);
+  },
+
+  triggerBassSwipe: (direction) => {
+    triggerBassSwipeFx(direction);
+  },
+
+  stutterGate: { enabled: false, bpm: 120 },
+
+  toggleStutterGate: () => {
+    const gate = get().stutterGate;
+    if (gate.enabled) {
+      stopStutterGate();
+    } else {
+      startStutterGate(gate.bpm);
+    }
+    set({ stutterGate: { ...gate, enabled: !gate.enabled } });
+  },
+
+  setStutterGateBpm: (bpm) => {
+    const gate = get().stutterGate;
+    set({ stutterGate: { ...gate, bpm } });
+    if (gate.enabled) startStutterGate(bpm); // re-arm at the new tempo
+  },
+
+  presets: [],
+  loadedPresetId: null,
+  loadedPresetName: null,
+
+  loadPresetList: async () => {
+    try {
+      let loaded: SoundscapePreset[];
+      try {
+        loaded = await loadSoundscapePresetsFromBackend(API_BASE);
+        // Merge into local IndexedDB so it's available offline next time.
+        for (const preset of loaded) await saveSoundscapePresetLocal(preset);
+      } catch {
+        loaded = await getSoundscapePresetsLocal();
+      }
+      set({
+        presets: [...loaded].sort((a, b) => b.when_last_modified.localeCompare(a.when_last_modified)),
+      });
+    } catch (error) {
+      console.warn('Unable to load soundscape presets:', error);
+    }
+  },
+
+  saveCurrentAsPreset: async (name) => {
+    const state = get();
+    const now = new Date().toISOString();
+    const preset: SoundscapePreset = {
+      id: nanoid(),
+      name,
+      when_created: now,
+      when_last_modified: now,
+      beatHz: state.beatHz,
+      carrier: state.carrier,
+      volume: state.volume,
+      playing: state.playing,
+      extraBinaural: state.extraBinaural,
+      noise: state.noise,
+      ambience: state.ambience,
+      birds: state.birds,
+      stutterGate: state.stutterGate,
+    };
+    await saveSoundscapePresetOfflineFirst(preset, API_BASE);
+    set({
+      presets: [preset, ...get().presets],
+      loadedPresetId: preset.id,
+      loadedPresetName: preset.name,
+    });
+    return preset;
+  },
+
+  applyPreset: (preset) => {
+    const state = get();
+
+    // Stop everything currently playing so the mix ends up matching the preset exactly.
+    if (state.playing) stopBinaural();
+    for (const key of Object.keys(state.extraBinaural)) {
+      if (state.extraBinaural[key].playing) stopTrack(`binaural:${key}`);
+    }
+    for (const color of Object.keys(state.noise) as NoiseColor[]) {
+      if (state.noise[color].playing) stopTrack(`noise:${color}`);
+    }
+    for (const kind of Object.keys(state.ambience) as AmbienceKind[]) {
+      if (state.ambience[kind].playing) stopTrack(`ambience:${kind}`);
+    }
+    if (state.birds.playing) stopTrack('birds');
+    if (state.stutterGate.enabled) stopStutterGate();
+
+    const playing = preset.playing && startBinaural(preset.beatHz, preset.carrier, preset.volume);
+
+    const extraBinaural: Record<string, LayerState> = {};
+    for (const p of WAVE_PRESETS) {
+      const layer = preset.extraBinaural[p.key] ?? defaultLayer();
+      if (layer.playing) startBinauralLayer(`binaural:${p.key}`, p.hz, preset.carrier, layer.volume);
+      extraBinaural[p.key] = layer;
+    }
+
+    const noise = {} as Record<NoiseColor, LayerState>;
+    for (const n of NOISE_COLORS) {
+      const layer = preset.noise[n.key] ?? defaultLayer();
+      if (layer.playing) startNoiseTrack(`noise:${n.key}`, n.key, layer.volume);
+      noise[n.key] = layer;
+    }
+
+    const ambience = {} as Record<AmbienceKind, LayerState>;
+    for (const s of AMBIENCE_SOURCES) {
+      const layer = preset.ambience[s.kind] ?? defaultLayer();
+      if (layer.playing) void startAmbienceTrack(`ambience:${s.kind}`, s.kind, layer.volume);
+      ambience[s.kind] = layer;
+    }
+
+    const birds = preset.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 };
+    if (birds.playing) startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
+
+    const stutterGate = preset.stutterGate ?? { enabled: false, bpm: 120 };
+    if (stutterGate.enabled) startStutterGate(stutterGate.bpm);
+
+    set({
+      beatHz: preset.beatHz,
+      carrier: preset.carrier,
+      volume: preset.volume,
+      playing,
+      extraBinaural,
+      noise,
+      ambience,
+      birds,
+      stutterGate,
+      loadedPresetId: preset.id,
+      loadedPresetName: preset.name,
+    });
+  },
+
+  loadPresetById: (id) => {
+    const preset = get().presets.find((p) => p.id === id);
+    if (preset) get().applyPreset(preset);
+  },
+
+  removePreset: async (id) => {
+    set({ presets: get().presets.filter((p) => p.id !== id) });
+    if (get().loadedPresetId === id) set({ loadedPresetId: null, loadedPresetName: null });
+    try {
+      await deleteSoundscapePresetLocal(id);
+    } catch (error) {
+      console.warn('Failed to delete soundscape preset locally:', error);
+    }
+    try {
+      await deleteSoundscapePresetFromBackend(API_BASE, id);
+    } catch (error) {
+      console.warn('Failed to delete soundscape preset from backend:', error);
+    }
   },
 }));

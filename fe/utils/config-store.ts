@@ -87,11 +87,12 @@ export interface ThreeDConfig {
 }
 
 const DB_NAME = "ComRevConfigDB";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_CONFIGS = "configs";
 const STORE_PENDING = "pendingSync";
 const STORE_PRESETS = "presets";
 const STORE_TRIED_EFFECTS = "triedEffects";
+const STORE_SOUNDSCAPE_PRESETS = "soundscapePresets";
 
 function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== "undefined" && indexedDB !== null;
@@ -123,6 +124,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_TRIED_EFFECTS)) {
         db.createObjectStore(STORE_TRIED_EFFECTS, { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains(STORE_SOUNDSCAPE_PRESETS)) {
+        db.createObjectStore(STORE_SOUNDSCAPE_PRESETS, { keyPath: "id" });
+      }
     };
   });
 }
@@ -134,6 +138,34 @@ export interface PresetRecord {
   when_last_modified: string;
   effects: EffectInstance[];
   thumbnail?: string;
+}
+
+interface SoundscapeLayerState {
+  playing: boolean;
+  volume: number;
+}
+
+interface SoundscapeBirdsState extends SoundscapeLayerState {
+  pitch: number;
+  speed: number;
+}
+
+/** A saved snapshot of the full soundscape mixer — binaural, noise, ambience and birds layers. */
+export interface SoundscapePreset {
+  id: string;
+  name: string;
+  when_created: string;
+  when_last_modified: string;
+  beatHz: number;
+  carrier: number;
+  volume: number;
+  playing: boolean;
+  extraBinaural: Record<string, SoundscapeLayerState>;
+  noise: Record<string, SoundscapeLayerState>;
+  ambience: Record<string, SoundscapeLayerState>;
+  birds: SoundscapeBirdsState;
+  /** Optional so presets saved before the stutter gate existed still load fine. */
+  stutterGate?: { enabled: boolean; bpm: number };
 }
 
 function requestPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -344,6 +376,71 @@ export async function deletePresetFromBackend(
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Delete preset failed: ${response.status} ${text}`);
+  }
+}
+
+// ── Soundscape mixer presets ─────────────────────────────────────────────────
+
+export async function saveSoundscapePreset(preset: SoundscapePreset): Promise<void> {
+  await withStore(STORE_SOUNDSCAPE_PRESETS, "readwrite", (store) => store.put(preset));
+}
+
+export async function getSoundscapePresets(): Promise<SoundscapePreset[]> {
+  return await withStore(STORE_SOUNDSCAPE_PRESETS, "readonly", (store) => store.getAll());
+}
+
+export async function deleteSoundscapePreset(id: string): Promise<void> {
+  await withStore(STORE_SOUNDSCAPE_PRESETS, "readwrite", (store) => store.delete(id));
+}
+
+export async function syncSoundscapePresetToBackend(
+  apiBase: string,
+  preset: SoundscapePreset,
+): Promise<void> {
+  if (!isOnline()) return;
+  const base = apiBase.replace(/\/$/, "");
+  const response = await fetch(`${base}/soundscape-presets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(preset),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Soundscape preset sync failed: ${response.status} ${text}`);
+  }
+}
+
+export async function loadSoundscapePresetsFromBackend(
+  apiBase: string,
+): Promise<SoundscapePreset[]> {
+  const base = apiBase.replace(/\/$/, "");
+  const response = await fetch(`${base}/soundscape-presets`);
+  if (!response.ok) throw new Error(`Load soundscape presets failed: ${response.status}`);
+  return response.json();
+}
+
+export async function deleteSoundscapePresetFromBackend(
+  apiBase: string,
+  id: string,
+): Promise<void> {
+  if (!isOnline()) return;
+  const base = apiBase.replace(/\/$/, "");
+  const response = await fetch(`${base}/soundscape-presets/${id}`, { method: "DELETE" });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Delete soundscape preset failed: ${response.status} ${text}`);
+  }
+}
+
+export async function saveSoundscapePresetOfflineFirst(
+  preset: SoundscapePreset,
+  apiBase: string,
+): Promise<void> {
+  await saveSoundscapePreset(preset);
+  try {
+    await syncSoundscapePresetToBackend(apiBase, preset);
+  } catch (error) {
+    console.warn("Soundscape preset saved locally; backend sync failed:", error);
   }
 }
 

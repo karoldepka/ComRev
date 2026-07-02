@@ -33,6 +33,7 @@ import {
   SlideImagePosition,
   slideImageStyle,
 } from "@/components/SlideImageOverlay";
+import { QuoteAuthorOverlay } from "@/components/QuoteAuthorOverlay";
 import { createPipeFromInstance } from "@/utils/pipe-factory";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import {
@@ -285,6 +286,8 @@ type PrincipalTextSet = {
   id: string;
   name: string;
   text: string;
+  /** Quote attribution, rendered bottom-right instead of baked into the main text geometry. */
+  author?: string;
   images?: SlideImage[];
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
   configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
@@ -296,6 +299,7 @@ type SequencePage = {
   text: string;
   durationMs: number;
   transition: "flare" | "slide" | "zoom" | "wipe";
+  author?: string;
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
   configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
   images?: SlideImage[];
@@ -336,6 +340,7 @@ function normalizePrincipalTextSets(
         id: String(item.id || `set-${index + 1}`),
         name: String(item.name || `Set ${index + 1}`),
         text: String(item.text ?? ""),
+        author: typeof item.author === "string" ? item.author : undefined,
         images,
         soundscape: (item.soundscape as any) ?? undefined,
         configOverride: (item.configOverride as any) ?? undefined,
@@ -398,6 +403,7 @@ function getSequencePages(
       text: set.text,
       durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs),
       transition: transitions[setIndex % transitions.length],
+      author: set.author,
       images: set.images,
       soundscape: set.soundscape,
       configOverride: set.configOverride,
@@ -7217,6 +7223,21 @@ export function ThreeDTextScreen({
                 images={imgs}
               />
             ) : null;
+          })()}
+          {(() => {
+            const author = sequenceMode
+              ? visibleSequencePage.author
+              : getActivePrincipalTextSet(mainTextParams).author;
+            return (
+              <QuoteAuthorOverlay
+                key={
+                  sequenceMode
+                    ? `author-seq-${readySequenceTransition?.key ?? visibleSequencePage.id}`
+                    : "author-active"
+                }
+                author={author}
+              />
+            );
           })()}
           {sequenceMode && readySequenceTransition?.key === currentSequencePageKey && (
             <SequenceTransitionOverlay

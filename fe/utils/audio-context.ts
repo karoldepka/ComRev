@@ -3,6 +3,7 @@
 // instead of each spinning up its own — browsers discourage multiple contexts.
 
 let audioCtx: AudioContext | null = null;
+let masterBus: GainNode | null = null;
 
 type StateListener = (state: AudioContextState | 'unavailable') => void;
 const stateListeners = new Set<StateListener>();
@@ -30,8 +31,23 @@ export function getOrCreateAudioContext(): AudioContext | null {
   if (!audioCtx || audioCtx.state === 'closed') {
     audioCtx = new Ctor() as AudioContext;
     audioCtx.onstatechange = notifyState;
+    masterBus = null; // stale reference to the old context's node graph
   }
   return audioCtx;
+}
+
+// Every engine's output routes through this single gain node on its way to
+// speakers, so a mix-wide modifier (e.g. the stutter gate in sound-fx.ts) can
+// chop the whole soundscape at once instead of needing per-track wiring.
+export function getMasterBus(): GainNode | null {
+  const ctx = getOrCreateAudioContext();
+  if (!ctx) return null;
+  if (!masterBus) {
+    masterBus = ctx.createGain();
+    masterBus.gain.value = 1;
+    masterBus.connect(ctx.destination);
+  }
+  return masterBus;
 }
 
 // resume() must ultimately be triggered by a user gesture (click/tap) to unlock

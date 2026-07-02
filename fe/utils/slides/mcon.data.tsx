@@ -252,9 +252,11 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "minimum effective dose": {},
   "minimum viable product": {},
   "release early, release often": {},
+  "program my mind early, program often": {},
   "unique value proposition": {},
   "have to -> want to": {},
   "towards-state": {},
   "Zapierdalac. Be like Elon and Martin.": {},
   "Regrets minimization principle": {},
+  "What gets measured, gets managed": { author: "Peter Drucker" },
 };

@@ -11,7 +11,7 @@
 // instead of ChannelMergerNode — it works reliably across browsers.
 // Headphones are required; speakers mix the two channels and cancel the beat.
 
-import { getOrCreateAudioContext, getAudioContextState, onAudioContextStateChange, resumeAudioContext } from './audio-context';
+import { getOrCreateAudioContext, getAudioContextState, getMasterBus, onAudioContextStateChange, resumeAudioContext } from './audio-context';
 
 let leftOsc: OscillatorNode | null = null;
 let rightOsc: OscillatorNode | null = null;
@@ -56,7 +56,7 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
 
     leftOsc.connect(leftPanner).connect(gainNode);
     rightOsc.connect(rightPanner).connect(gainNode);
-    gainNode.connect(ctx.destination);
+    gainNode.connect(getMasterBus() ?? ctx.destination);
 
     leftOsc.start();
     rightOsc.start();

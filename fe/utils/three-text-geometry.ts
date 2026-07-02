@@ -1,18 +1,36 @@
 import {
   Box3,
   BoxGeometry,
+  BufferAttribute,
   Color,
   Group,
   Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   type Texture,
   Vector3,
 } from "three";
+import type { BufferGeometry } from "three";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
 import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 
+
+/** Per-zone material overrides. Properties not specified inherit from the base material. */
+export interface ZoneMaterialProps {
+  color?: Color;
+  metalness?: number;
+  roughness?: number;
+  /** Iridescence strength 0–1 (MeshPhysicalMaterial). */
+  iridescence?: number;
+  iridescenceIOR?: number;
+  iridescenceThicknessMin?: number;
+  iridescenceThicknessMax?: number;
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  envMapIntensity?: number;
+}
 
 export interface TextGeometryOptions {
   text: string;
@@ -34,6 +52,12 @@ export interface TextGeometryOptions {
   equalizationMethod?: 'spacing' | 'fontSize';
   targetWidth?: number;
   lineSpacing?: number;
+  /** Material override for the front letter-face cap (materialIndex 1). */
+  faceZone?: ZoneMaterialProps;
+  /** Material override for the bevel chamfer (reclassified to materialIndex 2). */
+  bevelZone?: ZoneMaterialProps;
+  /** Material override for the straight extrusion walls (materialIndex 0). */
+  extrusionZone?: ZoneMaterialProps;
 }
 
 export interface FontDef {
@@ -173,6 +197,95 @@ const defaultOptions: Partial<TextGeometryOptions> = {
 };
 
 /**
+ * Splits ExtrudeGeometry's group 0 (walls + bevel) into two groups:
+ *   0 = straight extrusion walls  (face normal nearly perpendicular to Z)
+ *   2 = bevel chamfer faces       (face normal has a Z component)
+ * Group 1 (caps) is unchanged.
+ * Only applied when the caller requests separate bevel or extrusion zones.
+ */
+const BEVEL_NZ_THRESHOLD = 0.15;
+
+function faceNormalZ(pos: ArrayLike<number>, i0: number, i1: number, i2: number): number {
+  const ax = pos[i0*3], ay = pos[i0*3+1];
+  const bx = pos[i1*3], by = pos[i1*3+1], bz = pos[i1*3+2];
+  const cx = pos[i2*3], cy = pos[i2*3+1], cz = pos[i2*3+2];
+  const az = pos[i0*3+2];
+  const ex = bx-ax, ey = by-ay, ez = bz-az;
+  const fx = cx-ax, fy = cy-ay, fz = cz-az;
+  const nx = ey*fz - ez*fy, ny = ez*fx - ex*fz, nz = ex*fy - ey*fx;
+  const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+  return len < 1e-10 ? 0 : nz / len;
+}
+
+function reclassifyBevelGroups(geo: BufferGeometry): void {
+  if (!geo.index) return;
+  const pos = geo.attributes.position.array;
+  const src = geo.index.array;
+  const IndexCtor = src instanceof Uint32Array ? Uint32Array : Uint16Array;
+
+  const wallIdx: number[] = [];
+  const capIdx: number[] = [];
+  const bevelIdx: number[] = [];
+
+  for (const g of geo.groups) {
+    for (let i = g.start; i < g.start + g.count; i += 3) {
+      const i0 = src[i], i1 = src[i+1], i2 = src[i+2];
+      if (g.materialIndex === 1) {
+        capIdx.push(i0, i1, i2);
+      } else {
+        if (Math.abs(faceNormalZ(pos, i0, i1, i2)) > BEVEL_NZ_THRESHOLD) {
+          bevelIdx.push(i0, i1, i2);
+        } else {
+          wallIdx.push(i0, i1, i2);
+        }
+      }
+    }
+  }
+
+  const newIdx = new IndexCtor(src.length);
+  let ptr = 0;
+  const wallStart = ptr; for (const v of wallIdx)  newIdx[ptr++] = v;
+  const capStart  = ptr; for (const v of capIdx)   newIdx[ptr++] = v;
+  const bevelStart = ptr; for (const v of bevelIdx) newIdx[ptr++] = v;
+
+  geo.setIndex(new BufferAttribute(newIdx, 1));
+  geo.clearGroups();
+  if (wallIdx.length > 0)  geo.addGroup(wallStart,  wallIdx.length,  0);
+  if (capIdx.length > 0)   geo.addGroup(capStart,   capIdx.length,   1);
+  if (bevelIdx.length > 0) geo.addGroup(bevelStart, bevelIdx.length, 2);
+}
+
+function makeZoneMaterial(
+  base: MeshStandardMaterial,
+  zone: ZoneMaterialProps,
+): MeshStandardMaterial | MeshPhysicalMaterial {
+  const needsPhysical = zone.iridescence !== undefined || zone.clearcoat !== undefined;
+  const opts: any = {
+    color: zone.color ?? base.color.clone(),
+    metalness: zone.metalness ?? base.metalness,
+    roughness: zone.roughness ?? base.roughness,
+    envMap: base.envMap,
+    envMapIntensity: zone.envMapIntensity ?? base.envMapIntensity,
+  };
+  if (needsPhysical) {
+    opts.iridescence = zone.iridescence ?? 0;
+    opts.iridescenceIOR = zone.iridescenceIOR ?? 1.8;
+    opts.iridescenceThicknessRange = [
+      zone.iridescenceThicknessMin ?? 100,
+      zone.iridescenceThicknessMax ?? 800,
+    ];
+    opts.clearcoat = zone.clearcoat ?? 0;
+    opts.clearcoatRoughness = zone.clearcoatRoughness ?? 0.1;
+    const mat = new MeshPhysicalMaterial(opts);
+    patchBevelNormalReflect(mat as unknown as MeshStandardMaterial);
+    return mat;
+  }
+  const mat = new MeshStandardMaterial(opts);
+  patchBevelNormalReflect(mat);
+  return mat;
+}
+
+/**
  * Clamps the fragment-shader normal to the camera-facing hemisphere.
  * Bevel normals interpolate past zero (pointing backward) at sharp edges;
  * simply reflecting z creates a near-forward normal that samples a bright
@@ -269,13 +382,22 @@ async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
   });
 }
 
+export interface CreateTextGeometryResult {
+  geometry: TextGeometry | Group;
+  /** Base material (extrusion walls, materialIndex 0). */
+  material: MeshStandardMaterial;
+  /** Face-cap material (letter face + back cap, materialIndex 1). Undefined when no faceZone. */
+  faceMaterial?: MeshStandardMaterial | MeshPhysicalMaterial;
+  /** Bevel material (chamfer, materialIndex 2). Undefined when no bevelZone. */
+  bevelMaterial?: MeshStandardMaterial | MeshPhysicalMaterial;
+}
+
 export async function createTextGeometry(
   options: TextGeometryOptions,
-): Promise<{
-  geometry: TextGeometry | Group;
-  material: MeshStandardMaterial;
-}> {
+): Promise<CreateTextGeometryResult> {
   const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
+  const { faceZone, bevelZone, extrusionZone } = options;
+  const needsReclassify = !!bevelZone;
   const rawLines = mergedOptions.text!.split('\n');
   const hasBold = rawLines.some(l => /<b>/i.test(l));
   // Strip tags for measurement; raw lines used for bold-aware rendering below
@@ -397,6 +519,7 @@ export async function createTextGeometry(
           const lineGroup = new Group();
           for (const { geo, width, minY, maxY, startX } of segInfos) {
             geo.translate(cursorX - startX, 0, 0);
+            if (needsReclassify) reclassifyBevelGroups(geo);
             lineGroup.add(new Mesh(geo));
             cursorX += width;
             lineMinY = Math.min(lineMinY, minY);
@@ -428,6 +551,7 @@ export async function createTextGeometry(
         const minY = lineGeometry.boundingBox?.min.y ?? 0;
         const maxY = lineGeometry.boundingBox?.max.y ?? mergedOptions.size!;
         lineGeometry.translate(-centerX, 0, 0);
+        if (needsReclassify) reclassifyBevelGroups(lineGeometry);
         lineGeometries.push({ geometry: lineGeometry, minY, maxY });
       } else {
         // Empty line in spacing mode → spacer
@@ -470,6 +594,7 @@ export async function createTextGeometry(
           charGeometry.computeBoundingBox();
           const charWidth = charGeometry.boundingBox!.max.x - charGeometry.boundingBox!.min.x;
           charGeometry.translate(cursorX, 0, 0);
+          if (needsReclassify) reclassifyBevelGroups(charGeometry);
           const charMesh = new Mesh(charGeometry);
           lineGroup.add(charMesh);
           cursorX += charWidth + extraSpace;
@@ -525,11 +650,19 @@ export async function createTextGeometry(
       materialOptions.envMap = mergedOptions.envMap;
       materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
     }
+    if (extrusionZone) {
+      if (extrusionZone.color) materialOptions.color = extrusionZone.color;
+      if (extrusionZone.metalness !== undefined) materialOptions.metalness = extrusionZone.metalness;
+      if (extrusionZone.roughness !== undefined) materialOptions.roughness = extrusionZone.roughness;
+      if (extrusionZone.envMapIntensity !== undefined) materialOptions.envMapIntensity = extrusionZone.envMapIntensity;
+    }
     const material = new MeshStandardMaterial(materialOptions);
     patchBevelNormalReflect(material);
+    const faceMaterial = faceZone ? makeZoneMaterial(material, faceZone) : undefined;
+    const bevelMaterial = bevelZone ? makeZoneMaterial(material, bevelZone) : undefined;
     // Shift so letter face is at z=0 and extrusion goes into screen (-Z)
     mainGroup.position.z = -(mergedOptions.height! + (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0));
-    return { geometry: mainGroup, material };
+    return { geometry: mainGroup, material, faceMaterial, bevelMaterial };
   } catch (error) {
     console.error("Failed to load font, creating fallback geometry:", error);
 
@@ -634,7 +767,7 @@ export async function createTextGeometry(
     patchBevelNormalReflect(material);
     // BoxGeometry is z-centered; shift front face to z=0 so extrusion goes into screen
     mainGroup.position.z = -(mergedOptions.height! / 2);
-    return { geometry: mainGroup, material };
+    return { geometry: mainGroup, material };  // fallback: no zone materials
   }
 }
 
