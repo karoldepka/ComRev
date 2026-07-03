@@ -2,6 +2,7 @@ export { ACESFilmicToneMapping, EquirectangularReflectionMapping, LinearFilter }
 export { AmbientLight } from "../node_modules/three/src/lights/AmbientLight.js";
 export { Box3 } from "../node_modules/three/src/math/Box3.js";
 export { BoxGeometry } from "../node_modules/three/src/geometries/BoxGeometry.js";
+export { BufferAttribute } from "../node_modules/three/src/core/BufferAttribute.js";
 export { Color } from "../node_modules/three/src/math/Color.js";
 export { DirectionalLight } from "../node_modules/three/src/lights/DirectionalLight.js";
 export { ExtrudeGeometry } from "../node_modules/three/src/geometries/ExtrudeGeometry.js";
@@ -9,6 +10,8 @@ export { FileLoader } from "../node_modules/three/src/loaders/FileLoader.js";
 export { Group } from "../node_modules/three/src/objects/Group.js";
 export { Loader } from "../node_modules/three/src/loaders/Loader.js";
 export { Mesh } from "../node_modules/three/src/objects/Mesh.js";
+export { MeshBasicMaterial } from "../node_modules/three/src/materials/MeshBasicMaterial.js";
+export { MeshPhysicalMaterial } from "../node_modules/three/src/materials/MeshPhysicalMaterial.js";
 export { MeshStandardMaterial } from "../node_modules/three/src/materials/MeshStandardMaterial.js";
 export { OrthographicCamera } from "../node_modules/three/src/cameras/OrthographicCamera.js";
 export { PerspectiveCamera } from "../node_modules/three/src/cameras/PerspectiveCamera.js";
