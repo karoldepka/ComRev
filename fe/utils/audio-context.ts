@@ -50,6 +50,16 @@ export function getMasterBus(): GainNode | null {
   return masterBus;
 }
 
+// Sets the master output gain (0–1). This scales the entire mix without
+// touching individual track volumes, so the relative blend is preserved.
+export function setMasterGain(value: number): void {
+  const bus = getMasterBus();
+  if (!bus) return;
+  const ctx = getOrCreateAudioContext();
+  if (!ctx) return;
+  bus.gain.setTargetAtTime(value, ctx.currentTime, 0.05);
+}
+
 // resume() must ultimately be triggered by a user gesture (click/tap) to unlock
 // audio playback; callers should invoke this synchronously from that handler.
 export function resumeAudioContext(): AudioContext | null {
