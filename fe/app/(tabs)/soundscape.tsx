@@ -13,6 +13,14 @@ import {
 import type { AmbienceCategory } from '@/utils/ambience-tracks';
 import { getCtxState, onStateChange } from '@/utils/binaural-engine';
 
+// Responsive column breakpoints
+const COL3_WIDTH = 1200;
+const COL2_WIDTH = 720;
+
+// Warm accent backgrounds used by master-volume card and now-playing cards
+const WARM_DARK_BG = '#1a1a1a';
+const WARM_LIGHT_BG = '#fff7f0';
+
 const CATEGORY_ORDER: AmbienceCategory[] = [
   'Nature',
   'Water',
@@ -350,7 +358,7 @@ export default function SoundscapeScreen() {
   const tp = isSmall ? 14 : 56;  // top padding
 
   // Multi-column breakpoints for layer cards
-  const numCols = width >= 1200 ? 3 : width >= 720 ? 2 : 1;
+  const numCols = width >= COL3_WIDTH ? 3 : width >= COL2_WIDTH ? 2 : 1;
   const contentWidth = width - hp * 2;
   const cardGap = 8;
   const cardWidth = numCols > 1 ? (contentWidth - cardGap * (numCols - 1)) / numCols : undefined;
@@ -448,7 +456,7 @@ export default function SoundscapeScreen() {
   const activeLayers: ActiveLayer[] = [];
   if (playing) {
     activeLayers.push({
-      key: '__binaural__',
+      key: 'binaural:custom',
       label: 'Custom Binaural',
       sub: `${beatHz.toFixed(1)} Hz beat · ${carrier} Hz carrier`,
       volume,
@@ -520,7 +528,7 @@ export default function SoundscapeScreen() {
       </Text>
 
       {/* ---------------- Master volume ---------------- */}
-      <View style={[styles.masterVolCard, { backgroundColor: dark ? '#1a1a1a' : '#fff7f0', borderColor: c.tint }]}>
+      <View style={[styles.masterVolCard, { backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG, borderColor: c.tint }]}>
         <View style={styles.masterVolHeader}>
           <MaterialIcons name="volume-up" size={22} color={c.tint} />
           <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
@@ -535,7 +543,8 @@ export default function SoundscapeScreen() {
           <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 8 }]}>NOW PLAYING · {activeLayers.length} active</Text>
           <View style={styles.nowPlayingGrid}>
             {activeLayers.map((al) => (
-              <View key={al.key} style={[styles.nowPlayingCard, { borderColor: c.tint, backgroundColor: dark ? '#1a1a1a' : '#fff7f0' }, cardWidth ? { width: cardWidth } : undefined]}>
+              // All entries in activeLayers are guaranteed to be playing, so the pause icon is always correct.
+              <View key={al.key} style={[styles.nowPlayingCard, { borderColor: c.tint, backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG }, cardWidth ? { width: cardWidth } : undefined]}>
                 <Pressable onPress={al.onToggle} style={layerStyles.header}>
                   <MaterialIcons name="pause-circle-filled" size={22} color={c.tint} />
                   <View style={layerStyles.headerText}>
