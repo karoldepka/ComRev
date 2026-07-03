@@ -13,6 +13,14 @@ import {
 import type { AmbienceCategory } from '@/utils/ambience-tracks';
 import { getCtxState, onStateChange } from '@/utils/binaural-engine';
 
+// Responsive column breakpoints
+const COL3_WIDTH = 1200;
+const COL2_WIDTH = 720;
+
+// Warm accent backgrounds used by master-volume card and now-playing cards
+const WARM_DARK_BG = '#1a1a1a';
+const WARM_LIGHT_BG = '#fff7f0';
+
 const CATEGORY_ORDER: AmbienceCategory[] = [
   'Nature',
   'Water',
@@ -108,6 +116,7 @@ function LayerRow({
   c,
   dark,
   children,
+  cardWidth,
 }: {
   label: string;
   sub?: string;
@@ -118,12 +127,14 @@ function LayerRow({
   c: (typeof Colors)['light'];
   dark: boolean;
   children?: ReactNode;
+  cardWidth?: number;
 }) {
   return (
     <View
       style={[
         layerStyles.card,
         { borderColor: playing ? c.tint : (dark ? '#333' : '#e8e0d8') },
+        cardWidth ? { width: cardWidth } : undefined,
       ]}
     >
       <Pressable onPress={onToggle} style={layerStyles.header}>
@@ -167,12 +178,14 @@ function AmbienceBrowser({
   setAmbienceVolume,
   c,
   dark,
+  cardWidth,
 }: {
   ambience: Record<string, { playing: boolean; volume: number }>;
   toggleAmbience: (key: string) => void;
   setAmbienceVolume: (key: string, v: number) => void;
   c: (typeof Colors)['light'];
   dark: boolean;
+  cardWidth?: number;
 }) {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<AmbienceCategory>>(new Set());
@@ -230,23 +243,27 @@ function AmbienceBrowser({
               <Text style={[browserStyles.categoryTitle, { color: c.text }]}>{cat}</Text>
               <Text style={[browserStyles.categoryCount, { color: c.icon }]}>{items.length}</Text>
             </Pressable>
-            {isOpen &&
-              items.map((item) => {
-                const layer = ambience[item.key];
-                if (!layer) return null;
-                return (
-                  <LayerRow
-                    key={item.key}
-                    label={item.label}
-                    playing={layer.playing}
-                    volume={layer.volume}
-                    onToggle={() => toggleAmbience(item.key)}
-                    onVolumeChange={(v) => setAmbienceVolume(item.key, v)}
-                    c={c}
-                    dark={dark}
-                  />
-                );
-              })}
+            {isOpen && (
+              <View style={browserStyles.categoryItems}>
+                {items.map((item) => {
+                  const layer = ambience[item.key];
+                  if (!layer) return null;
+                  return (
+                    <LayerRow
+                      key={item.key}
+                      label={item.label}
+                      playing={layer.playing}
+                      volume={layer.volume}
+                      onToggle={() => toggleAmbience(item.key)}
+                      onVolumeChange={(v) => setAmbienceVolume(item.key, v)}
+                      c={c}
+                      dark={dark}
+                      cardWidth={cardWidth}
+                    />
+                  );
+                })}
+              </View>
+            )}
           </View>
         );
       })}
@@ -279,6 +296,7 @@ const browserStyles = StyleSheet.create({
   },
   categoryTitle: { flex: 1, fontSize: 13, fontWeight: '700' },
   categoryCount: { fontSize: 12, fontWeight: '600' },
+  categoryItems: { flexDirection: 'row', flexWrap: 'wrap' },
 });
 
 const presetStyles = StyleSheet.create({
@@ -338,6 +356,15 @@ export default function SoundscapeScreen() {
   const isSmall = width < 480;
   const hp = isSmall ? 5 : 20;   // horizontal padding
   const tp = isSmall ? 14 : 56;  // top padding
+
+  // Multi-column breakpoints for layer cards
+  const numCols = width >= COL3_WIDTH ? 3 : width >= COL2_WIDTH ? 2 : 1;
+  const contentWidth = width - hp * 2;
+  const cardGap = 8;
+  const cardWidth = numCols > 1 ? (contentWidth - cardGap * (numCols - 1)) / numCols : undefined;
+
+  const masterVolume = useSoundscapeStore((s) => s.masterVolume);
+  const setMasterVolume = useSoundscapeStore((s) => s.setMasterVolume);
 
   const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
     useSoundscapeStore();
@@ -417,12 +444,75 @@ export default function SoundscapeScreen() {
 
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-  const anyPlaying =
-    playing ||
-    Object.values(extraBinaural).some((l) => l.playing) ||
-    Object.values(noise).some((l) => l.playing) ||
-    Object.values(ambience).some((l) => l.playing) ||
-    birds.playing;
+  // Collect all currently playing layers for the "Now Playing" summary at top.
+  type ActiveLayer = {
+    key: string;
+    label: string;
+    sub?: string;
+    volume: number;
+    onToggle: () => void;
+    onVolumeChange: (v: number) => void;
+  };
+  const activeLayers: ActiveLayer[] = [];
+  if (playing) {
+    activeLayers.push({
+      key: 'binaural:custom',
+      label: 'Custom Binaural',
+      sub: `${beatHz.toFixed(1)} Hz beat · ${carrier} Hz carrier`,
+      volume,
+      onToggle: toggle,
+      onVolumeChange: setVolume,
+    });
+  }
+  for (const p of WAVE_PRESETS) {
+    const layer = extraBinaural[p.key];
+    if (layer?.playing) {
+      activeLayers.push({
+        key: `eb:${p.key}`,
+        label: p.label,
+        sub: p.sub,
+        volume: layer.volume,
+        onToggle: () => toggleExtraBinaural(p.key),
+        onVolumeChange: (v) => setExtraBinauralVolume(p.key, v),
+      });
+    }
+  }
+  for (const n of NOISE_COLORS) {
+    const layer = noise[n.key];
+    if (layer?.playing) {
+      activeLayers.push({
+        key: `noise:${n.key}`,
+        label: n.label,
+        volume: layer.volume,
+        onToggle: () => toggleNoise(n.key),
+        onVolumeChange: (v) => setNoiseVolume(n.key, v),
+      });
+    }
+  }
+  if (birds.playing) {
+    activeLayers.push({
+      key: 'birds',
+      label: 'Birds',
+      sub: 'procedural chirps',
+      volume: birds.volume,
+      onToggle: toggleBirds,
+      onVolumeChange: setBirdsVolume,
+    });
+  }
+  for (const a of AMBIENCE_KINDS) {
+    const layer = ambience[a.key];
+    if (layer?.playing) {
+      activeLayers.push({
+        key: `ambience:${a.key}`,
+        label: a.label,
+        volume: layer.volume,
+        onToggle: () => toggleAmbience(a.key),
+        onVolumeChange: (v) => setAmbienceVolume(a.key, v),
+      });
+    }
+  }
+
+  const anyPlaying = activeLayers.length > 0;
 
   const ctxOk = ctxState === 'running';
   const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
@@ -436,6 +526,42 @@ export default function SoundscapeScreen() {
       <Text style={[styles.subtitle, { color: c.icon }]}>
         Mix binaural beats, noise and nature ambience — layer as many as you like at once.
       </Text>
+
+      {/* ---------------- Master volume ---------------- */}
+      <View style={[styles.masterVolCard, { backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG, borderColor: c.tint }]}>
+        <View style={styles.masterVolHeader}>
+          <MaterialIcons name="volume-up" size={22} color={c.tint} />
+          <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
+          <Text style={[styles.masterVolValue, { color: c.tint }]}>{Math.round(masterVolume * 100)}%</Text>
+        </View>
+        <InlineSlider min={0} max={1} step={0.01} value={masterVolume} onChange={setMasterVolume} tint={c.tint} />
+      </View>
+
+      {/* ---------------- Now Playing ---------------- */}
+      {activeLayers.length > 0 && (
+        <>
+          <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 8 }]}>NOW PLAYING · {activeLayers.length} active</Text>
+          <View style={styles.nowPlayingGrid}>
+            {activeLayers.map((al) => (
+              // All entries in activeLayers are guaranteed to be playing, so the pause icon is always correct.
+              <View key={al.key} style={[styles.nowPlayingCard, { borderColor: c.tint, backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG }, cardWidth ? { width: cardWidth } : undefined]}>
+                <Pressable onPress={al.onToggle} style={layerStyles.header}>
+                  <MaterialIcons name="pause-circle-filled" size={22} color={c.tint} />
+                  <View style={layerStyles.headerText}>
+                    <Text style={[layerStyles.title, { color: c.text }]}>{al.label}</Text>
+                    {al.sub ? <Text style={[layerStyles.sub, { color: c.icon }]}>{al.sub}</Text> : null}
+                  </View>
+                </Pressable>
+                <View style={layerStyles.sliderRow}>
+                  <Text style={[layerStyles.volLabel, { color: c.icon }]}>Vol</Text>
+                  <InlineSlider min={0} max={1} step={0.01} value={al.volume} onChange={al.onVolumeChange} tint={c.tint} />
+                  <Text style={[layerStyles.volValue, { color: c.icon }]}>{Math.round(al.volume * 100)}%</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
 
       {/* ---------------- Saved presets ---------------- */}
       <Text style={[styles.sectionLabel, { color: c.icon }]}>MY PRESETS</Text>
@@ -533,41 +659,47 @@ export default function SoundscapeScreen() {
       <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
         BINAURAL LAYERS · stack several at once
       </Text>
-      {WAVE_PRESETS.map((p) => {
-        const layer = extraBinaural[p.key];
-        if (!layer) return null;
-        return (
-          <LayerRow
-            key={p.key}
-            label={p.label}
-            sub={p.sub}
-            playing={layer.playing}
-            volume={layer.volume}
-            onToggle={() => toggleExtraBinaural(p.key)}
-            onVolumeChange={(v) => setExtraBinauralVolume(p.key, v)}
-            c={c}
-            dark={dark}
-          />
-        );
-      })}
+      <View style={styles.layerGrid}>
+        {WAVE_PRESETS.map((p) => {
+          const layer = extraBinaural[p.key];
+          if (!layer) return null;
+          return (
+            <LayerRow
+              key={p.key}
+              label={p.label}
+              sub={p.sub}
+              playing={layer.playing}
+              volume={layer.volume}
+              onToggle={() => toggleExtraBinaural(p.key)}
+              onVolumeChange={(v) => setExtraBinauralVolume(p.key, v)}
+              c={c}
+              dark={dark}
+              cardWidth={cardWidth}
+            />
+          );
+        })}
+      </View>
 
       {/* ---------------- Noise ---------------- */}
       <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>NOISE</Text>
-      {NOISE_COLORS.map((n) => {
-        const layer = noise[n.key];
-        return (
-          <LayerRow
-            key={n.key}
-            label={n.label}
-            playing={layer.playing}
-            volume={layer.volume}
-            onToggle={() => toggleNoise(n.key)}
-            onVolumeChange={(v) => setNoiseVolume(n.key, v)}
-            c={c}
-            dark={dark}
-          />
-        );
-      })}
+      <View style={styles.layerGrid}>
+        {NOISE_COLORS.map((n) => {
+          const layer = noise[n.key];
+          return (
+            <LayerRow
+              key={n.key}
+              label={n.label}
+              playing={layer.playing}
+              volume={layer.volume}
+              onToggle={() => toggleNoise(n.key)}
+              onVolumeChange={(v) => setNoiseVolume(n.key, v)}
+              c={c}
+              dark={dark}
+              cardWidth={cardWidth}
+            />
+          );
+        })}
+      </View>
 
       {/* ---------------- Sound effects & modifiers ---------------- */}
       <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>SOUND EFFECTS</Text>
@@ -648,6 +780,7 @@ export default function SoundscapeScreen() {
         setAmbienceVolume={setAmbienceVolume}
         c={c}
         dark={dark}
+        cardWidth={cardWidth}
       />
 
       <Text style={[styles.hint, { color: c.icon }]}>
@@ -665,7 +798,30 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { gap: 8 },
   title: { fontSize: 26, fontWeight: '800', marginBottom: 2 },
-  subtitle: { fontSize: 13, marginBottom: 20 },
+  subtitle: { fontSize: 13, marginBottom: 8 },
+
+  masterVolCard: {
+    borderRadius: 12,
+    borderWidth: 2,
+    marginBottom: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  masterVolHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, marginBottom: 8 },
+  masterVolLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
+  masterVolValue: { fontSize: 16, fontWeight: '800', minWidth: 44, textAlign: 'right' },
+
+  nowPlayingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  nowPlayingCard: {
+    borderRadius: 10,
+    borderWidth: 1.5,
+    flex: 1,
+    marginBottom: 8,
+    minWidth: 220,
+    padding: 10,
+  },
+
+  layerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 
   playButton: {
     flexDirection: 'row',

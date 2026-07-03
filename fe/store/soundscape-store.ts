@@ -11,6 +11,7 @@ import {
   updateBirdsTrack,
   setTrackVolume,
 } from '@/utils/sound-engine';
+import { setMasterGain } from '@/utils/audio-context';
 import type { NoiseColor } from '@/utils/noise-buffers';
 import { AMBIENCE_SOURCES, type AmbienceKind, type AmbienceCategory } from '@/utils/ambience-tracks';
 import {
@@ -80,6 +81,10 @@ export interface StutterGateState {
 }
 
 interface SoundscapeState {
+  // --- Master output volume (scales the whole mix uniformly) ---
+  masterVolume: number;
+  setMasterVolume: (v: number) => void;
+
   // --- Primary binaural track (drives slideshow/preset integration; unchanged behavior) ---
   beatHz: number;
   carrier: number;
@@ -136,6 +141,13 @@ interface SoundscapeState {
 const defaultLayer = (): LayerState => ({ playing: false, volume: 0.35 });
 
 export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
+  masterVolume: 1,
+
+  setMasterVolume: (masterVolume) => {
+    set({ masterVolume });
+    setMasterGain(masterVolume);
+  },
+
   beatHz: 10,
   carrier: 200,
   volume: 0.35,
