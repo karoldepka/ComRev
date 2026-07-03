@@ -1,4 +1,6 @@
 packages:
   - "fe"
+  - "fe/wc"
   - "web"
+  - "structable"
   - "packages/*"

@@ -1,5 +1,5 @@
 import { anthropic } from '@ai-sdk/anthropic';
-import { convertToModelMessages, streamText, tool, type UIMessage } from 'ai';
+import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from 'ai';
 import { z } from 'zod';
 import { CV, searchCv, filterSkills, sortSkills, filterExperience } from '@/data/cv';
 
@@ -32,11 +32,11 @@ export async function POST(req: Request) {
     model: anthropic('claude-sonnet-4-6'),
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
-    maxSteps: 8,
+    stopWhen: stepCountIs(8),
     tools: {
       get_cv_overview: tool({
         description: 'Get the top-level CV overview: name, title, location, summary.',
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () => ({
           name: CV.name,
           title: CV.title,
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
       get_cv_skills: tool({
         description: 'Return all skills, optionally filtered and/or sorted.',
-        parameters: z.object({
+        inputSchema: z.object({
           keyword:     z.string().optional().describe('Filter by this keyword (matches name, category, or tags)'),
           category:    z.string().optional().describe('Filter by category e.g. Frontend, Backend, AI/ML, Language, Database, DevOps, Tools'),
           proficiency: z.enum(['expert', 'proficient', 'familiar']).optional().describe('Filter by proficiency level'),
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
       search_cv: tool({
         description: 'Keyword search across all or specific CV sections.',
-        parameters: z.object({
+        inputSchema: z.object({
           query:    z.string().describe('Search term'),
           sections: z.array(z.enum(['skills', 'experience', 'projects', 'education', 'all']))
                      .optional()
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
 
       get_cv_experience: tool({
         description: 'Return work experience entries, optionally filtered by keyword.',
-        parameters: z.object({
+        inputSchema: z.object({
           keyword: z.string().optional().describe('Filter by technology, role, company, or keyword in description'),
         }),
         execute: async ({ keyword }) => {
@@ -88,13 +88,13 @@ export async function POST(req: Request) {
 
       get_cv_education: tool({
         description: 'Return education history.',
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () => ({ education: CV.education }),
       }),
 
       get_cv_projects: tool({
         description: 'Return notable projects, optionally filtered by keyword.',
-        parameters: z.object({
+        inputSchema: z.object({
           keyword: z.string().optional().describe('Filter by technology or keyword in description'),
         }),
         execute: async ({ keyword }) => {
@@ -112,7 +112,7 @@ export async function POST(req: Request) {
 
       sort_skills: tool({
         description: 'Return all skills sorted by a given field.',
-        parameters: z.object({
+        inputSchema: z.object({
           by:    z.enum(['name', 'proficiency', 'years', 'category']),
           order: z.enum(['asc', 'desc']).optional(),
         }),
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
       get_skill_usage_matrix: tool({
         description: 'Return a matrix of skills with project and experience counts — ideal for "how many projects use X" table requests.',
-        parameters: z.object({
+        inputSchema: z.object({
           category: z.string().optional().describe('Filter by category e.g. Database, Frontend, AI/ML, Language'),
           keyword:  z.string().optional().describe('Filter by keyword'),
         }),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import type { ColumnFiltersState, ColumnVisibilityState } from "@tanstack/react-table";
+import type { ColumnFiltersState, VisibilityState } from "@tanstack/react-table";
 import type { ColNode, ColType, RowData } from "@/lib/table-types";
 
 // --- pure helpers ---
@@ -22,8 +22,8 @@ function addToTree(nodes: ColNode[], parentId: string | null, node: ColNode): Co
 function computeVisibility(
   nodes: ColNode[],
   userHiddenIds: Set<string>
-): ColumnVisibilityState {
-  const vis: ColumnVisibilityState = {};
+): VisibilityState {
+  const vis: VisibilityState = {};
   function walk(node: ColNode, parentHidden: boolean) {
     const hidden = parentHidden || userHiddenIds.has(node.id);
     vis[node.id] = !hidden;
