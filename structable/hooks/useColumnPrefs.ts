@@ -5,24 +5,24 @@ import type { StoredColumnGroup } from '../services/localStore';
 
 export type ColumnGroup = StoredColumnGroup;
 
-export function useColumnPrefs() {
+export function useColumnPrefs(tableId: string) {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(
-    () => localStore.getColumnWidths(),
+    () => localStore.getColumnWidths(tableId),
   );
   const [columnOrder, setColumnOrder] = useState<string[]>(
-    () => localStore.getColumnOrder(),
+    () => localStore.getColumnOrder(tableId),
   );
   const [columnGroups, setColumnGroups] = useState<ColumnGroup[]>(
-    () => localStore.getColumnGroups(),
+    () => localStore.getColumnGroups(tableId),
   );
 
   useEffect(() => {
-    if (Object.keys(columnWidths).length > 0) localStore.setColumnWidths(columnWidths);
-  }, [columnWidths]);
+    if (Object.keys(columnWidths).length > 0) localStore.setColumnWidths(tableId, columnWidths);
+  }, [tableId, columnWidths]);
 
   useEffect(() => {
-    localStore.setColumnGroups(columnGroups);
-  }, [columnGroups]);
+    localStore.setColumnGroups(tableId, columnGroups);
+  }, [tableId, columnGroups]);
 
   const reorderColumns = useCallback((fromId: string, toId: string, allLeafIds: string[]) => {
     const next = allLeafIds.filter((id) => id !== fromId);
@@ -30,8 +30,8 @@ export function useColumnPrefs() {
     if (toIdx === -1) return;
     next.splice(toIdx, 0, fromId);
     setColumnOrder(next);
-    localStore.setColumnOrder(next);
-  }, []);
+    localStore.setColumnOrder(tableId, next);
+  }, [tableId]);
 
   const moveColumnsToLeftEdge = useCallback((colIds: string[], allLeafIds: string[]) => {
     const colIdSet = new Set(colIds);
@@ -39,8 +39,8 @@ export function useColumnPrefs() {
     const rest = allLeafIds.filter((id) => !colIdSet.has(id));
     const next = [...moving, ...rest];
     setColumnOrder(next);
-    localStore.setColumnOrder(next);
-  }, []);
+    localStore.setColumnOrder(tableId, next);
+  }, [tableId]);
 
   const insertColumnAfter = useCallback((newColId: string, afterColId: string | null) => {
     setColumnOrder((prev) => {
@@ -48,10 +48,10 @@ export function useColumnPrefs() {
       const next = [...prev];
       const idx = afterColId ? prev.indexOf(afterColId) : -1;
       next.splice(idx >= 0 ? idx + 1 : next.length, 0, newColId);
-      localStore.setColumnOrder(next);
+      localStore.setColumnOrder(tableId, next);
       return next;
     });
-  }, []);
+  }, [tableId]);
 
   const addColumnGroup = useCallback((label: string, childIds: string[]) => {
     setColumnGroups((prev) => {
