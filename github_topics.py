@@ -1,5 +1,31 @@
 from collections import Counter
 
+# --- Deduplication while preserving order ---
+# Explicit repos to include in every fetch run, independent of topic search results.
+# Accepts full GitHub URLs or owner/repo identifiers.
+HARDCODED_REPOS_RAW = [
+    "https://github.com/anomalyco/opencode",
+    "https://github.com/googleapis/js-genai",
+    "https://github.com/Wei-Shaw/sub2api",
+    "https://github.com/AmazingAng/auth2api",
+    "https://github.com/kittors/CliRelay",
+    "https://github.com/router-for-me/CLIProxyAPI",
+    "https://github.com/AlexAnys/ai-sub-auth",
+    "https://github.com/andrewyng/aisuite",
+    "https://github.com/bitovi/react-to-web-component",
+    "https://github.com/webcomponents/polyfills",
+
+    # MCP SDKs
+    "https://github.com/modelcontextprotocol/typescript-sdk",
+    "https://github.com/modelcontextprotocol/csharp-sdk",
+    "https://github.com/modelcontextprotocol/rust-sdk",
+    "https://github.com/modelcontextprotocol/python-sdk",
+    "https://github.com/modelcontextprotocol/go-sdk",
+    "https://github.com/modelcontextprotocol/java-sdk",
+    "https://github.com/modelcontextprotocol/php-sdk",
+    "https://github.com/modelcontextprotocol/swift-sdk",
+    
+]
 
 TOPICS_RAW = [
     # general / trends
@@ -345,22 +371,7 @@ if duplicates:
 
 TOPICS = list(dict.fromkeys(TOPICS_RAW))
 
-# --- Deduplication while preserving order ---
-# Explicit repos to include in every fetch run, independent of topic search results.
-# Accepts full GitHub URLs or owner/repo identifiers.
-HARDCODED_REPOS_RAW = [
-    "https://github.com/anomalyco/opencode",
-    "https://github.com/googleapis/js-genai",
-    "https://github.com/Wei-Shaw/sub2api",
-    "https://github.com/AmazingAng/auth2api",
-    "https://github.com/kittors/CliRelay",
-    "https://github.com/router-for-me/CLIProxyAPI",
-    "https://github.com/AlexAnys/ai-sub-auth",
-    "https://github.com/andrewyng/aisuite",
-    "https://github.com/bitovi/react-to-web-component",
-    "https://github.com/webcomponents/polyfills",
 
-]
 
 HARDCODED_REPOS = list(dict.fromkeys(HARDCODED_REPOS_RAW))
 
