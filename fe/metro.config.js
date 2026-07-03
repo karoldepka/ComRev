@@ -12,6 +12,14 @@ config.resolver.unstable_enablePackageExports = true;
 // Pin the resolver to only look inside fe/node_modules.
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, 'node_modules')];
 
+// Expo auto-detects the pnpm workspace (repo-root pnpm-workspace.yaml) and adds
+// the workspace root's node_modules plus sibling packages to config.watchFolders.
+// Metro's Transformer statSyncs every entry in watchFolders on startup and
+// crashes if one doesn't exist. On Vercel only fe/node_modules gets installed
+// (the repo root is never `pnpm install`-ed there), so drop any watch folder
+// that isn't actually present instead of letting Metro fail to construct.
+config.watchFolders = config.watchFolders.filter((folder) => fs.existsSync(folder));
+
 // ── Warn logger: suppress stack traces on screen, write full details to file ──
 // The naive approach (calling the original console.warn) doesn't work because
 // Expo CLI's serverLogLikeMetro.ts replaces console.warn and re-adds the stack.
