@@ -87,7 +87,7 @@ export interface ThreeDConfig {
 }
 
 const DB_NAME = "ComRevConfigDB";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const STORE_CONFIGS = "configs";
 const STORE_PENDING = "pendingSync";
 const STORE_PRESETS = "presets";
