@@ -1,4 +1,4 @@
-import toast from 'react-hot-toast';
+import { Platform } from 'react-native';
 
 let installed = false;
 
@@ -9,7 +9,7 @@ let installed = false;
  * No-op outside a browser environment.
  */
 export function installShaderErrorReporter() {
-  if (installed || typeof window === 'undefined') return;
+  if (installed || Platform.OS !== 'web' || typeof window === 'undefined') return;
   installed = true;
 
   const origError = console.error.bind(console);
@@ -18,7 +18,9 @@ export function installShaderErrorReporter() {
     const msg = typeof args[0] === 'string' ? args[0] : '';
     if (msg.includes('THREE.WebGLProgram') || msg.includes('Shader Error')) {
       const firstLine = msg.split('\n')[0].trim().slice(0, 140);
-      toast.error(`GLSL error: ${firstLine}`, { duration: 10000, id: 'glsl-error' });
+      void import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(`GLSL error: ${firstLine}`, { duration: 10000, id: 'glsl-error' });
+      });
     }
   };
 }
