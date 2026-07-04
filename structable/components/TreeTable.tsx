@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, CircleDot } from 'lucide-react';
 import { getSyncClient, SyncClient } from '../services/syncClient';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import type { ColumnGroup } from '../hooks/useColumnPrefs';
+import { localStore } from '../services/localStore';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
 import AddColumnDialog, { type AddColumnPayload, type ColumnDataType } from './AddColumnDialog';
@@ -551,11 +552,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     addToGroup,
     removeColumnGroup,
     updateGroupLabel,
-  } = useColumnPrefs();
+  } = useColumnPrefs(tableId);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // ── Column state ───────────────────────────────────────────────────────────
-  const [showRowNumbers, setShowRowNumbers] = useState(true);
+  const [showRowNumbers, setShowRowNumbers] = useState(
+    () => localStore.getShowRowNumbers(tableId) ?? true,
+  );
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [customColumns, setCustomColumns] = useState<ApiCustomColumn[]>([]);
   const customColumnsRef = useRef(customColumns);
@@ -606,8 +609,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const { jobs, actions: jobActions } = useJobs();
 
   // ── Sort & filter ──────────────────────────────────────────────────────────
-  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>({ col: 'stars_diff__14d', dir: 'desc' });
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc'; colType?: string }>(
+    () => localStore.getSort(tableId) ?? { col: 'stars_diff__14d', dir: 'desc' },
+  );
+  const [filters, setFilters] = useState<Record<string, string>>(() => localStore.getFilters(tableId));
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
 
   // ── Cell remarks (unified notes + comments) ───────────────────────────────
@@ -621,7 +626,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
 
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
   const pendingFocusColRef = useRef<string | null>(null);
-  const [perPage, setPerPage] = useState(50);
+  const [perPage, setPerPage] = useState(() => localStore.getPerPage(tableId) ?? 50);
+
+  // ── Persist view prefs (sort/filters/per-page/row-numbers) per table ──────
+  useEffect(() => { localStore.setSort(tableId, sort); }, [tableId, sort]);
+  useEffect(() => { localStore.setFilters(tableId, filters); }, [tableId, filters]);
+  useEffect(() => { localStore.setPerPage(tableId, perPage); }, [tableId, perPage]);
+  useEffect(() => { localStore.setShowRowNumbers(tableId, showRowNumbers); }, [tableId, showRowNumbers]);
 
   // ── Bootstrap: load flags, hidden columns, hidden rows, remarks ───────────
   useEffect(() => {
