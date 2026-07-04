@@ -11,6 +11,7 @@ import {
   useSoundscapeStore,
 } from '@/store/soundscape-store';
 import type { AmbienceCategory } from '@/utils/ambience-tracks';
+import { resumeAudioContext } from '@/utils/audio-context';
 import { getCtxState, onStateChange } from '@/utils/binaural-engine';
 
 // Responsive column breakpoints
@@ -516,6 +517,19 @@ export default function SoundscapeScreen() {
 
   const anyPlaying = activeLayers.length > 0;
 
+  useEffect(() => {
+    if (!anyPlaying || ctxState !== 'suspended' || typeof window === 'undefined') return;
+    const resumeRestoredAudio = () => {
+      resumeAudioContext();
+    };
+    window.addEventListener('pointerdown', resumeRestoredAudio, true);
+    window.addEventListener('keydown', resumeRestoredAudio, true);
+    return () => {
+      window.removeEventListener('pointerdown', resumeRestoredAudio, true);
+      window.removeEventListener('keydown', resumeRestoredAudio, true);
+    };
+  }, [anyPlaying, ctxState]);
+
   const ctxOk = ctxState === 'running';
   const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
 
@@ -613,7 +627,7 @@ export default function SoundscapeScreen() {
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: ctxColor }]} />
           <Text style={[styles.statusText, { color: ctxColor }]}>
-            {ctxOk ? 'Audio running' : `Audio ${ctxState} — tap a layer again if silent`}
+            {ctxOk ? 'Audio running' : `Audio ${ctxState} - click/tap once to resume`}
           </Text>
         </View>
       )}
