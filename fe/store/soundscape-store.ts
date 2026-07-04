@@ -24,8 +24,10 @@ import { API_BASE } from '@/utils/api-config';
 import {
   deleteSoundscapePreset as deleteSoundscapePresetLocal,
   deleteSoundscapePresetFromBackend,
+  getLastSoundscapeState,
   getSoundscapePresets as getSoundscapePresetsLocal,
   loadSoundscapePresetsFromBackend,
+  saveLastSoundscapeState,
   saveSoundscapePreset as saveSoundscapePresetLocal,
   saveSoundscapePresetOfflineFirst,
   type SoundscapePreset,
@@ -136,6 +138,17 @@ interface SoundscapeState {
   applyPreset: (preset: SoundscapePreset) => void;
   loadPresetById: (id: string) => void;
   removePreset: (id: string) => Promise<void>;
+
+  // --- Restore the mixer to how the user last left it, across reloads ---
+  hydrateFromLastUsed: () => Promise<void>;
+}
+
+function withPlayingReset<T extends { playing: boolean }>(
+  layers: Record<string, T>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(layers).map(([key, layer]) => [key, { ...layer, playing: false }]),
+  ) as Record<string, T>;
 }
 
 const defaultLayer = (): LayerState => ({ playing: false, volume: 0.35 });
@@ -454,4 +467,53 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       console.warn('Failed to delete soundscape preset from backend:', error);
     }
   },
+
+  hydrateFromLastUsed: async () => {
+    try {
+      const last = await getLastSoundscapeState();
+      if (!last) return;
+
+      set({
+        masterVolume: last.masterVolume,
+        beatHz: last.beatHz,
+        carrier: last.carrier,
+        volume: last.volume,
+        playing: false,
+        extraBinaural: withPlayingReset(last.extraBinaural),
+        noise: withPlayingReset(last.noise) as SoundscapeState['noise'],
+        ambience: withPlayingReset(last.ambience) as SoundscapeState['ambience'],
+        birds: { ...last.birds, playing: false },
+        stutterGate: { ...last.stutterGate, enabled: false },
+        loadedPresetId: last.loadedPresetId,
+        loadedPresetName: last.loadedPresetName,
+      });
+      setMasterGain(last.masterVolume);
+    } catch (error) {
+      console.warn('Unable to restore last-used soundscape state:', error);
+    }
+  },
 }));
+
+// Auto-persist the mixer's working state (debounced) so reloading the
+// soundscape tab restores it via hydrateFromLastUsed above, instead of
+// resetting every layer to its hard-coded default.
+let lastStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
+useSoundscapeStore.subscribe(() => {
+  if (lastStateSaveTimer) clearTimeout(lastStateSaveTimer);
+  lastStateSaveTimer = setTimeout(() => {
+    const state = useSoundscapeStore.getState();
+    saveLastSoundscapeState({
+      masterVolume: state.masterVolume,
+      beatHz: state.beatHz,
+      carrier: state.carrier,
+      volume: state.volume,
+      extraBinaural: state.extraBinaural,
+      noise: state.noise,
+      ambience: state.ambience,
+      birds: state.birds,
+      stutterGate: state.stutterGate,
+      loadedPresetId: state.loadedPresetId,
+      loadedPresetName: state.loadedPresetName,
+    }).catch((error) => console.warn('Failed to persist last-used soundscape state:', error));
+  }, 600);
+});
