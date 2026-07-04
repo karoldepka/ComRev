@@ -4,7 +4,7 @@ import {
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import {
-  ColorScheme, FireState, FireworksState, FractalParams, FractalType,
+  FireState, FireworksState, FractalParams, FractalType,
   fetchIconSvg, generateAiImage, IconResult, PlasmaParams,
   PRESET_SCHEMES, SCHEME_NAMES, renderFractal, renderPlasma, searchIcons,
 } from '@/utils/image-sources';

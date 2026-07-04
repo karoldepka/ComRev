@@ -58,6 +58,7 @@ export type CellMenuProps = BaseProps & {
   draftText: string;
   setDraftText: (v: string) => void;
   onSetMode:    (m: 'menu' | 'note' | 'comment' | 'flag') => void;
+  onOpenTarget?: (target: CellTarget) => void;
   onHideCols:   (colIds: string[]) => void;
   onHideRows:   (rowIds: string[]) => void;
 };
@@ -352,7 +353,7 @@ export default function ContextMenu(props: ContextMenuProps) {
     const {
       targets, mode, draftText,
       setDraftText, onSetMode,
-      onHideCols, onHideRows,
+      onOpenTarget, onHideCols, onHideRows,
     } = props;
 
     const n = targets.length;
@@ -373,6 +374,18 @@ export default function ContextMenu(props: ContextMenuProps) {
               ? <div className="menu-section-label" style={{ paddingTop: 6 }}>{targets[0].colId}</div>
               : <div className="menu-section-label" style={{ paddingTop: 6 }}>{n} cells selected</div>
             }
+            {isSingle && onOpenTarget && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenTarget(targets[0]);
+                  onClose();
+                }}
+              >
+                Open
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {

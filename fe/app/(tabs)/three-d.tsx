@@ -10,8 +10,6 @@ import { useThreeDStore } from "@/store/three-d-store";
 import { useSoundscapeStore } from "@/store/soundscape-store";
 import {
   consumePendingPresetToLoad,
-  deletePreset,
-  deletePresetFromBackend,
   getLatestConfig,
   getPendingSyncCount,
   getPresets,
@@ -31,7 +29,6 @@ import {
   SlideImage,
   SlideImageOverlay,
   SlideImagePosition,
-  slideImageStyle,
 } from "@/components/SlideImageOverlay";
 import { QuoteAuthorOverlay } from "@/components/QuoteAuthorOverlay";
 import { createPipeFromInstance } from "@/utils/pipe-factory";
@@ -42,168 +39,12 @@ import {
   registerCustomFontUrl,
 } from "@/utils/three-text-geometry";
 import {
-  AcidPipe,
-  AmbientPulsePipe,
-  AnimChromaticPipe,
-  AntialiasingPipe,
-  AuraPipe,
-  BackgroundPlanePipe,
-  // vertex deform
-  BendPipe,
-  // post-process
-  BloomPipe,
-  BlurPipe,
-  BouncePipe,
-  BreathePipe,
-  BulgePipe,
-  ChromaticAberrationPipe,
-  ChromeEdgePipe,
-  CircularBlurPipe,
-  ColorBurnPipe,
-  ColorCycleLightPipe,
-  ColorGradingPipe,
-  ColorOverlayPipe,
-  CometTrailPipe,
-  ConfettiPipe,
-  CrosshatchPipe,
-  CrtCurvaturePipe,
-  CrumplePipe,
-  // ai-generated
-  CustomJsPipe,
-  CylindrizePipe,
-  DepthLinesPipe,
-  DepthOfFieldPipe,
-  DiscoPipe,
-  DissolveAnimPipe,
-  DramaticLightPipe,
-  DuotonePipe,
-  EchoCopiesPipe,
-  // base
-  EffectPipe,
-  EmbossPipe,
-  EmissivePulsePipe,
-  // material
-  EnvMapPipe,
-  EnvMapStyle,
-  ExplodePipe,
-  FigureEightPipe,
-  FilmGrainPipe,
-  FishEyePipe,
-  FlatShadePipe,
-  FlickerPipe,
-  FlipCoinPipe,
-  FloatDriftPipe,
-  FloatingCubesPipe,
-  FloatingRingsPipe,
-  FogEffectPipe,
-  FoldPipe,
-  FrostedGlassPipe,
-  GlassPipe,
-  GlitchBlockPipe,
-  GlitchPipe,
-  GlowEdgePipe,
-  GradientMeshPipe,
-  GraphicsPipe,
-  GridFloorPipe,
-  GrowPipe,
-  HalftonePipe,
-  HologramPipe,
-  InflatePipe,
-  InvertPipe,
-  IridescentPipe,
-  JitterPipe,
-  KaleidoscopePostPipe,
-  LensDistortPipe,
-  LevitationPipe,
-  LightningFlashPipe,
-  MainTextPipe,
-  MatcapPipe,
-  MeltPipe,
-  MetallicPreset,
-  MetallicPresetPipe,
-  MirrorHPipe,
-  MirrorPlanePipe,
-  MirrorVPipe,
-  MoonLightPipe,
-  MosaicPipe,
-  NeonGlowPipe,
-  NightVisionPipe,
-  NoisePostPipe,
-  NoiseWobblePipe,
-  OldFilmPipe,
-  OrbitAnimPipe,
-  OrbiterPipe,
-  OutlinePipe,
-  // scene objects
-  ParticleDustPipe,
-  PendulumPipe,
-  PinchPipe,
-  PixelatePipe,
-  PixelShiftPipe,
-  PortalRingPipe,
-  PosterizePipe,
-  // animation
-  PulsePipe,
-  RadialBlurPipe,
-  RainbowLightsPipe,
-  RainbowMeshPipe,
-  RainPipe,
-  RaysPipe,
-  DEFAULT_STAR_SVG,
   DEFAULT_HEART_SVG,
   DEFAULT_LIGHTNING_SVG,
-  RetroTvPipe,
-  RgbShiftPipe,
-  RimLightPipe,
-  RipplePipe,
-  RockPipe,
-  ScanlinesPipe,
-  SepiaPipe,
-  ShadowFloorPipe,
-  SharpenPipe,
-  ShearPipe,
-  ShrinkPipe,
-  SketchPipe,
-  SnowPipe,
-  SobelEdgePipe,
-  SparklePipe,
-  SpeedLinesPipe,
-  SpherifyPipe,
-  SpikesPipe,
-  SpinPipe,
-  SpiralDeformPipe,
-  // lighting
-  SpotlightPipe,
-  SquishPipe,
-  StarField3dPipe,
-  StrobePipe,
-  StudioLightPipe,
-  SunsetLightPipe,
-  SwayPipe,
-  SwingPipe,
-  TaperPipe,
-  Text3dPipe,
-  ThermalPipe,
-  ThresholdPipe,
-  ToonShadingPipe,
-  TremplePipe,
-  TwistPipe,
-  VhsTrackingPipe,
-  VignettePipe,
-  VoxelizePipe,
-  WaterRipplePipe,
-  WavePipe,
-  WigglePipe,
-  TessellatePipe,
-  WingsPipe,
-  FirePipe,
-  SmokePipe,
-  SkySpherePipe,
-  SkyStyle,
-  WireframePipe,
-  XRayPipe,
-  ZapPipe,
-  ZoomBlurPipe,
+  DEFAULT_STAR_SVG,
+  EffectPipe,
+  EnvMapStyle,
+  MetallicPreset,
   SCHEME_STOPS,
 } from "@/utils/three-text-pipes";
 import { useFocusEffect, router } from "expo-router";
@@ -211,7 +52,6 @@ import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -485,64 +325,6 @@ function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | nu
     noise.start(now);
   } catch (error) {
     console.warn("Unable to play gong sound:", error);
-  }
-}
-
-function playSequencePageSound(
-  audioContextRef: React.MutableRefObject<AudioContext | null>,
-  pageIndex: number,
-) {
-  if (typeof window === "undefined") return;
-  const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioCtor) return;
-
-  try {
-    const ctx = audioContextRef.current ?? new AudioCtor();
-    audioContextRef.current = ctx;
-    ctx.resume?.().catch(() => undefined);
-    if (ctx.state === "suspended") return;
-
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
-    filter.type = "highpass";
-    filter.frequency.setValueAtTime(90, now);
-    master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.24, now + 0.035);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
-    master.connect(filter);
-    filter.connect(ctx.destination);
-
-    const base = 174.61 * Math.pow(2, (pageIndex % 5) / 12);
-    [1, 1.5, 2.25].forEach((ratio, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = i === 0 ? "sawtooth" : "triangle";
-      osc.frequency.setValueAtTime(base * ratio * 0.75, now);
-      osc.frequency.exponentialRampToValueAtTime(base * ratio * 1.7, now + 0.24);
-      gain.gain.setValueAtTime(0.0001, now + i * 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.18 / (i + 1), now + 0.06 + i * 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.52 + i * 0.08);
-      osc.connect(gain);
-      gain.connect(master);
-      osc.start(now + i * 0.025);
-      osc.stop(now + 0.9);
-    });
-
-    const shimmer = ctx.createOscillator();
-    const shimmerGain = ctx.createGain();
-    shimmer.type = "sine";
-    shimmer.frequency.setValueAtTime(base * 5, now + 0.05);
-    shimmer.frequency.exponentialRampToValueAtTime(base * 8, now + 0.55);
-    shimmerGain.gain.setValueAtTime(0.0001, now + 0.05);
-    shimmerGain.gain.exponentialRampToValueAtTime(0.08, now + 0.12);
-    shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
-    shimmer.connect(shimmerGain);
-    shimmerGain.connect(master);
-    shimmer.start(now + 0.05);
-    shimmer.stop(now + 0.85);
-  } catch (error) {
-    console.warn("Unable to play sequence sound:", error);
   }
 }
 
@@ -1355,448 +1137,6 @@ async function generateRandomConfig(
 
   return newInstances;
 }
-
-// Stub kept only to satisfy the switch default below; the real implementation is in utils/effect-defaults.ts
-function createDefaultEffectParams_local(
-  type: EffectType,
-): Record<string, unknown> {
-  switch (type) {
-    case "mainText":
-      return {
-        text: DEFAULT_MAIN_TEXT,
-        textSets: [
-          {
-            id: "default",
-            name: "Set 1",
-            text: DEFAULT_MAIN_TEXT,
-          },
-        ],
-        activeTextSetId: "default",
-        sequenceLineDurationMs: DEFAULT_SEQUENCE_LINE_DURATION_MS,
-        fontFamily: DEFAULT_3D_FONT_FAMILY,
-        size: 2,
-        height: 0.8,
-        curveSegments: 48,
-        bevelEnabled: true,
-        bevelThickness: 0.15,
-        bevelSize: 0.08,
-        bevelOffset: 0,
-        bevelSegments: 5,
-        color: 0xff6600,
-        metalness: 0.95,
-        roughness: 0.15,
-        envMapIntensity: 1.5,
-        equalizeLineWidths: false,
-        equalizationMethod: "fontSize",
-        targetWidth: 20,
-        lineSpacing: 1.0,
-      };
-    case "bloom":
-      return { strength: 0.8, threshold: 0.2, radius: 0.5 };
-    case "depthOfField":
-      return { focus: 15, aperture: 3, maxBlur: 0.01 };
-    case "chromatic":
-      return { offset: 0.005 };
-    case "filmGrain":
-      return { intensity: 0.35 };
-    case "glitch":
-      return { wildGlitch: false };
-    case "fishEye":
-      return { strength: 0.4, radius: 10 };
-    case "bend":
-      return { strength: 0.18, axis: "x" };
-    case "envMap":
-      return {
-        style: "gradient",
-        intensity: 1.5,
-        seed: 42,
-        customImageDataUrl: undefined,
-      };
-    case "neonGlow":
-      return {
-        colorIdx: 0,
-        intensity: 0.8,
-        pulseSpeed: 1.0,
-        pulseAmplitude: 0.3,
-      };
-    case "metallicPreset":
-      return { preset: "gold" };
-    case "dust":
-      return { count: 500, speed: 0.5, size: 0.06, seed: 42 };
-    case "wireframe":
-      return { opacity: 0.25 };
-    case "outline":
-      return { thickness: 1.05 };
-    case "rays":
-      return {
-        mode: "radial",
-        count: 24,
-        innerThickness: 0.06,
-        outerThickness: 0.08,
-        lockThickness: true,
-        innerMargin: 2,
-        outerMargin: 6,
-        heartRotation: 0,
-      };
-    case "radialBlur":
-      return { strength: 0.12, samples: 8, center: [0.5, 0.5] };
-    case "wave":
-      return { amplitude: 0.5, frequency: 1.0, speed: 1.0, axis: "x" };
-    case "twist":
-      return { strength: 0.3, axis: "y" };
-    case "pulse":
-      return { amplitude: 0.12, speed: 1.0 };
-    case "floatingRings":
-      return {
-        count: 3,
-        radiusMult: 1.6,
-        speed: 0.25,
-        thickness: 0.04,
-        color: 0xff8800,
-      };
-    case "vignette":
-      return { offset: 0.5, darkness: 1.0 };
-    case "scanlines":
-      return { count: 100, intensity: 0.3, scrollSpeed: 0 };
-    case "colorGrading":
-      return { hueShift: 0, saturation: 1.0, contrast: 1.0, brightness: 0 };
-    case "pixelate":
-      return { pixelSize: 4 };
-    case "circularBlur":
-      return { radius: 0.01, samples: 16 };
-    case "sepia":
-      return { amount: 1 };
-    case "invert":
-      return { amount: 1 };
-    case "sobelEdge":
-      return { strength: 1 };
-    case "thermal":
-      return { intensity: 1 };
-    case "nightVision":
-      return { intensity: 0.8, noise: 0.2 };
-    case "duotone":
-      return { colorA: 0xff6600, colorB: 0x0066ff };
-    case "posterize":
-      return { levels: 4 };
-    case "colorOverlay":
-      return { color: 0xff6600, opacity: 0.4 };
-    case "halftone":
-      return { dotSize: 4 };
-    case "sharpen":
-      return { amount: 1 };
-    case "animChromatic":
-      return { amount: 0.01, speed: 1 };
-    case "blur":
-      return { radius: 1 };
-    case "lensDistort":
-      return { k: 0.3 };
-    case "mosaic":
-      return { size: 0.05 };
-    case "noisePost":
-      return { amount: 0.15, animated: true };
-    case "crtCurvature":
-      return { bend: 4 };
-    case "vhsTracking":
-      return { strength: 0.04, speed: 1 };
-    case "glowEdge":
-      return { radius: 3, intensity: 1.5, color: 0xff6600 };
-    case "acid":
-      return { strength: 0.08, speed: 1 };
-    case "kaleidoscopePost":
-      return { segments: 6 };
-    case "oldFilm":
-      return { scratchIntensity: 0.3, vignetteAmount: 0.5, grainAmount: 0.08 };
-    case "zoomBlur":
-      return { strength: 0.04, samples: 10 };
-    case "crosshatch":
-      return { density: 8, lineWidth: 0.5 };
-    case "glitchBlock":
-      return { intensity: 0.1, frequency: 1 };
-    case "speedLines":
-      return { intensity: 0.5, lineCount: 48 };
-    case "rgbShift":
-      return { amount: 0.005, angle: 0 };
-    case "frostedGlass":
-      return { blur: 2 };
-    case "waterRipple":
-      return { strength: 0.02, speed: 1, frequency: 10 };
-    case "pixelShift":
-      return { amount: 3, speed: 1 };
-    case "retroTv":
-      return { scanlineIntensity: 0.2, curvature: 5, noise: 0.05 };
-    case "antialiasing":
-      return {};
-    // vertex deform
-    case "inflate":
-      return { strength: 0.5 };
-    case "taper":
-      return { strength: 0.5, axis: "y" };
-    case "shear":
-      return { strength: 0.3, axis: "x" };
-    case "spherify":
-      return { strength: 0.5 };
-    case "ripple":
-      return { amplitude: 0.3, frequency: 2, speed: 1.5 };
-    case "melt":
-      return { strength: 0.5, speed: 0 };
-    case "pinch":
-      return { strength: 0.5 };
-    case "voxelize":
-      return { gridSize: 0.2 };
-    case "crumple":
-      return { strength: 0.3, seed: 42 };
-    case "noiseWobble":
-      return { amplitude: 0.3, frequency: 2, speed: 1 };
-    case "spiralDeform":
-      return { twist: 0.3, flare: 0.2 };
-    case "bulge":
-      return { strength: 0.5 };
-    case "squish":
-      return { strength: 0.5, axis: "y" };
-    case "zap":
-      return { strength: 1.5, density: 0.1 };
-    case "explode":
-      return { strength: 0.5, pulse: false };
-    case "fold":
-      return { strength: 0.5, axis: "y" };
-    case "spikes":
-      return { strength: 2, density: 0.05, seed: 42 };
-    case "cylindrize":
-      return { strength: 0.5, radius: 10 };
-    // material
-    case "xRay":
-      return { color: 0x00ffff, opacity: 0.4 };
-    case "toonShading":
-      return { color: 0x44cc88, steps: 4 };
-    case "hologram":
-      return { color: 0x00ffff, scanSpeed: 1 };
-    case "gradientMesh":
-      return { colorTop: 0xff6600, colorBottom: 0x0066ff, animated: false };
-    case "rainbowMesh":
-      return { speed: 0.3, saturation: 1 };
-    case "iridescent":
-      return { speed: 1 };
-    case "emissivePulse":
-      return {
-        color: 0xff6600,
-        minIntensity: 0,
-        maxIntensity: 1.5,
-        speed: 1.5,
-      };
-    case "dissolveAnim":
-      return { speed: 0.5, color: 0xff6600 };
-    case "glass":
-      return { color: 0xaaddff, roughness: 0.05, transmission: 0.9 };
-    case "matcap":
-      return { colorA: 0xff6600, colorB: 0xffffff, shininess: 0.5 };
-    // lighting
-    case "spotlight":
-      return { color: 0xffffff, intensity: 3, angle: 0.4, penumbra: 0.3 };
-    case "strobe":
-      return { color: 0xffffff, frequency: 4, intensity: 5 };
-    case "flicker":
-      return { color: 0xffa020, baseIntensity: 2, flickerAmount: 1.5 };
-    case "colorCycleLight":
-      return { speed: 0.5, intensity: 2, saturation: 1 };
-    case "disco":
-      return { lightCount: 6, speed: 2, intensity: 2 };
-    case "ambientPulse":
-      return { color: 0xffffff, minIntensity: 0.1, maxIntensity: 2, speed: 1 };
-    case "rimLight":
-      return { color: 0x4488ff, intensity: 2 };
-    case "dramaticLight":
-      return { keyColor: 0xfff4e0, fillColor: 0x203060 };
-    case "lightningFlash":
-      return { color: 0xaaccff, intensity: 8, frequency: 2 };
-    case "rainbowLights":
-      return { count: 7, speed: 0.5, intensity: 1.5 };
-    // scene objects
-    case "echoCopies":
-      return {
-        count: 4,
-        offsetX: 0.3,
-        offsetY: 0,
-        offsetZ: -0.5,
-        rotateY: 0,
-        opacity: 0.4,
-        color: 0xff6600,
-        fade: true,
-      };
-    case "starField3d":
-      return { count: 800, speed: 0.05, spread: 30 };
-    case "snow":
-      return { count: 400, speed: 0.5, spread: 20 };
-    case "rain":
-      return { count: 300, speed: 1, spread: 20 };
-    case "confetti":
-      return { count: 60, speed: 1, spread: 15 };
-    case "sparkle":
-      return { count: 200, color: 0xffffaa, spread: 8 };
-    case "aura":
-      return { color: 0xff6600, opacity: 0.15, layers: 3, speed: 1 };
-    case "gridFloor":
-      return { color: 0x444444, opacity: 0.4, size: 40, divisions: 40 };
-    case "orbiter":
-      return { count: 4, color: 0xff6600, orbitRadius: 4, speed: 1, size: 0.3 };
-    case "portalRing":
-      return { color: 0x00ffff, radius: 5, speed: 0.5 };
-    case "cometTrail":
-      return { color: 0xffffff, speed: 1.2, count: 3 };
-    case "floatingCubes":
-      return { count: 12, color: 0xff6600, spread: 10, speed: 0.5 };
-    case "mirrorPlane":
-      return { opacity: 0.3, axis: "y", offset: 0 };
-    // animation
-    case "spin":
-      return { speedX: 0, speedY: 1, speedZ: 0 };
-    case "bounce":
-      return { height: 1.5, speed: 2 };
-    case "levitation":
-      return { amplitude: 0.5, speed: 0.8 };
-    case "swing":
-      return { angle: 0.4, speed: 1, axis: "z" };
-    case "tremble":
-      return { intensity: 0.05, speed: 20 };
-    case "breathe":
-      return { depth: 0.08, speed: 0.4 };
-    case "wiggle":
-      return { amount: 0.15, speed: 5 };
-    case "floatDrift":
-      return { amplitude: 0.3, speed: 0.3 };
-    case "flipCoin":
-      return { axis: "y", speed: 2 };
-    case "grow":
-      return { targetScale: 1, speed: 1 };
-    case "shrink":
-      return { targetScale: 0.5, speed: 1 };
-    case "orbitAnim":
-      return { radius: 3, speed: 0.5, axis: "y" };
-    case "rock":
-      return { angle: 0.2, speed: 1 };
-    case "jitter":
-      return { intensity: 0.1, frequency: 12 };
-    case "sway":
-      return { amplitude: 0.2, speed: 0.7 };
-    case "figureEight":
-      return { width: 2, height: 1, speed: 0.5 };
-    case "pendulum":
-      return { angle: 0.5, speed: 1.2 };
-    case "customJs":
-      return { code: "", description: "" };
-    case "text3d":
-      return {
-        text: "Text 3D",
-        fontFamily: DEFAULT_3D_FONT_FAMILY,
-        size: 2,
-        height: 0.8,
-        curveSegments: 48,
-        bevelEnabled: true,
-        bevelThickness: 0.15,
-        bevelSize: 0.08,
-        bevelOffset: 0,
-        bevelSegments: 5,
-        color: 0xff6600,
-        metalness: 0.95,
-        roughness: 0.15,
-        envMapIntensity: 1.5,
-        equalizeLineWidths: false,
-        equalizationMethod: "fontSize",
-        targetWidth: 20,
-        lineSpacing: 1.0,
-        posX: 0,
-        posY: 0,
-        posZ: 0,
-        rotX: 0,
-        rotY: 0,
-        rotZ: 0,
-      };
-    case "graphics":
-      return {
-        items: [],
-        layout: "row",
-        spacing: 4,
-        scale: 1,
-        extrudeDepth: 0.2,
-        bevelEnabled: true,
-        bevelSize: 0.02,
-        bevelThickness: 0.02,
-        bevelSegments: 3,
-        colorOverride: false,
-        color: 0xff6600,
-        metalness: 0.8,
-        roughness: 0.2,
-        bgEnabled: false,
-        bgColor: 0x111111,
-        bgOpacity: 0.8,
-        matImageDataUrl: undefined,
-        envMapStyle: "none",
-        envMapIntensity: 1.5,
-        envMapCustomDataUrl: undefined,
-        posX: 0,
-        posY: 0,
-        posZ: 0,
-        rotX: 0,
-        rotY: 0,
-        rotZ: 0,
-      };
-    case "wings":
-      return { style: "straight", color: 0xffffff, size: 2.5, longLength: 1.4, shortLength: 0.6, heightScale: 0.6, flapSpeed: 2.5, flapAmplitude: 0.45, opacity: 0.88 };
-    case "fractalBackground":
-      return { fractalType: "mandelbrot", scheme: "psychedelic", maxIter: 128, zoom: 0.35, cx: -0.5, cy: 0, juliaRe: -0.7, juliaIm: 0.27, animateJulia: true, juliaSpeed: 0.3, width: 60, height: 40, offsetZ: -8 };
-    case "flatShade":
-      return {};
-    case "shadowFloor":
-      return { color: 0x000000, opacity: 0.35, size: 30, offsetY: 0 };
-    case "backgroundPlane":
-      return {
-        color: 0x111111,
-        colorBottom: 0x222244,
-        opacity: 1,
-        width: 60,
-        height: 40,
-        offsetZ: -3,
-        gradient: false,
-      };
-    case "fogEffect":
-      return { color: 0xaaaaaa, near: 10, far: 50 };
-    case "emboss":
-      return { strength: 1 };
-    case "threshold":
-      return { cutoff: 0.5, smoothing: 0.05 };
-    case "mirrorH":
-      return { split: 0.5 };
-    case "mirrorV":
-      return { split: 0.5 };
-    case "sketch":
-      return { strength: 3, paperColor: 0xf5f0e0, inkColor: 0x141008 };
-    case "sunsetLight":
-      return { intensity: 1 };
-    case "studioLight":
-      return { keyIntensity: 3, fillIntensity: 1.2, backIntensity: 1.5 };
-    case "moonLight":
-      return { intensity: 1, ambientIntensity: 0.15 };
-    case "chromeEdge":
-      return { color: 0xffffff, intensity: 0.6 };
-    case "colorBurn":
-      return { color: 0xff6600, strength: 0.5 };
-    case "depthLines":
-      return { lineCount: 12, lineWidth: 0.03, color: 0x000000 };
-    default:
-      return {};
-  }
-}
-
-
-const CURATED_COLORS = [
-  { label: "Orange", value: 0xff6600 },
-  { label: "Green", value: 0x00ff88 },
-  { label: "Blue", value: 0x0088ff },
-  { label: "Cyan", value: 0x00ffff },
-  { label: "Magenta", value: 0xff00ff },
-  { label: "Yellow", value: 0xffff00 },
-  { label: "Purple", value: 0x8800ff },
-  { label: "White", value: 0xffffff },
-];
 
 // ── Color history (localStorage, max 12 recent) ───────────────────────────────
 const COLOR_HISTORY_KEY = "comrev_recent_colors";
@@ -6253,10 +5593,8 @@ export function ThreeDTextScreen({
     resetToBasic: storeResetToBasic,
     slideEffectOverride,
     setSlideEffectOverride,
-    mantraMode,
   } = useThreeDStore();
-  const [selectedEffectType, setSelectedEffectType] =
-    useState<EffectType>("bloom");
+  const selectedEffectType: EffectType = "bloom";
   const [selectedEffectSearch, setSelectedEffectSearch] = useState("");
   const [showMoreEffects, setShowMoreEffects] = useState(false);
   const [lastDeleted, setLastDeleted] = useState<{
@@ -6269,7 +5607,7 @@ export function ThreeDTextScreen({
     | { mode: "effect"; instanceId: string; paramKey: string }
     | { mode: "slide"; textSetId: string; imageId?: string };
   const [imagePickerTarget, setImagePickerTarget] = useState<ImagePickerTarget | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [, setSaveStatus] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(fullWindow);
   const [isPaused, setIsPaused] = useState(false);
   const pauseIconOpacity = useSharedValue(0);
@@ -6296,7 +5634,7 @@ export function ThreeDTextScreen({
       return !prev;
     });
   }, [controlsHeightSv]);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [, setPendingSyncCount] = useState(0);
   const [aiChatTarget, setAiChatTarget] = useState<{
     id: string | null;
     code: string;
@@ -6343,7 +5681,7 @@ export function ThreeDTextScreen({
         setSaveStatus(`Loaded: ${pending.name}`);
         setTimeout(() => setSaveStatus(null), 3000);
       }
-    }, []),
+    }, [setEffectInstances]),
   );
 
   const effectInstancesRef = useRef(effectInstances);
@@ -6455,14 +5793,21 @@ export function ThreeDTextScreen({
     }
     applySlideConfig(currentSequencePage.soundscape);
     setSlideEffectOverride(currentSequencePage.configOverride?.effectInstances ?? null);
-  }, [sequenceMode, currentSequencePage.id, applySlideConfig, setSlideEffectOverride]);
+  }, [
+    sequenceMode,
+    currentSequencePage.configOverride?.effectInstances,
+    currentSequencePage.id,
+    currentSequencePage.soundscape,
+    applySlideConfig,
+    setSlideEffectOverride,
+  ]);
 
   useEffect(() => {
     if (!sequenceMode) return;
     // Mutate the existing pipe directly — avoids React state update → pipe rebuild
     // → full GPU teardown/setup cycle that was causing crashes and animation freezes.
     threeDTextRef.current?.updatePipeParams('envMap', { plasmaCustomStops: pickPlasmaStops() });
-  }, [currentSequencePage.id, sequenceMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentSequencePage.id, sequenceMode]);
 
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
@@ -7027,14 +6372,6 @@ export function ThreeDTextScreen({
     };
   }, [skipSavedConfigLoad, setEffectInstances]);
 
-  const refreshPending = async () => {
-    try {
-      setPendingSyncCount(await getPendingSyncCount());
-    } catch {
-      setPendingSyncCount(0);
-    }
-  };
-
   const buildCurrentConfig = (): ThreeDConfig => {
     if (!currentConfigIdRef.current) {
       currentConfigIdRef.current = nanoid();
@@ -7103,41 +6440,6 @@ export function ThreeDTextScreen({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectInstances, showAdvanced]);
-
-  const handleSaveConfig = async () => {
-    setSaveStatus("Saving configuration...");
-    const config = buildCurrentConfig();
-
-    try {
-      const result = await saveConfigOfflineFirst(config, API_BASE);
-      if (result.synced) {
-        setSaveStatus("Saved locally and synced to the backend.");
-      } else {
-        setSaveStatus(
-          `Saved locally. Will sync later. ${result.error ?? ""}`.trim(),
-        );
-      }
-    } catch (error) {
-      setSaveStatus(
-        `Save failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    refreshPending();
-  };
-
-  const handleSyncPending = async () => {
-    setSaveStatus("Syncing pending configurations...");
-    try {
-      await syncPendingConfigs(API_BASE);
-      setSaveStatus("Pending configurations synced successfully.");
-    } catch (error) {
-      setSaveStatus(
-        `Sync failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    refreshPending();
-  };
 
   return (
     <SafeAreaView

@@ -52,7 +52,11 @@ const ROW_NUM_COL_MIN_WIDTH = 40;
 
 const CLASSES_COL_ID = 'classes';
 const FULL_NAME_COL_ID = 'full_name';
+const ID_COL_ID = 'id';
 const PARENT_CHILD_FIELD_ID = 'parent_child';
+const TABLES_TABLE_ID = 'tables';
+const TABLES_TABLE_PATH = '/tables';
+const OPENABLE_TABLE_CELL_COLUMNS = new Set([ID_COL_ID, FULL_NAME_COL_ID]);
 
 // ── Local types ────────────────────────────────────────────────────────────────
 
@@ -399,7 +403,6 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   }>({ query: '', loading: false, rows: [], total: 0, error: null });
   const [pendingSearchTarget, setPendingSearchTarget] = useState<{ rowId: string; columnId: string | null } | null>(null);
   const [pendingSearchColumnId, setPendingSearchColumnId] = useState<string | null>(null);
-  const globalSearchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSyncClient()
@@ -420,8 +423,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   useEffect(() => {
     if (!isGlobalSearchOpen) return;
     const focusTimer = setTimeout(() => {
-      globalSearchInputRef.current?.focus();
-      globalSearchInputRef.current?.select();
+      const input = document.querySelector<HTMLInputElement>('[cmdk-input]');
+      input?.focus();
+      input?.select();
     }, 0);
     return () => clearTimeout(focusTimer);
   }, [isGlobalSearchOpen]);
@@ -791,7 +795,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       ? columnsFromMetadata(customColumns, rows[0])
       : (rows[0] ? deriveColumns(rows[0]) : []);
     const userDataColumns = dataColumns.filter((col) => col.id !== PARENT_CHILD_FIELD_ID);
-    const result = tableId === 'tables'
+    const result = tableId === TABLES_TABLE_ID
       ? userDataColumns.filter((col) => col.id !== CLASSES_COL_ID)
       : [...userDataColumns.filter((col) => col.id !== CLASSES_COL_ID), CLASSES_COLUMN];
     let flat = result;
@@ -973,6 +977,43 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     () => buildHeaderRows(columns, getColumnDepth(columns), hiddenSet),
     [columns, hiddenSet],
   );
+  const [headerRowTops, setHeaderRowTops] = useState<number[]>([]);
+
+  useEffect(() => {
+    const rows = Array.from(wrapperRef.current?.querySelectorAll<HTMLTableRowElement>('thead tr') ?? []);
+    if (rows.length === 0) {
+      setHeaderRowTops([]);
+      return;
+    }
+
+    const measure = () => {
+      let nextTop = 0;
+      const next = rows.map((row) => {
+        const top = nextTop;
+        nextTop += row.getBoundingClientRect().height;
+        return top;
+      });
+
+      setHeaderRowTops((prev) =>
+        prev.length === next.length && prev.every((top, index) => Math.abs(top - next[index]) < 0.5)
+          ? prev
+          : next,
+      );
+    };
+
+    measure();
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(measure)
+      : null;
+    rows.forEach((row) => resizeObserver?.observe(row));
+    window.addEventListener('resize', measure);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [headerRows]);
+
   const resizerTargetByColumn = useMemo(() => {
     const map = new Map<string, string>();
     function traverse(col: Column) {
@@ -1562,8 +1603,8 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     if (el && wrap) {
       const elRect = el.getBoundingClientRect();
 
-      // Vertical: all thead th cells have position:sticky;top:0. With multi-level headers each
-      // row stacks at top:0 independently, so take the max bottom across all th cells.
+      // Vertical: header rows are sticky with measured row offsets, so take the
+      // max bottom across all th cells after layout.
       const allThs = Array.from(wrap.querySelectorAll('thead th'));
       const headerBottom = allThs.reduce((max, th) => Math.max(max, th.getBoundingClientRect().bottom), 0);
       if (elRect.top < headerBottom) {
@@ -1587,7 +1628,12 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
         const row = treeRows[ri]?.row;
         if (row) {
           const rowId = String(row['id'] ?? '');
-          history.replaceState(null, '', `#${encodeURIComponent(rowId)}--${encodeURIComponent(colId)}`);
+          const hash = `#${encodeURIComponent(rowId)}--${encodeURIComponent(colId)}`;
+          history.replaceState(
+            null,
+            '',
+            tableId === TABLES_TABLE_ID ? `${TABLES_TABLE_PATH}${hash}` : hash,
+          );
         }
       }
     }
@@ -1734,6 +1780,11 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     setHiddenRowIds((prev) => new Set([...prev, ...rowIds]));
     setRows((prev) => prev.filter((r) => !rowIds.includes(String(r['id'] ?? ''))));
   }, [api]);
+
+  const openCellTarget = useCallback((target: CellTarget) => {
+    if (tableId !== TABLES_TABLE_ID || !OPENABLE_TABLE_CELL_COLUMNS.has(target.colId)) return;
+    onRowClick?.(target.rowId);
+  }, [onRowClick, tableId]);
 
   const handleResizerPointerDown = (event: React.PointerEvent<HTMLDivElement>, columnId: string) => {
     event.preventDefault();
@@ -2043,7 +2094,6 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           <Command shouldFilter={false}>
             <div className="flex items-center border-b border-app-border">
               <CommandInput
-                ref={globalSearchInputRef}
                 value={globalSearchQuery}
                 onValueChange={setGlobalSearchQuery}
                 placeholder="Search columns and rows"
@@ -2155,7 +2205,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                       key={ROW_NUM_COL_ID}
                       rowSpan={headerRows.length > 1 ? headerRows.length : undefined}
                       className="sticky-col row-num-th"
-                      style={{ left: 0, width: rowNumColWidth, minWidth: rowNumColWidth }}
+                      style={{ top: headerRowTops[0] ?? 0, left: 0, width: rowNumColWidth, minWidth: rowNumColWidth }}
                       title="Row number — click to hide"
                       onClick={() => setShowRowNumbers(false)}
                     >
@@ -2252,7 +2302,11 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                           dragGroupTarget === column.id ? 'col-drag-group' : '',
                           isLeaf && deletingCols.has(column.id) ? 'col-deleting-cell' : '',
                         ].filter(Boolean).join(' ') || undefined}
-                        style={{ ...(isSticky ? { left: frozenLeft } : undefined), ...headerFlagStyle }}
+                        style={{
+                          top: headerRowTops[rowIndex] ?? 0,
+                          ...(isSticky ? { left: frozenLeft } : undefined),
+                          ...headerFlagStyle,
+                        }}
                         onClick={(e) => selectKey(headerKey, e.metaKey || e.ctrlKey, e.shiftKey)}
                         onContextMenu={(e) => {
                           if (!showMenu) return;
@@ -2377,6 +2431,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                           ? 'header-selected'
                           : selectedCols.has(ADD_COL_VIRTUAL_ID) ? 'col-highlight' : '',
                       ].filter(Boolean).join(' ') || undefined}
+                      style={{ top: headerRowTops[0] ?? 0 }}
                       onClick={(e) => selectKey(ADD_COL_HEADER_KEY, e.metaKey || e.ctrlKey, e.shiftKey)}
                     >
                       <button
@@ -2743,6 +2798,14 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           onSaveRemark={saveRemark}
           setDraftText={setDraftText}
           onSetMode={setCellMenuMode}
+          onOpenTarget={
+            tableId === TABLES_TABLE_ID
+            && onRowClick
+            && cellMenu.targets.length === 1
+            && OPENABLE_TABLE_CELL_COLUMNS.has(cellMenu.targets[0].colId)
+              ? openCellTarget
+              : undefined
+          }
           onHideCols={hideColumns}
           onHideRows={hideRows}
           availableClasses={rowClasses}

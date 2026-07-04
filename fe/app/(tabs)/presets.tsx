@@ -42,7 +42,7 @@ function presetMainParams(preset: PresetRecord): Record<string, unknown> {
 function presetText(params: Record<string, unknown>): string {
   let text: string;
   if (Array.isArray(params.textSets) && params.textSets.length > 0) {
-    const sets = params.textSets as Array<{ id?: string; text?: string }>;
+    const sets = params.textSets as { id?: string; text?: string }[];
     const activeId = params.activeTextSetId;
     const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
     text = String((active ?? sets[0])?.text ?? "");
@@ -54,7 +54,7 @@ function presetText(params: Record<string, unknown>): string {
 
 function presetImages(params: Record<string, unknown>): SlideImage[] {
   if (Array.isArray(params.textSets) && params.textSets.length > 0) {
-    const sets = params.textSets as Array<{ id?: string; images?: SlideImage[] }>;
+    const sets = params.textSets as { id?: string; images?: SlideImage[] }[];
     const activeId = params.activeTextSetId;
     const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
     const imgs = (active ?? sets[0])?.images;

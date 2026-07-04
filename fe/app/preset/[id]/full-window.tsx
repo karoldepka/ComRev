@@ -51,7 +51,7 @@ export default function PresetFullWindowScreen() {
   if (notFound) {
     return (
       <ThemedView style={styles.screen}>
-        <ThemedText>Preset "{id}" not found.</ThemedText>
+        <ThemedText>{`Preset ${id} not found.`}</ThemedText>
       </ThemedView>
     );
   }

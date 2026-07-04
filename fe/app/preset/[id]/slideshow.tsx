@@ -11,7 +11,7 @@ export default function PresetSlideshowScreen() {
   if (notFound) {
     return (
       <ThemedView style={styles.screen}>
-        <ThemedText>Preset "{id}" not found.</ThemedText>
+        <ThemedText>{`Preset ${id} not found.`}</ThemedText>
       </ThemedView>
     );
   }

@@ -9,12 +9,12 @@ import {
 import {
   ColumnDef,
   ExpandedState,
-  Row,
   flexRender,
   getCoreRowModel,
   getExpandedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+import { API_BASE } from '@/utils/api-config';
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -72,8 +72,6 @@ function buildTree(repos: Repo[]): TreeRow[] {
       })),
     }));
 }
-
-import { API_BASE } from '@/utils/api-config';
 
 export default function ReposScreen() {
   const colorScheme = useColorScheme();

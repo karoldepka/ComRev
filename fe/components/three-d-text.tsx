@@ -294,7 +294,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         el.removeEventListener("touchmove", onTouchMove);
         el.removeEventListener("touchend", onTouchEnd);
       };
-    }, [applyZoom, getZoomTarget]);
+    }, [applyZoom, getZoomLimits, getZoomTarget]);
 
     // Rebuild PipelineManager when the pipes array reference changes
     useEffect(() => {

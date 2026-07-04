@@ -210,7 +210,7 @@ export function AiEffectChatModal({
           >
             {messages.length === 0 && (
               <Text style={[styles.hint, { color: isDark ? '#888' : '#aaa' }]}>
-                Describe the effect you want — e.g. "make the text gently float up and down" or "add a neon glow that pulses".
+                {'Describe the effect you want, e.g. "make the text gently float up and down" or "add a neon glow that pulses".'}
                 {initialCode ? '\n\nExisting code is loaded below. Ask for refinements.' : ''}
               </Text>
             )}

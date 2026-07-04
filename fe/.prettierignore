@@ -1,0 +1,9 @@
+node_modules
+dist
+.expo
+.vercel
+android
+ios
+public
+pnpm-lock.yaml
+*.log
