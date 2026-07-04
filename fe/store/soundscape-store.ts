@@ -143,15 +143,61 @@ interface SoundscapeState {
   hydrateFromLastUsed: () => Promise<void>;
 }
 
-function withPlayingReset<T extends { playing: boolean }>(
-  layers: Record<string, T>,
-): Record<string, T> {
-  return Object.fromEntries(
-    Object.entries(layers).map(([key, layer]) => [key, { ...layer, playing: false }]),
-  ) as Record<string, T>;
+const defaultLayer = (): LayerState => ({ playing: false, volume: 0.35 });
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-const defaultLayer = (): LayerState => ({ playing: false, volume: 0.35 });
+function clampVolume(value: unknown, fallback = 0.35): number {
+  return Math.max(0, Math.min(1, finiteNumber(value, fallback)));
+}
+
+function normalizeLayer(layer: Partial<LayerState> | undefined): LayerState {
+  return {
+    playing: layer?.playing === true,
+    volume: clampVolume(layer?.volume),
+  };
+}
+
+function normalizeLayerRecord<K extends string>(
+  keys: readonly K[],
+  layers: Record<string, LayerState> | undefined,
+): Record<K, LayerState> {
+  const normalized = {} as Record<K, LayerState>;
+  for (const key of keys) normalized[key] = normalizeLayer(layers?.[key]);
+  return normalized;
+}
+
+function normalizeBirds(birds: Partial<BirdsState> | undefined): BirdsState {
+  return {
+    ...normalizeLayer(birds),
+    pitch: finiteNumber(birds?.pitch, 1),
+    speed: finiteNumber(birds?.speed, 1),
+  };
+}
+
+function normalizeStutterGate(stutterGate: Partial<StutterGateState> | undefined): StutterGateState {
+  return {
+    enabled: stutterGate?.enabled === true,
+    bpm: finiteNumber(stutterGate?.bpm, 120),
+  };
+}
+
+function stopCurrentPlayback(state: SoundscapeState): void {
+  if (state.playing) stopBinaural();
+  for (const key of Object.keys(state.extraBinaural)) {
+    if (state.extraBinaural[key].playing) stopTrack(`binaural:${key}`);
+  }
+  for (const color of Object.keys(state.noise) as NoiseColor[]) {
+    if (state.noise[color].playing) stopTrack(`noise:${color}`);
+  }
+  for (const kind of Object.keys(state.ambience) as AmbienceKind[]) {
+    if (state.ambience[kind].playing) stopTrack(`ambience:${kind}`);
+  }
+  if (state.birds.playing) stopTrack('birds');
+  if (state.stutterGate.enabled) stopStutterGate();
+}
 
 export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   masterVolume: 1,
@@ -473,21 +519,66 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       const last = await getLastSoundscapeState();
       if (!last) return;
 
+      stopCurrentPlayback(get());
+
+      const masterVolume = clampVolume(last.masterVolume, 1);
+      const beatHz = finiteNumber(last.beatHz, 10);
+      const carrier = finiteNumber(last.carrier, 200);
+      const volume = clampVolume(last.volume);
+
+      setMasterGain(masterVolume);
+
+      const playing = last.playing ? startBinaural(beatHz, carrier, volume) : false;
+
+      const extraBinaural = normalizeLayerRecord(
+        WAVE_PRESETS.map((p) => p.key),
+        last.extraBinaural,
+      );
+      for (const preset of WAVE_PRESETS) {
+        const layer = extraBinaural[preset.key];
+        if (layer.playing) {
+          layer.playing = startBinauralLayer(`binaural:${preset.key}`, preset.hz, carrier, layer.volume);
+        }
+      }
+
+      const noise = normalizeLayerRecord(
+        NOISE_COLORS.map((n) => n.key),
+        last.noise,
+      ) as SoundscapeState['noise'];
+      for (const n of NOISE_COLORS) {
+        const layer = noise[n.key];
+        if (layer.playing) layer.playing = startNoiseTrack(`noise:${n.key}`, n.key, layer.volume);
+      }
+
+      const ambience = normalizeLayerRecord(
+        AMBIENCE_SOURCES.map((s) => s.kind),
+        last.ambience,
+      ) as SoundscapeState['ambience'];
+      for (const source of AMBIENCE_SOURCES) {
+        const layer = ambience[source.kind];
+        if (layer.playing) void startAmbienceTrack(`ambience:${source.kind}`, source.kind, layer.volume);
+      }
+
+      const birds = normalizeBirds(last.birds);
+      if (birds.playing) birds.playing = startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
+
+      const stutterGate = normalizeStutterGate(last.stutterGate);
+      if (stutterGate.enabled) stutterGate.enabled = startStutterGate(stutterGate.bpm);
+
       set({
-        masterVolume: last.masterVolume,
-        beatHz: last.beatHz,
-        carrier: last.carrier,
-        volume: last.volume,
-        playing: false,
-        extraBinaural: withPlayingReset(last.extraBinaural),
-        noise: withPlayingReset(last.noise) as SoundscapeState['noise'],
-        ambience: withPlayingReset(last.ambience) as SoundscapeState['ambience'],
-        birds: { ...last.birds, playing: false },
-        stutterGate: { ...last.stutterGate, enabled: false },
+        masterVolume,
+        beatHz,
+        carrier,
+        volume,
+        playing,
+        extraBinaural,
+        noise,
+        ambience,
+        birds,
+        stutterGate,
         loadedPresetId: last.loadedPresetId,
         loadedPresetName: last.loadedPresetName,
       });
-      setMasterGain(last.masterVolume);
     } catch (error) {
       console.warn('Unable to restore last-used soundscape state:', error);
     }
@@ -510,6 +601,7 @@ useSoundscapeStore.subscribe(() => {
       beatHz: state.beatHz,
       carrier: state.carrier,
       volume: state.volume,
+      playing: state.playing,
       extraBinaural: state.extraBinaural,
       noise: state.noise,
       ambience: state.ambience,

@@ -479,13 +479,17 @@ export async function deleteSoundscapePresetFromBackend(
 // soundscape tab restores what the user had rather than resetting to defaults.
 
 const LAST_SOUNDSCAPE_STATE_KEY = "singleton";
+const LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION = 1;
+const LAST_SOUNDSCAPE_STATE_STORAGE_KEY = `comrev:soundscape:last-state:v${LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION}`;
 
 export interface LastSoundscapeState {
   id: typeof LAST_SOUNDSCAPE_STATE_KEY;
+  schemaVersion: typeof LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION;
   masterVolume: number;
   beatHz: number;
   carrier: number;
   volume: number;
+  playing: boolean;
   extraBinaural: Record<string, SoundscapeLayerState>;
   noise: Record<string, SoundscapeLayerState>;
   ambience: Record<string, SoundscapeLayerState>;
@@ -496,24 +500,99 @@ export interface LastSoundscapeState {
   updatedAt: string;
 }
 
+function getLocalStorage(): Storage | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const storage = window.localStorage;
+    if (!storage) return null;
+    const key = "__comrev_storage_probe__";
+    storage.setItem(key, "1");
+    storage.removeItem(key);
+    return storage;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<LastSoundscapeState>;
+  return {
+    id: LAST_SOUNDSCAPE_STATE_KEY,
+    schemaVersion: LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION,
+    masterVolume: typeof record.masterVolume === "number" ? record.masterVolume : 1,
+    beatHz: typeof record.beatHz === "number" ? record.beatHz : 10,
+    carrier: typeof record.carrier === "number" ? record.carrier : 200,
+    volume: typeof record.volume === "number" ? record.volume : 0.35,
+    playing: typeof record.playing === "boolean" ? record.playing : false,
+    extraBinaural: record.extraBinaural ?? {},
+    noise: record.noise ?? {},
+    ambience: record.ambience ?? {},
+    birds: record.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 },
+    stutterGate: record.stutterGate ?? { enabled: false, bpm: 120 },
+    loadedPresetId: record.loadedPresetId ?? null,
+    loadedPresetName: record.loadedPresetName ?? null,
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
+  };
+}
+
 export async function saveLastSoundscapeState(
-  state: Omit<LastSoundscapeState, "id" | "updatedAt">,
+  state: Omit<LastSoundscapeState, "id" | "schemaVersion" | "updatedAt">,
 ): Promise<void> {
   const record: LastSoundscapeState = {
     id: LAST_SOUNDSCAPE_STATE_KEY,
+    schemaVersion: LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION,
     ...state,
     updatedAt: new Date().toISOString(),
   };
+
+  const storage = getLocalStorage();
+  if (storage) {
+    try {
+      storage.setItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY, JSON.stringify(record));
+      return;
+    } catch (error) {
+      console.warn("Unable to persist last-used soundscape state to localStorage:", error);
+    }
+  }
+
   await withStore(STORE_LAST_SOUNDSCAPE_STATE, "readwrite", (store) => store.put(record));
 }
 
 export async function getLastSoundscapeState(): Promise<LastSoundscapeState | null> {
-  const record = await withStore<LastSoundscapeState | undefined>(
-    STORE_LAST_SOUNDSCAPE_STATE,
-    "readonly",
-    (store) => store.get(LAST_SOUNDSCAPE_STATE_KEY),
-  );
-  return record ?? null;
+  const storage = getLocalStorage();
+  if (storage) {
+    const raw = storage.getItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY);
+    if (raw) {
+      try {
+        const parsed = normalizeLastSoundscapeState(JSON.parse(raw));
+        if (parsed) return parsed;
+      } catch (error) {
+        console.warn("Unable to parse last-used soundscape state from localStorage:", error);
+        storage.removeItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY);
+      }
+    }
+  }
+
+  try {
+    const record = await withStore<LastSoundscapeState | undefined>(
+      STORE_LAST_SOUNDSCAPE_STATE,
+      "readonly",
+      (store) => store.get(LAST_SOUNDSCAPE_STATE_KEY),
+    );
+    const normalized = normalizeLastSoundscapeState(record);
+    if (normalized && storage) {
+      try {
+        storage.setItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY, JSON.stringify(normalized));
+      } catch (error) {
+        console.warn("Unable to migrate last-used soundscape state to localStorage:", error);
+      }
+    }
+    return normalized;
+  } catch (error) {
+    console.warn("Unable to load last-used soundscape state from IndexedDB:", error);
+    return null;
+  }
 }
 
 export async function saveSoundscapePresetOfflineFirst(
