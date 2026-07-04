@@ -108,9 +108,46 @@ function openDb(): Promise<IDBDatabase> {
 
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
 
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+    // A stale connection from another tab (opened before this app instance,
+    // holding an older DB_VERSION with no onversionchange handler of its own)
+    // can block this open request indefinitely — IndexedDB never times that
+    // out on its own. Left unhandled, every read/write silently hangs forever
+    // with no error, which looks exactly like settings failing to persist.
+    // Fail loudly instead so callers' catch blocks can log it.
+    const blockTimeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(
+        new Error(
+          "IndexedDB open timed out — likely blocked by another open tab/window of this app. Close other tabs of this app and retry.",
+        ),
+      );
+    }, 2000);
+
+    request.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(blockTimeout);
+      reject(request.error);
+    };
+    request.onsuccess = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(blockTimeout);
+      const db = request.result;
+      // If another tab/window later needs a higher DB_VERSION, release this
+      // connection instead of silently blocking that upgrade forever — openDb()
+      // just reopens cleanly next time it's called.
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    request.onblocked = () => {
+      console.warn(
+        "IndexedDB upgrade blocked by another open tab/window of this app; will time out shortly if it doesn't close.",
+      );
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_CONFIGS)) {

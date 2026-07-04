@@ -498,9 +498,12 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 // soundscape tab restores it via hydrateFromLastUsed above, instead of
 // resetting every layer to its hard-coded default.
 let lastStateSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let flushLastStateSave: (() => void) | null = null;
+
 useSoundscapeStore.subscribe(() => {
   if (lastStateSaveTimer) clearTimeout(lastStateSaveTimer);
-  lastStateSaveTimer = setTimeout(() => {
+
+  flushLastStateSave = () => {
     const state = useSoundscapeStore.getState();
     saveLastSoundscapeState({
       masterVolume: state.masterVolume,
@@ -515,5 +518,21 @@ useSoundscapeStore.subscribe(() => {
       loadedPresetId: state.loadedPresetId,
       loadedPresetName: state.loadedPresetName,
     }).catch((error) => console.warn('Failed to persist last-used soundscape state:', error));
-  }, 600);
+    flushLastStateSave = null;
+  };
+  lastStateSaveTimer = setTimeout(flushLastStateSave, 600);
 });
+
+// A quick reload/tab-close right after a change shouldn't lose it — flush the
+// pending debounced save immediately once the page starts going away, instead
+// of waiting out the rest of the 600ms window.
+if (typeof window !== 'undefined') {
+  const flushNow = () => {
+    if (lastStateSaveTimer) clearTimeout(lastStateSaveTimer);
+    flushLastStateSave?.();
+  };
+  window.addEventListener('pagehide', flushNow);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushNow();
+  });
+}
