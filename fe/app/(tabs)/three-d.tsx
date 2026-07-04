@@ -75,6 +75,22 @@ import Animated, {
 
 import { API_BASE } from '@/utils/api-config';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
+
+function isSpacebarShortcut(event: KeyboardEvent): boolean {
+  return event.code === "Space" || event.key === " " || event.key === "Spacebar";
+}
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(
+    target.closest(
+      'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
+    ),
+  );
+}
+
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   const a = s * Math.min(l, 1 - l);
   const f = (n: number) => {
@@ -5612,6 +5628,24 @@ export function ThreeDTextScreen({
   const [isPaused, setIsPaused] = useState(false);
   const pauseIconOpacity = useSharedValue(0);
   const pauseIconStyle = useAnimatedStyle(() => ({ opacity: pauseIconOpacity.value }));
+  const animatePauseToggle = React.useCallback((nextPaused: boolean) => {
+    if (nextPaused) {
+      pauseIconOpacity.value = withTiming(1, { duration: 200 });
+    } else {
+      pauseIconOpacity.value = withSequence(
+        withTiming(1, { duration: 200 }),
+        withTiming(1, { duration: 600 }),
+        withTiming(0, { duration: 200 }),
+      );
+    }
+  }, [pauseIconOpacity]);
+  const toggleSequencePause = React.useCallback(() => {
+    setIsPaused((paused) => {
+      const nextPaused = !paused;
+      animatePauseToggle(nextPaused);
+      return nextPaused;
+    });
+  }, [animatePauseToggle]);
   const savedControlsHeight = React.useRef(initialControlsHeight);
 
   const toggleFullscreen = React.useCallback(() => {
@@ -5825,6 +5859,29 @@ export function ThreeDTextScreen({
     sequenceMode,
     sequencePages.length,
   ]);
+
+  useEffect(() => {
+    if (!sequenceMode || typeof window === "undefined" || !window.addEventListener) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !isSpacebarShortcut(event) ||
+        isEditableShortcutTarget(event.target)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (!slideJumpMode) {
+        toggleSequencePause();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sequenceMode, slideJumpMode, toggleSequencePause]);
 
   const handleSequenceMeshReady = React.useCallback(() => {
     threeDTextRef.current?.fitCamera();
@@ -6674,21 +6731,7 @@ export function ThreeDTextScreen({
           {sequenceMode && (
             <Pressable
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 5 }}
-              onPress={() => {
-                const nextPaused = !isPaused;
-                setIsPaused(nextPaused);
-                if (nextPaused) {
-                  // Pausing: fade in and stay
-                  pauseIconOpacity.value = withTiming(1, { duration: 200 });
-                } else {
-                  // Resuming: flash ▶ then fade out
-                  pauseIconOpacity.value = withSequence(
-                    withTiming(1, { duration: 200 }),
-                    withTiming(1, { duration: 600 }),
-                    withTiming(0, { duration: 200 }),
-                  );
-                }
-              }}
+              onPress={toggleSequencePause}
             />
           )}
           {/* Pause/play icon flash — pointerEvents in style to avoid deprecation warning */}
