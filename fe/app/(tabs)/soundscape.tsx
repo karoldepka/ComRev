@@ -398,14 +398,16 @@ export default function SoundscapeScreen() {
   const saveCurrentAsPreset = useSoundscapeStore((s) => s.saveCurrentAsPreset);
   const loadPresetById = useSoundscapeStore((s) => s.loadPresetById);
   const removePreset = useSoundscapeStore((s) => s.removePreset);
+  const hydrateFromLastUsed = useSoundscapeStore((s) => s.hydrateFromLastUsed);
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [draftPresetName, setDraftPresetName] = useState('');
   const [presetStatus, setPresetStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    hydrateFromLastUsed();
     loadPresetList();
-  }, [loadPresetList]);
+  }, [hydrateFromLastUsed, loadPresetList]);
 
   const defaultPresetName = () => {
     const base = 'My preset';

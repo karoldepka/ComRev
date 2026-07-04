@@ -87,12 +87,13 @@ export interface ThreeDConfig {
 }
 
 const DB_NAME = "ComRevConfigDB";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_CONFIGS = "configs";
 const STORE_PENDING = "pendingSync";
 const STORE_PRESETS = "presets";
 const STORE_TRIED_EFFECTS = "triedEffects";
 const STORE_SOUNDSCAPE_PRESETS = "soundscapePresets";
+const STORE_LAST_SOUNDSCAPE_STATE = "lastSoundscapeState";
 
 function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== "undefined" && indexedDB !== null;
@@ -127,6 +128,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_SOUNDSCAPE_PRESETS)) {
         db.createObjectStore(STORE_SOUNDSCAPE_PRESETS, { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains(STORE_LAST_SOUNDSCAPE_STATE)) {
+        db.createObjectStore(STORE_LAST_SOUNDSCAPE_STATE, { keyPath: "id" });
+      }
     };
   });
 }
@@ -140,12 +144,12 @@ export interface PresetRecord {
   thumbnail?: string;
 }
 
-interface SoundscapeLayerState {
+export interface SoundscapeLayerState {
   playing: boolean;
   volume: number;
 }
 
-interface SoundscapeBirdsState extends SoundscapeLayerState {
+export interface SoundscapeBirdsState extends SoundscapeLayerState {
   pitch: number;
   speed: number;
 }
@@ -430,6 +434,49 @@ export async function deleteSoundscapePresetFromBackend(
     const text = await response.text();
     throw new Error(`Delete soundscape preset failed: ${response.status} ${text}`);
   }
+}
+
+// ── Last-used soundscape mixer state ─────────────────────────────────────────
+// Distinct from named presets above: this is the working state of the mixer
+// (volumes, layer params, which preset if any is loaded) so reloading the
+// soundscape tab restores what the user had rather than resetting to defaults.
+
+const LAST_SOUNDSCAPE_STATE_KEY = "singleton";
+
+export interface LastSoundscapeState {
+  id: typeof LAST_SOUNDSCAPE_STATE_KEY;
+  masterVolume: number;
+  beatHz: number;
+  carrier: number;
+  volume: number;
+  extraBinaural: Record<string, SoundscapeLayerState>;
+  noise: Record<string, SoundscapeLayerState>;
+  ambience: Record<string, SoundscapeLayerState>;
+  birds: SoundscapeBirdsState;
+  stutterGate: { enabled: boolean; bpm: number };
+  loadedPresetId: string | null;
+  loadedPresetName: string | null;
+  updatedAt: string;
+}
+
+export async function saveLastSoundscapeState(
+  state: Omit<LastSoundscapeState, "id" | "updatedAt">,
+): Promise<void> {
+  const record: LastSoundscapeState = {
+    id: LAST_SOUNDSCAPE_STATE_KEY,
+    ...state,
+    updatedAt: new Date().toISOString(),
+  };
+  await withStore(STORE_LAST_SOUNDSCAPE_STATE, "readwrite", (store) => store.put(record));
+}
+
+export async function getLastSoundscapeState(): Promise<LastSoundscapeState | null> {
+  const record = await withStore<LastSoundscapeState | undefined>(
+    STORE_LAST_SOUNDSCAPE_STATE,
+    "readonly",
+    (store) => store.get(LAST_SOUNDSCAPE_STATE_KEY),
+  );
+  return record ?? null;
 }
 
 export async function saveSoundscapePresetOfflineFirst(
