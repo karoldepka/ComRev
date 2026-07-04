@@ -843,8 +843,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 4,
     marginBottom: 8,
+    maxWidth: 480,
     paddingHorizontal: 14,
     paddingVertical: 4,
+    width: '100%',
   },
   divider: { borderTopWidth: StyleSheet.hairlineWidth },
 
