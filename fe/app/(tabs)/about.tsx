@@ -15,6 +15,7 @@ interface BuildInfo {
   date: string;
   author: string;
   branch: string;
+  buildTimestamp?: string;
 }
 
 export default function AboutScreen() {
@@ -22,6 +23,7 @@ export default function AboutScreen() {
   const c = Colors[colorScheme ?? 'light'];
   const build: BuildInfo | undefined = Constants.expoConfig?.extra?.buildInfo;
   const version = Constants.expoConfig?.version ?? '—';
+  const buildTimestamp = formatTimestamp(build?.buildTimestamp);
 
   return (
     <ParallaxScrollView
@@ -46,12 +48,14 @@ export default function AboutScreen() {
       </View>
 
       <View style={[styles.card, { borderColor: c.tint + '44' }]}>
-        <InfoRow label="Version" value={version} c={c} />
+        <Text style={[styles.cardTitle, { color: c.text }]}>About</Text>
+        <InfoRow label="App version" value={version} c={c} />
+        <InfoRow label="Last commit" value={build?.hash ?? '—'} c={c} mono />
+        <InfoRow label="Build timestamp" value={buildTimestamp} c={c} mono />
         {build && (
           <>
             <InfoRow label="Branch" value={build.branch} c={c} mono />
-            <InfoRow label="Commit" value={build.hash} c={c} mono />
-            <InfoRow label="Date"   value={build.date.slice(0, 16).replace('T', '  ')} c={c} mono />
+            <InfoRow label="Commit date" value={formatTimestamp(build.date)} c={c} mono />
             <InfoRow label="Author" value={build.author} c={c} />
             <View style={[styles.divider, { borderColor: c.tint + '33' }]} />
             <Text style={[styles.commitMsg, { color: c.text }]}>{build.message}</Text>
@@ -69,6 +73,22 @@ export default function AboutScreen() {
   );
 }
 
+function formatTimestamp(value?: string): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 19).replace('T', '  ');
+  }
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 function InfoRow({ label, value, c, mono }: { label: string; value: string; c: any; mono?: boolean }) {
   return (
     <View style={styles.row}>
@@ -84,17 +104,18 @@ const styles = StyleSheet.create({
   headerIcon: { position: 'absolute', bottom: -30, right: 20 },
   titleRow:   { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   titleTextCol: { flex: 1 },
-  appName:    { fontSize: 26, fontWeight: '700', letterSpacing: 0.3 },
+  appName:    { fontSize: 26, fontWeight: '700', letterSpacing: 0 },
   tagline:    { fontSize: 13, marginTop: -4, marginBottom: 8 },
   card: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 8,
     padding: 14,
     gap: 10,
   },
-  row:       { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  rowLabel:  { fontSize: 13, flex: 1 },
-  rowValue:  { fontSize: 13, flex: 2, textAlign: 'right' },
+  cardTitle: { fontSize: 18, fontWeight: '700', letterSpacing: 0 },
+  row:       { flexDirection: 'row', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' },
+  rowLabel:  { fontSize: 13, flexShrink: 0, maxWidth: '42%' },
+  rowValue:  { fontSize: 13, flex: 1, flexShrink: 1, textAlign: 'right' },
   divider:   { borderTopWidth: StyleSheet.hairlineWidth, marginVertical: 2 },
   commitMsg: { fontSize: 13, lineHeight: 18, fontStyle: 'italic' },
   ghButton:  {

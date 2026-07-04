@@ -7,6 +7,7 @@ const { writeFileSync } = require('fs');
 const { resolve } = require('path');
 
 const root = resolve(__dirname, '..');
+const buildTimestamp = new Date().toISOString();
 
 function run(cmd) {
   return execSync(cmd, { encoding: 'utf8', cwd: root }).trim();
@@ -24,7 +25,7 @@ try {
   try {
     if (run('git status --porcelain')) dirty = '+uncommitted';
   } catch { /* ignore */ }
-  info = { hash: hash + dirty, fullHash, message, date, author, branch };
+  info = { hash: hash + dirty, fullHash, message, date, author, branch, buildTimestamp };
 } catch (err) {
   console.error('generate-build-info: git unavailable:', err.message);
   process.exit(1);
