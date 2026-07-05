@@ -481,6 +481,7 @@ export async function deleteSoundscapePresetFromBackend(
 const LAST_SOUNDSCAPE_STATE_KEY = "singleton";
 const LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION = 1;
 const LAST_SOUNDSCAPE_STATE_STORAGE_KEY = `comrev:soundscape:last-state:v${LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION}`;
+const MAX_RECENT_SOUNDSCAPE_LAYERS = 16;
 
 export interface LastSoundscapeState {
   id: typeof LAST_SOUNDSCAPE_STATE_KEY;
@@ -495,6 +496,7 @@ export interface LastSoundscapeState {
   ambience: Record<string, SoundscapeLayerState>;
   birds: SoundscapeBirdsState;
   stutterGate: { enabled: boolean; bpm: number };
+  recentLayerKeys: string[];
   loadedPresetId: string | null;
   loadedPresetName: string | null;
   updatedAt: string;
@@ -517,6 +519,11 @@ function getLocalStorage(): Storage | null {
 function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Partial<LastSoundscapeState>;
+  const recentLayerKeys = Array.isArray(record.recentLayerKeys)
+    ? record.recentLayerKeys
+        .filter((key): key is string => typeof key === "string")
+        .slice(0, MAX_RECENT_SOUNDSCAPE_LAYERS)
+    : [];
   return {
     id: LAST_SOUNDSCAPE_STATE_KEY,
     schemaVersion: LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION,
@@ -530,6 +537,7 @@ function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | nul
     ambience: record.ambience ?? {},
     birds: record.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 },
     stutterGate: record.stutterGate ?? { enabled: false, bpm: 120 },
+    recentLayerKeys,
     loadedPresetId: record.loadedPresetId ?? null,
     loadedPresetName: record.loadedPresetName ?? null,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),

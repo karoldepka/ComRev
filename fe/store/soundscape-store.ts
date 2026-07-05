@@ -82,6 +82,43 @@ export interface StutterGateState {
   bpm: number;
 }
 
+const MAX_RECENT_LAYERS = 16;
+const CUSTOM_BINAURAL_LAYER_KEY = 'binaural:custom';
+
+function promoteRecentLayerKey(keys: string[], key: string): string[] {
+  return [key, ...keys.filter((existing) => existing !== key)].slice(0, MAX_RECENT_LAYERS);
+}
+
+function playingLayerKeys(state: {
+  playing: boolean;
+  extraBinaural: Record<string, LayerState>;
+  noise: Record<NoiseColor, LayerState>;
+  ambience: Record<AmbienceKind, LayerState>;
+  birds: BirdsState;
+}): string[] {
+  const keys: string[] = [];
+  if (state.playing) keys.push(CUSTOM_BINAURAL_LAYER_KEY);
+  for (const preset of WAVE_PRESETS) {
+    if (state.extraBinaural[preset.key]?.playing) keys.push(`eb:${preset.key}`);
+  }
+  for (const noise of NOISE_COLORS) {
+    if (state.noise[noise.key]?.playing) keys.push(`noise:${noise.key}`);
+  }
+  if (state.birds.playing) keys.push('birds');
+  for (const source of AMBIENCE_SOURCES) {
+    if (state.ambience[source.kind]?.playing) keys.push(`ambience:${source.kind}`);
+  }
+  return keys;
+}
+
+function mergeRecentLayerKeys(recentLayerKeys: string[], activeLayerKeys: string[]): string[] {
+  const merged: string[] = [];
+  for (const key of [...recentLayerKeys, ...activeLayerKeys]) {
+    if (!merged.includes(key)) merged.push(key);
+  }
+  return merged.slice(0, MAX_RECENT_LAYERS);
+}
+
 interface SoundscapeState {
   // --- Master output volume (scales the whole mix uniformly) ---
   masterVolume: number;
@@ -140,6 +177,7 @@ interface SoundscapeState {
   removePreset: (id: string) => Promise<void>;
 
   // --- Restore the mixer to how the user last left it, across reloads ---
+  recentLayerKeys: string[];
   hydrateFromLastUsed: () => Promise<void>;
 }
 
@@ -201,6 +239,7 @@ function stopCurrentPlayback(state: SoundscapeState): void {
 
 export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   masterVolume: 1,
+  recentLayerKeys: [],
 
   setMasterVolume: (masterVolume) => {
     set({ masterVolume });
@@ -215,12 +254,13 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
   toggle: () => {
     const { playing, beatHz, carrier, volume } = get();
+    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, CUSTOM_BINAURAL_LAYER_KEY);
     if (playing) {
       stopBinaural();
-      set({ playing: false });
+      set({ playing: false, recentLayerKeys });
     } else {
       const ok = startBinaural(beatHz, carrier, volume);
-      if (ok) set({ playing: true });
+      if (ok) set({ playing: true, recentLayerKeys });
     }
   },
 
@@ -269,12 +309,14 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     const preset = WAVE_PRESETS.find((p) => p.key === key);
     if (!layer || !preset) return;
     const id = `binaural:${key}`;
+    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `eb:${key}`);
     if (layer.playing) {
       stopTrack(id);
+      set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: false } }, recentLayerKeys });
     } else {
-      startBinauralLayer(id, preset.hz, get().carrier, layer.volume);
+      const ok = startBinauralLayer(id, preset.hz, get().carrier, layer.volume);
+      if (ok) set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: true } }, recentLayerKeys });
     }
-    set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: !layer.playing } } });
   },
 
   setExtraBinauralVolume: (key, volume) => {
@@ -293,12 +335,14 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   toggleNoise: (color) => {
     const layer = get().noise[color];
     const id = `noise:${color}`;
+    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `noise:${color}`);
     if (layer.playing) {
       stopTrack(id);
+      set({ noise: { ...get().noise, [color]: { ...layer, playing: false } }, recentLayerKeys });
     } else {
-      startNoiseTrack(id, color, layer.volume);
+      const ok = startNoiseTrack(id, color, layer.volume);
+      if (ok) set({ noise: { ...get().noise, [color]: { ...layer, playing: true } }, recentLayerKeys });
     }
-    set({ noise: { ...get().noise, [color]: { ...layer, playing: !layer.playing } } });
   },
 
   setNoiseVolume: (color, volume) => {
@@ -315,6 +359,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   toggleAmbience: (kind) => {
     const layer = get().ambience[kind];
     const id = `ambience:${kind}`;
+    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `ambience:${kind}`);
     if (layer.playing) {
       stopTrack(id);
     } else {
@@ -323,7 +368,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       // guard inside startAmbienceTrack.
       void startAmbienceTrack(id, kind, layer.volume);
     }
-    set({ ambience: { ...get().ambience, [kind]: { ...layer, playing: !layer.playing } } });
+    set({ ambience: { ...get().ambience, [kind]: { ...layer, playing: !layer.playing } }, recentLayerKeys });
   },
 
   setAmbienceVolume: (kind, volume) => {
@@ -336,12 +381,14 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
   toggleBirds: () => {
     const layer = get().birds;
+    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, 'birds');
     if (layer.playing) {
       stopTrack('birds');
+      set({ birds: { ...layer, playing: false }, recentLayerKeys });
     } else {
-      startBirdsTrack('birds', layer.volume, layer.pitch, layer.speed);
+      const ok = startBirdsTrack('birds', layer.volume, layer.pitch, layer.speed);
+      if (ok) set({ birds: { ...layer, playing: true }, recentLayerKeys });
     }
-    set({ birds: { ...layer, playing: !layer.playing } });
   },
 
   setBirdsVolume: (volume) => {
@@ -478,6 +525,10 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
     const stutterGate = preset.stutterGate ?? { enabled: false, bpm: 120 };
     if (stutterGate.enabled) startStutterGate(stutterGate.bpm);
+    const recentLayerKeys = mergeRecentLayerKeys(
+      state.recentLayerKeys,
+      playingLayerKeys({ playing, extraBinaural, noise, ambience, birds }),
+    );
 
     set({
       beatHz: preset.beatHz,
@@ -489,6 +540,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       ambience,
       birds,
       stutterGate,
+      recentLayerKeys,
       loadedPresetId: preset.id,
       loadedPresetName: preset.name,
     });
@@ -564,6 +616,10 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
       const stutterGate = normalizeStutterGate(last.stutterGate);
       if (stutterGate.enabled) stutterGate.enabled = startStutterGate(stutterGate.bpm);
+      const recentLayerKeys = mergeRecentLayerKeys(
+        last.recentLayerKeys,
+        playingLayerKeys({ playing, extraBinaural, noise, ambience, birds }),
+      );
 
       set({
         masterVolume,
@@ -576,6 +632,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
         ambience,
         birds,
         stutterGate,
+        recentLayerKeys,
         loadedPresetId: last.loadedPresetId,
         loadedPresetName: last.loadedPresetName,
       });
@@ -607,6 +664,7 @@ useSoundscapeStore.subscribe(() => {
       ambience: state.ambience,
       birds: state.birds,
       stutterGate: state.stutterGate,
+      recentLayerKeys: state.recentLayerKeys,
       loadedPresetId: state.loadedPresetId,
       loadedPresetName: state.loadedPresetName,
     }).catch((error) => console.warn('Failed to persist last-used soundscape state:', error));

@@ -403,6 +403,7 @@ export default function SoundscapeScreen() {
 
   const presets = useSoundscapeStore((s) => s.presets);
   const loadedPresetId = useSoundscapeStore((s) => s.loadedPresetId);
+  const recentLayerKeys = useSoundscapeStore((s) => s.recentLayerKeys);
   const loadPresetList = useSoundscapeStore((s) => s.loadPresetList);
   const saveCurrentAsPreset = useSoundscapeStore((s) => s.saveCurrentAsPreset);
   const loadPresetById = useSoundscapeStore((s) => s.loadPresetById);
@@ -455,75 +456,85 @@ export default function SoundscapeScreen() {
 
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-  // Collect all currently playing layers for the "Now Playing" summary at top.
-  type ActiveLayer = {
+  // Collect recently used layers for the top summary. Paused entries remain here
+  // so a just-paused item can be resumed without hunting through the long page.
+  type RecentLayer = {
     key: string;
     label: string;
     sub?: string;
+    playing: boolean;
     volume: number;
     onToggle: () => void;
     onVolumeChange: (v: number) => void;
   };
-  const activeLayers: ActiveLayer[] = [];
-  if (playing) {
-    activeLayers.push({
-      key: 'binaural:custom',
-      label: 'Custom Binaural',
-      sub: `${beatHz.toFixed(1)} Hz beat · ${carrier} Hz carrier`,
-      volume,
-      onToggle: toggle,
-      onVolumeChange: setVolume,
-    });
-  }
+  const layerByKey = new Map<string, RecentLayer>();
+  const activeLayerKeys: string[] = [];
+  const registerLayer = (layer: RecentLayer) => {
+    layerByKey.set(layer.key, layer);
+    if (layer.playing) activeLayerKeys.push(layer.key);
+  };
+  registerLayer({
+    key: 'binaural:custom',
+    label: 'Custom Binaural',
+    sub: `${beatHz.toFixed(1)} Hz beat · ${carrier} Hz carrier`,
+    playing,
+    volume,
+    onToggle: toggle,
+    onVolumeChange: setVolume,
+  });
   for (const p of WAVE_PRESETS) {
-    const layer = extraBinaural[p.key];
-    if (layer?.playing) {
-      activeLayers.push({
-        key: `eb:${p.key}`,
-        label: p.label,
-        sub: p.sub,
-        volume: layer.volume,
-        onToggle: () => toggleExtraBinaural(p.key),
-        onVolumeChange: (v) => setExtraBinauralVolume(p.key, v),
-      });
-    }
+    const layer = extraBinaural[p.key] ?? { playing: false, volume: 0.35 };
+    registerLayer({
+      key: `eb:${p.key}`,
+      label: p.label,
+      sub: p.sub,
+      playing: layer.playing,
+      volume: layer.volume,
+      onToggle: () => toggleExtraBinaural(p.key),
+      onVolumeChange: (v) => setExtraBinauralVolume(p.key, v),
+    });
   }
   for (const n of NOISE_COLORS) {
-    const layer = noise[n.key];
-    if (layer?.playing) {
-      activeLayers.push({
-        key: `noise:${n.key}`,
-        label: n.label,
-        volume: layer.volume,
-        onToggle: () => toggleNoise(n.key),
-        onVolumeChange: (v) => setNoiseVolume(n.key, v),
-      });
-    }
-  }
-  if (birds.playing) {
-    activeLayers.push({
-      key: 'birds',
-      label: 'Birds',
-      sub: 'procedural chirps',
-      volume: birds.volume,
-      onToggle: toggleBirds,
-      onVolumeChange: setBirdsVolume,
+    const layer = noise[n.key] ?? { playing: false, volume: 0.35 };
+    registerLayer({
+      key: `noise:${n.key}`,
+      label: n.label,
+      playing: layer.playing,
+      volume: layer.volume,
+      onToggle: () => toggleNoise(n.key),
+      onVolumeChange: (v) => setNoiseVolume(n.key, v),
     });
   }
+  registerLayer({
+    key: 'birds',
+    label: 'Birds',
+    sub: 'procedural chirps',
+    playing: birds.playing,
+    volume: birds.volume,
+    onToggle: toggleBirds,
+    onVolumeChange: setBirdsVolume,
+  });
   for (const a of AMBIENCE_KINDS) {
-    const layer = ambience[a.key];
-    if (layer?.playing) {
-      activeLayers.push({
-        key: `ambience:${a.key}`,
-        label: a.label,
-        volume: layer.volume,
-        onToggle: () => toggleAmbience(a.key),
-        onVolumeChange: (v) => setAmbienceVolume(a.key, v),
-      });
-    }
+    const layer = ambience[a.key] ?? { playing: false, volume: 0.35 };
+    registerLayer({
+      key: `ambience:${a.key}`,
+      label: a.label,
+      playing: layer.playing,
+      volume: layer.volume,
+      onToggle: () => toggleAmbience(a.key),
+      onVolumeChange: (v) => setAmbienceVolume(a.key, v),
+    });
   }
 
-  const anyPlaying = activeLayers.length > 0;
+  const visibleLayerKeys = Array.from(new Set([
+    ...recentLayerKeys,
+    ...activeLayerKeys.filter((key) => !recentLayerKeys.includes(key)),
+  ]));
+  const recentLayers = visibleLayerKeys
+    .map((key) => layerByKey.get(key))
+    .filter((layer): layer is RecentLayer => Boolean(layer));
+  const activeLayerCount = recentLayers.filter((layer) => layer.playing).length;
+  const anyPlaying = activeLayerCount > 0;
 
   useEffect(() => {
     if (!anyPlaying || ctxState !== 'suspended' || typeof window === 'undefined') return;
@@ -562,15 +573,30 @@ export default function SoundscapeScreen() {
       </View>
 
       {/* ---------------- Now Playing ---------------- */}
-      {activeLayers.length > 0 && (
+      {recentLayers.length > 0 && (
         <>
-          <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 8 }]}>NOW PLAYING · {activeLayers.length} active</Text>
+          <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 8 }]}>
+            MOST RECENTLY USED{activeLayerCount > 0 ? ` · ${activeLayerCount} active` : ''}
+          </Text>
           <View style={styles.nowPlayingGrid}>
-            {activeLayers.map((al) => (
-              // All entries in activeLayers are guaranteed to be playing, so the pause icon is always correct.
-              <View key={al.key} style={[styles.nowPlayingCard, { borderColor: c.tint, backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG }, cardWidth ? { width: cardWidth } : undefined]}>
+            {recentLayers.map((al) => (
+              <View
+                key={al.key}
+                style={[
+                  styles.nowPlayingCard,
+                  {
+                    borderColor: al.playing ? c.tint : (dark ? '#333' : '#e8e0d8'),
+                    backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG,
+                  },
+                  cardWidth ? { width: cardWidth } : undefined,
+                ]}
+              >
                 <Pressable onPress={al.onToggle} style={layerStyles.header}>
-                  <MaterialIcons name="pause-circle-filled" size={22} color={c.tint} />
+                  <MaterialIcons
+                    name={al.playing ? 'pause-circle-filled' : 'play-circle-outline'}
+                    size={22}
+                    color={al.playing ? c.tint : c.icon}
+                  />
                   <View style={layerStyles.headerText}>
                     <Text style={[layerStyles.title, { color: c.text }]}>{al.label}</Text>
                     {al.sub ? <Text style={[layerStyles.sub, { color: c.icon }]}>{al.sub}</Text> : null}
