@@ -80,6 +80,12 @@ function isSpacebarShortcut(event: KeyboardEvent): boolean {
   return event.code === "Space" || event.key === " " || event.key === "Spacebar";
 }
 
+function getSlideNavigationDirection(event: KeyboardEvent): -1 | 0 | 1 {
+  if (event.code === "ArrowLeft" || event.key === "ArrowLeft") return -1;
+  if (event.code === "ArrowRight" || event.key === "ArrowRight") return 1;
+  return 0;
+}
+
 function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
     return false;
@@ -5778,6 +5784,12 @@ export function ThreeDTextScreen({
   const [sequenceLineIndex, setSequenceLineIndex] = useState(0);
   const [slideJumpMode, setSlideJumpMode] = useState(false);
   const [slideJumpDraft, setSlideJumpDraft] = useState("");
+  const moveSequenceSlide = React.useCallback((direction: -1 | 1) => {
+    setSequenceLineIndex((index) => {
+      if (sequencePages.length <= 0) return index;
+      return (index + direction + sequencePages.length) % sequencePages.length;
+    });
+  }, [sequencePages.length]);
   const currentSequencePage =
     sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
   const currentSequencePageKey = sequenceMode
@@ -5863,25 +5875,29 @@ export function ThreeDTextScreen({
   useEffect(() => {
     if (!sequenceMode || typeof window === "undefined" || !window.addEventListener) return;
     const handleKeyDown = (event: KeyboardEvent) => {
+      const slideDirection = getSlideNavigationDirection(event);
       if (
         event.defaultPrevented ||
         event.repeat ||
         event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
-        !isSpacebarShortcut(event) ||
+        (!isSpacebarShortcut(event) && slideDirection === 0) ||
         isEditableShortcutTarget(event.target)
       ) {
         return;
       }
       event.preventDefault();
-      if (!slideJumpMode) {
+      if (slideJumpMode) return;
+      if (slideDirection !== 0) {
+        moveSequenceSlide(slideDirection);
+      } else {
         toggleSequencePause();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sequenceMode, slideJumpMode, toggleSequencePause]);
+  }, [moveSequenceSlide, sequenceMode, slideJumpMode, toggleSequencePause]);
 
   const handleSequenceMeshReady = React.useCallback(() => {
     threeDTextRef.current?.fitCamera();
