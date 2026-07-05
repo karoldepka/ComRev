@@ -77,6 +77,7 @@
 
   body {
     @apply flex flex-col bg-app-bg text-app-fg antialiased;
+    accent-color: var(--color-primary);
     line-height: 1.5;
   }
 
@@ -251,6 +252,7 @@
 
   .tree-table {
     @apply w-full table-fixed border-collapse;
+    accent-color: var(--color-primary);
   }
 
   .tree-table th,
@@ -270,6 +272,21 @@
 
   .tree-table tr:last-child td {
     @apply border-b-0;
+  }
+
+  .tree-table th input[type='checkbox'],
+  .tree-table td input[type='checkbox'] {
+    @apply h-4 w-4 flex-shrink-0;
+    margin-inline: 0.25rem 0.5rem;
+  }
+
+  .table-checkbox-cell {
+    @apply inline-flex min-h-6 min-w-6 items-center justify-center align-middle;
+  }
+
+  .table-checkbox-cell input[type='checkbox'] {
+    @apply m-0 h-4 w-4 flex-shrink-0;
+    pointer-events: none;
   }
 
   .row-num-th {
@@ -904,11 +921,11 @@
   }
 
   .item-picker-item {
-    @apply gap-1.5 pr-3.5 py-1;
+    @apply gap-2 px-3.5 py-1;
   }
 
   .item-picker-item input[type='checkbox'] {
-    @apply flex-shrink-0 cursor-pointer;
+    @apply h-4 w-4 flex-shrink-0 cursor-pointer;
   }
 
   .item-picker-label {

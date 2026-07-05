@@ -4,6 +4,9 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "dev": "./scripts/dev.sh",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "format:rust": "cargo fmt --manifest-path backend_rs/Cargo.toml && cargo fmt --manifest-path sync_core/Cargo.toml && cargo fmt --manifest-path star_diff_rs/Cargo.toml && cargo fmt --manifest-path structable_logger/Cargo.toml && cargo fmt --manifest-path tools/dman/Cargo.toml",
     "gen:api": "./scripts/gen-api.sh",
     "gen:gql": "pnpm --filter @comrev/graphql codegen",
     "web": "pnpm --filter web",
@@ -13,6 +16,7 @@
     "@supabase/supabase-js": "^2.106.1",
     "concurrently": "^9.0.0",
     "openapi-typescript": "^7.0.0",
+    "prettier": "^3.9.4",
     "supabase": "^2.101.0"
   }
 }

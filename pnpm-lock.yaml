@@ -17,6 +17,9 @@ importers:
       openapi-typescript:
         specifier: ^7.0.0
         version: 7.13.0(typescript@5.9.3)
+      prettier:
+        specifier: ^3.9.4
+        version: 3.9.4
       supabase:
         specifier: ^2.101.0
         version: 2.101.0

@@ -18,6 +18,25 @@ type Props = {
   hasComment?: boolean;
 };
 
+function BooleanCell({ value }: { value: boolean }) {
+  return (
+    <span className="table-checkbox-cell" title={value ? 'Checked' : 'Unchecked'}>
+      <input
+        type="checkbox"
+        checked={value}
+        readOnly
+        tabIndex={-1}
+        aria-label={value ? 'Checked' : 'Unchecked'}
+      />
+    </span>
+  );
+}
+
+function renderCellValue(value: unknown, formatNumericStrings?: boolean): React.ReactNode {
+  if (typeof value === 'boolean') return <BooleanCell value={value} />;
+  return formatCell(value, { formatNumericStrings });
+}
+
 export default function CellContent({ row, colId, sourcePath, types, formatNumericStrings, compiledExpr, hasNote, hasComment }: Props) {
   let content: React.ReactNode;
 
@@ -41,12 +60,12 @@ export default function CellContent({ row, colId, sourcePath, types, formatNumer
   } else if (compiledExpr) {
     try {
       const v = compiledExpr(row);
-      content = formatCell(v, { formatNumericStrings });
+      content = renderCellValue(v, formatNumericStrings);
     } catch {
       content = '#ERR';
     }
   } else {
-    content = formatCell(rowVal(row, colId, sourcePath), { formatNumericStrings });
+    content = renderCellValue(rowVal(row, colId, sourcePath), formatNumericStrings);
   }
 
   return (

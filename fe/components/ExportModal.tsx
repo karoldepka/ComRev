@@ -30,18 +30,78 @@ interface ExportFormat {
 
 const EXPORT_FORMATS: ExportFormat[] = [
   // Image
-  { id: 'png',       label: 'PNG Screenshot',    description: 'Current view as PNG image',       isPremium: false, category: 'image' },
-  { id: 'svg',       label: 'SVG Vector',         description: 'Scalable vector graphics',        isPremium: true,  category: 'image' },
+  {
+    id: 'png',
+    label: 'PNG Screenshot',
+    description: 'Current view as PNG image',
+    isPremium: false,
+    category: 'image',
+  },
+  {
+    id: 'svg',
+    label: 'SVG Vector',
+    description: 'Scalable vector graphics',
+    isPremium: true,
+    category: 'image',
+  },
   // Merchandise
-  { id: 'mousepad',  label: 'Mouse Pad',          description: 'Print-ready 220×180mm artwork',   isPremium: true,  category: 'merchandise' },
-  { id: 'towel',     label: 'Towel',              description: 'Print-ready towel artwork',        isPremium: true,  category: 'merchandise' },
-  { id: 'shirt',     label: 'T-Shirt',            description: 'Print-ready shirt front design',  isPremium: true,  category: 'merchandise' },
-  { id: 'hoodie',    label: 'Hoodie',             description: 'Print-ready hoodie design',        isPremium: true,  category: 'merchandise' },
+  {
+    id: 'mousepad',
+    label: 'Mouse Pad',
+    description: 'Print-ready 220×180mm artwork',
+    isPremium: true,
+    category: 'merchandise',
+  },
+  {
+    id: 'towel',
+    label: 'Towel',
+    description: 'Print-ready towel artwork',
+    isPremium: true,
+    category: 'merchandise',
+  },
+  {
+    id: 'shirt',
+    label: 'T-Shirt',
+    description: 'Print-ready shirt front design',
+    isPremium: true,
+    category: 'merchandise',
+  },
+  {
+    id: 'hoodie',
+    label: 'Hoodie',
+    description: 'Print-ready hoodie design',
+    isPremium: true,
+    category: 'merchandise',
+  },
   // 3D models
-  { id: 'stl',       label: '3D Model (.STL)',    description: 'For FDM/SLA 3D printing',         isPremium: true,  category: '3d' },
-  { id: 'obj',       label: '3D Model (.OBJ)',    description: 'Standard 3D model format',        isPremium: true,  category: '3d' },
-  { id: 'gltf',      label: '3D Model (.glTF)',   description: 'Web-ready 3D format',             isPremium: true,  category: '3d' },
-  { id: 'ply',       label: '3D Model (.PLY)',    description: 'Point cloud / mesh format',       isPremium: true,  category: '3d' },
+  {
+    id: 'stl',
+    label: '3D Model (.STL)',
+    description: 'For FDM/SLA 3D printing',
+    isPremium: true,
+    category: '3d',
+  },
+  {
+    id: 'obj',
+    label: '3D Model (.OBJ)',
+    description: 'Standard 3D model format',
+    isPremium: true,
+    category: '3d',
+  },
+  {
+    id: 'gltf',
+    label: '3D Model (.glTF)',
+    description: 'Web-ready 3D format',
+    isPremium: true,
+    category: '3d',
+  },
+  {
+    id: 'ply',
+    label: '3D Model (.PLY)',
+    description: 'Point cloud / mesh format',
+    isPremium: true,
+    category: '3d',
+  },
 ];
 
 const CATEGORY_LABELS: Record<FormatCategory, string> = {
@@ -84,7 +144,13 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene }: Props) {
+export function ExportModal({
+  visible,
+  onClose,
+  captureFrame,
+  getMesh,
+  getScene,
+}: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const c = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
@@ -100,16 +166,23 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
   const premiumColor = '#f59e0b'; // amber for premium badge
 
   const toggleFormat = (id: string, isPremium: boolean) => {
-    if (isPremium) { setShowPayment(true); return; }
+    if (isPremium) {
+      setShowPayment(true);
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   const handleExport = async () => {
-    if (selected.size === 0) { setStatusMsg('Select at least one format.'); return; }
+    if (selected.size === 0) {
+      setStatusMsg('Select at least one format.');
+      return;
+    }
     setExporting(true);
     setStatusMsg('');
 
@@ -127,34 +200,61 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
           }
         } else if (id === 'stl') {
           const mesh = getMesh();
-          if (!mesh) { setStatusMsg('No mesh available.'); continue; }
+          if (!mesh) {
+            setStatusMsg('No mesh available.');
+            continue;
+          }
           const exporter = new STLExporter();
           const stlBuffer = exporter.parse(mesh, { binary: true });
-          downloadBlob(new Blob([stlBuffer], { type: 'model/stl' }), 'comrev-3d.stl');
+          downloadBlob(
+            new Blob([stlBuffer], { type: 'model/stl' }),
+            'comrev-3d.stl',
+          );
         } else if (id === 'obj') {
           const mesh = getMesh();
-          if (!mesh) { setStatusMsg('No mesh available.'); continue; }
+          if (!mesh) {
+            setStatusMsg('No mesh available.');
+            continue;
+          }
           const exporter = new OBJExporter();
           const objText = exporter.parse(mesh);
           downloadText(objText, 'comrev-3d.obj', 'model/obj');
         } else if (id === 'gltf') {
           const mesh = getMesh();
-          if (!mesh) { setStatusMsg('No mesh available.'); continue; }
+          if (!mesh) {
+            setStatusMsg('No mesh available.');
+            continue;
+          }
           await new Promise<void>((resolve, reject) => {
             const exporter = new GLTFExporter();
-            exporter.parse(mesh, (result) => {
-              const json = JSON.stringify(result, null, 2);
-              downloadText(json, 'comrev-3d.gltf', 'model/gltf+json');
-              resolve();
-            }, reject, { binary: false });
+            exporter.parse(
+              mesh,
+              (result) => {
+                const json = JSON.stringify(result, null, 2);
+                downloadText(json, 'comrev-3d.gltf', 'model/gltf+json');
+                resolve();
+              },
+              reject,
+              { binary: false },
+            );
           });
         } else if (id === 'ply') {
           const mesh = getMesh();
-          if (!mesh) { setStatusMsg('No mesh available.'); continue; }
+          if (!mesh) {
+            setStatusMsg('No mesh available.');
+            continue;
+          }
           const exporter = new PLYExporter();
-          exporter.parse(mesh, (result: any) => {
-            downloadBlob(new Blob([result], { type: 'application/octet-stream' }), 'comrev-3d.ply');
-          }, { binary: true } as any);
+          exporter.parse(
+            mesh,
+            (result: any) => {
+              downloadBlob(
+                new Blob([result], { type: 'application/octet-stream' }),
+                'comrev-3d.ply',
+              );
+            },
+            { binary: true } as any,
+          );
         }
       }
       setStatusMsg(`Done! ${selected.size} file(s) downloaded.`);
@@ -165,12 +265,19 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
     }
   };
 
-  const categories = (['image', 'merchandise', '3d'] as FormatCategory[]);
+  const categories = ['image', 'merchandise', '3d'] as FormatCategory[];
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
-        <View style={[styles.sheet, { backgroundColor: bg, borderColor: border }]}>
+        <View
+          style={[styles.sheet, { backgroundColor: bg, borderColor: border }]}
+        >
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: border }]}>
             <Text style={[styles.title, { color: c.text }]}>Export</Text>
@@ -182,7 +289,9 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
           <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
             {categories.map((cat) => (
               <View key={cat} style={{ marginTop: 16 }}>
-                <Text style={[styles.catLabel, { color: c.text, opacity: 0.55 }]}>
+                <Text
+                  style={[styles.catLabel, { color: c.text, opacity: 0.55 }]}
+                >
                   {CATEGORY_LABELS[cat]}
                 </Text>
                 {EXPORT_FORMATS.filter((f) => f.category === cat).map((fmt) => {
@@ -191,6 +300,11 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
                     <TouchableOpacity
                       key={fmt.id}
                       onPress={() => toggleFormat(fmt.id, fmt.isPremium)}
+                      accessibilityRole={fmt.isPremium ? 'button' : 'checkbox'}
+                      accessibilityState={
+                        fmt.isPremium ? undefined : { checked: isSelected }
+                      }
+                      accessibilityLabel={`${fmt.label}, ${fmt.description}`}
                       style={[
                         styles.formatRow,
                         {
@@ -202,32 +316,74 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
                     >
                       {/* Checkbox / Lock */}
                       <View style={styles.checkboxPad}>
-                        <View style={[styles.checkbox, {
-                          borderColor: fmt.isPremium ? premiumColor : c.tint,
-                          backgroundColor: isSelected ? c.tint : 'transparent',
-                        }]}>
-                          {fmt.isPremium
-                            ? <Text style={{ fontSize: 10, color: premiumColor }}>P</Text>
-                            : isSelected
-                              ? <Text style={{ fontSize: 11, color: '#fff' }}>✓</Text>
-                              : null
-                          }
+                        <View
+                          style={[
+                            styles.checkbox,
+                            {
+                              borderColor: fmt.isPremium
+                                ? premiumColor
+                                : c.tint,
+                              backgroundColor: isSelected
+                                ? c.tint
+                                : 'transparent',
+                            },
+                          ]}
+                        >
+                          {fmt.isPremium ? (
+                            <Text style={{ fontSize: 10, color: premiumColor }}>
+                              P
+                            </Text>
+                          ) : isSelected ? (
+                            <Text style={{ fontSize: 11, color: '#fff' }}>
+                              ✓
+                            </Text>
+                          ) : null}
                         </View>
                       </View>
 
                       {/* Labels */}
                       <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={{ color: c.text, fontSize: 14, fontWeight: '600' }}>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: c.text,
+                              fontSize: 14,
+                              fontWeight: '600',
+                            }}
+                          >
                             {fmt.label}
                           </Text>
                           {fmt.isPremium && (
-                            <View style={[styles.premiumBadge, { borderColor: premiumColor }]}>
-                              <Text style={{ color: premiumColor, fontSize: 9, fontWeight: '700' }}>PRO</Text>
+                            <View
+                              style={[
+                                styles.premiumBadge,
+                                { borderColor: premiumColor },
+                              ]}
+                            >
+                              <Text
+                                style={{
+                                  color: premiumColor,
+                                  fontSize: 9,
+                                  fontWeight: '700',
+                                }}
+                              >
+                                PRO
+                              </Text>
                             </View>
                           )}
                         </View>
-                        <Text style={{ color: isDark ? '#888' : '#999', fontSize: 12 }}>
+                        <Text
+                          style={{
+                            color: isDark ? '#888' : '#999',
+                            fontSize: 12,
+                          }}
+                        >
                           {fmt.description}
                         </Text>
                       </View>
@@ -238,23 +394,53 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
             ))}
 
             {/* Premium CTA */}
-            <View style={[styles.premiumCta, { backgroundColor: `${premiumColor}18`, borderColor: premiumColor }]}>
-              <Text style={{ color: premiumColor, fontWeight: '700', fontSize: 13, marginBottom: 4 }}>
+            <View
+              style={[
+                styles.premiumCta,
+                {
+                  backgroundColor: `${premiumColor}18`,
+                  borderColor: premiumColor,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: premiumColor,
+                  fontWeight: '700',
+                  fontSize: 13,
+                  marginBottom: 4,
+                }}
+              >
                 Unlock PRO
               </Text>
               <Text style={{ color: isDark ? '#ccc' : '#555', fontSize: 12 }}>
                 Get merchandise exports, 3D print files, and more.
               </Text>
-              <TouchableOpacity style={[styles.upgradeBtn, { backgroundColor: premiumColor }]} onPress={() => setShowPayment(true)}>
-                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Get Premium</Text>
+              <TouchableOpacity
+                style={[styles.upgradeBtn, { backgroundColor: premiumColor }]}
+                onPress={() => setShowPayment(true)}
+              >
+                <Text
+                  style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}
+                >
+                  Get Premium
+                </Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
 
           {/* Footer */}
-          <View style={[styles.footer, { borderTopColor: border, backgroundColor: bg }]}>
+          <View
+            style={[
+              styles.footer,
+              { borderTopColor: border, backgroundColor: bg },
+            ]}
+          >
             {statusMsg ? (
-              <Text style={{ color: c.text, fontSize: 12, marginBottom: 6 }} numberOfLines={1}>
+              <Text
+                style={{ color: c.text, fontSize: 12, marginBottom: 6 }}
+                numberOfLines={1}
+              >
                 {statusMsg}
               </Text>
             ) : null}
@@ -263,69 +449,197 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
               disabled={exporting || selected.size === 0}
               style={[
                 styles.exportBtn,
-                { backgroundColor: c.tint, opacity: exporting || selected.size === 0 ? 0.5 : 1 },
+                {
+                  backgroundColor: c.tint,
+                  opacity: exporting || selected.size === 0 ? 0.5 : 1,
+                },
               ]}
             >
-              {exporting
-                ? <ActivityIndicator size="small" color={'#fff'} />
-                : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
-                    Export ({selected.size})
-                  </Text>
-              }
+              {exporting ? (
+                <ActivityIndicator size="small" color={'#fff'} />
+              ) : (
+                <Text
+                  style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}
+                >
+                  Export ({selected.size})
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </View>
       {/* Payment modal */}
-      <Modal visible={showPayment} transparent animationType="slide" onRequestClose={() => setShowPayment(false)}>
+      <Modal
+        visible={showPayment}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPayment(false)}
+      >
         <View style={styles.overlay}>
-          <View style={[styles.sheet, { backgroundColor: bg, borderColor: border, maxHeight: '80%' }]}>
+          <View
+            style={[
+              styles.sheet,
+              { backgroundColor: bg, borderColor: border, maxHeight: '80%' },
+            ]}
+          >
             <View style={[styles.header, { borderBottomColor: border }]}>
               <Text style={[styles.title, { color: c.text }]}>Unlock PRO</Text>
-              <TouchableOpacity onPress={() => setShowPayment(false)} style={styles.closeBtn}>
+              <TouchableOpacity
+                onPress={() => setShowPayment(false)}
+                style={styles.closeBtn}
+              >
                 <Text style={{ color: c.text, fontSize: 18 }}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={{ padding: 16 }}>
               {/* Pay-per-download */}
-              <Text style={{ color: premiumColor, fontWeight: '700', fontSize: 13, marginBottom: 8 }}>Pay-per-download</Text>
+              <Text
+                style={{
+                  color: premiumColor,
+                  fontWeight: '700',
+                  fontSize: 13,
+                  marginBottom: 8,
+                }}
+              >
+                Pay-per-download
+              </Text>
               {[
-                { label: 'High-res PNG (2K+)', price: '$0.49', desc: 'Full-resolution screenshot, no watermark' },
-                { label: '3D Model (OBJ / GLB)', price: '$0.99', desc: 'Export mesh for 3D printing or import' },
-                { label: 'Merchandise artwork', price: '$0.99', desc: 'Print-ready design for shirt / towel / mousepad' },
+                {
+                  label: 'High-res PNG (2K+)',
+                  price: '$0.49',
+                  desc: 'Full-resolution screenshot, no watermark',
+                },
+                {
+                  label: '3D Model (OBJ / GLB)',
+                  price: '$0.99',
+                  desc: 'Export mesh for 3D printing or import',
+                },
+                {
+                  label: 'Merchandise artwork',
+                  price: '$0.99',
+                  desc: 'Print-ready design for shirt / towel / mousepad',
+                },
               ].map((item) => (
-                <View key={item.label} style={[styles.formatRow, { backgroundColor: cardBg, borderColor: border, marginBottom: 6 }]}>
+                <View
+                  key={item.label}
+                  style={[
+                    styles.formatRow,
+                    {
+                      backgroundColor: cardBg,
+                      borderColor: border,
+                      marginBottom: 6,
+                    },
+                  ]}
+                >
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: c.text, fontWeight: '600', fontSize: 13 }}>{item.label}</Text>
-                    <Text style={{ color: isDark ? '#888' : '#999', fontSize: 11 }}>{item.desc}</Text>
+                    <Text
+                      style={{ color: c.text, fontWeight: '600', fontSize: 13 }}
+                    >
+                      {item.label}
+                    </Text>
+                    <Text
+                      style={{ color: isDark ? '#888' : '#999', fontSize: 11 }}
+                    >
+                      {item.desc}
+                    </Text>
                   </View>
-                  <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: premiumColor, borderRadius: 6 }}
-                    onPress={() => {/* TODO: initiate Stripe one-time payment */}}>
-                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{item.price}</Text>
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      backgroundColor: premiumColor,
+                      borderRadius: 6,
+                    }}
+                    onPress={() => {
+                      /* TODO: initiate Stripe one-time payment */
+                    }}
+                  >
+                    <Text
+                      style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}
+                    >
+                      {item.price}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ))}
 
               {/* Subscription */}
-              <Text style={{ color: premiumColor, fontWeight: '700', fontSize: 13, marginTop: 16, marginBottom: 8 }}>Monthly subscription</Text>
-              <View style={[styles.formatRow, { backgroundColor: `${premiumColor}18`, borderColor: premiumColor, marginBottom: 6 }]}>
+              <Text
+                style={{
+                  color: premiumColor,
+                  fontWeight: '700',
+                  fontSize: 13,
+                  marginTop: 16,
+                  marginBottom: 8,
+                }}
+              >
+                Monthly subscription
+              </Text>
+              <View
+                style={[
+                  styles.formatRow,
+                  {
+                    backgroundColor: `${premiumColor}18`,
+                    borderColor: premiumColor,
+                    marginBottom: 6,
+                  },
+                ]}
+              >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: c.text, fontWeight: '700', fontSize: 14 }}>Creator — $9 / month</Text>
-                  <Text style={{ color: isDark ? '#aaa' : '#666', fontSize: 12, marginTop: 2 }}>
-                    Unlimited high-res exports, 3D models, merchandise art, and backend preset storage
+                  <Text
+                    style={{ color: c.text, fontWeight: '700', fontSize: 14 }}
+                  >
+                    Creator — $9 / month
+                  </Text>
+                  <Text
+                    style={{
+                      color: isDark ? '#aaa' : '#666',
+                      fontSize: 12,
+                      marginTop: 2,
+                    }}
+                  >
+                    Unlimited high-res exports, 3D models, merchandise art, and
+                    backend preset storage
                   </Text>
                 </View>
-                <TouchableOpacity style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: premiumColor, borderRadius: 6 }}
-                  onPress={() => {/* TODO: initiate Stripe subscription */}}>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Subscribe</Text>
+                <TouchableOpacity
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    backgroundColor: premiumColor,
+                    borderRadius: 6,
+                  }}
+                  onPress={() => {
+                    /* TODO: initiate Stripe subscription */
+                  }}
+                >
+                  <Text
+                    style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}
+                  >
+                    Subscribe
+                  </Text>
                 </TouchableOpacity>
               </View>
 
               {/* Payment methods */}
-              <Text style={{ color: isDark ? '#888' : '#999', fontSize: 12, marginTop: 16, textAlign: 'center' }}>
+              <Text
+                style={{
+                  color: isDark ? '#888' : '#999',
+                  fontSize: 12,
+                  marginTop: 16,
+                  textAlign: 'center',
+                }}
+              >
                 Accepted: Card · PayPal · BLIK · Bizum · Apple Pay · Google Pay
               </Text>
-              <Text style={{ color: isDark ? '#555' : '#ccc', fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+              <Text
+                style={{
+                  color: isDark ? '#555' : '#ccc',
+                  fontSize: 11,
+                  marginTop: 4,
+                  textAlign: 'center',
+                }}
+              >
                 Payments securely processed by Stripe
               </Text>
             </ScrollView>
@@ -374,7 +688,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 12,
     marginVertical: 3,
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
   },
@@ -383,9 +698,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     height: 36,
     justifyContent: 'center',
-    marginLeft: -4,
-    marginRight: 6,
-    width: 36,
+    marginRight: 10,
+    width: 40,
   },
   checkbox: {
     width: 20,
