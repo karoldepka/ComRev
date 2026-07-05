@@ -56,6 +56,7 @@ export function AiEffectChatModal({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [formattingCode, setFormattingCode] = useState(false);
 
   const [provider, setProviderState] = useState<AiProvider>(() => getStoredProvider());
   const [apiKey, setApiKeyState] = useState(() => getStoredApiKey());
@@ -119,6 +120,35 @@ export function AiEffectChatModal({
     onApplyEffect(editableCode.trim(), codeDescription || 'AI custom effect');
     onClose();
   };
+
+  const handleFormatCode = useCallback(async () => {
+    const code = editableCode.trim();
+    if (!code || formattingCode) return;
+    setFormattingCode(true);
+    setError('');
+    try {
+      const [prettier, parserBabel, parserEstree] = await Promise.all([
+        import('prettier/standalone'),
+        import('prettier/plugins/babel'),
+        import('prettier/plugins/estree'),
+      ]);
+      const formatted = await prettier.format(code, {
+        parser: 'babel',
+        plugins: [parserBabel, parserEstree],
+        printWidth: 80,
+        tabWidth: 2,
+        useTabs: false,
+        semi: true,
+        singleQuote: true,
+        trailingComma: 'all',
+      });
+      setEditableCode(formatted.trimEnd());
+    } catch (e) {
+      setError(`Format failed: ${String(e).slice(0, 160)}`);
+    } finally {
+      setFormattingCode(false);
+    }
+  }, [editableCode, formattingCode]);
 
   const bg = isDark ? '#1a1a1a' : '#fff';
   const cardBg = isDark ? '#252525' : '#f5f5f5';
@@ -251,15 +281,34 @@ export function AiEffectChatModal({
           {(editableCode || initialCode) ? (
             <View style={[styles.codeSection, { borderTopColor: border, borderBottomColor: border }]}>
               <View style={styles.codeHeader}>
-                <Text style={[styles.label, { color: c.text }]}>Generated code (editable)</Text>
-                <TouchableOpacity
-                  onPress={handleApply}
-                  style={[styles.applyBtn, { backgroundColor: c.tint }]}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
-                    Apply Effect
-                  </Text>
-                </TouchableOpacity>
+                <Text style={[styles.label, styles.codeLabel, { color: c.text }]}>
+                  Generated code (editable)
+                </Text>
+                <View style={styles.codeActions}>
+                  <TouchableOpacity
+                    onPress={handleFormatCode}
+                    disabled={formattingCode || !editableCode.trim()}
+                    style={[
+                      styles.formatBtn,
+                      {
+                        borderColor: c.tint,
+                        opacity: formattingCode || !editableCode.trim() ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: c.tint, fontWeight: '700', fontSize: 13 }}>
+                      {formattingCode ? 'Formatting...' : 'Format'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleApply}
+                    style={[styles.applyBtn, { backgroundColor: c.tint }]}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+                      Apply Effect
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
               <ScrollView horizontal style={{ flex: 0 }} contentContainerStyle={{ flexGrow: 1 }}>
                 <TextInput
@@ -355,7 +404,22 @@ const styles = StyleSheet.create({
   codeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  codeLabel: { flexShrink: 1 },
+  codeActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 'auto',
+  },
+  formatBtn: {
+    borderRadius: 6,
+    borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
