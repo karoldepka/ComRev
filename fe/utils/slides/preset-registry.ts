@@ -1,6 +1,7 @@
 import type { SoundscapeConfig } from "@/store/soundscape-store";
 import type { EffectInstance } from "@/utils/config-store";
 import i18n from "@/utils/i18n";
+import { wrapRichTextWords } from "@/utils/rich-text";
 import { nanoid } from "nanoid/non-secure";
 import type { MantraEntry, MantraText } from "./mcon.data";
 import { MANTRAS as MCON_MANTRAS } from "./mcon.data";
@@ -28,26 +29,12 @@ export interface PresetDefinition {
 // ── mcon helpers ──────────────────────────────────────────────────────────────
 
 function normalizeMantraText(mantra: MantraText): string {
-  return Array.isArray(mantra) ? mantra.join("\n") : mantra;
+  return typeof mantra === "string" ? mantra : mantra.join("\n");
 }
 
 function wrapMantraText(text: string, maxChars = 12): string {
   if (text.includes("\n")) return text;
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (!current) {
-      current = word;
-    } else if (current.length + 1 + word.length <= maxChars) {
-      current += " " + word;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.join("\n");
+  return wrapRichTextWords(text, maxChars);
 }
 
 function getMantraSlideText(

@@ -8,14 +8,15 @@ import {
   MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  type BufferGeometry,
   type Texture,
   Vector3,
 } from "three";
-import type { BufferGeometry } from "three";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
 import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
+import { parseBoldSegments, stripBoldTags } from "./rich-text";
 
 
 /** Per-zone material overrides. Properties not specified inherit from the base material. */
@@ -307,22 +308,39 @@ function patchBevelNormalReflect(mat: MeshStandardMaterial): void {
 
 const fontCache = new Map<string, Font>();
 
-function parseBoldSegments(line: string): Array<{ text: string; bold: boolean }> {
-  const segments: Array<{ text: string; bold: boolean }> = [];
-  const regex = /<b>(.*?)<\/b>/gi;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(line)) !== null) {
-    if (match.index > lastIndex) segments.push({ text: line.slice(lastIndex, match.index), bold: false });
-    if (match[1]) segments.push({ text: match[1], bold: true });
-    lastIndex = regex.lastIndex;
+function measureTextAdvance(text: string, font: Font, size: number): number {
+  const fontData = (font as any).data;
+  const glyphs = fontData?.glyphs ?? {};
+  const resolution = fontData?.resolution || 1000;
+  let width = 0;
+
+  for (const char of text) {
+    const glyph = glyphs[char] ?? glyphs["?"];
+    if (glyph?.ha !== undefined) {
+      width += glyph.ha;
+    }
   }
-  if (lastIndex < line.length) segments.push({ text: line.slice(lastIndex), bold: false });
-  return segments.filter(s => s.text.length > 0);
+
+  return (width * size) / resolution;
 }
 
-function stripBoldTags(text: string): string {
-  return text.replace(/<\/?b>/gi, '');
+function getTextGeometryBounds(
+  geometry: TextGeometry,
+  fallbackMaxY: number,
+): { visualWidth: number; minY: number; maxY: number } {
+  const bbox = geometry.boundingBox;
+  const hasFiniteBounds =
+    !!bbox &&
+    Number.isFinite(bbox.min.x) &&
+    Number.isFinite(bbox.max.x) &&
+    Number.isFinite(bbox.min.y) &&
+    Number.isFinite(bbox.max.y);
+
+  return {
+    visualWidth: hasFiniteBounds ? bbox.max.x - bbox.min.x : 0,
+    minY: hasFiniteBounds ? bbox.min.y : 0,
+    maxY: hasFiniteBounds ? bbox.max.y : fallbackMaxY,
+  };
 }
 
 const BOLD_FONT_MAP: Record<string, string> = {
@@ -389,7 +407,7 @@ export interface CreateTextGeometryResult {
   /** Base material (extrusion walls, materialIndex 0). */
   material: MeshStandardMaterial;
   /** Face-cap material (letter face + back cap, materialIndex 1). Undefined when no faceZone. */
-  faceMaterial?: MeshStandardMaterial | MeshPhysicalMaterial;
+  faceMaterial?: MeshStandardMaterial | MeshPhysicalMaterial | MeshBasicMaterial;
   /** Bevel material (chamfer, materialIndex 2). Undefined when no bevelZone. */
   bevelMaterial?: MeshStandardMaterial | MeshPhysicalMaterial;
 }
@@ -443,7 +461,18 @@ export async function createTextGeometry(
             bevelSegments: mergedOptions.bevelSegments,
           } as any);
           geo.computeBoundingBox();
-          totalWidth += (geo.boundingBox?.max.x ?? 0) - (geo.boundingBox?.min.x ?? 0);
+          const { visualWidth } = getTextGeometryBounds(
+            geo,
+            mergedOptions.size!,
+          );
+          const advanceWidth = measureTextAdvance(
+            seg.text,
+            segFont,
+            mergedOptions.size!,
+          );
+          totalWidth += advanceWidth > 0 || !seg.text.trim()
+            ? advanceWidth
+            : visualWidth;
           geo.dispose();
         }
         lineWidths.push(totalWidth);
@@ -506,30 +535,50 @@ export async function createTextGeometry(
             bevelOffset: mergedOptions.bevelOffset,
             bevelSegments: mergedOptions.bevelSegments,
           };
-          const segInfos: Array<{ geo: TextGeometry; width: number; minY: number; maxY: number; startX: number }> = [];
-          let totalWidth = 0;
+          const segInfos: { geo: TextGeometry; advanceWidth: number; minY: number; maxY: number }[] = [];
+          let totalAdvanceWidth = 0;
           for (const seg of segments) {
             const segFont = seg.bold ? boldFont : font;
             const geo = new TextGeometry(seg.text, { font: segFont as any, ...geoParams } as any);
             geo.computeBoundingBox();
-            const bbox = geo.boundingBox!;
-            const width = bbox.max.x - bbox.min.x;
-            segInfos.push({ geo, width, minY: bbox.min.y, maxY: bbox.max.y, startX: bbox.min.x });
-            totalWidth += width;
+            const { visualWidth, minY, maxY } = getTextGeometryBounds(
+              geo,
+              effectiveSize,
+            );
+            const advanceWidth = measureTextAdvance(seg.text, segFont, effectiveSize);
+            const layoutWidth =
+              advanceWidth > 0 || !seg.text.trim() ? advanceWidth : visualWidth;
+            segInfos.push({ geo, advanceWidth: layoutWidth, minY, maxY });
+            totalAdvanceWidth += layoutWidth;
           }
-          let cursorX = -totalWidth / 2;
+          let cursorX = -totalAdvanceWidth / 2;
           let lineMinY = segInfos[0]?.minY ?? 0;
           let lineMaxY = segInfos[0]?.maxY ?? effectiveSize;
           const lineGroup = new Group();
-          for (const { geo, width, minY, maxY, startX } of segInfos) {
-            geo.translate(cursorX - startX, 0, 0);
+          for (const { geo, advanceWidth, minY, maxY } of segInfos) {
+            geo.translate(cursorX, 0, 0);
             if (needsReclassify) reclassifyBevelGroups(geo);
             lineGroup.add(new Mesh(geo));
-            cursorX += width;
+            cursorX += advanceWidth;
             lineMinY = Math.min(lineMinY, minY);
             lineMaxY = Math.max(lineMaxY, maxY);
           }
-          lineGeometries.push({ geometry: lineGroup, minY: lineMinY, maxY: lineMaxY });
+          const renderedBox = lineGroup.children.length > 0
+            ? new Box3().setFromObject(lineGroup)
+            : new Box3(new Vector3(0, 0, 0), new Vector3(0, effectiveSize, 0));
+          const hasRenderedBounds =
+            Number.isFinite(renderedBox.min.x) &&
+            Number.isFinite(renderedBox.max.x) &&
+            Number.isFinite(renderedBox.min.y) &&
+            Number.isFinite(renderedBox.max.y);
+          if (hasRenderedBounds) {
+            lineGroup.position.x = -((renderedBox.min.x + renderedBox.max.x) / 2);
+          }
+          lineGeometries.push({
+            geometry: lineGroup,
+            minY: hasRenderedBounds ? renderedBox.min.y : lineMinY,
+            maxY: hasRenderedBounds ? renderedBox.max.y : lineMaxY,
+          });
           continue;
         }
 
@@ -548,7 +597,6 @@ export async function createTextGeometry(
         lineGeometry.computeBoundingBox();
         const minX = lineGeometry.boundingBox?.min.x ?? 0;
         const maxX = lineGeometry.boundingBox?.max.x ?? 0;
-        const lineWidth = maxX - minX;
         // Center using the actual geometry extents so left/right edges align
         // precisely across all lines (bbox.min.x is non-zero for many glyphs)
         const centerX = (minX + maxX) / 2;

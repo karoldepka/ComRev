@@ -6,35 +6,18 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThreeDStore } from "@/store/three-d-store";
 import { createEffectInstance } from "@/utils/effect-defaults";
+import { wrapRichTextWords } from "@/utils/rich-text";
 import { ThreeDTextScreen } from "./(tabs)/three-d";
 import type { MantraEntry, MantraText } from "@/utils/slides/mcon.data";
 import { MANTRAS } from "@/utils/slides/mcon.data";
 
 function normalizeMantraText(mantra: MantraText): string {
-  return Array.isArray(mantra) ? mantra.join("\n") : mantra;
+  return typeof mantra === "string" ? mantra : mantra.join("\n");
 }
-
-const stripBoldTagsForWrap = (s: string) => s.replace(/<\/?b>/gi, '');
 
 function wrapMantraText(text: string, maxChars = 12): string {
   if (text.includes("\n")) return text;
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const visCurrentLen = stripBoldTagsForWrap(current).length;
-    const visWordLen = stripBoldTagsForWrap(word).length;
-    if (!current) {
-      current = word;
-    } else if (visCurrentLen + 1 + visWordLen <= maxChars) {
-      current += " " + word;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.join("\n");
+  return wrapRichTextWords(text, maxChars);
 }
 
 function getMantraSlideText(title: string, entry: MantraEntry): string {
