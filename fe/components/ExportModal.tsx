@@ -201,20 +201,22 @@ export function ExportModal({ visible, onClose, captureFrame, getMesh, getScene 
                       activeOpacity={fmt.isPremium ? 1 : 0.7}
                     >
                       {/* Checkbox / Lock */}
-                      <View style={[styles.checkbox, {
-                        borderColor: fmt.isPremium ? premiumColor : c.tint,
-                        backgroundColor: isSelected ? c.tint : 'transparent',
-                      }]}>
-                        {fmt.isPremium
-                          ? <Text style={{ fontSize: 10, color: premiumColor }}>P</Text>
-                          : isSelected
-                            ? <Text style={{ fontSize: 11, color: '#fff' }}>✓</Text>
-                            : null
-                        }
+                      <View style={styles.checkboxPad}>
+                        <View style={[styles.checkbox, {
+                          borderColor: fmt.isPremium ? premiumColor : c.tint,
+                          backgroundColor: isSelected ? c.tint : 'transparent',
+                        }]}>
+                          {fmt.isPremium
+                            ? <Text style={{ fontSize: 10, color: premiumColor }}>P</Text>
+                            : isSelected
+                              ? <Text style={{ fontSize: 11, color: '#fff' }}>✓</Text>
+                              : null
+                          }
+                        </View>
                       </View>
 
                       {/* Labels */}
-                      <View style={{ flex: 1, marginLeft: 10 }}>
+                      <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={{ color: c.text, fontSize: 14, fontWeight: '600' }}>
                             {fmt.label}
@@ -375,6 +377,15 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  checkboxPad: {
+    alignItems: 'center',
+    borderRadius: 8,
+    height: 36,
+    justifyContent: 'center',
+    marginLeft: -4,
+    marginRight: 6,
+    width: 36,
   },
   checkbox: {
     width: 20,

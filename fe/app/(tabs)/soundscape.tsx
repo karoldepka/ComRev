@@ -329,7 +329,15 @@ const presetStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
   },
-  rowMain: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 8 },
+  rowMain: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 4 },
+  radioPad: {
+    alignItems: 'center',
+    borderRadius: 8,
+    height: 32,
+    justifyContent: 'center',
+    marginLeft: -6,
+    width: 32,
+  },
   rowLabel: { flex: 1, fontSize: 13, fontWeight: '600' },
 });
 
@@ -605,11 +613,13 @@ export default function SoundscapeScreen() {
           presets.map((p) => (
             <View key={p.id} style={[presetStyles.row, { borderColor: dark ? '#333' : '#eee' }]}>
               <Pressable onPress={() => loadPresetById(p.id)} style={presetStyles.rowMain}>
-                <MaterialIcons
-                  name={loadedPresetId === p.id ? 'radio-button-checked' : 'radio-button-unchecked'}
-                  size={18}
-                  color={loadedPresetId === p.id ? c.tint : c.icon}
-                />
+                <View style={presetStyles.radioPad}>
+                  <MaterialIcons
+                    name={loadedPresetId === p.id ? 'radio-button-checked' : 'radio-button-unchecked'}
+                    size={18}
+                    color={loadedPresetId === p.id ? c.tint : c.icon}
+                  />
+                </View>
                 <Text style={[presetStyles.rowLabel, { color: c.text }]} numberOfLines={1}>
                   {p.name}
                 </Text>
