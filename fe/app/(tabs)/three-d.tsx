@@ -74,6 +74,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { API_BASE } from '@/utils/api-config';
+import { encodeSvgDataUrl } from '@/utils/data-url';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 
 function isSpacebarShortcut(event: KeyboardEvent): boolean {
@@ -5034,8 +5035,7 @@ function renderEffectControls(
                       if (file.name.toLowerCase().endsWith(".svg")) {
                         reader.readAsText(file);
                         reader.onload = () => {
-                          const encoded = btoa(unescape(encodeURIComponent(reader.result as string)));
-                          onUpdate("matImageDataUrl", `data:image/svg+xml;base64,${encoded}`);
+                          onUpdate("matImageDataUrl", encodeSvgDataUrl(reader.result as string));
                         };
                       } else {
                         reader.readAsDataURL(file);
@@ -5102,8 +5102,7 @@ function renderEffectControls(
                           if (file.name.toLowerCase().endsWith(".svg")) {
                             reader.readAsText(file);
                             reader.onload = () => {
-                              const encoded = btoa(unescape(encodeURIComponent(reader.result as string)));
-                              onUpdate("envMapCustomDataUrl", `data:image/svg+xml;base64,${encoded}`);
+                              onUpdate("envMapCustomDataUrl", encodeSvgDataUrl(reader.result as string));
                             };
                           } else {
                             reader.readAsDataURL(file);

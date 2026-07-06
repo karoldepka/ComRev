@@ -8,7 +8,8 @@ import {
   fetchIconSvg, generateAiImage, IconResult, PlasmaParams,
   PRESET_SCHEMES, SCHEME_NAMES, renderFractal, renderPlasma, searchIcons,
 } from '@/utils/image-sources';
-import { preprocessSvg } from '@/utils/svg-preprocess';
+import { encodeSvgDataUrl } from '@/utils/data-url';
+import { preprocessSvg, preprocessSvgDataUrl } from '@/utils/svg-preprocess';
 
 export interface ImagePickerResult { dataUrl: string; type: 'image' | 'svg'; }
 
@@ -217,9 +218,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, onSelectAnimated,
         let dataUrl = reader.result as string;
         if (isSvg) {
           try {
-            const svgText = atob(dataUrl.split(';base64,')[1] ?? '');
-            const optimized = await preprocessSvg(svgText);
-            dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(optimized)));
+            dataUrl = await preprocessSvgDataUrl(dataUrl);
           } catch { /* fallback to original */ }
         }
         accept(dataUrl, isSvg ? 'svg' : 'image');
@@ -287,7 +286,7 @@ export function ImagePickerModal({ visible, onClose, onSelect, onSelectAnimated,
     try {
       const svg = await fetchIconSvg(icon);
       const processed = await preprocessSvg(svg);
-      const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(processed)));
+      const dataUrl = encodeSvgDataUrl(processed);
       accept(dataUrl, 'svg');
     } catch (e) { setErr(e); }
     finally { setLoading(false); }

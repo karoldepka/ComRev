@@ -1,5 +1,11 @@
 /** Utility functions for the 4 image source modes. */
 
+import {
+  decodeSvgDataUrl,
+  encodeSvgDataUrl,
+  isSvgDataUrl as isSvgDataUrlValue,
+} from './data-url';
+
 // ── Color scheme (multi-step gradient) ───────────────────────────────────────
 
 export interface ColorStop { pos: number; r: number; g: number; b: number; }
@@ -286,7 +292,7 @@ export async function fetchIconSvg(icon: IconResult): Promise<string> {
 // ── SVG data-URL utilities ────────────────────────────────────────────────────
 
 export function isSvgDataUrl(url: string): boolean {
-  return url.startsWith('data:image/svg+xml');
+  return isSvgDataUrlValue(url);
 }
 
 /**
@@ -300,12 +306,8 @@ export function processSvgDataUrl(
 ): string {
   if (!isSvgDataUrl(dataUrl)) return dataUrl;
   try {
-    let svgText: string;
-    if (dataUrl.includes(';base64,')) {
-      svgText = atob(dataUrl.split(';base64,')[1]);
-    } else {
-      svgText = decodeURIComponent(dataUrl.split(',')[1] ?? '');
-    }
+    let svgText = decodeSvgDataUrl(dataUrl);
+    if (!svgText) return dataUrl;
 
     let cssRules = 'svg { background: transparent !important; } ';
     if (color) {
@@ -323,7 +325,7 @@ export function processSvgDataUrl(
       svgText = svgText.replace(/(<svg[^>]*>)/, `$1<style>${cssRules}</style>`);
     }
 
-    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+    return encodeSvgDataUrl(svgText);
   } catch {
     return dataUrl;
   }

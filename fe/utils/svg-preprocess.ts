@@ -9,20 +9,13 @@
  */
 
 import { Font, parse } from 'opentype.js';
+import {
+  decodeDataUrlArrayBuffer,
+  decodeSvgDataUrl,
+  encodeSvgDataUrl,
+} from './data-url';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function base64ToArrayBuffer(dataUri: string): ArrayBuffer | null {
-  try {
-    const b64 = dataUri.includes(',') ? dataUri.split(',')[1] : dataUri;
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
-  } catch {
-    return null;
-  }
-}
 
 /** Walk up the DOM tree to find the nearest ancestor value for a presentation attr. */
 function inheritedAttr(el: Element, attr: string): string | null {
@@ -59,7 +52,7 @@ async function loadEmbeddedFonts(doc: Document): Promise<Map<string, Font>> {
     const dataM = src.match(/url\(['"]?(data:[^'")\s]+)['"]?\)/);
     if (!dataM) continue;
 
-    const buf = base64ToArrayBuffer(dataM[1]);
+    const buf = decodeDataUrlArrayBuffer(dataM[1]);
     if (!buf) continue;
     try {
       const font = parse(buf);
@@ -221,16 +214,11 @@ export async function preprocessSvg(svgText: string): Promise<string> {
  * Returns a new `data:image/svg+xml;base64,…` URL.
  */
 export async function preprocessSvgDataUrl(dataUrl: string): Promise<string> {
-  if (!dataUrl.startsWith('data:image/svg+xml')) return dataUrl;
+  const svgText = decodeSvgDataUrl(dataUrl);
+  if (!svgText) return dataUrl;
   try {
-    let svgText: string;
-    if (dataUrl.includes(';base64,')) {
-      svgText = atob(dataUrl.split(';base64,')[1]);
-    } else {
-      svgText = decodeURIComponent(dataUrl.split(',')[1] ?? '');
-    }
     const optimized = await preprocessSvg(svgText);
-    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(optimized)));
+    return encodeSvgDataUrl(optimized);
   } catch {
     return dataUrl;
   }
