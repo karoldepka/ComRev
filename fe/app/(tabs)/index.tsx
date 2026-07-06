@@ -1,106 +1,258 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Link, type Href } from 'expo-router';
+import { ComponentProps } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useConfirmDialog } from '@/components/confirm-dialog';
-import { Link } from 'expo-router';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+
+type IconName = ComponentProps<typeof MaterialIcons>['name'];
+
+const ACTIONS: {
+  href: Href;
+  icon: IconName;
+  titleKey: string;
+  bodyKey: string;
+}[] = [
+  {
+    href: '/(tabs)/three-d',
+    icon: 'view-in-ar',
+    titleKey: 'homeAction3dTitle',
+    bodyKey: 'homeAction3dBody',
+  },
+  {
+    href: '/(tabs)/soundscape',
+    icon: 'graphic-eq',
+    titleKey: 'homeActionSoundTitle',
+    bodyKey: 'homeActionSoundBody',
+  },
+  {
+    href: '/(tabs)/presets',
+    icon: 'star',
+    titleKey: 'homeActionPresetsTitle',
+    bodyKey: 'homeActionPresetsBody',
+  },
+  {
+    href: '/update',
+    icon: 'system-update-alt',
+    titleKey: 'homeActionUpdateTitle',
+    bodyKey: 'homeActionUpdateBody',
+  },
+];
 
 export default function HomeScreen() {
-  const { confirm, dialog } = useConfirmDialog();
-  const showMessage = (message: string) =>
-    confirm({ title: 'Action', message, confirmText: 'OK', hideCancel: true });
+  const { t } = useTranslation();
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const dark = colorScheme === 'dark';
+  const { width } = useWindowDimensions();
+  const compact = width < 560;
 
   return (
-    <>
-      <ParallaxScrollView
-        headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-        headerImage={
-          <Image
-            source={require('@/assets/images/partial-react-logo.png')}
-            style={styles.reactLogo}
-          />
-        }>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="title">Welcome!</ThemedText>
-          <HelloWave />
-        </ThemedView>
-        <ThemedView style={styles.stepContainer}>
-          <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-          <ThemedText>
-            Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-            Press{' '}
-            <ThemedText type="defaultSemiBold">
-              {Platform.select({
-                ios: 'cmd + d',
-                android: 'cmd + m',
-                web: 'F12',
-              })}
-            </ThemedText>{' '}
-            to open developer tools. test 2 3 s 34 5 6
-          </ThemedText>
-        </ThemedView>
-        <ThemedView style={styles.stepContainer}>
-          <Link href="/modal">
-            <Link.Trigger>
-              <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-            </Link.Trigger>
-            <Link.Preview />
-            <Link.Menu>
-              <Link.MenuAction title="Action" icon="cube" onPress={() => showMessage('Action pressed')} />
-              <Link.MenuAction
-                title="Share"
-                icon="square.and.arrow.up"
-                onPress={() => showMessage('Share pressed')}
-              />
-              <Link.Menu title="More" icon="ellipsis">
-                <Link.MenuAction
-                  title="Delete"
-                  icon="trash"
-                  destructive
-                  onPress={() => showMessage('Delete pressed')}
-                />
-              </Link.Menu>
-            </Link.Menu>
-          </Link>
+    <ThemedView style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingHorizontal: compact ? 18 : 28 },
+        ]}
+      >
+        <View style={styles.hero}>
+          <View style={[styles.logoMark, { backgroundColor: colors.tint }]}>
+            <MaterialIcons
+              name="dataset"
+              size={compact ? 26 : 30}
+              color="#fff"
+            />
+          </View>
+          <View style={styles.heroCopy}>
+            <Text style={[styles.eyebrow, { color: colors.tint }]}>
+              {t('homeEyebrow')}
+            </Text>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {t('homeTitle')}
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.icon }]}>
+              {t('homeSubtitle')}
+            </Text>
+          </View>
+        </View>
 
-          <ThemedText>
-            {`Tap the Explore tab to learn more about what's included in this starter app.`}
-          </ThemedText>
-        </ThemedView>
-        <ThemedView style={styles.stepContainer}>
-          <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-          <ThemedText>
-            {`When you're ready, run `}
-            <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-            <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-            <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-            <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-          </ThemedText>
-        </ThemedView>
-      </ParallaxScrollView>
-      {dialog}
-    </>
+        <View
+          style={[
+            styles.statusBar,
+            {
+              backgroundColor: dark ? '#201914' : '#fff7f0',
+              borderColor: dark ? '#3a2a1d' : '#ffd9ba',
+            },
+          ]}
+        >
+          <MaterialIcons name="sync" size={18} color={colors.tint} />
+          <Text style={[styles.statusText, { color: colors.text }]}>
+            {t('homeStatus')}
+          </Text>
+        </View>
+
+        <View
+          style={[styles.actionsGrid, compact && styles.actionsGridCompact]}
+        >
+          {ACTIONS.map((action) => (
+            <Link key={String(action.href)} href={action.href} asChild>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.actionCard,
+                  {
+                    backgroundColor: dark ? '#1d2021' : '#ffffff',
+                    borderColor: dark ? '#2f3436' : '#e8edf0',
+                    opacity: pressed ? 0.74 : 1,
+                  },
+                  compact ? styles.actionCardCompact : styles.actionCardWide,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.actionIcon,
+                    { borderColor: colors.tint + '55' },
+                  ]}
+                >
+                  <MaterialIcons
+                    name={action.icon}
+                    size={22}
+                    color={colors.tint}
+                  />
+                </View>
+                <View style={styles.actionText}>
+                  <Text style={[styles.actionTitle, { color: colors.text }]}>
+                    {t(action.titleKey)}
+                  </Text>
+                  <Text style={[styles.actionBody, { color: colors.icon }]}>
+                    {t(action.bodyKey)}
+                  </Text>
+                </View>
+                <MaterialIcons
+                  name="chevron-right"
+                  size={22}
+                  color={colors.icon}
+                />
+              </Pressable>
+            </Link>
+          ))}
+        </View>
+      </ScrollView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  screen: {
+    flex: 1,
+  },
+  content: {
+    gap: 18,
+    paddingBottom: 36,
+    paddingTop: 56,
+  },
+  hero: {
     alignItems: 'center',
-    gap: 8,
+    flexDirection: 'row',
+    gap: 14,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  logoMark: {
+    alignItems: 'center',
+    borderRadius: 8,
+    height: 54,
+    justifyContent: 'center',
+    width: 54,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  heroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 0,
+    lineHeight: 34,
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
+    maxWidth: 760,
+  },
+  statusBar: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  statusText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  actionsGridCompact: {
+    flexDirection: 'column',
+  },
+  actionCard: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  actionCardWide: {
+    flexBasis: 280,
+    flexGrow: 1,
+  },
+  actionCardCompact: {
+    width: '100%',
+  },
+  actionIcon: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  actionText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  actionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  actionBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
 });

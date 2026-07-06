@@ -1,35 +1,38 @@
-import { Tabs } from "expo-router";
-import React from "react";
-import { useWindowDimensions } from "react-native";
+import { Tabs } from 'expo-router';
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { useWindowDimensions } from 'react-native';
 
-import { HapticTab } from "@/components/haptic-tab";
-import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { HapticTab } from '@/components/haptic-tab';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
+  const { t } = useTranslation();
   const colorScheme = useColorScheme();
   const { width } = useWindowDimensions();
   const isSmall = width < 480;
-  const iconSize = isSmall ? 22 : 28;
+  const iconSize = isSmall ? 24 : 26;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
+        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarShowLabel: !isSmall,
         tabBarItemStyle: isSmall ? { paddingHorizontal: 0 } : undefined,
-        tabBarLabelStyle: isSmall ? { fontSize: 10, marginTop: -2 } : undefined,
+        tabBarLabelStyle: { fontSize: 11, marginTop: -2 },
         tabBarStyle: isSmall
-          ? { height: 52, paddingTop: 2, paddingBottom: 2 }
-          : undefined,
+          ? { height: 52, paddingTop: 4, paddingBottom: 4 }
+          : { height: 60, paddingTop: 4, paddingBottom: 6 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t('tabHome'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="house.fill" color={color} />
           ),
@@ -38,7 +41,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="about"
         options={{
-          title: "About",
+          title: t('tabAbout'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="info.circle.fill" color={color} />
           ),
@@ -47,7 +50,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="repos"
         options={{
-          title: "Repos",
+          title: t('tabItems'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="list.bullet" color={color} />
           ),
@@ -56,16 +59,20 @@ export default function TabLayout() {
       <Tabs.Screen
         name="inspiration"
         options={{
-          title: "Inspire",
+          title: t('tabInspire'),
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={iconSize} name="quote.bubble.fill" color={color} />
+            <IconSymbol
+              size={iconSize}
+              name="quote.bubble.fill"
+              color={color}
+            />
           ),
         }}
       />
       <Tabs.Screen
         name="three-d"
         options={{
-          title: "3D Text",
+          title: t('tab3d'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="cube.fill" color={color} />
           ),
@@ -74,16 +81,20 @@ export default function TabLayout() {
       <Tabs.Screen
         name="slideshow"
         options={{
-          title: "Slideshow",
+          title: t('tabSlideshow'),
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={iconSize} name="play.rectangle.fill" color={color} />
+            <IconSymbol
+              size={iconSize}
+              name="play.rectangle.fill"
+              color={color}
+            />
           ),
         }}
       />
       <Tabs.Screen
         name="presets"
         options={{
-          title: "Presets",
+          title: t('tabPresets'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="star.fill" color={color} />
           ),
@@ -92,7 +103,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="soundscape"
         options={{
-          title: "Soundscape",
+          title: t('tabSoundscape'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="waveform" color={color} />
           ),

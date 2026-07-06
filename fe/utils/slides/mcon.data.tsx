@@ -123,6 +123,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'turn anxieties\ninto motivators\nfor calm but decisive\naction': {},
   'surfing the anxieties': {},
   'surfing the urges': {},
+  'do mental katas (e.g. surfing)': {},
   "work on myself\nit's work too": {},
   'the virtues of play': {},
   'watch out for premature/overkill optimizations, perfectionism': {},

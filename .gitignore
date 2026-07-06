@@ -59,6 +59,7 @@ coverage/
 
 # Expo web
 web-build/
+fe/web-check-*/
 
 # EAS
 .eas/
@@ -84,4 +85,3 @@ backend/.venv/
 my-project
 
 .frames-*
-

@@ -9,6 +9,7 @@ import de from '../locales/de.json';
 import it from '../locales/it.json';
 import fr from '../locales/fr.json';
 import ca from '../locales/ca.json';
+import csb from '../locales/csb.json';
 import zh from '../locales/zh.json';
 import pt from '../locales/pt.json';
 import es from '../locales/es.json';
@@ -22,6 +23,7 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'it', label: 'Italiano' },
   { code: 'fr', label: 'Français' },
   { code: 'ca', label: 'Català' },
+  { code: 'csb', label: 'Kaszëbsczi' },
   { code: 'zh', label: '中文' },
   { code: 'pt', label: 'Português' },
   { code: 'es', label: 'Español' },
@@ -29,39 +31,57 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'ar', label: 'العربية' },
 ] as const;
 
-export type LanguageCode = typeof SUPPORTED_LANGUAGES[number]['code'];
+export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]['code'];
+
+const LANGUAGE_ALIASES: Partial<Record<string, LanguageCode>> = {
+  cat: 'ca',
+};
+
+export function normalizeLanguageCode(
+  code?: string | null,
+): LanguageCode | null {
+  if (!code) return null;
+  const normalized = code.toLowerCase().replace('_', '-');
+  const base = normalized.split('-')[0];
+  const candidate =
+    LANGUAGE_ALIASES[normalized] ?? LANGUAGE_ALIASES[base] ?? base;
+  return SUPPORTED_LANGUAGES.some((language) => language.code === candidate)
+    ? (candidate as LanguageCode)
+    : null;
+}
 
 function detectLocale(): string {
   try {
-    const locale = Localization.getLocales()[0]?.languageCode ?? 'en';
-    const supported = SUPPORTED_LANGUAGES.map(l => l.code);
-    return supported.includes(locale as LanguageCode) ? locale : 'en';
+    return (
+      normalizeLanguageCode(Localization.getLocales()[0]?.languageCode) ?? 'en'
+    );
   } catch {
     return 'en';
   }
 }
 
-i18n
-  .use(initReactI18next)
-  .init({
-    resources: {
-      en: { translation: en, mantras: {} },
-      pl: { translation: pl, mantras: mantrasPl },
-      de: { translation: de },
-      it: { translation: it },
-      fr: { translation: fr },
-      ca: { translation: ca },
-      zh: { translation: zh },
-      pt: { translation: pt },
-      es: { translation: es },
-      hi: { translation: hi },
-      ar: { translation: ar },
-    },
-    lng: detectLocale(),
-    fallbackLng: 'en',
-    ns: ['translation', 'mantras'],
-    defaultNS: 'translation',
-    interpolation: { escapeValue: false },
-  });
+// eslint-disable-next-line import/no-named-as-default-member
+i18n.use(initReactI18next).init({
+  resources: {
+    en: { translation: en, mantras: {} },
+    pl: { translation: pl, mantras: mantrasPl },
+    de: { translation: de },
+    it: { translation: it },
+    fr: { translation: fr },
+    ca: { translation: ca },
+    cat: { translation: ca },
+    csb: { translation: csb },
+    zh: { translation: zh },
+    pt: { translation: pt },
+    es: { translation: es },
+    hi: { translation: hi },
+    ar: { translation: ar },
+  },
+  lng: detectLocale(),
+  fallbackLng: 'en',
+  ns: ['translation', 'mantras'],
+  defaultNS: 'translation',
+  interpolation: { escapeValue: false },
+});
 
 export default i18n;

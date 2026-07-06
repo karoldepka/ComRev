@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
-} from "react-native";
+} from 'react-native';
 import {
   ColumnDef,
   ExpandedState,
@@ -13,14 +14,14 @@ import {
   getCoreRowModel,
   getExpandedRowModel,
   useReactTable,
-} from "@tanstack/react-table";
+} from '@tanstack/react-table';
 import { API_BASE } from '@/utils/api-config';
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { useColorScheme } from "@/hooks/use-color-scheme";
-import { Colors } from "@/constants/theme";
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors } from '@/constants/theme';
 
-interface Repo {
+interface ItemRecord {
   id: number;
   name: string;
   url: string;
@@ -46,12 +47,12 @@ interface TreeRow {
   _isGroup?: boolean;
 }
 
-function buildTree(repos: Repo[]): TreeRow[] {
-  const grouped: Record<string, Repo[]> = {};
-  for (const repo of repos) {
-    const lang = repo.language || "Unknown";
+function buildTree(items: ItemRecord[]): TreeRow[] {
+  const grouped: Record<string, ItemRecord[]> = {};
+  for (const item of items) {
+    const lang = item.language || 'Unknown';
     if (!grouped[lang]) grouped[lang] = [];
-    grouped[lang].push(repo);
+    grouped[lang].push(item);
   }
 
   return Object.entries(grouped)
@@ -66,7 +67,7 @@ function buildTree(repos: Repo[]): TreeRow[] {
       subRows: items.map((r) => ({
         name: r.name,
         stars: r.stars,
-        language: r.language || "Unknown",
+        language: r.language || 'Unknown',
         forks: r.forks,
         description: r.description,
       })),
@@ -75,11 +76,13 @@ function buildTree(repos: Repo[]): TreeRow[] {
 
 export default function ReposScreen() {
   const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? "light"];
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const colors = Colors[colorScheme ?? 'light'];
+  const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
+  const { width } = useWindowDimensions();
+  const compact = width < 560;
 
   useEffect(() => {
     fetch(`${API_BASE}/repo/?limit=200`)
@@ -87,24 +90,30 @@ export default function ReposScreen() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then(setRepos)
+      .then(setItems)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const data = useMemo(() => buildTree(repos), [repos]);
+  const data = useMemo(() => buildTree(items), [items]);
 
   const columns = useMemo<ColumnDef<TreeRow, any>[]>(
     () => [
       {
-        accessorKey: "name",
-        header: "Name",
+        accessorKey: 'name',
+        header: 'Name',
         cell: ({ row, getValue }) => (
-          <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: row.depth * 16 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingLeft: row.depth * 16,
+            }}
+          >
             {row.getCanExpand() ? (
               <Pressable onPress={row.getToggleExpandedHandler()} hitSlop={8}>
                 <ThemedText style={styles.expander}>
-                  {row.getIsExpanded() ? "▼" : "▶"}
+                  {row.getIsExpanded() ? '▼' : '▶'}
                 </ThemedText>
               </Pressable>
             ) : (
@@ -112,7 +121,11 @@ export default function ReposScreen() {
             )}
             <ThemedText
               numberOfLines={1}
-              style={[styles.cell, styles.nameCell, row.original._isGroup && styles.groupName]}
+              style={[
+                styles.cell,
+                styles.nameCell,
+                row.original._isGroup && styles.groupName,
+              ]}
             >
               {getValue()}
             </ThemedText>
@@ -120,34 +133,34 @@ export default function ReposScreen() {
         ),
       },
       {
-        accessorKey: "stars",
-        header: "Stars",
+        accessorKey: 'stars',
+        header: 'Stars',
         cell: ({ getValue }) => (
           <ThemedText style={[styles.cell, styles.numCell]}>
-            {getValue()?.toLocaleString() ?? ""}
+            {getValue()?.toLocaleString() ?? ''}
           </ThemedText>
         ),
       },
       {
-        accessorKey: "forks",
-        header: "Forks",
+        accessorKey: 'forks',
+        header: 'Forks',
         cell: ({ getValue }) => (
           <ThemedText style={[styles.cell, styles.numCell]}>
-            {getValue()?.toLocaleString() ?? ""}
+            {getValue()?.toLocaleString() ?? ''}
           </ThemedText>
         ),
       },
       {
-        accessorKey: "description",
-        header: "Description",
+        accessorKey: 'description',
+        header: 'Description',
         cell: ({ getValue }) => (
           <ThemedText numberOfLines={1} style={[styles.cell, styles.descCell]}>
-            {getValue() ?? ""}
+            {getValue() ?? ''}
           </ThemedText>
         ),
       },
     ],
-    []
+    [],
   );
 
   const table = useReactTable({
@@ -177,24 +190,38 @@ export default function ReposScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView
+      style={[
+        styles.container,
+        {
+          paddingHorizontal: compact ? 14 : 24,
+          paddingTop: compact ? 24 : 48,
+        },
+      ]}
+    >
       <ThemedText type="title" style={styles.title}>
-        Repositories
+        Items
       </ThemedText>
       <ThemedText style={styles.subtitle}>
-        {repos.length} repos grouped by language
+        {items.length} items grouped by language
       </ThemedText>
       <ScrollView horizontal>
         <View>
           <View style={[styles.headerRow, { borderBottomColor: colors.icon }]}>
             {table.getHeaderGroups().map((headerGroup) =>
               headerGroup.headers.map((header) => (
-                <View key={header.id} style={[styles.headerCell, { width: getColWidth(header.id) }]}>
+                <View
+                  key={header.id}
+                  style={[styles.headerCell, { width: getColWidth(header.id) }]}
+                >
                   <ThemedText style={styles.headerText}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
                   </ThemedText>
                 </View>
-              ))
+              )),
             )}
           </View>
           <ScrollView style={styles.body}>
@@ -203,12 +230,15 @@ export default function ReposScreen() {
                 key={row.id}
                 style={[
                   styles.row,
-                  { borderBottomColor: colors.icon + "33" },
+                  { borderBottomColor: colors.icon + '33' },
                   row.original._isGroup && styles.groupRow,
                 ]}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <View key={cell.id} style={{ width: getColWidth(cell.column.id) }}>
+                  <View
+                    key={cell.id}
+                    style={{ width: getColWidth(cell.column.id) }}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </View>
                 ))}
@@ -223,29 +253,38 @@ export default function ReposScreen() {
 
 function getColWidth(id: string): number {
   switch (id) {
-    case "name": return 240;
-    case "stars": return 80;
-    case "forks": return 80;
-    case "description": return 320;
-    default: return 120;
+    case 'name':
+      return 240;
+    case 'stars':
+      return 80;
+    case 'forks':
+      return 80;
+    case 'description':
+      return 320;
+    default:
+      return 120;
   }
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  container: { flex: 1 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   title: { marginBottom: 4 },
   subtitle: { marginBottom: 16, opacity: 0.6 },
-  headerRow: { flexDirection: "row", borderBottomWidth: 1, paddingBottom: 8 },
+  headerRow: { flexDirection: 'row', borderBottomWidth: 1, paddingBottom: 8 },
   headerCell: { paddingHorizontal: 4 },
-  headerText: { fontWeight: "700", fontSize: 13 },
+  headerText: { fontWeight: '700', fontSize: 13 },
   body: { flex: 1 },
-  row: { flexDirection: "row", paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  groupRow: { backgroundColor: "rgba(128,128,128,0.06)" },
+  row: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  groupRow: { backgroundColor: 'rgba(128,128,128,0.06)' },
   cell: { fontSize: 13, paddingHorizontal: 4 },
   nameCell: { flex: 1 },
-  groupName: { fontWeight: "600" },
-  numCell: { textAlign: "right" },
+  groupName: { fontWeight: '600' },
+  numCell: { textAlign: 'right' },
   descCell: { opacity: 0.7 },
   expander: { width: 18, fontSize: 10 },
 });
