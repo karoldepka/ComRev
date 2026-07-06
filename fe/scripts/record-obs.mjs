@@ -48,11 +48,8 @@ import {
   statSync,
   unlinkSync,
 } from "fs";
-import OBSWebSocket from "obs-websocket-js";
+import { OBSWebSocket } from "obs-websocket-js";
 import { dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
 

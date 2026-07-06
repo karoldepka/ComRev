@@ -61,7 +61,7 @@ export class FirePipe implements EffectPipe {
   }
 
   private build() {
-    const { count = 280, size = 0.85 } = this.params;
+    const { count = 280 } = this.params;
     const rng = makeRng(42);
     this.positions = new Float32Array(count * 3);
     this.lives     = new Float32Array(count);

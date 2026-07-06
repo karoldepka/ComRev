@@ -42,6 +42,7 @@
     "expo-three": "^8.0.0",
     "expo-web-browser": "~15.0.10",
     "i18next": "^26.3.1",
+    "nanoid": "^5.1.11",
     "opentype.js": "^2.0.0",
     "prettier": "^3.9.4",
     "react": "19.1.0",

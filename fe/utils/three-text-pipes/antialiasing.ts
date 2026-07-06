@@ -2,7 +2,7 @@ import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { EffectPipe, PipeSetupContext, PipeFrameContext } from './base';
 
-export interface AntialiasingPipeParams {}
+export type AntialiasingPipeParams = Record<string, never>;
 
 export class AntialiasingPipe implements EffectPipe {
   readonly name = 'antialiasing';

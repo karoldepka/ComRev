@@ -31,6 +31,7 @@ export interface Text3dPipeParams {
 
 export class Text3dPipe implements EffectPipe {
   readonly name = 'text3d';
+  effectInstanceId?: string;
   private group: THREE.Group | null = null;
   private scene: THREE.Scene | null = null;
   private currentMesh: THREE.Object3D | null = null;

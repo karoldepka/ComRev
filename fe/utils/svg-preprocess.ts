@@ -8,7 +8,7 @@
  *  render correctly in the browser but won't be truly portable.)
  */
 
-import opentype from 'opentype.js';
+import { Font, parse } from 'opentype.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,8 +38,8 @@ function inheritedAttr(el: Element, attr: string): string | null {
 // ── Stage 1: Font vectorisation ───────────────────────────────────────────────
 
 /** Load all @font-face fonts embedded as base64 data URIs inside a parsed SVG document. */
-async function loadEmbeddedFonts(doc: Document): Promise<Map<string, opentype.Font>> {
-  const fonts = new Map<string, opentype.Font>();
+async function loadEmbeddedFonts(doc: Document): Promise<Map<string, Font>> {
+  const fonts = new Map<string, Font>();
 
   // Collect CSS from all <style> elements
   const css = Array.from(doc.querySelectorAll('style'))
@@ -62,7 +62,7 @@ async function loadEmbeddedFonts(doc: Document): Promise<Map<string, opentype.Fo
     const buf = base64ToArrayBuffer(dataM[1]);
     if (!buf) continue;
     try {
-      const font = opentype.parse(buf);
+      const font = parse(buf);
       fonts.set(family, font);
     } catch {
       // corrupt/unsupported font – skip

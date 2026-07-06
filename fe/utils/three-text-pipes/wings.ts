@@ -288,7 +288,6 @@ export class WingsPipe implements EffectPipe {
     this.halfWidth = (bbox.max.x - bbox.min.x) * 0.5;
     this.attachmentY = center.y - meshPos.y;
     const newHalfHeight = (bbox.max.y - bbox.min.y) * 0.5;
-    const heightChanged = Math.abs(newHalfHeight - this.textHalfHeight) > 0.05;
     this.textHalfHeight = newHalfHeight;
     this.buildWings();
   }

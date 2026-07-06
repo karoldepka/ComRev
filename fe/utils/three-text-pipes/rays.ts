@@ -174,7 +174,7 @@ interface HeartRay { pos: [number, number]; normal: [number, number] }
 // scaled so the heart just encloses a circle of the given radius.
 function heartRayPositions(rayCount: number, radius: number): HeartRay[] {
   const N_SAMPLE = 2000;
-  const pts: Array<[number, number]> = [];
+  const pts: [number, number][] = [];
   const arcLen: number[] = [0];
 
   for (let i = 0; i < N_SAMPLE; i++) {
@@ -300,13 +300,13 @@ export class RaysPipe implements EffectPipe {
     const innerR = halfDiag + innerMargin;
 
     // Generate instances
-    let instances: Array<{
+    let instances: {
       pos: THREE.Vector3;
       angle: number;
       length: number;
       thickness: number;
       index: number;
-    }> = [];
+    }[] = [];
 
     const seed = (n: number) => Math.sin(n * 127.1 + 311.7) * 0.5 + 0.5;
 
@@ -700,4 +700,3 @@ export class RaysPipe implements EffectPipe {
     this.group = null;
   }
 }
-

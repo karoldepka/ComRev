@@ -6449,9 +6449,10 @@ export function ThreeDTextScreen({
     if (!currentConfigIdRef.current) {
       currentConfigIdRef.current = nanoid();
     }
+    const configId = currentConfigIdRef.current;
     const p = mainTextParams;
     return {
-      id: currentConfigIdRef.current,
+      id: configId,
       name: `3D render configuration ${new Date().toISOString()}`,
       savedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

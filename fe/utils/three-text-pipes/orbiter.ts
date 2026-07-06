@@ -14,7 +14,7 @@ export class OrbiterPipe implements EffectPipe {
   setup(ctx: PipeSetupContext) {
     this.scene = ctx.scene;
     this.group = new THREE.Group();
-    const { count = 4, color = 0xff6600, orbitRadius = 4, size = 0.3 } = this.params;
+    const { count = 4, color = 0xff6600, size = 0.3 } = this.params;
     for (let i = 0; i < count; i++) {
       const geo = new THREE.SphereGeometry(size, 8, 8);
       const mat = new THREE.MeshStandardMaterial({ color, emissive: new THREE.Color(color), emissiveIntensity: 0.5 });

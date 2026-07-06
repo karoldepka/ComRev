@@ -43,7 +43,7 @@
 
 import { execFileSync, execSync } from 'child_process';
 import { mkdirSync, renameSync, rmSync, unlinkSync, statSync } from 'fs';
-import { join, dirname, extname } from 'path';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

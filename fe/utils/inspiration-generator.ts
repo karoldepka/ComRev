@@ -1,3 +1,5 @@
+import { API_BASE } from './api-config';
+
 export type InspirationKind =
   | 'motto'
   | 'famous_people_quote'
@@ -46,8 +48,6 @@ export const INSPIRATION_KIND_LABELS: Record<InspirationKind, string> = {
   belief: 'Beliefs',
   quality: 'Qualities',
 };
-
-import { API_BASE } from './api-config';
 
 const STOP_WORDS = new Set([
   'a',

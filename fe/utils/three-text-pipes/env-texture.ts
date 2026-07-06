@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { makeRng } from './base';
-import { schemeUniforms } from './fractal-background';
+import { SCHEME_STOPS, schemeUniforms } from './fractal-background';
 import { FireworksState } from '../image-sources';
-import { SCHEME_STOPS, schemeUniformsFromData } from './fractal-background';
 
 export type EnvMapStyle =
   | 'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon'

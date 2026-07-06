@@ -14,7 +14,7 @@ export class MirrorPlanePipe implements EffectPipe {
   onMeshChanged(mesh: THREE.Mesh | THREE.Group | null, _ctx: PipeSetupContext) {
     if (this.mirror && this.scene) { this.scene.remove(this.mirror); this.mirror = null; }
     if (!mesh || !this.scene) return;
-    const { opacity = 0.3, color = 0xffffff, axis = 'y', offset = 0 } = this.params;
+    const { opacity = 0.3, color = 0xffffff, axis = 'y' } = this.params;
     const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, depthWrite: false });
     const clone = mesh.clone(true);
     clone.traverse(c => { if (c instanceof THREE.Mesh) c.material = mat; });

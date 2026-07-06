@@ -64,7 +64,7 @@ export class SmokePipe implements EffectPipe {
   }
 
   private build() {
-    const { count = 70, size = 1.6 } = this.params;
+    const { count = 70 } = this.params;
     const rng = makeRng(77);
     this.positions = new Float32Array(count * 3);
     this.lives     = new Float32Array(count);
