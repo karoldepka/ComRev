@@ -74,6 +74,12 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { API_BASE } from '@/utils/api-config';
+import {
+  hexColorToRgbNumber,
+  hslToRgbUnit,
+  isHexColorDraft,
+  rgbNumberToHexColor,
+} from '@/utils/color';
 import { encodeSvgDataUrl } from '@/utils/data-url';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 
@@ -98,15 +104,6 @@ function isEditableShortcutTarget(target: EventTarget | null): boolean {
   );
 }
 
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + h * 12) % 12;
-    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-  };
-  return [f(0), f(8), f(4)];
-}
-
 const PREDEFINED_PLASMA_STOP_DATA = Object.values(SCHEME_STOPS);
 
 function fullyRandomPlasmaStops(): number[] {
@@ -127,7 +124,7 @@ function fullyRandomPlasmaStops(): number[] {
   ts.forEach((t, i) => {
     const h = (startHue + i * GOLDEN) % 1;
     const s = 0.7 + Math.random() * 0.3;
-    const [r, g, b] = hslToRgb(h, s, lightnesses[i]);
+    const [r, g, b] = hslToRgbUnit(h, s, lightnesses[i]);
     stops.push(t, r, g, b);
   });
   return stops;
@@ -1187,14 +1184,6 @@ function saveRecentColor(hex: number) {
   } catch {}
 }
 
-function numToHex(n: number): string {
-  return "#" + n.toString(16).padStart(6, "0");
-}
-
-function hexToNum(s: string): number {
-  return parseInt(s.replace("#", ""), 16);
-}
-
 function ColorPickerRow({
   label,
   value,
@@ -1211,11 +1200,11 @@ function ColorPickerRow({
   const [recentColors, setRecentColors] = React.useState<number[]>(() =>
     loadRecentColors(),
   );
-  const [draftHex, setDraftHex] = React.useState(numToHex(value));
+  const [draftHex, setDraftHex] = React.useState(rgbNumberToHexColor(value));
   const originalValueRef = React.useRef(value);
 
   React.useEffect(() => {
-    setDraftHex(numToHex(value));
+    setDraftHex(rgbNumberToHexColor(value));
   }, [value]);
 
   const applyColor = (num: number) => {
@@ -1231,7 +1220,7 @@ function ColorPickerRow({
         <TouchableOpacity
           onPress={() => {
             originalValueRef.current = value;
-            setDraftHex(numToHex(value));
+            setDraftHex(rgbNumberToHexColor(value));
             setShowModal(true);
           }}
           style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
@@ -1241,7 +1230,7 @@ function ColorPickerRow({
               width: 28,
               height: 20,
               borderRadius: 3,
-              backgroundColor: numToHex(value),
+              backgroundColor: rgbNumberToHexColor(value),
               borderWidth: 1,
               borderColor: "#888",
             }}
@@ -1291,7 +1280,8 @@ function ColorPickerRow({
                   onChange={(e: any) => {
                     const hex = e.target.value;
                     setDraftHex(hex);
-                    if (/^#[0-9a-fA-F]{6}$/.test(hex)) onChange(hexToNum(hex));
+                    const color = hexColorToRgbNumber(hex);
+                    if (color !== null) onChange(color);
                   }}
                   style={{
                     width: 80,
@@ -1324,7 +1314,7 @@ function ColorPickerRow({
                     <TouchableOpacity
                       key={c}
                       onPress={() => {
-                        setDraftHex(numToHex(c));
+                        setDraftHex(rgbNumberToHexColor(c));
                       }}
                     >
                       <View
@@ -1332,10 +1322,10 @@ function ColorPickerRow({
                           width: 24,
                           height: 24,
                           borderRadius: 4,
-                          backgroundColor: numToHex(c),
+                          backgroundColor: rgbNumberToHexColor(c),
                           borderWidth: 2,
                           borderColor:
-                            numToHex(c) === draftHex
+                            rgbNumberToHexColor(c) === draftHex
                               ? colors.tint
                               : "transparent",
                         }}
@@ -1364,7 +1354,7 @@ function ColorPickerRow({
                 }}
                 value={draftHex}
                 onChangeText={(v) => {
-                  if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setDraftHex(v);
+                  if (isHexColorDraft(v)) setDraftHex(v);
                 }}
                 maxLength={7}
                 autoCapitalize="none"
@@ -1390,7 +1380,9 @@ function ColorPickerRow({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                  applyColor(hexToNum(draftHex));
+                  const color = hexColorToRgbNumber(draftHex);
+                  if (color === null) return;
+                  applyColor(color);
                   setShowModal(false);
                 }}
                 style={{
