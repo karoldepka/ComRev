@@ -138,4 +138,14 @@ describe('config store offline-first sync', () => {
       lastError: null,
     });
   });
+
+  it('hands off a selected pending config exactly once', async () => {
+    const store = await loadStore();
+    const config = makeConfig('pending-config-1');
+
+    store.setPendingConfigToLoad(config);
+
+    expect(store.consumePendingConfigToLoad()).toEqual(config);
+    expect(store.consumePendingConfigToLoad()).toBeNull();
+  });
 });

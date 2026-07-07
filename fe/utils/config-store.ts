@@ -638,6 +638,7 @@ export interface LastSoundscapeState {
   id: typeof LAST_SOUNDSCAPE_STATE_KEY;
   schemaVersion: typeof LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION;
   masterVolume: number;
+  masterPaused: boolean;
   beatHz: number;
   carrier: number;
   volume: number;
@@ -679,6 +680,7 @@ function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | nul
     id: LAST_SOUNDSCAPE_STATE_KEY,
     schemaVersion: LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION,
     masterVolume: typeof record.masterVolume === "number" ? record.masterVolume : 1,
+    masterPaused: record.masterPaused === true,
     beatHz: typeof record.beatHz === "number" ? record.beatHz : 10,
     carrier: typeof record.carrier === "number" ? record.carrier : 200,
     volume: typeof record.volume === "number" ? record.volume : 0.35,
@@ -805,7 +807,9 @@ export async function recordTriedEffect(type: EffectType, apiBase: string): Prom
       updatedAt: new Date().toISOString(),
     };
     await withStore(STORE_TRIED_EFFECTS, "readwrite", (store) => store.put(updated));
-    syncTriedEffectsToBackend(apiBase, updated).catch(() => {});
+    syncTriedEffectsToBackend(apiBase, updated).catch((error) => {
+      console.warn("Tried effects saved locally; backend sync failed:", error);
+    });
   } catch (error) {
     console.warn("recordTriedEffect failed:", error);
   }
@@ -825,6 +829,14 @@ let _pendingPreset: PresetRecord | null = null;
 export function setPendingPresetToLoad(p: PresetRecord | null) { _pendingPreset = p; }
 export function consumePendingPresetToLoad(): PresetRecord | null {
   const p = _pendingPreset; _pendingPreset = null; return p;
+}
+
+// Cross-screen local config handoff, used by the global sync indicator to open
+// a specific pending save in the editor without relying on backend state.
+let _pendingConfig: ThreeDConfig | null = null;
+export function setPendingConfigToLoad(config: ThreeDConfig | null) { _pendingConfig = config; }
+export function consumePendingConfigToLoad(): ThreeDConfig | null {
+  const config = _pendingConfig; _pendingConfig = null; return config;
 }
 
 export async function savePresetOfflineFirst(

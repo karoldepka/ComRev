@@ -24,6 +24,9 @@ export const getCtxState = getAudioContextState;
 function teardownOscillators() {
   try { leftOsc?.stop(); } catch { /* already stopped */ }
   try { rightOsc?.stop(); } catch { /* already stopped */ }
+  try { leftOsc?.disconnect(); } catch { /* already disconnected */ }
+  try { rightOsc?.disconnect(); } catch { /* already disconnected */ }
+  try { gainNode?.disconnect(); } catch { /* already disconnected */ }
   leftOsc = null;
   rightOsc = null;
   gainNode = null;
@@ -72,8 +75,6 @@ export function startBinaural(beatHz: number, carrier: number, volume: number): 
 
 export function stopBinaural() {
   teardownOscillators();
-  const ctx = getOrCreateAudioContext();
-  ctx?.suspend().catch(() => undefined);
   _playing = false;
 }
 

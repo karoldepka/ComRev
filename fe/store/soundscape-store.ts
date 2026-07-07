@@ -1,22 +1,29 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid/non-secure';
-import { startBinaural, stopBinaural, updateBinaural } from '@/utils/binaural-engine';
+import {
+  isBinauralPlaying,
+  startBinaural,
+  stopBinaural,
+  updateBinaural,
+} from '@/utils/binaural-engine';
 import {
   startAmbienceTrack,
   startBinauralLayer,
   startBirdsTrack,
+  isTrackPlaying,
   startNoiseTrack,
   stopTrack,
   updateBinauralLayer,
   updateBirdsTrack,
   setTrackVolume,
 } from '@/utils/sound-engine';
-import { setMasterGain } from '@/utils/audio-context';
+import { setGlobalAudioPaused, setMasterGain } from '@/utils/audio-context';
 import type { NoiseColor } from '@/utils/noise-buffers';
 import { AMBIENCE_SOURCES, type AmbienceKind, type AmbienceCategory } from '@/utils/ambience-tracks';
 import {
   startStutterGate,
   stopStutterGate,
+  isStutterGateActive,
   triggerBassSwipe as triggerBassSwipeFx,
   type SweepDirection,
 } from '@/utils/sound-fx';
@@ -122,7 +129,9 @@ function mergeRecentLayerKeys(recentLayerKeys: string[], activeLayerKeys: string
 interface SoundscapeState {
   // --- Master output volume (scales the whole mix uniformly) ---
   masterVolume: number;
+  masterPaused: boolean;
   setMasterVolume: (v: number) => void;
+  toggleMasterPause: () => void;
 
   // --- Primary binaural track (drives slideshow/preset integration; unchanged behavior) ---
   beatHz: number;
@@ -237,13 +246,51 @@ function stopCurrentPlayback(state: SoundscapeState): void {
   if (state.stutterGate.enabled) stopStutterGate();
 }
 
+function startMissingPlayback(state: SoundscapeState): void {
+  if (state.playing && !isBinauralPlaying()) startBinaural(state.beatHz, state.carrier, state.volume);
+  for (const preset of WAVE_PRESETS) {
+    const layer = state.extraBinaural[preset.key];
+    const id = `binaural:${preset.key}`;
+    if (layer?.playing && !isTrackPlaying(id)) startBinauralLayer(id, preset.hz, state.carrier, layer.volume);
+  }
+  for (const noise of NOISE_COLORS) {
+    const layer = state.noise[noise.key];
+    const id = `noise:${noise.key}`;
+    if (layer?.playing && !isTrackPlaying(id)) startNoiseTrack(id, noise.key, layer.volume);
+  }
+  for (const source of AMBIENCE_SOURCES) {
+    const layer = state.ambience[source.kind];
+    const id = `ambience:${source.kind}`;
+    if (layer?.playing && !isTrackPlaying(id)) void startAmbienceTrack(id, source.kind, layer.volume);
+  }
+  if (state.birds.playing && !isTrackPlaying('birds')) {
+    startBirdsTrack('birds', state.birds.volume, state.birds.pitch, state.birds.speed);
+  }
+  if (state.stutterGate.enabled && !isStutterGateActive()) startStutterGate(state.stutterGate.bpm);
+}
+
 export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   masterVolume: 1,
+  masterPaused: false,
   recentLayerKeys: [],
 
   setMasterVolume: (masterVolume) => {
     set({ masterVolume });
     setMasterGain(masterVolume);
+  },
+
+  toggleMasterPause: () => {
+    const state = get();
+    const masterPaused = !state.masterPaused;
+    if (masterPaused) {
+      set({ masterPaused });
+      setGlobalAudioPaused(true);
+      return;
+    }
+
+    startMissingPlayback(state);
+    set({ masterPaused });
+    setGlobalAudioPaused(false);
   },
 
   beatHz: 10,
@@ -253,13 +300,13 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   presetConfig: null,
 
   toggle: () => {
-    const { playing, beatHz, carrier, volume } = get();
+    const { playing, beatHz, carrier, volume, masterPaused } = get();
     const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, CUSTOM_BINAURAL_LAYER_KEY);
     if (playing) {
       stopBinaural();
       set({ playing: false, recentLayerKeys });
     } else {
-      const ok = startBinaural(beatHz, carrier, volume);
+      const ok = masterPaused || startBinaural(beatHz, carrier, volume);
       if (ok) set({ playing: true, recentLayerKeys });
     }
   },
@@ -314,7 +361,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       stopTrack(id);
       set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: false } }, recentLayerKeys });
     } else {
-      const ok = startBinauralLayer(id, preset.hz, get().carrier, layer.volume);
+      const ok = get().masterPaused || startBinauralLayer(id, preset.hz, get().carrier, layer.volume);
       if (ok) set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: true } }, recentLayerKeys });
     }
   },
@@ -340,7 +387,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       stopTrack(id);
       set({ noise: { ...get().noise, [color]: { ...layer, playing: false } }, recentLayerKeys });
     } else {
-      const ok = startNoiseTrack(id, color, layer.volume);
+      const ok = get().masterPaused || startNoiseTrack(id, color, layer.volume);
       if (ok) set({ noise: { ...get().noise, [color]: { ...layer, playing: true } }, recentLayerKeys });
     }
   },
@@ -362,7 +409,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `ambience:${kind}`);
     if (layer.playing) {
       stopTrack(id);
-    } else {
+    } else if (!get().masterPaused) {
       // Fire-and-forget: the recording is fetched/decoded async, but the UI
       // toggles optimistically; a fast re-toggle is handled by the load-token
       // guard inside startAmbienceTrack.
@@ -386,7 +433,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       stopTrack('birds');
       set({ birds: { ...layer, playing: false }, recentLayerKeys });
     } else {
-      const ok = startBirdsTrack('birds', layer.volume, layer.pitch, layer.speed);
+      const ok = get().masterPaused || startBirdsTrack('birds', layer.volume, layer.pitch, layer.speed);
       if (ok) set({ birds: { ...layer, playing: true }, recentLayerKeys });
     }
   },
@@ -410,6 +457,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   },
 
   triggerBassSwipe: (direction) => {
+    if (get().masterPaused) return;
     triggerBassSwipeFx(direction);
   },
 
@@ -419,7 +467,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     const gate = get().stutterGate;
     if (gate.enabled) {
       stopStutterGate();
-    } else {
+    } else if (!get().masterPaused) {
       startStutterGate(gate.bpm);
     }
     set({ stutterGate: { ...gate, enabled: !gate.enabled } });
@@ -428,7 +476,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   setStutterGateBpm: (bpm) => {
     const gate = get().stutterGate;
     set({ stutterGate: { ...gate, bpm } });
-    if (gate.enabled) startStutterGate(bpm); // re-arm at the new tempo
+    if (gate.enabled && !get().masterPaused) startStutterGate(bpm); // re-arm at the new tempo
   },
 
   presets: [],
@@ -574,10 +622,12 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       stopCurrentPlayback(get());
 
       const masterVolume = clampVolume(last.masterVolume, 1);
+      const masterPaused = last.masterPaused === true;
       const beatHz = finiteNumber(last.beatHz, 10);
       const carrier = finiteNumber(last.carrier, 200);
       const volume = clampVolume(last.volume);
 
+      setGlobalAudioPaused(masterPaused);
       setMasterGain(masterVolume);
 
       const playing = last.playing ? startBinaural(beatHz, carrier, volume) : false;
@@ -623,6 +673,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
       set({
         masterVolume,
+        masterPaused,
         beatHz,
         carrier,
         volume,
@@ -655,6 +706,7 @@ useSoundscapeStore.subscribe(() => {
     const state = useSoundscapeStore.getState();
     saveLastSoundscapeState({
       masterVolume: state.masterVolume,
+      masterPaused: state.masterPaused,
       beatHz: state.beatHz,
       carrier: state.carrier,
       volume: state.volume,

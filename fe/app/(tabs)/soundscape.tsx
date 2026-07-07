@@ -373,7 +373,9 @@ export default function SoundscapeScreen() {
   const cardWidth = numCols > 1 ? (contentWidth - cardGap * (numCols - 1)) / numCols : undefined;
 
   const masterVolume = useSoundscapeStore((s) => s.masterVolume);
+  const masterPaused = useSoundscapeStore((s) => s.masterPaused);
   const setMasterVolume = useSoundscapeStore((s) => s.setMasterVolume);
+  const toggleMasterPause = useSoundscapeStore((s) => s.toggleMasterPause);
 
   const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
     useSoundscapeStore();
@@ -537,7 +539,7 @@ export default function SoundscapeScreen() {
   const anyPlaying = activeLayerCount > 0;
 
   useEffect(() => {
-    if (!anyPlaying || ctxState !== 'suspended' || typeof window === 'undefined') return;
+    if (masterPaused || !anyPlaying || ctxState !== 'suspended' || typeof window === 'undefined') return;
     const resumeRestoredAudio = () => {
       resumeAudioContext();
     };
@@ -547,10 +549,17 @@ export default function SoundscapeScreen() {
       window.removeEventListener('pointerdown', resumeRestoredAudio, true);
       window.removeEventListener('keydown', resumeRestoredAudio, true);
     };
-  }, [anyPlaying, ctxState]);
+  }, [anyPlaying, ctxState, masterPaused]);
 
   const ctxOk = ctxState === 'running';
   const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
+  const masterToggleLabel = masterPaused ? 'Resume all soundscape audio' : 'Pause all soundscape audio';
+  const recentLayerStatus =
+    activeLayerCount > 0
+      ? masterPaused
+        ? ` · ${activeLayerCount} paused`
+        : ` · ${activeLayerCount} active`
+      : '';
 
   return (
     <ScrollView
@@ -566,17 +575,38 @@ export default function SoundscapeScreen() {
       <View style={[styles.masterVolCard, { backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG, borderColor: c.tint }]}>
         <View style={styles.masterVolHeader}>
           <MaterialIcons name="volume-up" size={22} color={c.tint} />
+          <Pressable
+            onPress={toggleMasterPause}
+            accessibilityRole="button"
+            accessibilityLabel={masterToggleLabel}
+            accessibilityState={{ checked: masterPaused }}
+            style={[
+              styles.masterPauseButton,
+              {
+                backgroundColor: masterPaused ? c.tint : 'transparent',
+                borderColor: c.tint,
+              },
+            ]}
+          >
+            <MaterialIcons name={masterPaused ? 'play-arrow' : 'pause'} size={20} color={masterPaused ? '#fff' : c.tint} />
+          </Pressable>
           <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
           <Text style={[styles.masterVolValue, { color: c.tint }]}>{Math.round(masterVolume * 100)}%</Text>
         </View>
         <InlineSlider min={0} max={1} step={0.01} value={masterVolume} onChange={setMasterVolume} tint={c.tint} />
+        {masterPaused ? (
+          <View style={styles.masterPausedRow}>
+            <MaterialIcons name="pause-circle-filled" size={14} color={c.tint} />
+            <Text style={[styles.masterPausedText, { color: c.tint }]}>Master paused</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* ---------------- Now Playing ---------------- */}
       {recentLayers.length > 0 && (
         <>
           <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 8 }]}>
-            MOST RECENTLY USED{activeLayerCount > 0 ? ` · ${activeLayerCount} active` : ''}
+            MOST RECENTLY USED{recentLayerStatus}
           </Text>
           <View style={styles.nowPlayingGrid}>
             {recentLayers.map((al) => (
@@ -659,7 +689,7 @@ export default function SoundscapeScreen() {
       </View>
 
       {/* AudioContext status — shows 'suspended' if browser blocked autoplay */}
-      {anyPlaying && (
+      {anyPlaying && !masterPaused && (
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: ctxColor }]} />
           <Text style={[styles.statusText, { color: ctxColor }]}>
@@ -860,8 +890,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   masterVolHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, marginBottom: 8 },
+  masterPauseButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
   masterVolLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
   masterVolValue: { fontSize: 16, fontWeight: '800', minWidth: 44, textAlign: 'right' },
+  masterPausedRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 8 },
+  masterPausedText: { fontSize: 12, fontWeight: '700' },
 
   nowPlayingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   nowPlayingCard: {

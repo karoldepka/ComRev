@@ -4,6 +4,7 @@
 
 let audioCtx: AudioContext | null = null;
 let masterBus: GainNode | null = null;
+let globalAudioPaused = false;
 
 type StateListener = (state: AudioContextState | 'unavailable') => void;
 const stateListeners = new Set<StateListener>();
@@ -33,6 +34,9 @@ export function getOrCreateAudioContext(): AudioContext | null {
     audioCtx.onstatechange = notifyState;
     masterBus = null; // stale reference to the old context's node graph
   }
+  if (globalAudioPaused && audioCtx.state === 'running') {
+    audioCtx.suspend().then(notifyState).catch(() => undefined);
+  }
   return audioCtx;
 }
 
@@ -60,10 +64,27 @@ export function setMasterGain(value: number): void {
   bus.gain.setTargetAtTime(value, ctx.currentTime, 0.05);
 }
 
+export function setGlobalAudioPaused(paused: boolean): AudioContext | null {
+  globalAudioPaused = paused;
+  const ctx = audioCtx;
+  if (!ctx) {
+    notifyState();
+    return null;
+  }
+
+  const transition = paused ? ctx.suspend() : ctx.resume();
+  transition.then(notifyState).catch(() => undefined);
+  return ctx;
+}
+
 // resume() must ultimately be triggered by a user gesture (click/tap) to unlock
 // audio playback; callers should invoke this synchronously from that handler.
 export function resumeAudioContext(): AudioContext | null {
   const ctx = getOrCreateAudioContext();
+  if (globalAudioPaused) {
+    notifyState();
+    return ctx;
+  }
   ctx?.resume().then(notifyState).catch(() => undefined);
   return ctx;
 }

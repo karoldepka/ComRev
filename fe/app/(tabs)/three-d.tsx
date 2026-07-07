@@ -9,6 +9,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useThreeDStore } from "@/store/three-d-store";
 import { useSoundscapeStore } from "@/store/soundscape-store";
 import {
+  consumePendingConfigToLoad,
   consumePendingPresetToLoad,
   getLatestConfig,
   getPresets,
@@ -46,7 +47,7 @@ import {
   MetallicPreset,
   SCHEME_STOPS,
 } from "@/utils/three-text-pipes";
-import { useFocusEffect, router } from "expo-router";
+import { useFocusEffect, router, useLocalSearchParams } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -1105,7 +1106,10 @@ async function generateRandomConfig(
   currentInstances: EffectInstance[],
   apiBase: string,
 ): Promise<EffectInstance[]> {
-  const triedArr = await getTriedEffects().catch(() => [] as string[]);
+  const triedArr = await getTriedEffects().catch((error) => {
+    console.warn("Unable to load tried effects for random config:", error);
+    return [] as string[];
+  });
   const tried = new Set(triedArr);
 
   const addable = EFFECT_TYPES.filter((e) => !e.primary && e.type !== 'customJs' && !DEFAULT_HIDDEN_EFFECT_TYPES.has(e.type));
@@ -1151,7 +1155,9 @@ async function generateRandomConfig(
 
   // Record newly tried types (fire-and-forget)
   for (const type of picked) {
-    recordTriedEffect(type, apiBase).catch(() => {});
+    recordTriedEffect(type, apiBase).catch((error) => {
+      console.warn("Unable to record tried effect:", type, error);
+    });
   }
 
   return newInstances;
@@ -1166,7 +1172,8 @@ function loadRecentColors(): number[] {
     if (typeof localStorage === "undefined") return [];
     const raw = localStorage.getItem(COLOR_HISTORY_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch {
+  } catch (error) {
+    console.warn("Unable to load recent colors:", error);
     return [];
   }
 }
@@ -1180,7 +1187,9 @@ function saveRecentColor(hex: number) {
       COLOR_HISTORY_KEY,
       JSON.stringify(list.slice(0, MAX_COLOR_HISTORY)),
     );
-  } catch {}
+  } catch (error) {
+    console.warn("Unable to save recent color:", error);
+  }
 }
 
 function ColorPickerRow({
@@ -5677,6 +5686,7 @@ export function ThreeDTextScreen({
   const [loadedPresetName, setLoadedPresetName] = useState<string | null>(null);
   const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
+  const handoffConfigLoadedRef = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlsScrollRef = useRef<ScrollView | null>(null);
   const effectListContainerY = useRef<number>(0);
@@ -5693,10 +5703,77 @@ export function ThreeDTextScreen({
   const compactEffectCardHeaderStyle = isSmallScreen
     ? styles.effectCardHeaderCompact
     : null;
+  const syncRouteParams = useLocalSearchParams();
+  const syncOpenToken = Array.isArray(syncRouteParams.syncOpen)
+    ? syncRouteParams.syncOpen[0]
+    : syncRouteParams.syncOpen;
+
+  const applySavedConfig = React.useCallback(
+    (config: ThreeDConfig, statusMessage?: string) => {
+      currentConfigIdRef.current = config.id;
+      setShowAdvanced(config.showAdvanced);
+
+      const savedEffects = (config as any).effectInstances as
+        | EffectInstance[]
+        | undefined;
+
+      let instances: EffectInstance[] = Array.isArray(savedEffects)
+        ? savedEffects.map((item) => ({
+            ...item,
+            enabled: item.enabled ?? true,
+            animate: item.animate ?? true,
+            params: item.params ?? {},
+          }))
+        : [];
+
+      // Migration: if no mainText effect in saved config, create one from old top-level fields
+      if (!instances.find((i) => i.type === "mainText")) {
+        const mainInst = createEffectInstance("mainText");
+        if (config.text)
+          mainInst.params = { ...mainInst.params, text: config.text };
+        if (config.equalizeLineWidths !== undefined)
+          mainInst.params = {
+            ...mainInst.params,
+            equalizeLineWidths: config.equalizeLineWidths,
+          };
+        if (config.equalizationMethod)
+          mainInst.params = {
+            ...mainInst.params,
+            equalizationMethod: config.equalizationMethod,
+          };
+        if (config.targetWidth)
+          mainInst.params = {
+            ...mainInst.params,
+            targetWidth: config.targetWidth,
+          };
+        if (config.lineSpacing)
+          mainInst.params = {
+            ...mainInst.params,
+            lineSpacing: config.lineSpacing,
+          };
+        instances = [mainInst, ...instances];
+      }
+
+      setEffectInstances(instances);
+      setLoadedPresetName(null);
+      if (statusMessage) {
+        setSaveStatus(statusMessage);
+        setTimeout(() => setSaveStatus(null), 3000);
+      }
+    },
+    [setEffectInstances],
+  );
 
   // Load preset passed from the presets gallery screen
   useFocusEffect(
     React.useCallback(() => {
+      const pendingConfig = consumePendingConfigToLoad();
+      if (pendingConfig) {
+        handoffConfigLoadedRef.current = true;
+        applySavedConfig(pendingConfig, `Opened pending sync item: ${pendingConfig.name}`);
+        return;
+      }
+
       const pending = consumePendingPresetToLoad();
       if (pending) {
         setEffectInstances(
@@ -5711,8 +5788,16 @@ export function ThreeDTextScreen({
         setSaveStatus(`Loaded: ${pending.name}`);
         setTimeout(() => setSaveStatus(null), 3000);
       }
-    }, [setEffectInstances]),
+    }, [applySavedConfig, setEffectInstances]),
   );
+
+  useEffect(() => {
+    if (!syncOpenToken) return;
+    const pendingConfig = consumePendingConfigToLoad();
+    if (!pendingConfig) return;
+    handoffConfigLoadedRef.current = true;
+    applySavedConfig(pendingConfig, `Opened pending sync item: ${pendingConfig.name}`);
+  }, [applySavedConfig, syncOpenToken]);
 
   const effectInstancesRef = useRef(effectInstances);
   useEffect(() => {
@@ -6056,7 +6141,9 @@ export function ThreeDTextScreen({
   const totalAddableCount = EFFECT_TYPES.filter((e) => !e.primary && e.type !== 'customJs').length;
   // Load from IDB once on mount
   useEffect(() => {
-    getTriedEffects().then((arr) => setTriedEffectsSet(new Set(arr))).catch(() => {});
+    getTriedEffects()
+      .then((arr) => setTriedEffectsSet(new Set(arr)))
+      .catch((error) => console.warn("Unable to load tried effects:", error));
   }, []);
 
   const markTried = React.useCallback((type: EffectType) => {
@@ -6066,7 +6153,9 @@ export function ThreeDTextScreen({
       next.add(type);
       return next;
     });
-    recordTriedEffect(type, API_BASE).catch(() => {});
+    recordTriedEffect(type, API_BASE).catch((error) =>
+      console.warn("Unable to record tried effect:", type, error),
+    );
   }, []);
 
   const handleRandom = React.useCallback(async () => {
@@ -6344,59 +6433,23 @@ export function ThreeDTextScreen({
 
     async function loadLastSavedConfig() {
       try {
+        const pendingConfig = consumePendingConfigToLoad();
+        if (pendingConfig) {
+          if (!active) return;
+          handoffConfigLoadedRef.current = true;
+          applySavedConfig(pendingConfig, `Opened pending sync item: ${pendingConfig.name}`);
+          return;
+        }
+
         const latest = await getLatestConfig();
-        if (!active || !latest) {
+        if (!active || !latest || handoffConfigLoadedRef.current) {
           return;
         }
         if (useThreeDStore.getState().mantraMode) {
           return;
         }
 
-        currentConfigIdRef.current = latest.id;
-        setShowAdvanced(latest.showAdvanced);
-
-        const savedEffects = (latest as any).effectInstances as
-          | EffectInstance[]
-          | undefined;
-
-        let instances: EffectInstance[] = Array.isArray(savedEffects)
-          ? savedEffects.map((item) => ({
-              ...item,
-              enabled: item.enabled ?? true,
-              animate: item.animate ?? true,
-              params: item.params ?? {},
-            }))
-          : [];
-
-        // Migration: if no mainText effect in saved config, create one from old top-level fields
-        if (!instances.find((i) => i.type === "mainText")) {
-          const mainInst = createEffectInstance("mainText");
-          if (latest.text)
-            mainInst.params = { ...mainInst.params, text: latest.text };
-          if (latest.equalizeLineWidths !== undefined)
-            mainInst.params = {
-              ...mainInst.params,
-              equalizeLineWidths: latest.equalizeLineWidths,
-            };
-          if (latest.equalizationMethod)
-            mainInst.params = {
-              ...mainInst.params,
-              equalizationMethod: latest.equalizationMethod,
-            };
-          if (latest.targetWidth)
-            mainInst.params = {
-              ...mainInst.params,
-              targetWidth: latest.targetWidth,
-            };
-          if (latest.lineSpacing)
-            mainInst.params = {
-              ...mainInst.params,
-              lineSpacing: latest.lineSpacing,
-            };
-          instances = [mainInst, ...instances];
-        }
-
-        setEffectInstances(instances);
+        applySavedConfig(latest);
       } catch (error) {
         console.warn("Unable to load last configuration:", error);
       }
@@ -6409,7 +6462,8 @@ export function ThreeDTextScreen({
           loaded = await loadPresetsFromBackend(API_BASE);
           // Merge into local IndexedDB
           for (const p of loaded) await savePreset(p);
-        } catch {
+        } catch (error) {
+          console.warn("Unable to load presets from backend; using local presets:", error);
           loaded = await getPresets();
         }
         if (active)
@@ -6431,8 +6485,8 @@ export function ThreeDTextScreen({
     const syncOnOnline = async () => {
       try {
         await syncPendingConfigs(API_BASE);
-      } catch {
-        // Ignore silent sync failures; status remains available to the user.
+      } catch (error) {
+        console.warn("Unable to sync pending configs after reconnect:", error);
       }
     };
 
@@ -6446,7 +6500,7 @@ export function ThreeDTextScreen({
         window.removeEventListener("online", syncOnOnline);
       }
     };
-  }, [skipSavedConfigLoad, setEffectInstances]);
+  }, [applySavedConfig, skipSavedConfigLoad, setEffectInstances]);
 
   const buildCurrentConfig = (): ThreeDConfig => {
     if (!currentConfigIdRef.current) {

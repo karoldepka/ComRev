@@ -163,7 +163,8 @@ export default function PresetsScreen() {
       try {
         loaded = await loadPresetsFromBackend(API_BASE);
         for (const p of loaded) await savePreset(p);
-      } catch {
+      } catch (error) {
+        console.warn("Unable to load presets from backend; using local presets:", error);
         loaded = await getPresets();
       }
       setPresets(
@@ -171,7 +172,9 @@ export default function PresetsScreen() {
           b.when_last_modified.localeCompare(a.when_last_modified),
         ),
       );
-    } catch {}
+    } catch (error) {
+      console.warn("Unable to load presets:", error);
+    }
     setLoading(false);
   }, []);
 
@@ -187,7 +190,9 @@ export default function PresetsScreen() {
       await deletePreset(id);
       try {
         await deletePresetFromBackend(API_BASE, id);
-      } catch {}
+      } catch (error) {
+        console.warn("Preset deleted locally; backend delete failed:", error);
+      }
       setPresets((prev) => prev.filter((p) => p.id !== id));
     };
     const confirmed = await confirm({

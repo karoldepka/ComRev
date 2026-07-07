@@ -1,14 +1,25 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
   ConfigSyncStatus,
+  getPendingConfigs,
   getConfigSyncStatusSnapshot,
   refreshConfigSyncStatus,
+  setPendingConfigToLoad,
   subscribeConfigSyncStatus,
+  type ThreeDConfig,
 } from '@/utils/config-store';
 
 function getStatusTone(status: ConfigSyncStatus) {
@@ -54,11 +65,27 @@ function getStatusDescription(status: ConfigSyncStatus) {
   return parts.join('. ');
 }
 
+function getPendingItemTitle(config: ThreeDConfig) {
+  return config.name?.trim() || config.text?.trim() || config.id;
+}
+
+function formatPendingItemTime(config: ThreeDConfig) {
+  const timestamp = config.updatedAt || config.savedAt;
+  if (!timestamp) return 'Pending local save';
+  return `Updated ${new Date(timestamp).toLocaleString()}`;
+}
+
 export function SyncStatusIndicator() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const dark = colorScheme === 'dark';
   const [status, setStatus] = React.useState(getConfigSyncStatusSnapshot);
+  const [expanded, setExpanded] = React.useState(false);
+  const [pendingItems, setPendingItems] = React.useState<ThreeDConfig[]>([]);
+  const [pendingLoading, setPendingLoading] = React.useState(false);
+  const [pendingLoadError, setPendingLoadError] = React.useState<string | null>(
+    null,
+  );
 
   React.useEffect(() => {
     const unsubscribe = subscribeConfigSyncStatus(setStatus);
@@ -78,6 +105,48 @@ export function SyncStatusIndicator() {
     };
   }, []);
 
+  const hasPendingItems = status.pendingCount > 0;
+
+  const loadPendingItems = React.useCallback(async () => {
+    setPendingLoading(true);
+    try {
+      const pending = await getPendingConfigs();
+      setPendingItems(
+        pending.sort((a, b) =>
+          (b.updatedAt || b.savedAt || '').localeCompare(
+            a.updatedAt || a.savedAt || '',
+          ),
+        ),
+      );
+      setPendingLoadError(null);
+    } catch (error) {
+      setPendingLoadError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!expanded) return;
+    if (!hasPendingItems) {
+      setExpanded(false);
+      setPendingItems([]);
+      return;
+    }
+    loadPendingItems().catch(() => undefined);
+  }, [expanded, hasPendingItems, loadPendingItems, status.pendingCount]);
+
+  React.useEffect(() => {
+    if (!expanded || typeof window === 'undefined') return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpanded(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [expanded]);
+
   const tone = getStatusTone(status);
   const toneColor = {
     error: '#d14343',
@@ -88,6 +157,17 @@ export function SyncStatusIndicator() {
     syncing: '#2478d4',
   }[tone];
   const label = getStatusLabel(status);
+  const toggleExpanded = () => {
+    if (!hasPendingItems) return;
+    setExpanded((value) => !value);
+  };
+  const openPendingItem = (config: ThreeDConfig) => {
+    setPendingConfigToLoad(config);
+    setExpanded(false);
+    router.push(
+      `/(tabs)/three-d?syncItemId=${encodeURIComponent(config.id)}&syncOpen=${Date.now()}`,
+    );
+  };
   const webLiveProps =
     Platform.OS === 'web'
       ? ({
@@ -99,42 +179,168 @@ export function SyncStatusIndicator() {
 
   return (
     <View pointerEvents="box-none" style={styles.container}>
-      <View
-        {...webLiveProps}
-        accessibilityLabel={getStatusDescription(status)}
-        accessibilityLiveRegion={
-          status.phase === 'error' ? 'assertive' : 'polite'
+      <Pressable
+        disabled={!hasPendingItems}
+        onPress={toggleExpanded}
+        accessibilityRole={hasPendingItems ? 'button' : 'text'}
+        accessibilityHint={
+          hasPendingItems ? 'Shows pending sync items.' : undefined
         }
-        accessibilityRole="text"
-        style={[
-          styles.pill,
-          {
-            backgroundColor: dark
-              ? 'rgba(22, 24, 27, 0.94)'
-              : 'rgba(255, 255, 255, 0.96)',
-            borderColor: dark ? '#343a40' : '#e6ded7',
-          },
-        ]}
+        accessibilityState={{
+          expanded: hasPendingItems ? expanded : undefined,
+        }}
       >
-        <MaterialIcons
-          name={
-            status.phase === 'syncing'
-              ? 'sync'
-              : status.phase === 'error'
-                ? 'sync-problem'
-                : 'cloud-done'
+        <View
+          {...webLiveProps}
+          accessibilityLabel={getStatusDescription(status)}
+          accessibilityLiveRegion={
+            status.phase === 'error' ? 'assertive' : 'polite'
           }
-          size={14}
-          color={toneColor}
-        />
-        <View style={[styles.dot, { backgroundColor: toneColor }]} />
-        <Text
-          numberOfLines={1}
-          style={[styles.label, { color: dark ? '#f4f4f5' : colors.text }]}
+          accessibilityRole="text"
+          style={[
+            styles.pill,
+            {
+              backgroundColor: dark
+                ? 'rgba(22, 24, 27, 0.94)'
+                : 'rgba(255, 255, 255, 0.96)',
+              borderColor: dark ? '#343a40' : '#e6ded7',
+            },
+          ]}
         >
-          {label}
-        </Text>
-      </View>
+          <MaterialIcons
+            name={
+              status.phase === 'syncing'
+                ? 'sync'
+                : status.phase === 'error'
+                  ? 'sync-problem'
+                  : 'cloud-done'
+            }
+            size={14}
+            color={toneColor}
+          />
+          <View style={[styles.dot, { backgroundColor: toneColor }]} />
+          <Text
+            numberOfLines={1}
+            style={[styles.label, { color: dark ? '#f4f4f5' : colors.text }]}
+          >
+            {label}
+          </Text>
+          {hasPendingItems ? (
+            <MaterialIcons
+              name={expanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+              size={16}
+              color={toneColor}
+            />
+          ) : null}
+        </View>
+      </Pressable>
+
+      {expanded && hasPendingItems ? (
+        <View
+          style={[
+            styles.pendingPanel,
+            {
+              backgroundColor: dark
+                ? 'rgba(22, 24, 27, 0.98)'
+                : 'rgba(255, 255, 255, 0.99)',
+              borderColor: dark ? '#343a40' : '#e6ded7',
+            },
+          ]}
+        >
+          <View style={[styles.pendingHeader, { borderColor: dark ? '#343a40' : '#eee4dc' }]}>
+            <Text style={[styles.pendingHeaderText, { color: dark ? '#f4f4f5' : colors.text }]}>
+              Pending sync items
+            </Text>
+            <Pressable
+              onPress={() => setExpanded(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close pending sync items"
+              hitSlop={8}
+              style={styles.pendingCloseButton}
+            >
+              <MaterialIcons name="close" size={16} color={dark ? '#a1a1aa' : '#6b7280'} />
+            </Pressable>
+          </View>
+          {pendingLoadError ? (
+            <Text
+              style={[styles.pendingBodyMessage, styles.pendingError, { color: '#d14343' }]}
+              numberOfLines={3}
+            >
+              {pendingLoadError}
+            </Text>
+          ) : pendingLoading ? (
+            <Text
+              style={[
+                styles.pendingBodyMessage,
+                styles.pendingMeta,
+                { color: dark ? '#a1a1aa' : '#6b7280' },
+              ]}
+            >
+              Loading pending items...
+            </Text>
+          ) : pendingItems.length === 0 ? (
+            <Text
+              style={[
+                styles.pendingBodyMessage,
+                styles.pendingMeta,
+                { color: dark ? '#a1a1aa' : '#6b7280' },
+              ]}
+            >
+              No pending items found.
+            </Text>
+          ) : (
+            <ScrollView style={styles.pendingList} nestedScrollEnabled>
+              {pendingItems.map((item) => (
+                <Pressable
+                key={item.id}
+                onPress={() => openPendingItem(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open pending sync item ${getPendingItemTitle(item)}`}
+                accessibilityHint="Opens this local save in the 3D editor."
+                style={[
+                    styles.pendingItem,
+                    { borderColor: dark ? '#343a40' : '#eee4dc' },
+                  ]}
+                >
+                  <View style={styles.pendingItemText}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.pendingTitle,
+                        { color: dark ? '#f4f4f5' : colors.text },
+                      ]}
+                    >
+                      {getPendingItemTitle(item)}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.pendingMeta,
+                        { color: dark ? '#a1a1aa' : '#6b7280' },
+                      ]}
+                    >
+                      {formatPendingItemTime(item)}
+                    </Text>
+                    {item.syncError ? (
+                      <Text
+                        numberOfLines={2}
+                        style={[styles.pendingError, { color: '#d14343' }]}
+                      >
+                        {item.syncError}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <MaterialIcons
+                    name="open-in-new"
+                    size={16}
+                    color={toneColor}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -156,6 +362,70 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 12,
     fontWeight: '700',
+    lineHeight: 16,
+  },
+  pendingBodyMessage: {
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  pendingCloseButton: {
+    alignItems: 'center',
+    borderRadius: 4,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  pendingError: {
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
+  },
+  pendingHeader: {
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  pendingHeaderText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  pendingItem: {
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  pendingItemText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pendingList: {
+    maxHeight: 280,
+  },
+  pendingMeta: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  pendingPanel: {
+    borderRadius: 6,
+    borderWidth: 1,
+    boxShadow: '0 8px 26px rgba(0, 0, 0, 0.16)',
+    marginTop: 6,
+    maxWidth: 360,
+    minWidth: 300,
+    overflow: 'hidden',
+  },
+  pendingTitle: {
+    fontSize: 12,
+    fontWeight: '800',
     lineHeight: 16,
   },
   pill: {
