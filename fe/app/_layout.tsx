@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import '@/utils/i18n';
 
+import { SyncStatusIndicator } from '@/components/sync-status-indicator';
 import ToastHost from '@/components/toast-host';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { installShaderErrorReporter } from '@/utils/shader-error-reporter';
@@ -33,6 +34,7 @@ export default function RootLayout() {
         />
       </Stack>
       <StatusBar style="auto" />
+      <SyncStatusIndicator />
       <ToastHost />
     </ThemeProvider>
   );

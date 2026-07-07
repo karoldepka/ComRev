@@ -11,7 +11,6 @@ import { useSoundscapeStore } from "@/store/soundscape-store";
 import {
   consumePendingPresetToLoad,
   getLatestConfig,
-  getPendingSyncCount,
   getPresets,
   loadPresetsFromBackend,
   PresetRecord,
@@ -5665,7 +5664,6 @@ export function ThreeDTextScreen({
       return !prev;
     });
   }, [controlsHeightSv]);
-  const [, setPendingSyncCount] = useState(0);
   const [aiChatTarget, setAiChatTarget] = useState<{
     id: string | null;
     code: string;
@@ -6401,19 +6399,10 @@ export function ThreeDTextScreen({
       }
     }
 
-    async function refreshPending() {
-      try {
-        setPendingSyncCount(await getPendingSyncCount());
-      } catch {
-        setPendingSyncCount(0);
-      }
-    }
-
     if (!skipSavedConfigLoad) {
       loadLastSavedConfig();
     }
     loadPresetList();
-    refreshPending();
 
     const syncOnOnline = async () => {
       try {
@@ -6421,7 +6410,6 @@ export function ThreeDTextScreen({
       } catch {
         // Ignore silent sync failures; status remains available to the user.
       }
-      refreshPending();
     };
 
     if (typeof window !== "undefined" && window.addEventListener) {

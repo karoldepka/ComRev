@@ -95,6 +95,65 @@ const STORE_TRIED_EFFECTS = "triedEffects";
 const STORE_SOUNDSCAPE_PRESETS = "soundscapePresets";
 const STORE_LAST_SOUNDSCAPE_STATE = "lastSoundscapeState";
 
+export type ConfigSyncPhase =
+  | "idle"
+  | "saved-local"
+  | "syncing"
+  | "synced"
+  | "offline"
+  | "error";
+
+export interface ConfigSyncStatus {
+  phase: ConfigSyncPhase;
+  isOnline: boolean;
+  pendingCount: number;
+  lastLocalSaveAt: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
+const configSyncStatusListeners = new Set<(status: ConfigSyncStatus) => void>();
+
+let configSyncStatus: ConfigSyncStatus = {
+  phase: "idle",
+  isOnline: true,
+  pendingCount: 0,
+  lastLocalSaveAt: null,
+  lastSyncAt: null,
+  lastError: null,
+};
+
+function copyConfigSyncStatus(): ConfigSyncStatus {
+  return { ...configSyncStatus, isOnline: isOnline() };
+}
+
+function emitConfigSyncStatus(patch: Partial<ConfigSyncStatus>): ConfigSyncStatus {
+  configSyncStatus = {
+    ...configSyncStatus,
+    ...patch,
+    isOnline: isOnline(),
+  };
+  const snapshot = copyConfigSyncStatus();
+  for (const listener of configSyncStatusListeners) {
+    listener(snapshot);
+  }
+  return snapshot;
+}
+
+export function getConfigSyncStatusSnapshot(): ConfigSyncStatus {
+  return copyConfigSyncStatus();
+}
+
+export function subscribeConfigSyncStatus(
+  listener: (status: ConfigSyncStatus) => void,
+): () => void {
+  listener(copyConfigSyncStatus());
+  configSyncStatusListeners.add(listener);
+  return () => {
+    configSyncStatusListeners.delete(listener);
+  };
+}
+
 function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== "undefined" && indexedDB !== null;
 }
@@ -261,6 +320,32 @@ export async function getPendingSyncCount(): Promise<number> {
   return configs.length;
 }
 
+export async function refreshConfigSyncStatus(): Promise<ConfigSyncStatus> {
+  try {
+    const pendingCount = await getPendingSyncCount();
+    const online = isOnline();
+    const phase =
+      configSyncStatus.phase === "syncing"
+        ? "syncing"
+        : !online
+          ? "offline"
+          : pendingCount > 0
+            ? configSyncStatus.lastError
+              ? "error"
+              : "saved-local"
+            : configSyncStatus.lastSyncAt
+              ? "synced"
+              : "idle";
+
+    return emitConfigSyncStatus({ phase, pendingCount, isOnline: online });
+  } catch (error) {
+    return emitConfigSyncStatus({
+      phase: "error",
+      lastError: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function deletePendingSync(id: string): Promise<void> {
   await withStore(STORE_PENDING, "readwrite", (store) => store.delete(id));
 }
@@ -352,33 +437,99 @@ export async function saveConfigOfflineFirst(
     syncError: null,
   };
 
-  await saveConfigLocally(record);
+  try {
+    await saveConfigLocally(record);
+  } catch (error) {
+    emitConfigSyncStatus({
+      phase: "error",
+      lastError: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+
+  emitConfigSyncStatus({
+    phase: isOnline() ? "syncing" : "offline",
+    lastLocalSaveAt: record.updatedAt,
+    lastError: null,
+  });
 
   try {
     await syncConfigToBackend(apiBase, record);
+    await refreshConfigSyncStatus();
+    emitConfigSyncStatus({
+      phase: "synced",
+      lastSyncAt: new Date().toISOString(),
+      lastError: null,
+    });
     return { synced: true };
   } catch (error: unknown) {
-    await queuePendingSync(record);
+    const message = error instanceof Error ? error.message : String(error);
+    const pendingRecord = {
+      ...record,
+      syncError: message,
+      synced: false,
+    };
+    await saveConfigLocally(pendingRecord);
+    await queuePendingSync(pendingRecord);
+    await refreshConfigSyncStatus();
+    emitConfigSyncStatus({
+      phase: isOnline() ? "error" : "offline",
+      lastLocalSaveAt: pendingRecord.updatedAt,
+      lastError: message,
+    });
     return {
       synced: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }
 
-export async function syncPendingConfigs(apiBase: string): Promise<void> {
+export interface ConfigSyncSummary {
+  synced: number;
+  failed: number;
+  pendingCount: number;
+}
+
+export async function syncPendingConfigs(
+  apiBase: string,
+): Promise<ConfigSyncSummary> {
   if (!isOnline()) {
+    await refreshConfigSyncStatus();
+    emitConfigSyncStatus({ phase: "offline" });
     throw new Error("Offline; cannot sync pending configs.");
   }
 
   const pending = await getPendingConfigs();
+  emitConfigSyncStatus({
+    phase: "syncing",
+    pendingCount: pending.length,
+    lastError: null,
+  });
+
+  let synced = 0;
+  let failed = 0;
+  let lastError: string | null = null;
+
   for (const config of pending) {
     try {
       await syncConfigToBackend(apiBase, config);
+      synced += 1;
     } catch (error) {
+      failed += 1;
+      lastError = error instanceof Error ? error.message : String(error);
       console.warn("Failed to sync pending config", config.id, error);
     }
   }
+
+  const pendingCount = await getPendingSyncCount();
+  emitConfigSyncStatus({
+    phase: pendingCount === 0 ? "synced" : failed > 0 ? "error" : "saved-local",
+    pendingCount,
+    lastSyncAt: synced > 0 ? new Date().toISOString() : configSyncStatus.lastSyncAt,
+    lastError,
+  });
+
+  return { synced, failed, pendingCount };
 }
 
 export async function syncPresetToBackend(
