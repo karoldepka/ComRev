@@ -52,13 +52,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
   TextInput,
   TouchableOpacity,
+  type LayoutChangeEvent,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -5622,6 +5622,7 @@ export function ThreeDTextScreen({
   const [, setSaveStatus] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(fullWindow);
   const [isPaused, setIsPaused] = useState(false);
+  const sequenceCanvasWidthRef = useRef(0);
   const pauseIconOpacity = useSharedValue(0);
   const pauseIconStyle = useAnimatedStyle(() => ({ opacity: pauseIconOpacity.value }));
   const animatePauseToggle = React.useCallback((nextPaused: boolean) => {
@@ -5779,6 +5780,29 @@ export function ThreeDTextScreen({
       return (index + direction + sequencePages.length) % sequencePages.length;
     });
   }, [sequencePages.length]);
+  const handleSequenceCanvasLayout = React.useCallback((event: LayoutChangeEvent) => {
+    sequenceCanvasWidthRef.current = event.nativeEvent.layout.width;
+  }, []);
+  const handleSequenceCanvasDoubleTap = React.useCallback((tapX: number) => {
+    if (!sequenceMode || slideJumpMode || sequencePages.length <= 1) return;
+    const canvasWidth = sequenceCanvasWidthRef.current;
+    if (!Number.isFinite(tapX) || canvasWidth <= 0) return;
+    moveSequenceSlide(tapX < canvasWidth / 2 ? -1 : 1);
+  }, [moveSequenceSlide, sequenceMode, sequencePages.length, slideJumpMode]);
+  const sequenceCanvasTapGesture = useMemo(() => {
+    const doubleTap = Gesture.Tap()
+      .numberOfTaps(2)
+      .onEnd((event) => {
+        runOnJS(handleSequenceCanvasDoubleTap)(event.x);
+      });
+    const singleTap = Gesture.Tap()
+      .numberOfTaps(1)
+      .onEnd(() => {
+        runOnJS(toggleSequencePause)();
+      });
+
+    return Gesture.Exclusive(doubleTap, singleTap);
+  }, [handleSequenceCanvasDoubleTap, toggleSequencePause]);
   const currentSequencePage =
     sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
   const currentSequencePageKey = sequenceMode
@@ -6500,7 +6524,10 @@ export function ThreeDTextScreen({
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <View style={styles.content}>
-        <View style={[styles.canvas, { position: 'relative' }]}>
+        <View
+          style={[styles.canvas, { position: 'relative' }]}
+          onLayout={handleSequenceCanvasLayout}
+        >
           <ThreeDText
             ref={threeDTextRef}
             text={displayText}
@@ -6723,12 +6750,15 @@ export function ThreeDTextScreen({
               </Text>
             </TouchableOpacity>
           )}
-          {/* Tap-to-pause: transparent overlay below UI buttons (zIndex 5 < buttons' 10) */}
+          {/* Canvas shortcuts: single tap pauses; double tap left/right navigates slides. */}
           {sequenceMode && (
-            <Pressable
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 5 }}
-              onPress={toggleSequencePause}
-            />
+            <GestureDetector gesture={sequenceCanvasTapGesture}>
+              <View
+                accessible={false}
+                importantForAccessibility="no"
+                style={styles.sequenceTapOverlay}
+              />
+            </GestureDetector>
           )}
           {/* Pause/play icon flash — pointerEvents in style to avoid deprecation warning */}
           {sequenceMode && (
@@ -7790,6 +7820,14 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     zIndex: 10,
     gap: 2,
+  },
+  sequenceTapOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 5,
   },
   effectSearchList: {
     borderWidth: 1,
