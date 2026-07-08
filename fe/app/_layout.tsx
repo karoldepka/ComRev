@@ -11,6 +11,7 @@ import '@/utils/i18n';
 import { SyncStatusIndicator } from '@/components/sync-status-indicator';
 import ToastHost from '@/components/toast-host';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useFeatureFlag } from '@/utils/feature-flags';
 import { installShaderErrorReporter } from '@/utils/shader-error-reporter';
 
 installShaderErrorReporter();
@@ -21,6 +22,7 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const showSyncIndicator = useFeatureFlag('syncStatusIndicator');
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -34,7 +36,7 @@ export default function RootLayout() {
         />
       </Stack>
       <StatusBar style="auto" />
-      <SyncStatusIndicator />
+      {showSyncIndicator ? <SyncStatusIndicator /> : null}
       <ToastHost />
     </ThemeProvider>
   );

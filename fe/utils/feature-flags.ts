@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type FeatureFlagKey = 'syncAttentionIndicator';
+export type FeatureFlagKey = 'syncStatusIndicator' | 'syncAttentionIndicator';
 
 export interface FeatureFlagDefinition {
   key: FeatureFlagKey;
@@ -14,6 +14,12 @@ export type FeatureFlagState = Record<FeatureFlagKey, boolean>;
 const STORAGE_KEY = 'comrev:feature-flags:v1';
 
 export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
+  {
+    key: 'syncStatusIndicator',
+    title: 'Sync status indicator',
+    description: 'Show the top-right sync status pill across the app.',
+    defaultEnabled: true,
+  },
   {
     key: 'syncAttentionIndicator',
     title: 'Sync attention indicator',
