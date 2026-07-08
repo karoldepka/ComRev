@@ -148,4 +148,15 @@ describe('config store offline-first sync', () => {
     expect(store.consumePendingConfigToLoad()).toEqual(config);
     expect(store.consumePendingConfigToLoad()).toBeNull();
   });
+
+  it('loads a locally saved config by id', async () => {
+    const store = await loadStore();
+    await store.saveConfigLocally(makeConfig('config-a'));
+    await store.saveConfigLocally(makeConfig('config-b'));
+
+    expect(await store.getConfigById('config-a')).toMatchObject({
+      id: 'config-a',
+    });
+    expect(await store.getConfigById('missing-config')).toBeNull();
+  });
 });

@@ -11,6 +11,7 @@ import { useSoundscapeStore } from "@/store/soundscape-store";
 import {
   consumePendingConfigToLoad,
   consumePendingPresetToLoad,
+  getConfigById,
   getLatestConfig,
   getPresets,
   loadPresetsFromBackend,
@@ -5707,6 +5708,9 @@ export function ThreeDTextScreen({
   const syncOpenToken = Array.isArray(syncRouteParams.syncOpen)
     ? syncRouteParams.syncOpen[0]
     : syncRouteParams.syncOpen;
+  const syncItemId = Array.isArray(syncRouteParams.syncItemId)
+    ? syncRouteParams.syncItemId[0]
+    : syncRouteParams.syncItemId;
 
   const applySavedConfig = React.useCallback(
     (config: ThreeDConfig, statusMessage?: string) => {
@@ -5792,12 +5796,45 @@ export function ThreeDTextScreen({
   );
 
   useEffect(() => {
-    if (!syncOpenToken) return;
-    const pendingConfig = consumePendingConfigToLoad();
-    if (!pendingConfig) return;
-    handoffConfigLoadedRef.current = true;
-    applySavedConfig(pendingConfig, `Opened pending sync item: ${pendingConfig.name}`);
-  }, [applySavedConfig, syncOpenToken]);
+    if (!syncOpenToken && !syncItemId) return;
+    if (
+      syncItemId &&
+      handoffConfigLoadedRef.current &&
+      currentConfigIdRef.current === syncItemId
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    async function openPendingSyncItem() {
+      const pendingConfig = consumePendingConfigToLoad();
+      const config =
+        pendingConfig && (!syncItemId || pendingConfig.id === syncItemId)
+          ? pendingConfig
+          : syncItemId
+            ? await getConfigById(syncItemId)
+            : null;
+
+      if (!active || !config) {
+        if (syncItemId) {
+          console.warn("Unable to open pending sync item:", syncItemId);
+        }
+        return;
+      }
+
+      handoffConfigLoadedRef.current = true;
+      applySavedConfig(config, `Opened pending sync item: ${config.name}`);
+    }
+
+    openPendingSyncItem().catch((error) => {
+      console.warn("Unable to open pending sync item:", error);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [applySavedConfig, syncItemId, syncOpenToken]);
 
   const effectInstancesRef = useRef(effectInstances);
   useEffect(() => {
@@ -6441,6 +6478,10 @@ export function ThreeDTextScreen({
           return;
         }
 
+        if (syncItemId) {
+          return;
+        }
+
         const latest = await getLatestConfig();
         if (!active || !latest || handoffConfigLoadedRef.current) {
           return;
@@ -6500,7 +6541,7 @@ export function ThreeDTextScreen({
         window.removeEventListener("online", syncOnOnline);
       }
     };
-  }, [applySavedConfig, skipSavedConfigLoad, setEffectInstances]);
+  }, [applySavedConfig, skipSavedConfigLoad, setEffectInstances, syncItemId]);
 
   const buildCurrentConfig = (): ThreeDConfig => {
     if (!currentConfigIdRef.current) {

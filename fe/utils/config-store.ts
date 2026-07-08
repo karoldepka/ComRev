@@ -315,6 +315,15 @@ export async function getPendingConfigs(): Promise<ThreeDConfig[]> {
   return await withStore(STORE_PENDING, "readonly", (store) => store.getAll());
 }
 
+export async function getConfigById(id: string): Promise<ThreeDConfig | null> {
+  const config = await withStore<ThreeDConfig | undefined>(
+    STORE_CONFIGS,
+    "readonly",
+    (store) => store.get(id),
+  );
+  return config ?? null;
+}
+
 export async function getPendingSyncCount(): Promise<number> {
   const configs = await getPendingConfigs();
   return configs.length;
