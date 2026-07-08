@@ -109,6 +109,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="feature-flags"
+        options={{
+          title: 'Flags',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={iconSize} name="flag.fill" color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

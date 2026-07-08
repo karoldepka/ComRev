@@ -21,9 +21,19 @@ import {
   subscribeConfigSyncStatus,
   type ThreeDConfig,
 } from '@/utils/config-store';
+import { useFeatureFlag } from '@/utils/feature-flags';
 
-function getStatusTone(status: ConfigSyncStatus) {
-  if (status.phase === 'error') return 'error';
+type SyncStatusTone =
+  'error' | 'idle' | 'local' | 'offline' | 'synced' | 'syncing';
+type MaterialIconName = React.ComponentProps<typeof MaterialIcons>['name'];
+
+function getStatusTone(
+  status: ConfigSyncStatus,
+  showSyncAttention: boolean,
+): SyncStatusTone {
+  if (status.phase === 'error') {
+    return showSyncAttention ? 'error' : 'local';
+  }
   if (status.phase === 'offline') return 'offline';
   if (status.phase === 'syncing') return 'syncing';
   if (status.pendingCount > 0) return 'local';
@@ -31,7 +41,7 @@ function getStatusTone(status: ConfigSyncStatus) {
   return 'idle';
 }
 
-function getStatusLabel(status: ConfigSyncStatus) {
+function getStatusLabel(status: ConfigSyncStatus, showSyncAttention: boolean) {
   if (status.phase === 'syncing') return 'Syncing';
   if (status.phase === 'offline') {
     return status.pendingCount > 0
@@ -39,9 +49,14 @@ function getStatusLabel(status: ConfigSyncStatus) {
       : 'Offline';
   }
   if (status.phase === 'error') {
+    if (showSyncAttention) {
+      return status.pendingCount > 0
+        ? `Sync needs attention · ${status.pendingCount} pending`
+        : 'Sync needs attention';
+    }
     return status.pendingCount > 0
-      ? `Sync needs attention · ${status.pendingCount} pending`
-      : 'Sync needs attention';
+      ? `Saved locally · ${status.pendingCount} pending`
+      : 'Sync delayed';
   }
   if (status.pendingCount > 0)
     return `Saved locally · ${status.pendingCount} pending`;
@@ -49,8 +64,11 @@ function getStatusLabel(status: ConfigSyncStatus) {
   return 'Ready';
 }
 
-function getStatusDescription(status: ConfigSyncStatus) {
-  const parts = [getStatusLabel(status)];
+function getStatusDescription(
+  status: ConfigSyncStatus,
+  showSyncAttention: boolean,
+) {
+  const parts = [getStatusLabel(status, showSyncAttention)];
   if (status.lastLocalSaveAt) {
     parts.push(
       `Last local save ${new Date(status.lastLocalSaveAt).toLocaleString()}`,
@@ -59,10 +77,21 @@ function getStatusDescription(status: ConfigSyncStatus) {
   if (status.lastSyncAt) {
     parts.push(`Last sync ${new Date(status.lastSyncAt).toLocaleString()}`);
   }
-  if (status.lastError) {
+  if (showSyncAttention && status.lastError) {
     parts.push(`Latest error: ${status.lastError}`);
   }
   return parts.join('. ');
+}
+
+function getStatusIcon(
+  status: ConfigSyncStatus,
+  showSyncAttention: boolean,
+): MaterialIconName {
+  if (status.phase === 'syncing') return 'sync';
+  if (status.phase === 'error' && showSyncAttention) return 'sync-problem';
+  if (status.phase === 'synced' && status.pendingCount === 0)
+    return 'cloud-done';
+  return 'sync';
 }
 
 function getPendingItemTitle(config: ThreeDConfig) {
@@ -79,6 +108,7 @@ export function SyncStatusIndicator() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const dark = colorScheme === 'dark';
+  const showSyncAttention = useFeatureFlag('syncAttentionIndicator');
   const [status, setStatus] = React.useState(getConfigSyncStatusSnapshot);
   const [expanded, setExpanded] = React.useState(false);
   const [pendingItems, setPendingItems] = React.useState<ThreeDConfig[]>([]);
@@ -105,7 +135,7 @@ export function SyncStatusIndicator() {
     };
   }, []);
 
-  const hasPendingItems = status.pendingCount > 0;
+  const hasPendingItems = showSyncAttention && status.pendingCount > 0;
 
   const loadPendingItems = React.useCallback(async () => {
     setPendingLoading(true);
@@ -147,7 +177,7 @@ export function SyncStatusIndicator() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [expanded]);
 
-  const tone = getStatusTone(status);
+  const tone = getStatusTone(status, showSyncAttention);
   const toneColor = {
     error: '#d14343',
     idle: dark ? '#8c98a4' : '#6b7280',
@@ -156,7 +186,7 @@ export function SyncStatusIndicator() {
     synced: colors.tint,
     syncing: '#2478d4',
   }[tone];
-  const label = getStatusLabel(status);
+  const label = getStatusLabel(status, showSyncAttention);
   const toggleExpanded = () => {
     if (!hasPendingItems) return;
     setExpanded((value) => !value);
@@ -172,7 +202,10 @@ export function SyncStatusIndicator() {
     Platform.OS === 'web'
       ? ({
           role: 'status',
-          'aria-live': status.phase === 'error' ? 'assertive' : 'polite',
+          'aria-live':
+            status.phase === 'error' && showSyncAttention
+              ? 'assertive'
+              : 'polite',
           'aria-atomic': true,
         } as Record<string, unknown>)
       : {};
@@ -192,9 +225,11 @@ export function SyncStatusIndicator() {
       >
         <View
           {...webLiveProps}
-          accessibilityLabel={getStatusDescription(status)}
+          accessibilityLabel={getStatusDescription(status, showSyncAttention)}
           accessibilityLiveRegion={
-            status.phase === 'error' ? 'assertive' : 'polite'
+            status.phase === 'error' && showSyncAttention
+              ? 'assertive'
+              : 'polite'
           }
           accessibilityRole="text"
           style={[
@@ -208,13 +243,7 @@ export function SyncStatusIndicator() {
           ]}
         >
           <MaterialIcons
-            name={
-              status.phase === 'syncing'
-                ? 'sync'
-                : status.phase === 'error'
-                  ? 'sync-problem'
-                  : 'cloud-done'
-            }
+            name={getStatusIcon(status, showSyncAttention)}
             size={14}
             color={toneColor}
           />
@@ -247,8 +276,18 @@ export function SyncStatusIndicator() {
             },
           ]}
         >
-          <View style={[styles.pendingHeader, { borderColor: dark ? '#343a40' : '#eee4dc' }]}>
-            <Text style={[styles.pendingHeaderText, { color: dark ? '#f4f4f5' : colors.text }]}>
+          <View
+            style={[
+              styles.pendingHeader,
+              { borderColor: dark ? '#343a40' : '#eee4dc' },
+            ]}
+          >
+            <Text
+              style={[
+                styles.pendingHeaderText,
+                { color: dark ? '#f4f4f5' : colors.text },
+              ]}
+            >
               Pending sync items
             </Text>
             <Pressable
@@ -258,12 +297,20 @@ export function SyncStatusIndicator() {
               hitSlop={8}
               style={styles.pendingCloseButton}
             >
-              <MaterialIcons name="close" size={16} color={dark ? '#a1a1aa' : '#6b7280'} />
+              <MaterialIcons
+                name="close"
+                size={16}
+                color={dark ? '#a1a1aa' : '#6b7280'}
+              />
             </Pressable>
           </View>
           {pendingLoadError ? (
             <Text
-              style={[styles.pendingBodyMessage, styles.pendingError, { color: '#d14343' }]}
+              style={[
+                styles.pendingBodyMessage,
+                styles.pendingError,
+                { color: '#d14343' },
+              ]}
               numberOfLines={3}
             >
               {pendingLoadError}
@@ -292,12 +339,12 @@ export function SyncStatusIndicator() {
             <ScrollView style={styles.pendingList} nestedScrollEnabled>
               {pendingItems.map((item) => (
                 <Pressable
-                key={item.id}
-                onPress={() => openPendingItem(item)}
-                accessibilityRole="button"
-                accessibilityLabel={`Open pending sync item ${getPendingItemTitle(item)}`}
-                accessibilityHint="Opens this local save in the 3D editor."
-                style={[
+                  key={item.id}
+                  onPress={() => openPendingItem(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open pending sync item ${getPendingItemTitle(item)}`}
+                  accessibilityHint="Opens this local save in the 3D editor."
+                  style={[
                     styles.pendingItem,
                     { borderColor: dark ? '#343a40' : '#eee4dc' },
                   ]}
