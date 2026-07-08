@@ -574,12 +574,16 @@ export default function SoundscapeScreen() {
       {/* ---------------- Master volume ---------------- */}
       <View style={[styles.masterVolCard, { backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG, borderColor: c.tint }]}>
         <View style={styles.masterVolHeader}>
-          <MaterialIcons name="volume-up" size={22} color={c.tint} />
+          <View style={styles.masterVolTitleGroup}>
+            <MaterialIcons name="volume-up" size={22} color={c.tint} />
+            <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
+          </View>
           <Pressable
             onPress={toggleMasterPause}
             accessibilityRole="button"
             accessibilityLabel={masterToggleLabel}
-            accessibilityState={{ checked: masterPaused }}
+            accessibilityHint="Pauses or resumes every soundscape layer without changing their volumes."
+            accessibilityState={{ selected: masterPaused }}
             style={[
               styles.masterPauseButton,
               {
@@ -589,8 +593,10 @@ export default function SoundscapeScreen() {
             ]}
           >
             <MaterialIcons name={masterPaused ? 'play-arrow' : 'pause'} size={20} color={masterPaused ? '#fff' : c.tint} />
+            <Text style={[styles.masterPauseText, { color: masterPaused ? '#fff' : c.tint }]}>
+              {masterPaused ? 'Resume all' : 'Pause all'}
+            </Text>
           </Pressable>
-          <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
           <Text style={[styles.masterVolValue, { color: c.tint }]}>{Math.round(masterVolume * 100)}%</Text>
         </View>
         <InlineSlider min={0} max={1} step={0.01} value={masterVolume} onChange={setMasterVolume} tint={c.tint} />
@@ -889,15 +895,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  masterVolHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, marginBottom: 8 },
+  masterVolHeader: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  masterVolTitleGroup: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 132,
+  },
   masterPauseButton: {
     alignItems: 'center',
     borderRadius: 8,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
     height: 34,
     justifyContent: 'center',
-    width: 34,
+    minWidth: 104,
+    paddingHorizontal: 10,
   },
+  masterPauseText: { fontSize: 13, fontWeight: '800' },
   masterVolLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
   masterVolValue: { fontSize: 16, fontWeight: '800', minWidth: 44, textAlign: 'right' },
   masterPausedRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 8 },

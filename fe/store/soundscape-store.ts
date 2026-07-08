@@ -282,15 +282,16 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   toggleMasterPause: () => {
     const state = get();
     const masterPaused = !state.masterPaused;
+    set({ masterPaused });
+
     if (masterPaused) {
-      set({ masterPaused });
       setGlobalAudioPaused(true);
+      stopCurrentPlayback(state);
       return;
     }
 
-    startMissingPlayback(state);
-    set({ masterPaused });
     setGlobalAudioPaused(false);
+    startMissingPlayback(state);
   },
 
   beatHz: 10,
@@ -530,49 +531,53 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
   applyPreset: (preset) => {
     const state = get();
+    const shouldStartAudio = !state.masterPaused;
 
     // Stop everything currently playing so the mix ends up matching the preset exactly.
-    if (state.playing) stopBinaural();
-    for (const key of Object.keys(state.extraBinaural)) {
-      if (state.extraBinaural[key].playing) stopTrack(`binaural:${key}`);
-    }
-    for (const color of Object.keys(state.noise) as NoiseColor[]) {
-      if (state.noise[color].playing) stopTrack(`noise:${color}`);
-    }
-    for (const kind of Object.keys(state.ambience) as AmbienceKind[]) {
-      if (state.ambience[kind].playing) stopTrack(`ambience:${kind}`);
-    }
-    if (state.birds.playing) stopTrack('birds');
-    if (state.stutterGate.enabled) stopStutterGate();
+    stopCurrentPlayback(state);
 
-    const playing = preset.playing && startBinaural(preset.beatHz, preset.carrier, preset.volume);
+    const playing = preset.playing
+      ? shouldStartAudio
+        ? startBinaural(preset.beatHz, preset.carrier, preset.volume)
+        : true
+      : false;
 
     const extraBinaural: Record<string, LayerState> = {};
     for (const p of WAVE_PRESETS) {
-      const layer = preset.extraBinaural[p.key] ?? defaultLayer();
-      if (layer.playing) startBinauralLayer(`binaural:${p.key}`, p.hz, preset.carrier, layer.volume);
+      const layer = { ...(preset.extraBinaural[p.key] ?? defaultLayer()) };
+      if (layer.playing && shouldStartAudio) {
+        layer.playing = startBinauralLayer(`binaural:${p.key}`, p.hz, preset.carrier, layer.volume);
+      }
       extraBinaural[p.key] = layer;
     }
 
     const noise = {} as Record<NoiseColor, LayerState>;
     for (const n of NOISE_COLORS) {
-      const layer = preset.noise[n.key] ?? defaultLayer();
-      if (layer.playing) startNoiseTrack(`noise:${n.key}`, n.key, layer.volume);
+      const layer = { ...(preset.noise[n.key] ?? defaultLayer()) };
+      if (layer.playing && shouldStartAudio) {
+        layer.playing = startNoiseTrack(`noise:${n.key}`, n.key, layer.volume);
+      }
       noise[n.key] = layer;
     }
 
     const ambience = {} as Record<AmbienceKind, LayerState>;
     for (const s of AMBIENCE_SOURCES) {
-      const layer = preset.ambience[s.kind] ?? defaultLayer();
-      if (layer.playing) void startAmbienceTrack(`ambience:${s.kind}`, s.kind, layer.volume);
+      const layer = { ...(preset.ambience[s.kind] ?? defaultLayer()) };
+      if (layer.playing && shouldStartAudio) {
+        void startAmbienceTrack(`ambience:${s.kind}`, s.kind, layer.volume);
+      }
       ambience[s.kind] = layer;
     }
 
-    const birds = preset.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 };
-    if (birds.playing) startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
+    const birds = { ...(preset.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 }) };
+    if (birds.playing && shouldStartAudio) {
+      birds.playing = startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
+    }
 
-    const stutterGate = preset.stutterGate ?? { enabled: false, bpm: 120 };
-    if (stutterGate.enabled) startStutterGate(stutterGate.bpm);
+    const stutterGate = { ...(preset.stutterGate ?? { enabled: false, bpm: 120 }) };
+    if (stutterGate.enabled && shouldStartAudio) {
+      stutterGate.enabled = startStutterGate(stutterGate.bpm);
+    }
     const recentLayerKeys = mergeRecentLayerKeys(
       state.recentLayerKeys,
       playingLayerKeys({ playing, extraBinaural, noise, ambience, birds }),
@@ -630,7 +635,12 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       setGlobalAudioPaused(masterPaused);
       setMasterGain(masterVolume);
 
-      const playing = last.playing ? startBinaural(beatHz, carrier, volume) : false;
+      const shouldStartAudio = !masterPaused;
+      const playing = last.playing
+        ? shouldStartAudio
+          ? startBinaural(beatHz, carrier, volume)
+          : true
+        : false;
 
       const extraBinaural = normalizeLayerRecord(
         WAVE_PRESETS.map((p) => p.key),
@@ -638,7 +648,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       );
       for (const preset of WAVE_PRESETS) {
         const layer = extraBinaural[preset.key];
-        if (layer.playing) {
+        if (layer.playing && shouldStartAudio) {
           layer.playing = startBinauralLayer(`binaural:${preset.key}`, preset.hz, carrier, layer.volume);
         }
       }
@@ -649,7 +659,9 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       ) as SoundscapeState['noise'];
       for (const n of NOISE_COLORS) {
         const layer = noise[n.key];
-        if (layer.playing) layer.playing = startNoiseTrack(`noise:${n.key}`, n.key, layer.volume);
+        if (layer.playing && shouldStartAudio) {
+          layer.playing = startNoiseTrack(`noise:${n.key}`, n.key, layer.volume);
+        }
       }
 
       const ambience = normalizeLayerRecord(
@@ -658,14 +670,20 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       ) as SoundscapeState['ambience'];
       for (const source of AMBIENCE_SOURCES) {
         const layer = ambience[source.kind];
-        if (layer.playing) void startAmbienceTrack(`ambience:${source.kind}`, source.kind, layer.volume);
+        if (layer.playing && shouldStartAudio) {
+          void startAmbienceTrack(`ambience:${source.kind}`, source.kind, layer.volume);
+        }
       }
 
       const birds = normalizeBirds(last.birds);
-      if (birds.playing) birds.playing = startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
+      if (birds.playing && shouldStartAudio) {
+        birds.playing = startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
+      }
 
       const stutterGate = normalizeStutterGate(last.stutterGate);
-      if (stutterGate.enabled) stutterGate.enabled = startStutterGate(stutterGate.bpm);
+      if (stutterGate.enabled && shouldStartAudio) {
+        stutterGate.enabled = startStutterGate(stutterGate.bpm);
+      }
       const recentLayerKeys = mergeRecentLayerKeys(
         last.recentLayerKeys,
         playingLayerKeys({ playing, extraBinaural, noise, ambience, birds }),
