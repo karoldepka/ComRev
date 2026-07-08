@@ -131,6 +131,7 @@ interface SoundscapeState {
   masterVolume: number;
   masterPaused: boolean;
   setMasterVolume: (v: number) => void;
+  toggleMasterPlayback: () => void;
   toggleMasterPause: () => void;
 
   // --- Primary binaural track (drives slideshow/preset integration; unchanged behavior) ---
@@ -246,6 +247,16 @@ function stopCurrentPlayback(state: SoundscapeState): void {
   if (state.stutterGate.enabled) stopStutterGate();
 }
 
+function hasAudibleLayers(state: {
+  playing: boolean;
+  extraBinaural: Record<string, LayerState>;
+  noise: Record<NoiseColor, LayerState>;
+  ambience: Record<AmbienceKind, LayerState>;
+  birds: BirdsState;
+}): boolean {
+  return playingLayerKeys(state).length > 0;
+}
+
 function startMissingPlayback(state: SoundscapeState): void {
   if (state.playing && !isBinauralPlaying()) startBinaural(state.beatHz, state.carrier, state.volume);
   for (const preset of WAVE_PRESETS) {
@@ -279,20 +290,35 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     setMasterGain(masterVolume);
   },
 
-  toggleMasterPause: () => {
+  toggleMasterPlayback: () => {
     const state = get();
-    const masterPaused = !state.masterPaused;
-    set({ masterPaused });
+    const hasActiveLayers = hasAudibleLayers(state);
 
-    if (masterPaused) {
+    if (!state.masterPaused && hasActiveLayers) {
+      set({ masterPaused: true });
       setGlobalAudioPaused(true);
       stopCurrentPlayback(state);
       return;
     }
 
     setGlobalAudioPaused(false);
-    startMissingPlayback(state);
+
+    if (state.masterPaused && hasActiveLayers) {
+      set({ masterPaused: false });
+      startMissingPlayback(state);
+      return;
+    }
+
+    const recentLayerKeys = promoteRecentLayerKey(state.recentLayerKeys, CUSTOM_BINAURAL_LAYER_KEY);
+    const playing = startBinaural(state.beatHz, state.carrier, state.volume);
+    set({
+      masterPaused: false,
+      playing,
+      recentLayerKeys: playing ? recentLayerKeys : state.recentLayerKeys,
+    });
   },
+
+  toggleMasterPause: () => get().toggleMasterPlayback(),
 
   beatHz: 10,
   carrier: 200,

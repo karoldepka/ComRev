@@ -375,7 +375,7 @@ export default function SoundscapeScreen() {
   const masterVolume = useSoundscapeStore((s) => s.masterVolume);
   const masterPaused = useSoundscapeStore((s) => s.masterPaused);
   const setMasterVolume = useSoundscapeStore((s) => s.setMasterVolume);
-  const toggleMasterPause = useSoundscapeStore((s) => s.toggleMasterPause);
+  const toggleMasterPlayback = useSoundscapeStore((s) => s.toggleMasterPlayback);
 
   const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
     useSoundscapeStore();
@@ -553,7 +553,14 @@ export default function SoundscapeScreen() {
 
   const ctxOk = ctxState === 'running';
   const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
-  const masterToggleLabel = masterPaused ? 'Resume all soundscape audio' : 'Pause all soundscape audio';
+  const masterIsPlaying = anyPlaying && !masterPaused;
+  const masterActionIsPlay = !masterIsPlaying;
+  const masterToggleText = masterIsPlaying ? 'Pause all' : anyPlaying ? 'Play all' : 'Play';
+  const masterToggleLabel = masterIsPlaying
+    ? 'Pause all soundscape audio'
+    : anyPlaying
+      ? 'Resume all soundscape audio'
+      : 'Play soundscape audio';
   const recentLayerStatus =
     activeLayerCount > 0
       ? masterPaused
@@ -579,22 +586,22 @@ export default function SoundscapeScreen() {
             <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
           </View>
           <Pressable
-            onPress={toggleMasterPause}
+            onPress={toggleMasterPlayback}
             accessibilityRole="button"
             accessibilityLabel={masterToggleLabel}
-            accessibilityHint="Pauses or resumes every soundscape layer without changing their volumes."
-            accessibilityState={{ selected: masterPaused }}
+            accessibilityHint="Controls the whole soundscape mix without changing individual layer volumes."
+            accessibilityState={{ selected: masterIsPlaying }}
             style={[
               styles.masterPauseButton,
               {
-                backgroundColor: masterPaused ? c.tint : 'transparent',
+                backgroundColor: masterActionIsPlay ? c.tint : 'transparent',
                 borderColor: c.tint,
               },
             ]}
           >
-            <MaterialIcons name={masterPaused ? 'play-arrow' : 'pause'} size={20} color={masterPaused ? '#fff' : c.tint} />
-            <Text style={[styles.masterPauseText, { color: masterPaused ? '#fff' : c.tint }]}>
-              {masterPaused ? 'Resume all' : 'Pause all'}
+            <MaterialIcons name={masterActionIsPlay ? 'play-arrow' : 'pause'} size={20} color={masterActionIsPlay ? '#fff' : c.tint} />
+            <Text style={[styles.masterPauseText, { color: masterActionIsPlay ? '#fff' : c.tint }]}>
+              {masterToggleText}
             </Text>
           </Pressable>
           <Text style={[styles.masterVolValue, { color: c.tint }]}>{Math.round(masterVolume * 100)}%</Text>
