@@ -18,7 +18,7 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: 'syncStatusIndicator',
     title: 'Sync status indicator',
     description: 'Show the top-right sync status pill across the app.',
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     key: 'syncAttentionIndicator',

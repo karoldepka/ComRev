@@ -40,10 +40,10 @@ describe('feature flags', () => {
     expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
   });
 
-  it('shows the sync status indicator by default', async () => {
+  it('hides the sync status indicator by default', async () => {
     const flags = await loadFeatureFlags();
 
-    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(true);
+    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
   });
 
   it('persists enabled flags locally', async () => {
@@ -56,14 +56,14 @@ describe('feature flags', () => {
     expect(reloaded.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(true);
   });
 
-  it('persists disabled default-on flags locally', async () => {
+  it('persists enabled default-off flags locally', async () => {
     const flags = await loadFeatureFlags();
 
-    flags.setFeatureFlag('syncStatusIndicator', false);
+    flags.setFeatureFlag('syncStatusIndicator', true);
 
-    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
+    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(true);
     const reloaded = await loadFeatureFlags();
-    expect(reloaded.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
+    expect(reloaded.isFeatureFlagEnabled('syncStatusIndicator')).toBe(true);
   });
 
   it('notifies subscribers when a flag changes', async () => {
