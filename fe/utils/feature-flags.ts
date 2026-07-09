@@ -12,7 +12,7 @@ export interface FeatureFlagDefinition {
 
 export type FeatureFlagState = Record<FeatureFlagKey, boolean>;
 
-const STORAGE_KEY = 'comrev:feature-flags:v1';
+export const FEATURE_FLAGS_STORAGE_KEY = 'comrev:feature-flags:v1';
 
 export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
   {
@@ -30,10 +30,10 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
   },
 ];
 
-const FEATURE_FLAG_KEYS = new Set<FeatureFlagKey>(
-  FEATURE_FLAGS.map((flag) => flag.key),
-);
 const DEFAULT_FLAGS = createDefaultFlags();
+const FEATURE_FLAG_BY_KEY = new Map<FeatureFlagKey, FeatureFlagDefinition>(
+  FEATURE_FLAGS.map((flag) => [flag.key, flag]),
+);
 
 const listeners = new Set<() => void>();
 let flagsLoaded = false;
@@ -45,12 +45,24 @@ function createDefaultFlags(): FeatureFlagState {
   ) as FeatureFlagState;
 }
 
-function getFeatureFlagDefinition(key: FeatureFlagKey): FeatureFlagDefinition {
-  const definition = FEATURE_FLAGS.find((flag) => flag.key === key);
+export function getFeatureFlagDefinition(
+  key: FeatureFlagKey,
+): FeatureFlagDefinition {
+  const definition = FEATURE_FLAG_BY_KEY.get(key);
   if (!definition) {
     throw new Error(`Unknown feature flag: ${key}`);
   }
   return definition;
+}
+
+export function getFeatureFlagDisabledReason(
+  key: FeatureFlagKey,
+  flags: FeatureFlagState = getFeatureFlagsSnapshot(),
+): string | null {
+  const definition = getFeatureFlagDefinition(key);
+  if (!definition.requires || flags[definition.requires]) return null;
+  const requirement = getFeatureFlagDefinition(definition.requires);
+  return `Requires ${requirement.title}.`;
 }
 
 function normalizeFlagDependencies(flags: FeatureFlagState): FeatureFlagState {
@@ -89,7 +101,7 @@ function readStoredFlags(): FeatureFlagState {
   if (!storage) return defaults;
 
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = storage.getItem(FEATURE_FLAGS_STORAGE_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<Record<string, unknown>>;
     const next = { ...defaults };
@@ -111,7 +123,7 @@ function persistFlags(flags: FeatureFlagState): void {
   if (!storage) return;
 
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(flags));
+    storage.setItem(FEATURE_FLAGS_STORAGE_KEY, JSON.stringify(flags));
   } catch (error) {
     console.warn('Unable to persist feature flags:', error);
   }
@@ -127,12 +139,6 @@ function emitFeatureFlagsChanged(): void {
   listeners.forEach((listener) => listener());
 }
 
-function assertFeatureFlagKey(key: FeatureFlagKey): void {
-  if (!FEATURE_FLAG_KEYS.has(key)) {
-    throw new Error(`Unknown feature flag: ${key}`);
-  }
-}
-
 export function getFeatureFlagsSnapshot(): FeatureFlagState {
   ensureFlagsLoaded();
   return currentFlags;
@@ -140,15 +146,14 @@ export function getFeatureFlagsSnapshot(): FeatureFlagState {
 
 export function isFeatureFlagEnabled(key: FeatureFlagKey): boolean {
   ensureFlagsLoaded();
-  assertFeatureFlagKey(key);
+  getFeatureFlagDefinition(key);
   return currentFlags[key];
 }
 
 export function setFeatureFlag(key: FeatureFlagKey, enabled: boolean): void {
   ensureFlagsLoaded();
-  assertFeatureFlagKey(key);
-  const definition = getFeatureFlagDefinition(key);
-  if (enabled && definition.requires && !currentFlags[definition.requires]) {
+  getFeatureFlagDefinition(key);
+  if (enabled && getFeatureFlagDisabledReason(key, currentFlags)) {
     return;
   }
 
@@ -206,7 +211,7 @@ export function useFeatureFlag(key: FeatureFlagKey): boolean {
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('storage', (event) => {
-    if (event.key !== STORAGE_KEY) return;
+    if (event.key !== FEATURE_FLAGS_STORAGE_KEY) return;
     flagsLoaded = false;
     currentFlags = readStoredFlags();
     flagsLoaded = true;

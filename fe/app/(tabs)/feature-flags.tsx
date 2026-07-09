@@ -14,6 +14,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
   FEATURE_FLAGS,
+  getFeatureFlagDisabledReason,
   resetFeatureFlags,
   setFeatureFlag,
   useFeatureFlags,
@@ -63,14 +64,11 @@ export default function FeatureFlagsScreen() {
       >
         {FEATURE_FLAGS.map((flag, index) => {
           const enabled = flags[flag.key];
-          const requiredFlag = flag.requires
-            ? FEATURE_FLAGS.find((candidate) => candidate.key === flag.requires)
-            : null;
-          const disabled = Boolean(requiredFlag && !flags[requiredFlag.key]);
-          const description =
-            disabled && requiredFlag
-              ? `${flag.description} Requires ${requiredFlag.title}.`
-              : flag.description;
+          const disabledReason = getFeatureFlagDisabledReason(flag.key, flags);
+          const disabled = Boolean(disabledReason);
+          const description = disabledReason
+            ? `${flag.description} ${disabledReason}`
+            : flag.description;
           return (
             <View
               key={flag.key}

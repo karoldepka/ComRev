@@ -75,6 +75,20 @@ describe('feature flags', () => {
     expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
   });
 
+  it('explains why dependent flags are disabled', async () => {
+    const flags = await loadFeatureFlags();
+
+    expect(flags.getFeatureFlagDisabledReason('syncAttentionIndicator')).toBe(
+      'Requires Sync status indicator.',
+    );
+
+    flags.setFeatureFlag('syncStatusIndicator', true);
+
+    expect(
+      flags.getFeatureFlagDisabledReason('syncAttentionIndicator'),
+    ).toBeNull();
+  });
+
   it('turns dependent flags off when their requirement is disabled', async () => {
     const flags = await loadFeatureFlags();
 
@@ -84,6 +98,22 @@ describe('feature flags', () => {
 
     expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
     expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
+  });
+
+  it('normalizes invalid dependent flags loaded from storage', async () => {
+    const flags = await loadFeatureFlags();
+    localStorage.setItem(
+      flags.FEATURE_FLAGS_STORAGE_KEY,
+      JSON.stringify({
+        syncAttentionIndicator: true,
+        syncStatusIndicator: false,
+      }),
+    );
+
+    const reloaded = await loadFeatureFlags();
+
+    expect(reloaded.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
+    expect(reloaded.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
   });
 
   it('notifies subscribers when a flag changes', async () => {
