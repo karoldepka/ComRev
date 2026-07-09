@@ -63,11 +63,20 @@ export default function FeatureFlagsScreen() {
       >
         {FEATURE_FLAGS.map((flag, index) => {
           const enabled = flags[flag.key];
+          const requiredFlag = flag.requires
+            ? FEATURE_FLAGS.find((candidate) => candidate.key === flag.requires)
+            : null;
+          const disabled = Boolean(requiredFlag && !flags[requiredFlag.key]);
+          const description =
+            disabled && requiredFlag
+              ? `${flag.description} Requires ${requiredFlag.title}.`
+              : flag.description;
           return (
             <View
               key={flag.key}
               style={[
                 styles.flagRow,
+                disabled && styles.flagRowDisabled,
                 index > 0 && {
                   borderTopColor: dark ? '#2f3436' : '#e8edf0',
                   borderTopWidth: StyleSheet.hairlineWidth,
@@ -79,13 +88,16 @@ export default function FeatureFlagsScreen() {
                   {flag.title}
                 </Text>
                 <Text style={[styles.flagDescription, { color: colors.icon }]}>
-                  {flag.description}
+                  {description}
                 </Text>
               </View>
               <Switch
                 accessibilityLabel={flag.title}
-                accessibilityHint={flag.description}
-                onValueChange={(value) => setFeatureFlag(flag.key, value)}
+                accessibilityHint={description}
+                disabled={disabled}
+                onValueChange={(value) => {
+                  if (!disabled) setFeatureFlag(flag.key, value);
+                }}
                 thumbColor={enabled ? colors.tint : dark ? '#d4d4d8' : '#fff'}
                 trackColor={{
                   false: dark ? '#3f4548' : '#d9e0e4',
@@ -160,6 +172,9 @@ const styles = StyleSheet.create({
     minHeight: 78,
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  flagRowDisabled: {
+    opacity: 0.64,
   },
   flagText: {
     flex: 1,

@@ -49,6 +49,7 @@ describe('feature flags', () => {
   it('persists enabled flags locally', async () => {
     const flags = await loadFeatureFlags();
 
+    flags.setFeatureFlag('syncStatusIndicator', true);
     flags.setFeatureFlag('syncAttentionIndicator', true);
 
     expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(true);
@@ -66,14 +67,33 @@ describe('feature flags', () => {
     expect(reloaded.isFeatureFlagEnabled('syncStatusIndicator')).toBe(true);
   });
 
+  it('does not enable dependent flags when their requirement is off', async () => {
+    const flags = await loadFeatureFlags();
+
+    flags.setFeatureFlag('syncAttentionIndicator', true);
+
+    expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
+  });
+
+  it('turns dependent flags off when their requirement is disabled', async () => {
+    const flags = await loadFeatureFlags();
+
+    flags.setFeatureFlag('syncStatusIndicator', true);
+    flags.setFeatureFlag('syncAttentionIndicator', true);
+    flags.setFeatureFlag('syncStatusIndicator', false);
+
+    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
+    expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
+  });
+
   it('notifies subscribers when a flag changes', async () => {
     const flags = await loadFeatureFlags();
     const listener = vi.fn();
 
     const unsubscribe = flags.subscribeFeatureFlags(listener);
-    flags.setFeatureFlag('syncAttentionIndicator', true);
+    flags.setFeatureFlag('syncStatusIndicator', true);
     unsubscribe();
-    flags.setFeatureFlag('syncAttentionIndicator', false);
+    flags.setFeatureFlag('syncStatusIndicator', false);
 
     expect(listener).toHaveBeenCalledTimes(1);
   });

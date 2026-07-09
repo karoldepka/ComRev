@@ -7,6 +7,7 @@ export interface FeatureFlagDefinition {
   title: string;
   description: string;
   defaultEnabled: boolean;
+  requires?: FeatureFlagKey;
 }
 
 export type FeatureFlagState = Record<FeatureFlagKey, boolean>;
@@ -25,6 +26,7 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     title: 'Sync attention indicator',
     description: 'Show alert-style sync errors and the pending-item drawer.',
     defaultEnabled: false,
+    requires: 'syncStatusIndicator',
   },
 ];
 
@@ -41,6 +43,31 @@ function createDefaultFlags(): FeatureFlagState {
   return Object.fromEntries(
     FEATURE_FLAGS.map((flag) => [flag.key, flag.defaultEnabled]),
   ) as FeatureFlagState;
+}
+
+function getFeatureFlagDefinition(key: FeatureFlagKey): FeatureFlagDefinition {
+  const definition = FEATURE_FLAGS.find((flag) => flag.key === key);
+  if (!definition) {
+    throw new Error(`Unknown feature flag: ${key}`);
+  }
+  return definition;
+}
+
+function normalizeFlagDependencies(flags: FeatureFlagState): FeatureFlagState {
+  const normalized = { ...flags };
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const flag of FEATURE_FLAGS) {
+      if (flag.requires && normalized[flag.key] && !normalized[flag.requires]) {
+        normalized[flag.key] = false;
+        changed = true;
+      }
+    }
+  }
+
+  return normalized;
 }
 
 function getStorage(): Storage | null {
@@ -72,7 +99,7 @@ function readStoredFlags(): FeatureFlagState {
         next[flag.key] = storedValue;
       }
     }
-    return next;
+    return normalizeFlagDependencies(next);
   } catch (error) {
     console.warn('Unable to load feature flags:', error);
     return defaults;
@@ -120,9 +147,31 @@ export function isFeatureFlagEnabled(key: FeatureFlagKey): boolean {
 export function setFeatureFlag(key: FeatureFlagKey, enabled: boolean): void {
   ensureFlagsLoaded();
   assertFeatureFlagKey(key);
-  if (currentFlags[key] === enabled) return;
-  currentFlags = { ...currentFlags, [key]: enabled };
-  persistFlags(currentFlags);
+  const definition = getFeatureFlagDefinition(key);
+  if (enabled && definition.requires && !currentFlags[definition.requires]) {
+    return;
+  }
+
+  const nextFlags = { ...currentFlags, [key]: enabled };
+  if (!enabled) {
+    for (const flag of FEATURE_FLAGS) {
+      if (flag.requires === key) {
+        nextFlags[flag.key] = false;
+      }
+    }
+  }
+
+  const normalizedFlags = normalizeFlagDependencies(nextFlags);
+  if (
+    FEATURE_FLAGS.every(
+      (flag) => currentFlags[flag.key] === normalizedFlags[flag.key],
+    )
+  ) {
+    return;
+  }
+
+  currentFlags = normalizedFlags;
+  persistFlags(normalizedFlags);
   emitFeatureFlagsChanged();
 }
 
