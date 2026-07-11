@@ -24,6 +24,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'use kanban': {},
   'patience and patient progress': {},
   'Perfect is the enemy of done': {},
+  'believe in myself': {},
   metaperfection: {},
   'be flexible': {},
   'delaying and dosage and right kind, not denying, of gratification': {},
