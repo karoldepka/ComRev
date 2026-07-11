@@ -1,7 +1,7 @@
 import type { SoundscapeConfig } from "@/store/soundscape-store";
 import type { EffectInstance } from "@/utils/config-store";
 import i18n from "@/utils/i18n";
-import { wrapRichTextWords } from "@/utils/rich-text";
+import { stripBoldTags, wrapRichTextWords } from "@/utils/rich-text";
 import { nanoid } from "nanoid/non-secure";
 import type { MantraEntry, MantraText } from "./mcon.data";
 import { MANTRAS as MCON_MANTRAS } from "./mcon.data";
@@ -64,7 +64,7 @@ function makeSlides(
 ): SlideEntry[] {
   return Object.entries(mantras).map(([title, entry]) => ({
     id: `${prefix}-${nanoid()}`,
-    name: title,
+    name: stripBoldTags(title),
     text: getMantraSlideText(title, entry, lang),
   }));
 }

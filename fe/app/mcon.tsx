@@ -6,7 +6,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useThreeDStore } from "@/store/three-d-store";
 import { createEffectInstance } from "@/utils/effect-defaults";
-import { wrapRichTextWords } from "@/utils/rich-text";
+import { stripBoldTags, wrapRichTextWords } from "@/utils/rich-text";
 import { ThreeDTextScreen } from "./(tabs)/three-d";
 import type { MantraEntry, MantraText } from "@/utils/slides/mcon.data";
 import { MANTRAS } from "@/utils/slides/mcon.data";
@@ -39,7 +39,7 @@ export default function MconScreen() {
     );
     const textSets = slideTexts.map((text, index) => ({
       id: `mcon-${nanoid()}`,
-      name: mantraEntries[index]?.[0] ?? "Mantra",
+      name: stripBoldTags(mantraEntries[index]?.[0] ?? "Mantra"),
       text,
       author: mantraEntries[index]?.[1]?.author,
     }));

@@ -86,6 +86,7 @@ import {
   rgbNumberToHexColor,
 } from '@/utils/color';
 import { encodeSvgDataUrl } from '@/utils/data-url';
+import { stripBoldTags } from '@/utils/rich-text';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 
 function isSpacebarShortcut(event: KeyboardEvent): boolean {
@@ -203,7 +204,7 @@ function normalizePrincipalTextSets(
       }
       return {
         id: String(item.id || `set-${index + 1}`),
-        name: String(item.name || `Set ${index + 1}`),
+        name: stripBoldTags(String(item.name || `Set ${index + 1}`)),
         text: String(item.text ?? ""),
         author: typeof item.author === "string" ? item.author : undefined,
         images,
