@@ -6,6 +6,18 @@ import React, { useCallback, useEffect, useImperativeHandle, useRef } from "reac
 import { LayoutChangeEvent, View } from "react-native";
 import * as THREE from "three";
 
+export type CameraFitInsets = {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+};
+
+export type CameraFitOptions = {
+  margin?: number;
+  insets?: CameraFitInsets;
+};
+
 export interface ThreeDTextHandle {
   /** Captures the current rendered frame and returns a PNG data URL. */
   captureFrame(): Promise<string | null>;
@@ -15,8 +27,8 @@ export interface ThreeDTextHandle {
   getScene(): THREE.Scene | null;
   /** Resets the camera to its default position and clears any orbit rotation. */
   resetCamera(): void;
-  /** Adjusts camera Z so the whole mesh fits within the viewport with a margin. */
-  fitCamera(margin?: number): void;
+  /** Adjusts camera Z so the whole mesh fits within the visible viewport. */
+  fitCamera(options?: number | CameraFitOptions): void;
   /**
    * Directly mutates params on an existing named pipe without triggering a
    * React state update or pipeline rebuild. Safe to call every slide change.
@@ -132,11 +144,27 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         }
         rotationRef.current = { x: 0, y: 0 };
       },
-      fitCamera: (margin = 1.18) => {
+      fitCamera: (options = 1.18) => {
         const camera = cameraRef.current;
         const scene = sceneRef.current;
         const mesh = meshRef.current;
         if (!camera || !scene || !mesh) return;
+        const fitOptions =
+          typeof options === "number" ? { margin: options } : options;
+        const margin = fitOptions.margin ?? 1.18;
+        const viewportWidth = Math.max(1, widthRef.current);
+        const viewportHeight = Math.max(1, heightRef.current);
+        const insetFor = (value: number | undefined, max: number) => {
+          const normalized =
+            typeof value === "number" && Number.isFinite(value) ? value : 0;
+          return Math.max(0, Math.min(max, normalized));
+        };
+        const maxHorizontalInset = Math.max(0, viewportWidth - 1);
+        const maxVerticalInset = Math.max(0, viewportHeight - 1);
+        const leftInset = insetFor(fitOptions.insets?.left, maxHorizontalInset);
+        const rightInset = insetFor(fitOptions.insets?.right, maxHorizontalInset);
+        const topInset = insetFor(fitOptions.insets?.top, maxVerticalInset);
+        const bottomInset = insetFor(fitOptions.insets?.bottom, maxVerticalInset);
         // Reset orbit so bounds are measured face-on, not on a rotated mesh.
         rotationRef.current = { x: 0, y: 0 };
         mesh.rotation.set(0, 0, 0);
@@ -154,16 +182,35 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         const halfW = (bbox.max.x - bbox.min.x) / 2;
         const halfH = (bbox.max.y - bbox.min.y) / 2;
         const fovRad = (camera.fov * Math.PI) / 180;
-        const aspect = widthRef.current / Math.max(1, heightRef.current);
+        const aspect = viewportWidth / viewportHeight;
         const hFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
+        const safeWidthRatio = Math.max(
+          0.05,
+          (viewportWidth - leftInset - rightInset) / viewportWidth,
+        );
+        const safeHeightRatio = Math.max(
+          0.05,
+          (viewportHeight - topInset - bottomInset) / viewportHeight,
+        );
+        const safeVFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * safeHeightRatio);
+        const safeHFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) * safeWidthRatio);
         // Distance from the front face (bbox.max.z) needed to fit W and H in viewport.
         // Using the front face (not center) ensures extruded/beveled depth doesn't clip.
         const distFromFront = Math.max(
-          halfH / Math.tan(fovRad / 2),
-          halfW / Math.tan(hFovRad / 2),
+          halfH / Math.tan(safeVFovRad / 2),
+          halfW / Math.tan(safeHFovRad / 2),
         ) * margin;
-        camera.position.set(center.x, center.y, Math.max(5, bbox.max.z + distFromFront));
-        camera.lookAt(center);
+        const cameraZ = Math.max(5, bbox.max.z + distFromFront);
+        const actualDistFromFront = Math.max(0.001, cameraZ - bbox.max.z);
+        const frameHalfHAtFront = Math.tan(fovRad / 2) * actualDistFromFront;
+        const frameHalfWAtFront = Math.tan(hFovRad / 2) * actualDistFromFront;
+        const safeCenterOffsetX = (leftInset - rightInset) / viewportWidth;
+        const safeCenterOffsetY = (bottomInset - topInset) / viewportHeight;
+        const target = center.clone();
+        target.x -= safeCenterOffsetX * frameHalfWAtFront;
+        target.y -= safeCenterOffsetY * frameHalfHAtFront;
+        camera.position.set(target.x, target.y, cameraZ);
+        camera.lookAt(target.x, target.y, center.z);
       },
       updatePipeParams: (pipeName, paramsUpdate) => {
         const pm = pipelineManagerRef.current;

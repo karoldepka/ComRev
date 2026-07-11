@@ -3,7 +3,11 @@ import { AiEffectChatModal } from "@/components/AiEffectChatModal";
 import { useConfirmDialog } from "@/components/confirm-dialog";
 import { ExportModal } from "@/components/ExportModal";
 import { ImagePickerModal } from "@/components/ImagePickerModal";
-import { ThreeDText, ThreeDTextHandle } from "@/components/three-d-text";
+import {
+  ThreeDText,
+  type CameraFitOptions,
+  type ThreeDTextHandle,
+} from "@/components/three-d-text";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useThreeDStore } from "@/store/three-d-store";
@@ -64,7 +68,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -5591,6 +5595,7 @@ export function ThreeDTextScreen({
   const { t, i18n: i18nInstance } = useTranslation();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const safeAreaInsets = useSafeAreaInsets();
   const isSmallScreen = screenWidth < 600;
   const initialControlsHeight = isSmallScreen
     ? Math.round(screenHeight * 0.45)
@@ -5633,6 +5638,7 @@ export function ThreeDTextScreen({
   const [isFullscreen, setIsFullscreen] = useState(fullWindow);
   const [isPaused, setIsPaused] = useState(false);
   const sequenceCanvasWidthRef = useRef(0);
+  const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const pauseIconOpacity = useSharedValue(0);
   const pauseIconStyle = useAnimatedStyle(() => ({ opacity: pauseIconOpacity.value }));
   const animatePauseToggle = React.useCallback((nextPaused: boolean) => {
@@ -5654,6 +5660,42 @@ export function ThreeDTextScreen({
     });
   }, [animatePauseToggle]);
   const savedControlsHeight = React.useRef(initialControlsHeight);
+  const slideshowFitOptions = React.useMemo<CameraFitOptions>(() => {
+    if (!sequenceMode) return { margin: 1.18 };
+    if (fullWindow) return { margin: 1.24 };
+    return {
+      margin: 1.32,
+      insets: {
+        top: Math.max(72, safeAreaInsets.top + 64),
+        bottom: Math.max(88, safeAreaInsets.bottom + 84),
+      },
+    };
+  }, [fullWindow, safeAreaInsets.bottom, safeAreaInsets.top, sequenceMode]);
+  const fitVisibleText = React.useCallback(() => {
+    threeDTextRef.current?.fitCamera(sequenceMode ? slideshowFitOptions : undefined);
+  }, [sequenceMode, slideshowFitOptions]);
+  const sequenceFitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSequenceFit = React.useCallback(
+    (delayMs = 120) => {
+      if (!sequenceMode) return;
+      if (sequenceFitTimerRef.current) clearTimeout(sequenceFitTimerRef.current);
+      sequenceFitTimerRef.current = setTimeout(() => {
+        sequenceFitTimerRef.current = null;
+        fitVisibleText();
+      }, delayMs);
+    },
+    [fitVisibleText, sequenceMode],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (sequenceFitTimerRef.current) clearTimeout(sequenceFitTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    scheduleSequenceFit(80);
+  }, [scheduleSequenceFit]);
 
   const toggleFullscreen = React.useCallback(() => {
     setIsFullscreen((prev) => {
@@ -5664,17 +5706,17 @@ export function ThreeDTextScreen({
           document.documentElement.requestFullscreen().catch(() => {});
         }
         // After layout settles, fit camera to mesh so all content is visible
-        setTimeout(() => threeDTextRef.current?.fitCamera(), 180);
+        setTimeout(fitVisibleText, 180);
       } else {
         controlsHeightSv.value = savedControlsHeight.current;
         if (typeof document !== 'undefined' && document.exitFullscreen && document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
         }
-        setTimeout(() => threeDTextRef.current?.fitCamera(), 180);
+        setTimeout(fitVisibleText, 180);
       }
       return !prev;
     });
-  }, [controlsHeightSv]);
+  }, [controlsHeightSv, fitVisibleText]);
   const [aiChatTarget, setAiChatTarget] = useState<{
     id: string | null;
     code: string;
@@ -5685,7 +5727,6 @@ export function ThreeDTextScreen({
   const [showSavePresetModal, setShowSavePresetModal] = useState(false);
   const [draftPresetName, setDraftPresetName] = useState("");
   const [loadedPresetName, setLoadedPresetName] = useState<string | null>(null);
-  const threeDTextRef = useRef<ThreeDTextHandle>(null);
   const currentConfigIdRef = useRef<string | null>(null);
   const handoffConfigLoadedRef = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -5904,7 +5945,8 @@ export function ThreeDTextScreen({
   }, [sequencePages.length]);
   const handleSequenceCanvasLayout = React.useCallback((event: LayoutChangeEvent) => {
     sequenceCanvasWidthRef.current = event.nativeEvent.layout.width;
-  }, []);
+    scheduleSequenceFit();
+  }, [scheduleSequenceFit]);
   const handleSequenceCanvasDoubleTap = React.useCallback((tapX: number) => {
     if (!sequenceMode || slideJumpMode || sequencePages.length <= 1) return;
     const canvasWidth = sequenceCanvasWidthRef.current;
@@ -6035,7 +6077,8 @@ export function ThreeDTextScreen({
   }, [moveSequenceSlide, sequenceMode, slideJumpMode, toggleSequencePause]);
 
   const handleSequenceMeshReady = React.useCallback(() => {
-    threeDTextRef.current?.fitCamera();
+    fitVisibleText();
+    scheduleSequenceFit(180);
     if (!sequenceMode) return;
     if (readySequencePageKeyRef.current === currentSequencePageKey) return;
 
@@ -6057,9 +6100,11 @@ export function ThreeDTextScreen({
   }, [
     currentSequencePage,
     currentSequencePageKey,
+    fitVisibleText,
     sequenceLineIndex,
     sequenceMode,
     sequenceReady,
+    scheduleSequenceFit,
   ]);
 
   // When OBS sends the start signal (sequenceReady flips to true), fire the
