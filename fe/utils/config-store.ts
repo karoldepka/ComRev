@@ -283,17 +283,34 @@ function transactionComplete(tx: IDBTransaction): Promise<void> {
   });
 }
 
+async function runTransaction<T>(
+  tx: IDBTransaction,
+  work: () => Promise<T>,
+): Promise<T> {
+  const completed = transactionComplete(tx);
+  try {
+    const result = await work();
+    await completed;
+    return result;
+  } catch (error) {
+    await completed.catch(() => undefined);
+    throw error;
+  }
+}
+
 async function withStore<T>(
   storeName: string,
   mode: IDBTransactionMode,
   action: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {
   const db = await openDb();
-  const tx = db.transaction(storeName, mode);
-  const store = tx.objectStore(storeName);
-  const result = await requestPromise(action(store));
-  await transactionComplete(tx);
-  return result;
+  try {
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
+    return await runTransaction(tx, () => requestPromise(action(store)));
+  } finally {
+    db.close();
+  }
 }
 
 export function isOnline(): boolean {
@@ -389,20 +406,24 @@ export async function markConfigSynced(
   backendId?: string | null,
 ): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction(STORE_CONFIGS, "readwrite");
-  const store = tx.objectStore(STORE_CONFIGS);
-  const request = store.get(id);
-  const existing = await requestPromise(request);
+  try {
+    const tx = db.transaction(STORE_CONFIGS, "readwrite");
+    const store = tx.objectStore(STORE_CONFIGS);
+    await runTransaction(tx, async () => {
+      const request = store.get(id);
+      const existing = await requestPromise(request);
 
-  if (existing) {
-    existing.synced = true;
-    existing.backendId = backendId || null;
-    existing.lastSyncAt = new Date().toISOString();
-    existing.syncError = null;
-    store.put(existing);
+      if (existing) {
+        existing.synced = true;
+        existing.backendId = backendId || null;
+        existing.lastSyncAt = new Date().toISOString();
+        existing.syncError = null;
+        store.put(existing);
+      }
+    });
+  } finally {
+    db.close();
   }
-
-  await transactionComplete(tx);
 }
 
 export async function syncConfigToBackend(

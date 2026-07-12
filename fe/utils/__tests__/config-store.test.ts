@@ -39,6 +39,30 @@ async function loadStore(): Promise<ConfigStoreModule> {
   return import('../config-store');
 }
 
+function openDbVersion(
+  version: number,
+): Promise<{ blocked: boolean; db: IDBDatabase }> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('ComRevConfigDB', version);
+    let blocked = false;
+    const timeout = setTimeout(() => {
+      reject(new Error(`Timed out opening upgraded DB; blocked=${blocked}`));
+    }, 1000);
+
+    request.onblocked = () => {
+      blocked = true;
+    };
+    request.onerror = () => {
+      clearTimeout(timeout);
+      reject(request.error);
+    };
+    request.onsuccess = () => {
+      clearTimeout(timeout);
+      resolve({ blocked, db: request.result });
+    };
+  });
+}
+
 describe('config store offline-first sync', () => {
   beforeEach(() => {
     vi.stubGlobal('indexedDB', new IDBFactory());
@@ -158,5 +182,16 @@ describe('config store offline-first sync', () => {
       id: 'config-a',
     });
     expect(await store.getConfigById('missing-config')).toBeNull();
+  });
+
+  it('closes IndexedDB connections after store operations', async () => {
+    const store = await loadStore();
+    await store.saveConfigLocally(makeConfig('config-a'));
+    await store.markConfigSynced('config-a', 'backend-config-a');
+
+    const upgraded = await openDbVersion(7);
+
+    expect(upgraded.blocked).toBe(false);
+    upgraded.db.close();
   });
 });
