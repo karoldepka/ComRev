@@ -6664,14 +6664,13 @@ export function ThreeDTextScreen({
     return () => document.removeEventListener('fullscreenchange', handler);
   }, [controlsHeightSv, fullWindow]);
 
-  // Hide the parent tab bar (if any) while fullscreen, so it doesn't float over the slideshow.
+  // This screen is rendered directly inside the Tabs navigator, so update its
+  // own options to keep the bottom icon bar out of fullscreen slideshows.
   useEffect(() => {
-    const parent = navigation.getParent();
-    if (!parent) return;
-    parent.setOptions({
+    navigation.setOptions({
       tabBarStyle: isFullscreen ? { display: 'none' } : undefined,
     });
-    return () => parent.setOptions({ tabBarStyle: undefined });
+    return () => navigation.setOptions({ tabBarStyle: undefined });
   }, [navigation, isFullscreen]);
 
   // Auto-save on every change (debounced 800ms)
@@ -6866,8 +6865,8 @@ export function ThreeDTextScreen({
               )}
             </TouchableOpacity>
           )}
-          {/* Mute toggle (only visible in sequence mode, not in full-window) */}
-          {sequenceMode && !fullWindow && (
+          {/* Mute toggle is part of slideshow chrome, so hide it in fullscreen. */}
+          {sequenceMode && !fullWindow && !isFullscreen && (
             <TouchableOpacity
               onPress={() => setIsMuted((m) => !m)}
               style={{
