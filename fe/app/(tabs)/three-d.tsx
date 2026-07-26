@@ -52,7 +52,7 @@ import {
   MetallicPreset,
   SCHEME_STOPS,
 } from "@/utils/three-text-pipes";
-import { useFocusEffect, router, useLocalSearchParams } from "expo-router";
+import { useFocusEffect, router, useLocalSearchParams, useNavigation } from "expo-router";
 import { nanoid } from "nanoid/non-secure";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -5596,6 +5596,7 @@ export function ThreeDTextScreen({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { t, i18n: i18nInstance } = useTranslation();
+  const navigation = useNavigation();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const safeAreaInsets = useSafeAreaInsets();
@@ -6663,6 +6664,16 @@ export function ThreeDTextScreen({
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, [controlsHeightSv, fullWindow]);
+
+  // Hide the parent tab bar (if any) while fullscreen, so it doesn't float over the slideshow.
+  useEffect(() => {
+    const parent = navigation.getParent();
+    if (!parent) return;
+    parent.setOptions({
+      tabBarStyle: isFullscreen ? { display: 'none' } : undefined,
+    });
+    return () => parent.setOptions({ tabBarStyle: undefined });
+  }, [navigation, isFullscreen]);
 
   // Auto-save on every change (debounced 800ms)
   useEffect(() => {
