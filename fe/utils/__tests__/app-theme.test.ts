@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { APP_THEMES, resolveAppTheme } from '../app-theme-data';
+import { APP_THEMES, isAppThemeId, resolveAppTheme } from '../app-theme-data';
 
 describe('resolveAppTheme', () => {
   it('uses the matching default palette for the system color scheme', () => {
@@ -18,5 +18,12 @@ describe('resolveAppTheme', () => {
       expect(theme.colors.text).not.toBe(theme.colors.background);
       expect(theme.colors.onTint).not.toBe(theme.colors.tint);
     }
+  });
+
+  it('accepts only supported persisted theme ids', () => {
+    expect(isAppThemeId('yellow')).toBe(true);
+    expect(isAppThemeId('midnight')).toBe(true);
+    expect(isAppThemeId('retro-neon')).toBe(false);
+    expect(isAppThemeId(null)).toBe(false);
   });
 });

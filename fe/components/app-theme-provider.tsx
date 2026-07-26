@@ -11,6 +11,7 @@ import {
 
 import {
   DEFAULT_THEME_ID,
+  isAppThemeId,
   type AppTheme,
   type AppThemeId,
   type ThemeColors,
@@ -35,14 +36,7 @@ function getStoredThemeId(): AppThemeId {
   if (typeof localStorage === 'undefined') return DEFAULT_THEME_ID;
   try {
     const value = localStorage.getItem(THEME_STORAGE_KEY);
-    return value === 'system' ||
-      value === 'sunrise' ||
-      value === 'yellow' ||
-      value === 'lavender' ||
-      value === 'midnight' ||
-      value === 'forest'
-      ? value
-      : DEFAULT_THEME_ID;
+    return isAppThemeId(value) ? value : DEFAULT_THEME_ID;
   } catch (error) {
     console.warn('Unable to read app theme preference:', error);
     return DEFAULT_THEME_ID;

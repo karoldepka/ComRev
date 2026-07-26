@@ -1,20 +1,27 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import type { PropsWithChildren } from 'react';
 
+import { APP_THEMES } from '@/utils/app-theme-data';
+
 const APP_NAME = 'ComRev';
 const MANIFEST_HREF = '/manifest.json';
 const THEME_COLOR = '#f97316';
 const APPLE_TOUCH_ICON_HREF = '/icons/icon-192.png';
+const THEME_BOOTSTRAP_DATA = JSON.stringify(
+  Object.fromEntries(
+    Object.values(APP_THEMES).map((theme) => [
+      theme.id,
+      { background: theme.colors.background, colorScheme: theme.colorScheme },
+    ]),
+  ),
+);
 const THEME_BOOTSTRAP_SCRIPT = `
   try {
     const selectedTheme = localStorage.getItem('comrev.app-theme');
-    const darkThemes = ['midnight', 'forest'];
-    const backgrounds = {
-      sunrise: '#fffaf4', yellow: '#fff3a6', lavender: '#f7f1ff',
-      midnight: '#16181d', forest: '#10221c'
-    };
-    const colorScheme = darkThemes.includes(selectedTheme) ? 'dark' : selectedTheme === 'system' ? 'light dark' : 'light';
-    const background = backgrounds[selectedTheme] || backgrounds.sunrise;
+    const themes = ${THEME_BOOTSTRAP_DATA};
+    const theme = themes[selectedTheme] || themes.sunrise;
+    const colorScheme = selectedTheme === 'system' ? 'light dark' : theme.colorScheme;
+    const background = theme.background;
     document.documentElement.dataset.appTheme = selectedTheme || 'system';
     document.documentElement.style.colorScheme = colorScheme;
     document.documentElement.style.backgroundColor = background;

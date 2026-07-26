@@ -26,6 +26,19 @@ export type AppTheme = {
   colors: ThemeColors;
 };
 
+export const APP_THEME_IDS = [
+  'system',
+  'sunrise',
+  'yellow',
+  'lavender',
+  'midnight',
+  'forest',
+] as const satisfies readonly AppThemeId[];
+
+export function isAppThemeId(value: string | null): value is AppThemeId {
+  return APP_THEME_IDS.some((themeId) => themeId === value);
+}
+
 const orange = '#f97316';
 
 export const APP_THEMES: Record<Exclude<AppThemeId, 'system'>, AppTheme> = {
