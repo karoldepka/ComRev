@@ -7,6 +7,7 @@ import '@/utils/i18n';
 import { SyncStatusIndicator } from '@/components/sync-status-indicator';
 import ToastHost from '@/components/toast-host';
 import { AppThemeProvider, useAppTheme } from '@/components/app-theme-provider';
+import { ErrorAlert } from '@/components/error-alert';
 import { useFeatureFlag } from '@/utils/feature-flags';
 import { installShaderErrorReporter } from '@/utils/shader-error-reporter';
 
@@ -19,7 +20,9 @@ export const unstable_settings = {
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-      <RootLayoutContents />
+      <ErrorAlert>
+        <RootLayoutContents />
+      </ErrorAlert>
     </AppThemeProvider>
   );
 }

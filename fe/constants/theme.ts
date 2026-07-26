@@ -4,7 +4,9 @@ import { APP_THEMES } from '@/utils/app-theme-data';
 
 export {
   APP_THEMES,
+  APP_THEME_IDS,
   DEFAULT_THEME_ID,
+  isAppThemeId,
   resolveAppTheme,
   type AppTheme,
   type AppThemeId,
