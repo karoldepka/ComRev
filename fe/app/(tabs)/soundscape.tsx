@@ -1,9 +1,9 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import { useConfirmDialog } from '@/components/confirm-dialog';
+import type { ThemeColors } from '@/constants/theme';
 import {
   AMBIENCE_KINDS,
   NOISE_COLORS,
@@ -47,7 +47,7 @@ function Stepper({
   display: string;
   onDec: () => void;
   onInc: () => void;
-  c: (typeof Colors)['light'];
+  c: ThemeColors;
 }) {
   return (
     <View style={stepperStyles.row}>
@@ -125,7 +125,7 @@ function LayerRow({
   volume: number;
   onToggle: () => void;
   onVolumeChange: (v: number) => void;
-  c: (typeof Colors)['light'];
+  c: ThemeColors;
   dark: boolean;
   children?: ReactNode;
   cardWidth?: number;
@@ -184,7 +184,7 @@ function AmbienceBrowser({
   ambience: Record<string, { playing: boolean; volume: number }>;
   toggleAmbience: (key: string) => void;
   setAmbienceVolume: (key: string, v: number) => void;
-  c: (typeof Colors)['light'];
+  c: ThemeColors;
   dark: boolean;
   cardWidth?: number;
 }) {
@@ -358,8 +358,7 @@ const fxStyles = StyleSheet.create({
 });
 
 export default function SoundscapeScreen() {
-  const cs = useColorScheme() ?? 'light';
-  const c = Colors[cs];
+  const { colorScheme: cs, colors: c } = useAppTheme();
   const dark = cs === 'dark';
   const { width } = useWindowDimensions();
   const isSmall = width < 480;

@@ -10,8 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import {
   FEATURE_FLAGS,
   getFeatureFlagDisabledReason,
@@ -21,8 +20,7 @@ import {
 } from '@/utils/feature-flags';
 
 export default function FeatureFlagsScreen() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const { colorScheme, colors } = useAppTheme();
   const dark = colorScheme === 'dark';
   const flags = useFeatureFlags();
   const { width } = useWindowDimensions();

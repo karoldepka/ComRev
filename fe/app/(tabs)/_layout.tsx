@@ -4,13 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { useWindowDimensions } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { useAppTheme } from '@/components/app-theme-provider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
   const { t } = useTranslation();
-  const colorScheme = useColorScheme();
+  const { colors } = useAppTheme();
   const { width } = useWindowDimensions();
   const isSmall = width < 480;
   const iconSize = isSmall ? 24 : 26;
@@ -18,15 +17,19 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: colors.tabIconSelected,
+        tabBarInactiveTintColor: colors.tabIconDefault,
+        tabBarStyle: [
+          isSmall
+            ? { height: 52, paddingTop: 4, paddingBottom: 4 }
+            : { height: 60, paddingTop: 4, paddingBottom: 6 },
+          { backgroundColor: colors.surface, borderTopColor: colors.border },
+        ],
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarShowLabel: !isSmall,
         tabBarItemStyle: isSmall ? { paddingHorizontal: 0 } : undefined,
         tabBarLabelStyle: { fontSize: 11, marginTop: -2 },
-        tabBarStyle: isSmall
-          ? { height: 52, paddingTop: 4, paddingBottom: 4 }
-          : { height: 60, paddingTop: 4, paddingBottom: 6 },
       }}
     >
       <Tabs.Screen
@@ -115,6 +118,19 @@ export default function TabLayout() {
           title: 'Flags',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="flag.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="themes"
+        options={{
+          title: 'Themes',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={iconSize}
+              name="paintpalette.fill"
+              color={color}
+            />
           ),
         }}
       />

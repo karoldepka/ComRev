@@ -28,6 +28,7 @@ const MAPPING = {
   'play.rectangle.fill': 'slideshow',
   'quote.bubble.fill': 'format-quote',
   'star.fill': 'star',
+  'paintpalette.fill': 'palette',
   waveform: 'graphic-eq',
 } as IconMapping;
 

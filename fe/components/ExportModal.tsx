@@ -1,5 +1,4 @@
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -151,8 +150,7 @@ export function ExportModal({
   getMesh,
   getScene,
 }: Props) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const c = Colors[colorScheme];
+  const { colorScheme, colors: c } = useAppTheme();
   const isDark = colorScheme === 'dark';
 
   const [selected, setSelected] = useState<Set<string>>(new Set(['png']));
