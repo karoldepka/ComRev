@@ -18,8 +18,7 @@ import {
 import { API_BASE } from '@/utils/api-config';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useAppTheme } from '@/components/app-theme-provider';
 
 interface ItemRecord {
   id: number;
@@ -75,8 +74,7 @@ function buildTree(items: ItemRecord[]): TreeRow[] {
 }
 
 export default function ReposScreen() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const { colors } = useAppTheme();
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -3,8 +3,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { SoundAttributionsPopover } from '@/components/sound-attributions-popover';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 
 const GITHUB_URL = 'https://github.com/karoldepka/ComRev';
 
@@ -19,8 +18,7 @@ interface BuildInfo {
 }
 
 export default function AboutScreen() {
-  const colorScheme = useColorScheme();
-  const c = Colors[colorScheme ?? 'light'];
+  const { colors: c } = useAppTheme();
   const build: BuildInfo | undefined = Constants.expoConfig?.extra?.buildInfo;
   const version = Constants.expoConfig?.version ?? '—';
   const buildTimestamp = formatTimestamp(build?.buildTimestamp);

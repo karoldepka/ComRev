@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import { normalizeLanguageCode, SUPPORTED_LANGUAGES } from '@/utils/i18n';
 
 interface BuildInfo {
@@ -30,8 +29,7 @@ interface BuildInfo {
 export default function UpdateScreen() {
   const { t, i18n } = useTranslation();
   const { lang } = useLocalSearchParams<{ lang?: string }>();
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const { colorScheme, colors } = useAppTheme();
   const dark = colorScheme === 'dark';
   const { width } = useWindowDimensions();
   const compact = width < 560;

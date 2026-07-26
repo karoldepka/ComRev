@@ -1,8 +1,4 @@
-import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
-} from '@react-navigation/native';
+import { ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -10,7 +6,8 @@ import '@/utils/i18n';
 
 import { SyncStatusIndicator } from '@/components/sync-status-indicator';
 import ToastHost from '@/components/toast-host';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AppThemeProvider, useAppTheme } from '@/components/app-theme-provider';
+import { ErrorAlert } from '@/components/error-alert';
 import { useFeatureFlag } from '@/utils/feature-flags';
 import { installShaderErrorReporter } from '@/utils/shader-error-reporter';
 
@@ -21,11 +18,21 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  return (
+    <AppThemeProvider>
+      <ErrorAlert>
+        <RootLayoutContents />
+      </ErrorAlert>
+    </AppThemeProvider>
+  );
+}
+
+function RootLayoutContents() {
+  const { colorScheme, navigationTheme } = useAppTheme();
   const showSyncIndicator = useFeatureFlag('syncStatusIndicator');
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={navigationTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="preset" options={{ headerShown: false }} />
@@ -35,7 +42,7 @@ export default function RootLayout() {
           options={{ presentation: 'modal', title: 'Modal' }}
         />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       {showSyncIndicator ? <SyncStatusIndicator /> : null}
       <ToastHost />
     </ThemeProvider>

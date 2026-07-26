@@ -1,5 +1,4 @@
-import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAppTheme } from '@/components/app-theme-provider';
 import React from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -17,8 +16,7 @@ type PendingConfirm = ConfirmOptions & {
 };
 
 export function useConfirmDialog() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? "light"];
+  const { colorScheme, colors } = useAppTheme();
   const dark = colorScheme === "dark";
   const [pending, setPending] = React.useState<PendingConfirm | null>(null);
 

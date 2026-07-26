@@ -10,8 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import {
   generateInspiration,
   groupInspirationItems,
@@ -27,8 +26,7 @@ const PROMPT_EXAMPLES = [
 ];
 
 export default function InspirationScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const { colorScheme, colors } = useAppTheme();
   const dark = colorScheme === 'dark';
   const { width } = useWindowDimensions();
   const isSmall = width < 480;

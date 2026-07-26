@@ -1,8 +1,7 @@
 import { SlideImage, SlideImageOverlay } from "@/components/SlideImageOverlay";
 import { ThreeDText } from "@/components/three-d-text";
 import { useConfirmDialog } from "@/components/confirm-dialog";
-import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useAppTheme } from '@/components/app-theme-provider';
 import {
   deletePreset,
   deletePresetFromBackend,
@@ -147,8 +146,7 @@ function ThumbnailZoomOverlay({
 }
 
 export default function PresetsScreen() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? "light"];
+  const { colorScheme, colors } = useAppTheme();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [presets, setPresets] = useState<PresetRecord[]>([]);
   const [search, setSearch] = useState("");
