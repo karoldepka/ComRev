@@ -4,7 +4,10 @@ import { createEffectInstance } from '@/utils/effect-defaults';
 import { useThreeDStore } from '@/store/three-d-store';
 import { useSoundscapeStore } from '@/store/soundscape-store';
 import i18n from '@/utils/i18n';
-import { PRESET_REGISTRY } from '@/utils/slides/preset-registry';
+import {
+  parseCategoriesParam,
+  PRESET_REGISTRY,
+} from '@/utils/slides/preset-registry';
 
 export function usePresetLoader(id: string) {
   const setEffectInstances = useThreeDStore((s) => s.setEffectInstances);
@@ -12,24 +15,45 @@ export function usePresetLoader(id: string) {
   const applyPresetConfig = useSoundscapeStore((s) => s.applyPresetConfig);
   const [ready, setReady] = useState(false);
 
-  const { lang } = useLocalSearchParams<{ lang?: string }>();
+  const { lang, categories } = useLocalSearchParams<{
+    lang?: string;
+    categories?: string | string[];
+  }>();
   const displayLang = lang || undefined;
+  const selectedCategories = useMemo(
+    () => parseCategoriesParam(categories),
+    [categories],
+  );
+  const selectedCategoriesKey = selectedCategories.join(',');
 
   const preset = PRESET_REGISTRY[id];
 
   const textSets = useMemo(
-    () => preset?.generateSlides(displayLang) ?? [],
-    // id guards against preset change if router reuses component; displayLang for ?lang= param
+    () => preset?.generateSlides(displayLang, selectedCategories) ?? [],
+    // id guards against preset change if router reuses component; other values track URL params
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, displayLang],
+    [id, displayLang, selectedCategoriesKey],
   );
 
-  const text = useMemo(() => textSets.map((s) => s.text).join('\n\n'), [textSets]);
+  const text = useMemo(
+    () => textSets.map((s) => s.text).join('\n\n'),
+    [textSets],
+  );
 
   useEffect(() => {
-    if (!preset) return;
+    if (!preset) {
+      setReady(false);
+      return;
+    }
+
     const prevLang = i18n.language;
-    if (displayLang && displayLang !== prevLang) i18n.changeLanguage(displayLang);
+    const languageToApply =
+      displayLang && displayLang !== prevLang ? displayLang : null;
+    if (languageToApply) {
+      void i18n.changeLanguage(languageToApply).catch((error) => {
+        console.warn(`Could not switch preset language to ${languageToApply}:`, error);
+      });
+    }
     if (preset.soundscape) applyPresetConfig(preset.soundscape);
     setMantraMode(true);
     setEffectInstances((instances) => {
@@ -37,16 +61,36 @@ export function usePresetLoader(id: string) {
       const next = mainText ?? createEffectInstance('mainText');
       const rest = instances.filter((i) => i.type !== 'mainText');
       return [
-        { ...next, params: { ...next.params, text, textSets, activeTextSetId: textSets[0]?.id } },
+        {
+          ...next,
+          params: {
+            ...next.params,
+            text,
+            textSets,
+            activeTextSetId: textSets[0]?.id,
+          },
+        },
         ...rest,
       ];
     });
     setReady(true);
     return () => {
       setMantraMode(false);
-      if (displayLang && displayLang !== prevLang) i18n.changeLanguage(prevLang);
+      if (languageToApply) {
+        void i18n.changeLanguage(prevLang).catch((error) => {
+          console.warn(`Could not restore preset language to ${prevLang}:`, error);
+        });
+      }
     };
-  }, [preset, setEffectInstances, setMantraMode, applyPresetConfig, text, textSets, displayLang]);
+  }, [
+    preset,
+    setEffectInstances,
+    setMantraMode,
+    applyPresetConfig,
+    text,
+    textSets,
+    displayLang,
+  ]);
 
   return { ready, notFound: !preset };
 }

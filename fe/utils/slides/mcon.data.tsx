@@ -7,28 +7,57 @@ export const MANTRAS: Record<string, MantraEntry> = {
     examples:
       'Am I running like a headless chicken and constantly changing music, instead of steady focus?',
   },
+  'Make positive associations between positive things': {
+    examples: 'Work and providing value in capitalism',
+  },
   'thoughts are things': {
     sentiment: 'growth',
     emotion: 'focus',
     style: 'neon',
   },
-  'mental anchors including posters': {},
-  "Lose the inner heaviness. It's all a fancy game. Play the game.": {},
-  'breathe well, with diaphragm': {},
-  'unconditional good mood': {},
-  'face my fears to flush them out': {},
+  'mental anchors including posters': {
+    categories: { motivation: {} },
+  },
+  "Lose the inner heaviness. It's all a fancy game. Play the game.": {
+    categories: { motivation: {} },
+  },
+  'breathe well, with diaphragm': {
+    categories: { motivation: {} },
+  },
+  'unconditional good mood': {
+    categories: { motivation: {} },
+  },
+  'face my fears to flush them out': {
+    categories: { motivation: {} },
+  },
   'attract, do not chase': {},
-  'visualize desired outcomes': {},
-  'outcome independence, focus on the process': {},
+  'visualize desired outcomes': {
+    categories: { motivation: {} },
+  },
+  'outcome independence, focus on the process and the journey, adventure': {
+    categories: { motivation: {} },
+  },
   'I apply Pareto principle (80/20, 90/10)': {},
-  'use kanban': {},
-  'patience and patient progress': {},
-  'Perfect is the enemy of done': {},
-  'believe in myself': {},
-  metaperfection: {},
+  'use kanban': {
+    categories: { motivation: { intensityPercent: 50 } },
+  },
+  'patience and patient progress': {
+    categories: { motivation: {} },
+  },
+  'Perfect is the enemy of done': {
+    categories: { motivation: {} },
+  },
+  'believe in myself': {
+    categories: { motivation: {} },
+  },
+  metaperfection: {
+    categories: { motivation: {} },
+  },
   'be flexible': {},
   'delaying and dosage and right kind, not denying, of gratification': {},
-  'exploit parallelisms': {},
+  'exploit parallelisms': {
+    categories: { motivation: {} },
+  },
   'fake it till you make it': {},
   'no headless chicken': {},
   "I'm just a glue code to run as part of the LLM loops": {},
@@ -115,14 +144,20 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'MIND<b>OS</b>': {},
   'RIGHT MINDSET': {},
   'The journey is a reward': {},
+  'Go with the flow. Bez spiny.': {},
+  'A journey of a thousand miles begins with one step': {},
   'everything is part of the game': {},
   'obstacles is what you start to see when you take your mind off your goals':
     {},
   'not time management\nbut manage\nyourself in time': {},
   'N-minute\nrule': {},
   '1% better a day\n= 37x a year': {},
-  kaizens: {},
-  'Follow your ikigai': {},
+  kaizens: {
+    categories: { efficiency: {} },
+  },
+  'Follow your ikigai': {
+    categories: { motivation: {}, inspiration: {} },
+  },
   'pause and plan, not fight-or-flight-or freeze': {},
   'turn anxieties\ninto motivators\nfor calm but decisive\naction': {},
   'surfing the anxieties': {},
@@ -132,7 +167,9 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'the virtues of play': {},
   'watch out for premature/overkill optimizations, perfectionism': {},
   'anarcho-capitalism\nblack&yellow': {},
-  'visualize camper van and MacBook Pro and cool stuff': {},
+  'visualize camper van and MacBook Pro and cool stuff': {
+    categories: { motivation: {}, inspiration: {} },
+  },
   'praise the subconscious mind after even small successes': {},
   'micro-fun in your mind': {},
   'micro-celebrations': {},
@@ -173,16 +210,19 @@ export const MANTRAS: Record<string, MantraEntry> = {
     sentiment: 'hardcore',
     emotion: 'empowerment',
     style: 'neon',
+    categories: { motivation: {} },
   },
   'build habits': {
     sentiment: 'growth',
     emotion: 'persistence',
     style: 'minimalist',
+    categories: { efficiency: {} },
   },
   'build habit chains': {
     sentiment: 'growth',
     emotion: 'structure',
     style: 'grid',
+    categories: { efficiency: {} },
   },
   'internalize ideas, beliefs, values, qualities': {
     sentiment: 'growth',
@@ -193,11 +233,13 @@ export const MANTRAS: Record<string, MantraEntry> = {
     sentiment: 'hardcore',
     emotion: 'duty',
     style: 'classic',
+    categories: { motivation: {} },
   },
   'miłość\npiękno': {
     sentiment: 'loving',
     emotion: 'love & beauty',
     style: 'dreamy',
+    categories: { motivation: {} },
   },
   'muscle memory\nkeyboard shortcuts': {
     sentiment: 'focus',
@@ -217,7 +259,10 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'inner strength': {},
   "i'm a warrior": {},
   'no-games-day challenges': {},
-  'think from long perspective - how much I can achieve': {},
+  'think from long perspective - how much I can achieve, given compounding and exponential growth':
+    {
+      categories: { motivation: {} },
+    },
   'lead, follow or get out of the way': {},
   'be at peace with things': {},
   'only constant is change': {},
@@ -266,7 +311,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'unique value proposition': {},
   'have to -> want to': {},
   'towards-state': {},
-  'Zapierdalac. Be like Elon and Martin.': {},
+  'Zapierdalac. Be like Elon and Martin and Tudor.': {},
   'Regrets minimization principle': {},
   'What gets measured, gets managed': { author: 'Peter Drucker' },
 };

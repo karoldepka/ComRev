@@ -58,6 +58,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -87,6 +88,7 @@ import {
 } from '@/utils/color';
 import { encodeSvgDataUrl } from '@/utils/data-url';
 import { stripBoldTags } from '@/utils/rich-text';
+import { getCanvasDoubleTapAction } from '@/utils/slideshow-interactions';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
 
 function isSpacebarShortcut(event: KeyboardEvent): boolean {
@@ -5698,26 +5700,29 @@ export function ThreeDTextScreen({
     scheduleSequenceFit(80);
   }, [scheduleSequenceFit]);
 
-  const toggleFullscreen = React.useCallback(() => {
-    setIsFullscreen((prev) => {
-      if (!prev) {
+  const toggleFullscreen = React.useCallback(async () => {
+    if (fullWindow) return;
+
+    if (typeof document === 'undefined') {
+      setIsFullscreen((fullscreen) => !fullscreen);
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
         savedControlsHeight.current = controlsHeightSv.value;
         controlsHeightSv.value = 0;
-        if (typeof document !== 'undefined' && document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
-        // After layout settles, fit camera to mesh so all content is visible
-        setTimeout(fitVisibleText, 180);
-      } else {
-        controlsHeightSv.value = savedControlsHeight.current;
-        if (typeof document !== 'undefined' && document.exitFullscreen && document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
-        }
-        setTimeout(fitVisibleText, 180);
+        await document.documentElement.requestFullscreen();
       }
-      return !prev;
-    });
-  }, [controlsHeightSv, fitVisibleText]);
+      // Let the fullscreenchange-driven layout settle before refitting.
+      setTimeout(fitVisibleText, 180);
+    } catch (error) {
+      controlsHeightSv.value = savedControlsHeight.current;
+      console.warn('Could not toggle browser fullscreen:', error);
+    }
+  }, [controlsHeightSv, fitVisibleText, fullWindow]);
   const [aiChatTarget, setAiChatTarget] = useState<{
     id: string | null;
     code: string;
@@ -5949,11 +5954,20 @@ export function ThreeDTextScreen({
     scheduleSequenceFit();
   }, [scheduleSequenceFit]);
   const handleSequenceCanvasDoubleTap = React.useCallback((tapX: number) => {
-    if (!sequenceMode || slideJumpMode || sequencePages.length <= 1) return;
-    const canvasWidth = sequenceCanvasWidthRef.current;
-    if (!Number.isFinite(tapX) || canvasWidth <= 0) return;
-    moveSequenceSlide(tapX < canvasWidth / 2 ? -1 : 1);
-  }, [moveSequenceSlide, sequenceMode, sequencePages.length, slideJumpMode]);
+    if (!sequenceMode || slideJumpMode) return;
+
+    const action = getCanvasDoubleTapAction(
+      tapX,
+      sequenceCanvasWidthRef.current,
+    );
+    if (action === 'previous') {
+      moveSequenceSlide(-1);
+    } else if (action === 'next') {
+      moveSequenceSlide(1);
+    } else {
+      void toggleFullscreen();
+    }
+  }, [moveSequenceSlide, sequenceMode, slideJumpMode, toggleFullscreen]);
   const sequenceCanvasTapGesture = useMemo(() => {
     const doubleTap = Gesture.Tap()
       .numberOfTaps(2)
@@ -5968,6 +5982,10 @@ export function ThreeDTextScreen({
 
     return Gesture.Exclusive(doubleTap, singleTap);
   }, [handleSequenceCanvasDoubleTap, toggleSequencePause]);
+  const nonSequenceCanvasWebProps =
+    Platform.OS === 'web' && !sequenceMode && !fullWindow
+      ? { onDoubleClick: toggleFullscreen }
+      : {};
   const currentSequencePage =
     sequencePages[sequenceLineIndex % sequencePages.length] ?? sequencePages[0];
   const currentSequencePageKey = sequenceMode
@@ -6626,23 +6644,27 @@ export function ThreeDTextScreen({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save on every change (debounced 800ms)
+  // Keep UI chrome in sync when fullscreen changes outside our toggle
+  // (for example, when the user presses Escape).
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const handler = () => {
-      if (!document.fullscreenElement) {
-        setIsFullscreen((prev) => {
-          if (prev && !fullWindow) {
-            controlsHeightSv.value = savedControlsHeight.current;
-          }
-          return fullWindow ? true : false;
-        });
-      }
+      const fullscreenActive = document.fullscreenElement !== null;
+      setIsFullscreen((wasFullscreen) => {
+        if (fullscreenActive && !wasFullscreen && !fullWindow) {
+          savedControlsHeight.current = controlsHeightSv.value;
+          controlsHeightSv.value = 0;
+        } else if (!fullscreenActive && wasFullscreen && !fullWindow) {
+          controlsHeightSv.value = savedControlsHeight.current;
+        }
+        return fullWindow || fullscreenActive;
+      });
     };
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, [controlsHeightSv, fullWindow]);
 
+  // Auto-save on every change (debounced 800ms)
   useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -6666,6 +6688,7 @@ export function ThreeDTextScreen({
     >
       <View style={styles.content}>
         <View
+          {...nonSequenceCanvasWebProps}
           style={[styles.canvas, { position: 'relative' }]}
           onLayout={handleSequenceCanvasLayout}
         >
@@ -6768,7 +6791,7 @@ export function ThreeDTextScreen({
               page={readySequenceTransition.page}
             />
           )}
-          {sequenceMode && !fullWindow && (
+          {sequenceMode && !fullWindow && !isFullscreen && (
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => {
@@ -6831,18 +6854,6 @@ export function ThreeDTextScreen({
                   {visibleSequenceLineIndex + 1}/{sequencePages.length}
                 </Text>
               )}
-              <Text
-                style={{ color: c.text, fontSize: 11, opacity: 0.7 }}
-                onPress={() => {
-                  setSlideJumpDraft(String(visibleSequenceLineIndex + 1));
-                  setSlideJumpMode(true);
-                }}
-              >
-                {visibleSequencePage.setName}
-              </Text>
-              <Text style={{ color: c.text, fontSize: 11, opacity: 0.7 }}>
-                {Math.round(visibleSequencePage.durationMs / 100) / 10}s
-              </Text>
             </TouchableOpacity>
           )}
           {/* Mute toggle (only visible in sequence mode, not in full-window) */}
@@ -6937,13 +6948,14 @@ export function ThreeDTextScreen({
           </GestureDetector>
         )}
 
-        <Animated.View style={[styles.controls, controlsAnimStyle]}>
-          <CompactControlsContext.Provider value={isSmallScreen}>
-          <ScrollView
-            ref={controlsScrollRef}
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: isSmallScreen ? 16 : 32 }}
-          >
+        {!isFullscreen && (
+          <Animated.View style={[styles.controls, controlsAnimStyle]}>
+            <CompactControlsContext.Provider value={isSmallScreen}>
+            <ScrollView
+              ref={controlsScrollRef}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: isSmallScreen ? 16 : 32 }}
+            >
             {/* ── Effects ── */}
             <Text
               style={[
@@ -7564,9 +7576,10 @@ export function ThreeDTextScreen({
                 {t("export")}
               </Text>
             </TouchableOpacity>
-          </ScrollView>
-          </CompactControlsContext.Provider>
-        </Animated.View>
+            </ScrollView>
+            </CompactControlsContext.Provider>
+          </Animated.View>
+        )}
       </View>
 
       {/* Modals */}

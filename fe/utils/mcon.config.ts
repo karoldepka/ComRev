@@ -1,5 +1,18 @@
 export type MantraText = string | readonly string[];
 
+/** TODO: later unify with journal metrics and user-wide / app-wide categories in DB */
+export const CATEGORIES_HARDCODED = {
+  motivation: {},
+  efficiency: {},
+  inspiration: {},
+};
+
+export type CategoryKeyHardcoded = keyof Partial<typeof CATEGORIES_HARDCODED>; // make the fields
+
+export type CategoryInclusionHardcoded = {
+  intensityPercent?: number;
+};
+
 /** Visual configuration applied when /mcon opens — edit here to change the mantra slideshow style. */
 export const MCON_VISUAL_PARAMS: Record<string, unknown> = {
   size: 2.5,
@@ -15,7 +28,7 @@ export const MCON_VISUAL_PARAMS: Record<string, unknown> = {
   roughness: 0.25,
   envMapIntensity: 1.5,
   equalizeLineWidths: false,
-  equalizationMethod: "fontSize",
+  equalizationMethod: 'fontSize',
   targetWidth: 20,
   lineSpacing: 1.0,
   perspective: 1.0,
@@ -28,13 +41,8 @@ export type MantraEntry = {
   examples?: string;
   author?: string;
   sentiment?:
-    | "loving"
-    | "growth"
-    | "hardcore"
-    | "dreaming"
-    | "calm"
-    | "focus"
-    | string;
+    'loving' | 'growth' | 'hardcore' | 'dreaming' | 'calm' | 'focus' | string;
   emotion?: string;
   style?: string;
+  categories?: { [key in CategoryKeyHardcoded]?: CategoryInclusionHardcoded };
 };
