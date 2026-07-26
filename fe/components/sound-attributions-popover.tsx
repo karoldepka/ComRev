@@ -1,16 +1,14 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import { ATTRIBUTION_REQUIRED_SOUNDS } from '@/utils/ambience-tracks';
 
 // Nature-ambience recordings under CC-BY require a visible credit; this popover
 // is that credit. CC0 sounds (also used in the Soundscape mixer) need no
 // mention here — see utils/ambience-tracks.ts for the full license breakdown.
 export function SoundAttributionsPopover() {
-  const cs = useColorScheme() ?? 'light';
-  const c = Colors[cs];
+  const { colorScheme: cs, colors: c } = useAppTheme();
   const dark = cs === 'dark';
   const [expanded, setExpanded] = useState(false);
 

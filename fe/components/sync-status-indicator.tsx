@@ -10,8 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 import {
   ConfigSyncStatus,
   getPendingConfigs,
@@ -105,8 +104,7 @@ function formatPendingItemTime(config: ThreeDConfig) {
 }
 
 export function SyncStatusIndicator() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const { colorScheme, colors } = useAppTheme();
   const dark = colorScheme === 'dark';
   const showSyncAttention = useFeatureFlag('syncAttentionIndicator');
   const [status, setStatus] = React.useState(getConfigSyncStatusSnapshot);

@@ -8,7 +8,7 @@ import {
   type CameraFitOptions,
   type ThreeDTextHandle,
 } from "@/components/three-d-text";
-import { Colors } from "@/constants/theme";
+import { useAppTheme } from '@/components/app-theme-provider';
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useThreeDStore } from "@/store/three-d-store";
 import { useSoundscapeStore } from "@/store/soundscape-store";
@@ -5593,8 +5593,7 @@ export function ThreeDTextScreen({
   /** When false, hold the sequence at slide 0 until set to true (OBS sync). */
   sequenceReady?: boolean;
 }) {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? "light"];
+  const { colorScheme, colors } = useAppTheme();
   const { t, i18n: i18nInstance } = useTranslation();
   const navigation = useNavigation();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();

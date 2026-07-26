@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/components/app-theme-provider';
 
 type IconName = ComponentProps<typeof MaterialIcons>['name'];
 
@@ -51,8 +50,7 @@ const ACTIONS: {
 
 export default function HomeScreen() {
   const { t } = useTranslation();
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const { colorScheme, colors } = useAppTheme();
   const dark = colorScheme === 'dark';
   const { width } = useWindowDimensions();
   const compact = width < 560;
