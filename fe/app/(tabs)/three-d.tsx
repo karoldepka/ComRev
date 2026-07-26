@@ -6665,14 +6665,14 @@ export function ThreeDTextScreen({
     return () => document.removeEventListener('fullscreenchange', handler);
   }, [controlsHeightSv, fullWindow]);
 
-  // Hide the parent tab bar (if any) while fullscreen, so it doesn't float over the slideshow.
+  // Hide the tab bar (if any) while fullscreen, so it doesn't float over the slideshow.
+  // This screen sits directly inside the Tabs navigator (no nested stack), so `navigation`
+  // itself is already the tab-bar-owning navigation prop — no getParent() needed.
   useEffect(() => {
-    const parent = navigation.getParent();
-    if (!parent) return;
-    parent.setOptions({
+    navigation.setOptions({
       tabBarStyle: isFullscreen ? { display: 'none' } : undefined,
     });
-    return () => parent.setOptions({ tabBarStyle: undefined });
+    return () => navigation.setOptions({ tabBarStyle: undefined });
   }, [navigation, isFullscreen]);
 
   // Auto-save on every change (debounced 800ms)
