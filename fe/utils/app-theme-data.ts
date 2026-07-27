@@ -16,7 +16,17 @@ export type ThemeColors = {
 };
 
 export type AppThemeId =
-  'system' | 'sunrise' | 'yellow' | 'lavender' | 'midnight' | 'forest';
+  | 'system'
+  | 'sunrise'
+  | 'yellow'
+  | 'lavender'
+  | 'sea-glass'
+  | 'rose-paper'
+  | 'midnight'
+  | 'forest'
+  | 'indigo-dusk'
+  | 'ember'
+  | 'deep-ocean';
 
 export type AppTheme = {
   id: Exclude<AppThemeId, 'system'>;
@@ -31,8 +41,13 @@ export const APP_THEME_IDS = [
   'sunrise',
   'yellow',
   'lavender',
+  'sea-glass',
+  'rose-paper',
   'midnight',
   'forest',
+  'indigo-dusk',
+  'ember',
+  'deep-ocean',
 ] as const satisfies readonly AppThemeId[];
 
 export function isAppThemeId(value: string | null): value is AppThemeId {
@@ -102,6 +117,46 @@ export const APP_THEMES: Record<Exclude<AppThemeId, 'system'>, AppTheme> = {
       onTint: '#ffffff',
     },
   },
+  'sea-glass': {
+    id: 'sea-glass',
+    name: 'Sea glass',
+    description: 'Cool blue paper with crisp ocean accents.',
+    colorScheme: 'light',
+    colors: {
+      text: '#073b4c',
+      background: '#eaf8ff',
+      tint: '#0077b6',
+      icon: '#568096',
+      tabIconDefault: '#568096',
+      tabIconSelected: '#0077b6',
+      surface: '#ffffff',
+      surfaceRaised: '#dcf4ff',
+      border: '#b9dfef',
+      subtleBackground: '#dff5ff',
+      subtleBorder: '#a9d8ee',
+      onTint: '#ffffff',
+    },
+  },
+  'rose-paper': {
+    id: 'rose-paper',
+    name: 'Rose paper',
+    description: 'Soft rose surfaces and confident berry controls.',
+    colorScheme: 'light',
+    colors: {
+      text: '#3d1323',
+      background: '#fff4f6',
+      tint: '#bd3d69',
+      icon: '#8b6070',
+      tabIconDefault: '#8b6070',
+      tabIconSelected: '#bd3d69',
+      surface: '#ffffff',
+      surfaceRaised: '#ffe8ee',
+      border: '#efc9d6',
+      subtleBackground: '#ffebf1',
+      subtleBorder: '#eeb7c9',
+      onTint: '#ffffff',
+    },
+  },
   midnight: {
     id: 'midnight',
     name: 'Midnight',
@@ -140,6 +195,66 @@ export const APP_THEMES: Record<Exclude<AppThemeId, 'system'>, AppTheme> = {
       subtleBackground: '#1b3b30',
       subtleBorder: '#356451',
       onTint: '#092117',
+    },
+  },
+  'indigo-dusk': {
+    id: 'indigo-dusk',
+    name: 'Indigo dusk',
+    description: 'Blue-violet night with luminous periwinkle accents.',
+    colorScheme: 'dark',
+    colors: {
+      text: '#f1f0ff',
+      background: '#17182f',
+      tint: '#aaa7ff',
+      icon: '#afb0d0',
+      tabIconDefault: '#afb0d0',
+      tabIconSelected: '#aaa7ff',
+      surface: '#222342',
+      surfaceRaised: '#2b2d50',
+      border: '#3c3e68',
+      subtleBackground: '#27284b',
+      subtleBorder: '#4b4d82',
+      onTint: '#17172e',
+    },
+  },
+  ember: {
+    id: 'ember',
+    name: 'Ember',
+    description: 'Charcoal warmth with glowing coral actions.',
+    colorScheme: 'dark',
+    colors: {
+      text: '#fff2ed',
+      background: '#251713',
+      tint: '#ff765a',
+      icon: '#c9aaa2',
+      tabIconDefault: '#c9aaa2',
+      tabIconSelected: '#ff9279',
+      surface: '#35201a',
+      surfaceRaised: '#442720',
+      border: '#5d3a31',
+      subtleBackground: '#3a211b',
+      subtleBorder: '#704236',
+      onTint: '#35130c',
+    },
+  },
+  'deep-ocean': {
+    id: 'deep-ocean',
+    name: 'Deep ocean',
+    description: 'Inky blue depth with clear cyan navigation.',
+    colorScheme: 'dark',
+    colors: {
+      text: '#e8f7ff',
+      background: '#081e2d',
+      tint: '#4dc9f6',
+      icon: '#9cbccb',
+      tabIconDefault: '#9cbccb',
+      tabIconSelected: '#71d7fa',
+      surface: '#102c3d',
+      surfaceRaised: '#17394d',
+      border: '#2d5267',
+      subtleBackground: '#123547',
+      subtleBorder: '#376c84',
+      onTint: '#06212d',
     },
   },
 };
