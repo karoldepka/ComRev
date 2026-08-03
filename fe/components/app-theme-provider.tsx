@@ -88,8 +88,19 @@ function applyBrowserTheme(theme: AppTheme, selectedThemeId: AppThemeId) {
 
 export function AppThemeProvider({ children }: PropsWithChildren) {
   const systemColorScheme = useColorScheme() ?? 'light';
+  // Initialize to the default theme (matching the statically-exported HTML,
+  // which has no localStorage access) and sync the real stored value in an
+  // effect. Reading localStorage during the initial render would make the
+  // client's first hydration pass diverge from the server-rendered markup
+  // whenever a non-default theme is persisted, triggering a React hydration
+  // error.
   const [selectedThemeId, setSelectedThemeId] =
-    useState<AppThemeId>(getStoredThemeId);
+    useState<AppThemeId>(DEFAULT_THEME_ID);
+
+  useEffect(() => {
+    setSelectedThemeId(getStoredThemeId());
+  }, []);
+
   const theme = useMemo(
     () => resolveAppTheme(selectedThemeId, systemColorScheme),
     [selectedThemeId, systemColorScheme],

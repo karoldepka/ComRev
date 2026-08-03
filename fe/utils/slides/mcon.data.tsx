@@ -162,6 +162,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'turn anxieties\ninto motivators\nfor calm but decisive\naction': {},
   'surfing the anxieties': {},
   'surfing the urges': {},
+  'Feeling of positive urgency': {},
   'do mental katas (e.g. surfing)': {},
   "work on myself\nit's work too": {},
   'the virtues of play': {},
@@ -274,7 +275,9 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Not problems, but <b>challenges</b>': {},
   'labelling of emotions and situations': {},
   'exponential improvements and growth': {},
-  'I have known\nmany problems,\nmost of which\nnever happened': {},
+  'I have known\nmany problems,\nmost of which\nnever happened': {
+    author: 'Mark Twain',
+  },
   'dare to dream': {},
   'happiness advantage': {},
   'Quick prototyping also has psychological value': {},
