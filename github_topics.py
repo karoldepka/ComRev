@@ -165,6 +165,8 @@ TOPICS_RAW = [
     "ux",
     "ui-components",
     "component-library",
+    "framework",
+    "framework-agnostic",
     "design-system",
     "storybook",
     "tailwind",
