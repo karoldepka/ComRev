@@ -14,6 +14,7 @@ HARDCODED_REPOS_RAW = [
     "https://github.com/andrewyng/aisuite",
     "https://github.com/bitovi/react-to-web-component",
     "https://github.com/webcomponents/polyfills",
+    "https://github.com/salesforce/lwc",
 
     # MCP SDKs
     "https://github.com/modelcontextprotocol/typescript-sdk",
@@ -170,6 +171,8 @@ TOPICS_RAW = [
     "material-ui",
     "chakra-ui",
     "shadcn",
+    "web-components", "webcomponents",
+    "web-component", "webcomponent",
 
     # tables / data UI
     "table",
@@ -374,5 +377,4 @@ TOPICS = list(dict.fromkeys(TOPICS_RAW))
 
 
 HARDCODED_REPOS = list(dict.fromkeys(HARDCODED_REPOS_RAW))
-
 
