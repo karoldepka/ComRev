@@ -281,6 +281,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   'dare to dream': {},
   'happiness advantage': {},
+  'Positive Qualia Advantage': {},
   'Quick prototyping also has psychological value': {},
   'constant improvement and learning': {},
   'to earn more i gotta learn more': {},
