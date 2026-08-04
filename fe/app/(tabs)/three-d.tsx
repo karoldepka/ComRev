@@ -289,7 +289,7 @@ function getSequencePages(
       ];
 }
 
-function playChimeSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
+function playFanfareSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
   if (typeof window === "undefined") return;
   const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
   if (!AudioCtor) return;
@@ -302,69 +302,87 @@ function playChimeSound(audioContextRef: React.MutableRefObject<AudioContext | n
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(1, now);
-    master.connect(ctx.destination);
+    // A limiter so the stacked brass voices + boom can hit hard without clipping.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.setValueAtTime(-20, now);
+    limiter.knee.setValueAtTime(24, now);
+    limiter.ratio.setValueAtTime(12, now);
+    limiter.attack.setValueAtTime(0.003, now);
+    limiter.release.setValueAtTime(0.25, now);
+    master.connect(limiter);
+    limiter.connect(ctx.destination);
 
-    // Bright ascending major arpeggio (C5-E5-G5-C6) — an uplifting, slightly
-    // congratulatory "ta-da" for arriving at the next slide.
-    const notes = [
-      { freq: 523.25, start: 0.0,  decay: 1.1 },  // C5
-      { freq: 659.25, start: 0.09, decay: 1.0 },  // E5
-      { freq: 783.99, start: 0.18, decay: 0.95 }, // G5
-      { freq: 1046.5, start: 0.3,  decay: 1.4 },  // C6 — the "arrival" note, rings longest
-    ];
-
-    for (const { freq, start, decay } of notes) {
-      const t0 = now + start;
-      // Two slightly detuned sine partials give each note a warm, bell-like shimmer.
-      for (const detune of [0, 4]) {
+    // A "brass section" voice: a small stack of detuned sawtooths through a
+    // lowpass filter whose envelope snaps open on attack — reads as horns
+    // punching in, not a glockenspiel chime.
+    function brassVoice(freq: number, t0: number, decay: number, gainPeak: number) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.Q.setValueAtTime(1.5, t0);
+      filter.frequency.setValueAtTime(freq * 1.2, t0);
+      filter.frequency.exponentialRampToValueAtTime(freq * 6, t0 + 0.025);
+      filter.frequency.exponentialRampToValueAtTime(freq * 2, t0 + decay);
+      const voiceGain = ctx.createGain();
+      voiceGain.gain.setValueAtTime(0.0001, t0);
+      voiceGain.gain.exponentialRampToValueAtTime(gainPeak, t0 + 0.015);
+      voiceGain.gain.exponentialRampToValueAtTime(gainPeak * 0.55, t0 + 0.1);
+      voiceGain.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+      filter.connect(voiceGain);
+      voiceGain.connect(master);
+      for (const detune of [-9, 0, 9]) {
         const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = "sine";
+        osc.type = "sawtooth";
         osc.frequency.setValueAtTime(freq, t0);
         osc.detune.setValueAtTime(detune, t0);
-        g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(detune === 0 ? 0.5 : 0.22, t0 + 0.012);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
-        osc.connect(g);
-        g.connect(master);
+        osc.connect(filter);
         osc.start(t0);
         osc.stop(t0 + decay + 0.05);
       }
-      // A quiet octave overtone keeps the note bright without turning metallic.
-      const overtone = ctx.createOscillator();
-      const og = ctx.createGain();
-      overtone.type = "triangle";
-      overtone.frequency.setValueAtTime(freq * 2, t0);
-      og.gain.setValueAtTime(0.0001, t0);
-      og.gain.exponentialRampToValueAtTime(0.12, t0 + 0.012);
-      og.gain.exponentialRampToValueAtTime(0.0001, t0 + decay * 0.6);
-      overtone.connect(og);
-      og.connect(master);
-      overtone.start(t0);
-      overtone.stop(t0 + decay * 0.6 + 0.05);
     }
 
-    // A soft high sparkle timed to the arrival note — the "congratulatory" twinkle.
-    const sparkleStart = now + 0.3;
-    const bufLen = Math.ceil(ctx.sampleRate * 0.5);
+    // Short rising two-note call (G4-C5), then a full major chord stab lands
+    // on the new slide — the classic fanfare shape.
+    brassVoice(392.0, now + 0.0, 0.16, 0.22);
+    brassVoice(523.25, now + 0.14, 0.16, 0.24);
+    const stabStart = now + 0.3;
+    const chordFreqs = [261.63, 329.63, 392.0, 523.25, 659.25]; // C4 E4 G4 C5 E5
+    for (const freq of chordFreqs) brassVoice(freq, stabStart, 1.3, 0.26);
+
+    // Low impact "boom" under the stab for cinematic weight.
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.type = "sine";
+    boom.frequency.setValueAtTime(110, stabStart);
+    boom.frequency.exponentialRampToValueAtTime(55, stabStart + 0.4);
+    boomGain.gain.setValueAtTime(0.0001, stabStart);
+    boomGain.gain.exponentialRampToValueAtTime(0.6, stabStart + 0.02);
+    boomGain.gain.exponentialRampToValueAtTime(0.0001, stabStart + 0.9);
+    boom.connect(boomGain);
+    boomGain.connect(master);
+    boom.start(stabStart);
+    boom.stop(stabStart + 1.0);
+
+    // Bright cymbal-like sheen swelling under the stab for extra sparkle.
+    const sheenStart = stabStart;
+    const bufLen = Math.ceil(ctx.sampleRate * 1.4);
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
     const data = buf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 2);
-    const sparkle = ctx.createBufferSource();
+    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 1.6);
+    const sheen = ctx.createBufferSource();
     const sf = ctx.createBiquadFilter();
     sf.type = "highpass";
-    sf.frequency.setValueAtTime(5000, sparkleStart);
+    sf.frequency.setValueAtTime(4000, sheenStart);
     const sg = ctx.createGain();
-    sg.gain.setValueAtTime(0.0001, sparkleStart);
-    sg.gain.exponentialRampToValueAtTime(0.22, sparkleStart + 0.02);
-    sg.gain.exponentialRampToValueAtTime(0.0001, sparkleStart + 0.5);
-    sparkle.buffer = buf;
-    sparkle.connect(sf);
+    sg.gain.setValueAtTime(0.0001, sheenStart);
+    sg.gain.exponentialRampToValueAtTime(0.18, sheenStart + 0.03);
+    sg.gain.exponentialRampToValueAtTime(0.0001, sheenStart + 1.3);
+    sheen.buffer = buf;
+    sheen.connect(sf);
     sf.connect(sg);
     sg.connect(master);
-    sparkle.start(sparkleStart);
+    sheen.start(sheenStart);
   } catch (error) {
-    console.warn("Unable to play slide transition chime:", error);
+    console.warn("Unable to play slide transition fanfare:", error);
   }
 }
 
@@ -6159,7 +6177,7 @@ export function ThreeDTextScreen({
   useEffect(() => {
     if (!sequenceMode || !soundEnabled) return;
     if (readySequenceTransition?.key !== currentSequencePageKey) return;
-    playChimeSound(audioContextRef);
+    playFanfareSound(audioContextRef);
   }, [
     currentSequencePageKey,
     readySequenceTransition?.key,
@@ -6172,7 +6190,7 @@ export function ThreeDTextScreen({
   useEffect(() => {
     if (!sequenceMode || !soundEnabled || typeof window === "undefined") return;
     const unlockAudio = () => {
-      playChimeSound(audioContextRef);
+      playFanfareSound(audioContextRef);
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
