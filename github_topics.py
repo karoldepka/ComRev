@@ -173,6 +173,7 @@ TOPICS_RAW = [
     "shadcn",
     "web-components", "webcomponents",
     "web-component", "webcomponent",
+    "lwc",
 
     # tables / data UI
     "table",
