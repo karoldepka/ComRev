@@ -328,13 +328,15 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
   toggle: () => {
     const { playing, beatHz, carrier, volume, masterPaused } = get();
-    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, CUSTOM_BINAURAL_LAYER_KEY);
     if (playing) {
       stopBinaural();
-      set({ playing: false, recentLayerKeys });
+      set({ playing: false });
     } else {
       const ok = masterPaused || startBinaural(beatHz, carrier, volume);
-      if (ok) set({ playing: true, recentLayerKeys });
+      if (ok) {
+        const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, CUSTOM_BINAURAL_LAYER_KEY);
+        set({ playing: true, recentLayerKeys });
+      }
     }
   },
 
@@ -383,13 +385,15 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     const preset = WAVE_PRESETS.find((p) => p.key === key);
     if (!layer || !preset) return;
     const id = `binaural:${key}`;
-    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `eb:${key}`);
     if (layer.playing) {
       stopTrack(id);
-      set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: false } }, recentLayerKeys });
+      set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: false } } });
     } else {
       const ok = get().masterPaused || startBinauralLayer(id, preset.hz, get().carrier, layer.volume);
-      if (ok) set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: true } }, recentLayerKeys });
+      if (ok) {
+        const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `eb:${key}`);
+        set({ extraBinaural: { ...get().extraBinaural, [key]: { ...layer, playing: true } }, recentLayerKeys });
+      }
     }
   },
 
@@ -409,13 +413,15 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   toggleNoise: (color) => {
     const layer = get().noise[color];
     const id = `noise:${color}`;
-    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `noise:${color}`);
     if (layer.playing) {
       stopTrack(id);
-      set({ noise: { ...get().noise, [color]: { ...layer, playing: false } }, recentLayerKeys });
+      set({ noise: { ...get().noise, [color]: { ...layer, playing: false } } });
     } else {
       const ok = get().masterPaused || startNoiseTrack(id, color, layer.volume);
-      if (ok) set({ noise: { ...get().noise, [color]: { ...layer, playing: true } }, recentLayerKeys });
+      if (ok) {
+        const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `noise:${color}`);
+        set({ noise: { ...get().noise, [color]: { ...layer, playing: true } }, recentLayerKeys });
+      }
     }
   },
 
@@ -433,8 +439,8 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
   toggleAmbience: (kind) => {
     const layer = get().ambience[kind];
     const id = `ambience:${kind}`;
-    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, `ambience:${kind}`);
-    if (layer.playing) {
+    const wasPlaying = layer.playing;
+    if (wasPlaying) {
       stopTrack(id);
     } else if (!get().masterPaused) {
       // Fire-and-forget: the recording is fetched/decoded async, but the UI
@@ -442,7 +448,10 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       // guard inside startAmbienceTrack.
       void startAmbienceTrack(id, kind, layer.volume);
     }
-    set({ ambience: { ...get().ambience, [kind]: { ...layer, playing: !layer.playing } }, recentLayerKeys });
+    const recentLayerKeys = wasPlaying
+      ? get().recentLayerKeys
+      : promoteRecentLayerKey(get().recentLayerKeys, `ambience:${kind}`);
+    set({ ambience: { ...get().ambience, [kind]: { ...layer, playing: !wasPlaying } }, recentLayerKeys });
   },
 
   setAmbienceVolume: (kind, volume) => {
@@ -455,13 +464,15 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
 
   toggleBirds: () => {
     const layer = get().birds;
-    const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, 'birds');
     if (layer.playing) {
       stopTrack('birds');
-      set({ birds: { ...layer, playing: false }, recentLayerKeys });
+      set({ birds: { ...layer, playing: false } });
     } else {
       const ok = get().masterPaused || startBirdsTrack('birds', layer.volume, layer.pitch, layer.speed);
-      if (ok) set({ birds: { ...layer, playing: true }, recentLayerKeys });
+      if (ok) {
+        const recentLayerKeys = promoteRecentLayerKey(get().recentLayerKeys, 'birds');
+        set({ birds: { ...layer, playing: true }, recentLayerKeys });
+      }
     }
   },
 
