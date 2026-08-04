@@ -289,7 +289,7 @@ function getSequencePages(
       ];
 }
 
-function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
+function playChimeSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
   if (typeof window === "undefined") return;
   const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
   if (!AudioCtor) return;
@@ -301,58 +301,70 @@ function playGongSound(audioContextRef: React.MutableRefObject<AudioContext | nu
 
     const now = ctx.currentTime;
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(1.0, now + 0.008);  // hard slam
-    master.gain.exponentialRampToValueAtTime(0.7, now + 0.05);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 6.0); // long ring
+    master.gain.setValueAtTime(1, now);
     master.connect(ctx.destination);
 
-    // Inharmonic metallic partials (large gong ratios)
-    const base = 80; // lower fundamental = bigger gong
-    const partials = [
-      { ratio: 1.0,   gain: 1.0,  decay: 6.0 },
-      { ratio: 1.72,  gain: 0.75, decay: 4.5 },
-      { ratio: 2.46,  gain: 0.55, decay: 3.2 },
-      { ratio: 3.13,  gain: 0.38, decay: 2.3 },
-      { ratio: 4.57,  gain: 0.22, decay: 1.5 },
-      { ratio: 6.21,  gain: 0.14, decay: 1.0 },
-      { ratio: 8.04,  gain: 0.07, decay: 0.6 },
+    // Bright ascending major arpeggio (C5-E5-G5-C6) — an uplifting, slightly
+    // congratulatory "ta-da" for arriving at the next slide.
+    const notes = [
+      { freq: 523.25, start: 0.0,  decay: 1.1 },  // C5
+      { freq: 659.25, start: 0.09, decay: 1.0 },  // E5
+      { freq: 783.99, start: 0.18, decay: 0.95 }, // G5
+      { freq: 1046.5, start: 0.3,  decay: 1.4 },  // C6 — the "arrival" note, rings longest
     ];
 
-    for (const { ratio, gain, decay } of partials) {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(base * ratio, now);
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(gain, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + decay);
-      osc.connect(g);
-      g.connect(master);
-      osc.start(now);
-      osc.stop(now + decay + 0.1);
+    for (const { freq, start, decay } of notes) {
+      const t0 = now + start;
+      // Two slightly detuned sine partials give each note a warm, bell-like shimmer.
+      for (const detune of [0, 4]) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, t0);
+        osc.detune.setValueAtTime(detune, t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(detune === 0 ? 0.5 : 0.22, t0 + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(t0);
+        osc.stop(t0 + decay + 0.05);
+      }
+      // A quiet octave overtone keeps the note bright without turning metallic.
+      const overtone = ctx.createOscillator();
+      const og = ctx.createGain();
+      overtone.type = "triangle";
+      overtone.frequency.setValueAtTime(freq * 2, t0);
+      og.gain.setValueAtTime(0.0001, t0);
+      og.gain.exponentialRampToValueAtTime(0.12, t0 + 0.012);
+      og.gain.exponentialRampToValueAtTime(0.0001, t0 + decay * 0.6);
+      overtone.connect(og);
+      og.connect(master);
+      overtone.start(t0);
+      overtone.stop(t0 + decay * 0.6 + 0.05);
     }
 
-    // Heavy strike transient — broad noise burst
-    const bufLen = Math.ceil(ctx.sampleRate * 0.08);
+    // A soft high sparkle timed to the arrival note — the "congratulatory" twinkle.
+    const sparkleStart = now + 0.3;
+    const bufLen = Math.ceil(ctx.sampleRate * 0.5);
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
     const data = buf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 1.5);
-    const noise = ctx.createBufferSource();
-    const nf = ctx.createBiquadFilter();
-    nf.type = "bandpass";
-    nf.frequency.setValueAtTime(base * 2.5, now);
-    nf.Q.setValueAtTime(0.5, now);
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.9, now);
-    ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-    noise.buffer = buf;
-    noise.connect(nf);
-    nf.connect(ng);
-    ng.connect(master);
-    noise.start(now);
+    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 2);
+    const sparkle = ctx.createBufferSource();
+    const sf = ctx.createBiquadFilter();
+    sf.type = "highpass";
+    sf.frequency.setValueAtTime(5000, sparkleStart);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, sparkleStart);
+    sg.gain.exponentialRampToValueAtTime(0.22, sparkleStart + 0.02);
+    sg.gain.exponentialRampToValueAtTime(0.0001, sparkleStart + 0.5);
+    sparkle.buffer = buf;
+    sparkle.connect(sf);
+    sf.connect(sg);
+    sg.connect(master);
+    sparkle.start(sparkleStart);
   } catch (error) {
-    console.warn("Unable to play gong sound:", error);
+    console.warn("Unable to play slide transition chime:", error);
   }
 }
 
@@ -6147,7 +6159,7 @@ export function ThreeDTextScreen({
   useEffect(() => {
     if (!sequenceMode || !soundEnabled) return;
     if (readySequenceTransition?.key !== currentSequencePageKey) return;
-    playGongSound(audioContextRef);
+    playChimeSound(audioContextRef);
   }, [
     currentSequencePageKey,
     readySequenceTransition?.key,
@@ -6160,7 +6172,7 @@ export function ThreeDTextScreen({
   useEffect(() => {
     if (!sequenceMode || !soundEnabled || typeof window === "undefined") return;
     const unlockAudio = () => {
-      playGongSound(audioContextRef);
+      playChimeSound(audioContextRef);
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
