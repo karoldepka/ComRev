@@ -25,6 +25,8 @@ HARDCODED_REPOS_RAW = [
     "https://github.com/modelcontextprotocol/java-sdk",
     "https://github.com/modelcontextprotocol/php-sdk",
     "https://github.com/modelcontextprotocol/swift-sdk",
+
+    "https://github.com/MadsLorentzen/ai-job-search",
     
 ]
 
