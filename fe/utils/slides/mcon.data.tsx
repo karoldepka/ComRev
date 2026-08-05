@@ -11,6 +11,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
     examples: 'Work and providing value in capitalism',
   },
   'Smile :-)': {},
+  'Agape - unconditional love': {},
+  'Gratefulness - best state to be ready to receive': {},
   'thoughts are things': {
     sentiment: 'growth',
     emotion: 'focus',
@@ -280,6 +282,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     author: 'Mark Twain',
   },
   'dare to dream': {},
+  'Do spine traction for back pain': {},
   'happiness advantage': {},
   'Positive Qualia Advantage': {},
   'Quick prototyping also has psychological value': {},
