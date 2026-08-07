@@ -179,7 +179,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'micro-celebrations': {},
   'micro-gratifications': {},
   'micro-rituals': {},
-  'micro-optimizations': {/** Arman */},
+  'micro-optimizations': {},
   'micro-protocols': {
     sentiment: 'hardcore',
     emotion: 'discipline',
@@ -191,6 +191,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'tranquility',
     style: 'organic',
   },
+  'micro-mindfulness': {},
+  'micro-Visualizations': {},
   mantras: {
     sentiment: 'focus',
     emotion: 'centering',
