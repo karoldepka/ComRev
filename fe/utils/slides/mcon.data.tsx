@@ -179,6 +179,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'micro-celebrations': {},
   'micro-gratifications': {},
   'micro-rituals': {},
+  'micro-optimizations': {/** Arman */},
   'micro-protocols': {
     sentiment: 'hardcore',
     emotion: 'discipline',
@@ -262,6 +263,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   'inner strength': {},
   "i'm a warrior": {},
+  'i am driven': {},
   'no-games-day challenges': {},
   'think from long perspective - how much I can achieve, given compounding and exponential growth':
     {
