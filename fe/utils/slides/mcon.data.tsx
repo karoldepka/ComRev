@@ -10,8 +10,10 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Make positive associations between positive things': {
     examples: 'Work and providing value in capitalism',
   },
+  "Don't dramatize": {},
   'Smile :-)': {},
   'Agape - unconditional love': {},
+  'Find beauty and love everywhere': {},
   'Gratefulness - best state to be ready to receive': {},
   'thoughts are things': {
     sentiment: 'growth',
@@ -192,7 +194,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
     style: 'organic',
   },
   'micro-mindfulness': {},
-  'micro-Visualizations': {},
+  'micro-Visualizations & micro-planning': {},
+  'micro-gratitudes': {},
   mantras: {
     sentiment: 'focus',
     emotion: 'centering',
