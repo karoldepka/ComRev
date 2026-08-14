@@ -19,6 +19,7 @@ import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 import droidSansRegularFont from '@/assets/fonts/Droid_Sans_Regular.typeface.json';
 import droidSansBoldFont from '@/assets/fonts/Droid_Sans_Bold.typeface.json';
 import { parseBoldSegments, stripBoldTags } from "./rich-text";
+import { runTextGeometryWorker } from "./text-geometry-worker-client";
 
 
 /** Per-zone material overrides. Properties not specified inherit from the base material. */
@@ -410,11 +411,16 @@ export interface CreateTextGeometryResult {
   bevelMaterial?: MeshStandardMaterial | MeshPhysicalMaterial;
 }
 
-export async function createTextGeometry(
-  options: TextGeometryOptions,
-): Promise<CreateTextGeometryResult> {
+/**
+ * Builds the text layout as a plain Group/Mesh/BufferGeometry tree — fonts,
+ * line-wrap/equalization math, and per-glyph bevel-zone classification, with
+ * no materials (those need `envMap`, a GPU resource that can't cross a
+ * worker boundary). This is the part that's expensive enough to stall the
+ * render loop, so it's the part that runs inside utils/text-geometry.worker.ts;
+ * createTextGeometry below is the only intended caller of the worker.
+ */
+export async function buildTextGroup(options: TextGeometryOptions): Promise<Group> {
   const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
-  const { faceZone, bevelZone, extrusionZone } = options;
   // Always reclassify so each zone has its own materialIndex regardless of
   // whether the caller supplied explicit zone overrides.
   const needsReclassify = true;
@@ -684,46 +690,9 @@ export async function createTextGeometry(
       }
     }
 
-    const color =
-      mergedOptions.color || new Color().setHSL(Math.random(), 0.8, 0.5);
-
-    const materialOptions: any = {
-      color,
-      metalness: mergedOptions.envMap
-        ? mergedOptions.metalness
-        : Math.min(mergedOptions.metalness ?? 0, 0.25),
-      roughness: mergedOptions.envMap
-        ? mergedOptions.roughness
-        : Math.max(mergedOptions.roughness ?? 0.45, 0.35),
-    };
-    if (mergedOptions.envMap) {
-      materialOptions.envMap = mergedOptions.envMap;
-      materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
-    }
-    // Build a template material that captures base color/envMap settings.
-    // Each zone then gets its own material via makeZoneMaterial so all three
-    // can be tweaked independently at any time.
-    const baseMaterial = new MeshStandardMaterial(materialOptions);
-
-    // Extrusion walls (materialIndex 0) — shiny metallic by default.
-    const material = makeZoneMaterial(baseMaterial, extrusionZone ?? {});
-
-    // Face cap (materialIndex 1) — MeshBasicMaterial is completely unaffected
-    // by scene.environment, lights, or env-map pipe patches.
-    // Pass an explicit faceZone to override with a full PBR material.
-    const faceMaterial = faceZone
-      ? makeZoneMaterial(baseMaterial, faceZone)
-      : new MeshBasicMaterial({ color: new Color(0x000000) });
-    // No envMapImmune flag needed — MeshBasicMaterial is naturally immune.
-    faceMaterial.userData.envMapImmune = true;
-
-    // Bevel chamfer (materialIndex 2) — inherits base by default.
-    const bevelMaterial = makeZoneMaterial(baseMaterial, bevelZone ?? {});
-
-    baseMaterial.dispose();
     // Shift so letter face is at z=0 and extrusion goes into screen (-Z)
     mainGroup.position.z = -(mergedOptions.height! + (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0));
-    return { geometry: mainGroup, material, faceMaterial, bevelMaterial };
+    return mainGroup;
   } catch (error) {
     console.error("Failed to load font, creating fallback geometry:", error);
 
@@ -808,28 +777,82 @@ export async function createTextGeometry(
       mainGroup.add(lineGroup);
     }
 
-    const color =
-      mergedOptions.color || new Color().setHSL(Math.random(), 0.8, 0.5);
-
-    const materialOptions: any = {
-      color,
-      metalness: mergedOptions.envMap
-        ? mergedOptions.metalness
-        : Math.min(mergedOptions.metalness ?? 0, 0.25),
-      roughness: mergedOptions.envMap
-        ? mergedOptions.roughness
-        : Math.max(mergedOptions.roughness ?? 0.45, 0.35),
-    };
-    if (mergedOptions.envMap) {
-      materialOptions.envMap = mergedOptions.envMap;
-      materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
-    }
-    const material = new MeshStandardMaterial(materialOptions);
-    patchBevelNormalReflect(material);
     // BoxGeometry is z-centered; shift front face to z=0 so extrusion goes into screen
     mainGroup.position.z = -(mergedOptions.height! / 2);
-    return { geometry: mainGroup, material };  // fallback: no zone materials
+    return mainGroup;
   }
+}
+
+export async function createTextGeometry(
+  options: TextGeometryOptions,
+): Promise<CreateTextGeometryResult> {
+  const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) } as TextGeometryOptions;
+  const { faceZone, bevelZone, extrusionZone } = options;
+
+  // Custom fonts are registered into AVAILABLE_FONTS on the main thread only;
+  // pass the URL through so the worker (a separate realm) can register it too.
+  const fontDef = AVAILABLE_FONTS.find((f) => f.id === mergedOptions.fontFamily);
+  const customFontUrl = fontDef?.isCustom ? fontDef.urls[0] : undefined;
+
+  const mainGroup = await runTextGeometryWorker(
+    {
+      text: mergedOptions.text!,
+      fontFamily: mergedOptions.fontFamily,
+      size: mergedOptions.size,
+      height: mergedOptions.height,
+      curveSegments: mergedOptions.curveSegments,
+      bevelEnabled: mergedOptions.bevelEnabled,
+      bevelThickness: mergedOptions.bevelThickness,
+      bevelSize: mergedOptions.bevelSize,
+      bevelOffset: mergedOptions.bevelOffset,
+      bevelSegments: mergedOptions.bevelSegments,
+      equalizeLineWidths: mergedOptions.equalizeLineWidths,
+      equalizationMethod: mergedOptions.equalizationMethod,
+      targetWidth: mergedOptions.targetWidth,
+      lineSpacing: mergedOptions.lineSpacing,
+    },
+    customFontUrl,
+  );
+
+  const color =
+    mergedOptions.color || new Color().setHSL(Math.random(), 0.8, 0.5);
+
+  const materialOptions: any = {
+    color,
+    metalness: mergedOptions.envMap
+      ? mergedOptions.metalness
+      : Math.min(mergedOptions.metalness ?? 0, 0.25),
+    roughness: mergedOptions.envMap
+      ? mergedOptions.roughness
+      : Math.max(mergedOptions.roughness ?? 0.45, 0.35),
+  };
+  if (mergedOptions.envMap) {
+    materialOptions.envMap = mergedOptions.envMap;
+    materialOptions.envMapIntensity = mergedOptions.envMapIntensity;
+  }
+  // Build a template material that captures base color/envMap settings.
+  // Each zone then gets its own material via makeZoneMaterial so all three
+  // can be tweaked independently at any time.
+  const baseMaterial = new MeshStandardMaterial(materialOptions);
+
+  // Extrusion walls (materialIndex 0) — shiny metallic by default.
+  const material = makeZoneMaterial(baseMaterial, extrusionZone ?? {});
+
+  // Face cap (materialIndex 1) — MeshBasicMaterial is completely unaffected
+  // by scene.environment, lights, or env-map pipe patches.
+  // Pass an explicit faceZone to override with a full PBR material.
+  const faceMaterial = faceZone
+    ? makeZoneMaterial(baseMaterial, faceZone)
+    : new MeshBasicMaterial({ color: new Color(0x000000) });
+  // No envMapImmune flag needed — MeshBasicMaterial is naturally immune.
+  faceMaterial.userData.envMapImmune = true;
+
+  // Bevel chamfer (materialIndex 2) — inherits base by default.
+  const bevelMaterial = makeZoneMaterial(baseMaterial, bevelZone ?? {});
+
+  baseMaterial.dispose();
+
+  return { geometry: mainGroup, material, faceMaterial, bevelMaterial };
 }
 
 export function createTextMesh(
