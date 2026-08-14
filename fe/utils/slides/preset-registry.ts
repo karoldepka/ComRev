@@ -10,6 +10,7 @@ import { MANTRAS as MCON_MANTRAS } from './mcon.data';
 import { MANTRAS as MOTIVATION_MANTRAS } from './motivation.data';
 import { MANTRAS as PRINCIPLES_MANTRAS } from './principles.data';
 import { MANTRAS as QUOTES_MANTRAS } from './quotes.data';
+import { VIDEO_CATEGORIES } from './videos.data';
 
 export type { SoundscapeConfig };
 
@@ -107,27 +108,52 @@ function makeSlides(
     }));
 }
 
-const PRINCIPLES_TITLE = '7 psychological principles to make you smarter';
+/** Like makeSlides, but for an explicit ordered subset of keys (e.g. a curated video) rather than the whole map. Unknown keys are skipped. */
+function makeSlidesFromKeys(
+  prefix: string,
+  mantras: Record<string, MantraEntry>,
+  keys: readonly string[],
+  lang?: string,
+): SlideEntry[] {
+  return keys
+    .filter((title) => title in mantras)
+    .map((title) => {
+      const entry = mantras[title];
+      return {
+        id: `${prefix}-${nanoid()}`,
+        name: stripBoldTags(title),
+        text: getMantraSlideText(title, entry, lang),
+        author: entry.author,
+        examples: entry.examples,
+      };
+    });
+}
 
-function getPrinciplesTitleSlide(lang?: string): SlideEntry {
+function makeTitleSlide(id: string, title: string, lang?: string): SlideEntry {
   const raw = lang
-    ? i18n.t(PRINCIPLES_TITLE, {
+    ? i18n.t(title, {
         ns: 'mantras',
         lng: lang,
         keySeparator: false,
-        defaultValue: PRINCIPLES_TITLE,
+        defaultValue: title,
       })
-    : PRINCIPLES_TITLE;
+    : title;
   const text = wrapMantraText(raw);
   return {
-    id: 'principles-title',
+    id,
     name: 'Title',
     text,
     // Reading-speed formula, not a fixed guess — see estimateReadingTimeMs.
-    // No CAPTION_REVEAL_DELAY_MS floor here: this slide has no caption, so
-    // there's nothing to wait for a reveal.
+    // No CAPTION_REVEAL_DELAY_MS floor here: title-only slides have no
+    // caption, so there's nothing to wait for a reveal.
     durationMsOverride: estimateReadingTimeMs(text),
   };
+}
+
+const PRINCIPLES_TITLE = '7 psychological principles to make you smarter';
+
+function getPrinciplesTitleSlide(lang?: string): SlideEntry {
+  return makeTitleSlide('principles-title', PRINCIPLES_TITLE, lang);
 }
 
 // Shared by `principles` and its A/B-test variants below — only visual
@@ -147,6 +173,26 @@ const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
     ...makeSlides('principles', PRINCIPLES_MANTRAS, lang, categories),
   ],
 };
+
+// Auto-generated from videos.data.tsx: one recordable preset per declared
+// video, e.g. `preset/video-smarter-7/full-window`. All current videos draw
+// their principles from principles.data.tsx, so they reuse principlesBase's
+// soundscape/music rather than repeating it per video.
+const videoPresetEntries: Record<string, PresetDefinition> = {};
+for (const category of VIDEO_CATEGORIES) {
+  for (const video of category.videos) {
+    const presetId = `video-${video.id}`;
+    videoPresetEntries[presetId] = {
+      label: `${category.label}: ${video.title}`,
+      soundscape: principlesBase.soundscape,
+      music: principlesBase.music,
+      generateSlides: (lang?: string) => [
+        makeTitleSlide(`${presetId}-title`, video.title, lang),
+        ...makeSlidesFromKeys(presetId, PRINCIPLES_MANTRAS, Object.keys(video.principles), lang),
+      ],
+    };
+  }
+}
 
 export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
   mcon: {
@@ -178,4 +224,5 @@ export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
     ...principlesBase,
     background: 0xffffff,
   },
+  ...videoPresetEntries,
 };
