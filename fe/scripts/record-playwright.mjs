@@ -207,6 +207,14 @@ function binauralOpts() {
   return { beatHz: binauralHz, carrier: binauralCarrier, volume: binauralVolume, durationSec };
 }
 
+// Fired without a top-level await — see record-obs.mjs's CLI entry for why.
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+
+async function main() {
+
 // ── banner ────────────────────────────────────────────────────────────────────
 
 console.log('\n══════════════════════════════════════════');
@@ -409,4 +417,5 @@ if (frameMode) {
     try { unlinkSync(videoPath); } catch { /* ignore */ }
     console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
   }
+}
 }

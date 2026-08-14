@@ -222,6 +222,14 @@ export async function runBatch(options = {}) {
 const isMainModule = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 if (isMainModule) {
+  // Fired without a top-level await — see record-obs.mjs's CLI entry for why.
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+async function main() {
   const batchProgram = new Command('record-videos.mjs')
     .allowUnknownOption(true)
     .option('--ids <list>', 'comma-separated video ids (default: all)')
@@ -254,5 +262,5 @@ if (isMainModule) {
     baseOpts,
   });
 
-  process.exit(results.some((r) => !r.ok) ? 1 : 0);
+  if (results.some((r) => !r.ok)) process.exitCode = 1;
 }

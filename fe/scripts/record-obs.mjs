@@ -554,6 +554,18 @@ export async function recordOne(obs, resolved) {
 const isMainModule = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 if (isMainModule) {
+  // Fired without a top-level await on purpose: Node's ESM loader can flag
+  // "unsettled top-level await" diagnostics when a top-level-awaited dynamic
+  // import() (below) is itself part of a module graph with its own guarded
+  // top-level await (record-videos.mjs). Kicking main() off unawaited and
+  // catching its rejection sidesteps that class of loader edge case entirely.
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+async function main() {
   const rawOpts = parseFlags(createRecordObsProgram(), process.argv.slice(2));
 
   if (rawOpts.video === true || rawOpts.video === "all") {
@@ -562,7 +574,7 @@ if (isMainModule) {
     // of opening a new one per video.
     const { runBatch } = await import("./record-videos.mjs");
     const langs = (rawOpts.lang || "en,pl").split(",").map((s) => s.trim()).filter(Boolean);
-    await runBatch({
+    const { results } = await runBatch({
       formats: [rawOpts.format ?? "shorts"],
       langs,
       outDir: rawOpts.outDir,
@@ -571,26 +583,29 @@ if (isMainModule) {
       continueOnError: rawOpts.continueOnError !== false,
       baseOpts: rawOpts,
     });
-  } else {
-    const resolved = resolveOptions(rawOpts);
-    if (rawOpts.dryRun === true) {
-      console.log("\n══════════════════════════════════════════");
-      console.log("  Animation Recorder (OBS) — DRY RUN");
-      console.log("══════════════════════════════════════════");
-      if (resolved.video) console.log(`  Video   : ${resolved.video.id}  "${resolved.video.title}"`);
-      console.log(`  Format  : ${resolved.label}`);
-      console.log(`  FPS     : ${resolved.fps}`);
-      console.log(`  Tab     : ${resolved.noTab ? "(none — recording --url as-is)" : resolved.tab}`);
-      console.log(`  Slides  : ${resolved.slidesCount ?? `(fixed ${resolved.durationSec}s)`}`);
-      console.log(`  Output  : ${resolved.outputDst}`);
-      console.log("══════════════════════════════════════════\n");
-    } else {
-      const obs = await connectObs(resolved.wsUrl, resolved.wsPassword);
-      try {
-        await recordOne(obs, resolved);
-      } finally {
-        await obs.disconnect();
-      }
-    }
+    if (results.some((r) => !r.ok)) process.exitCode = 1;
+    return;
+  }
+
+  const resolved = resolveOptions(rawOpts);
+  if (rawOpts.dryRun === true) {
+    console.log("\n══════════════════════════════════════════");
+    console.log("  Animation Recorder (OBS) — DRY RUN");
+    console.log("══════════════════════════════════════════");
+    if (resolved.video) console.log(`  Video   : ${resolved.video.id}  "${resolved.video.title}"`);
+    console.log(`  Format  : ${resolved.label}`);
+    console.log(`  FPS     : ${resolved.fps}`);
+    console.log(`  Tab     : ${resolved.noTab ? "(none — recording --url as-is)" : resolved.tab}`);
+    console.log(`  Slides  : ${resolved.slidesCount ?? `(fixed ${resolved.durationSec}s)`}`);
+    console.log(`  Output  : ${resolved.outputDst}`);
+    console.log("══════════════════════════════════════════\n");
+    return;
+  }
+
+  const obs = await connectObs(resolved.wsUrl, resolved.wsPassword);
+  try {
+    await recordOne(obs, resolved);
+  } finally {
+    await obs.disconnect();
   }
 }

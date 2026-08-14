@@ -75,90 +75,7 @@ function splitList(value, allowed) {
 
 const pad = (s, n) => String(s).padEnd(n);
 
-// ── arg parsing ───────────────────────────────────────────────────────────────
-
-const batchProgram = new Command('record-all.mjs')
-  .allowUnknownOption(true)
-  .option('--presets <list>', 'comma-separated presets (default: all)')
-  .option('--formats <list>', 'comma-separated formats (default: shorts,yt,tiktok,yt-4k)')
-  .option('--langs <list>', 'comma-separated language codes (default: all supported)')
-  .option('--recorder <name>', 'obs or playwright', 'obs')
-  .option('--dry-run', 'print plan without recording')
-  .option('--out-dir <path>', 'output directory')
-  .option('--continue-on-error', 'keep going after a failed recording (default: true)')
-  .option('--fail-fast', 'stop on first error');
-
-const { unknown: passthrough } = batchProgram.parseOptions(process.argv.slice(2));
-const batch = batchProgram.opts();
-
-const presets = splitList(batch.presets, ALL_PRESETS);
-const formats = splitList(batch.formats, ALL_FORMATS);
-const langs = splitList(batch.langs, ALL_LANGS);
-const recorder = batch.recorder;
-const dryRun = batch.dryRun === true;
-const failFast = batch.failFast === true;
-
-if (!['obs', 'playwright'].includes(recorder)) {
-  console.error(`Unknown recorder: "${recorder}". Use obs or playwright.`);
-  process.exit(1);
-}
-
-// Validate passthrough tokens against whichever recorder was picked, upfront,
-// rather than letting a typo silently do nothing or fail deep inside the
-// first job.
-const baseOpts = parseFlags(
-  recorder === 'playwright' ? createRecordPlaywrightProgram() : createRecordObsProgram(),
-  passthrough,
-);
-
-const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const outDir = resolve(__dirname, '..', batch.outDir ?? `../recordings/batch_${ts}`);
-
-// ── build job list ────────────────────────────────────────────────────────────
-
-const jobs = [];
-for (const preset of presets) {
-  for (const format of formats) {
-    for (const lang of langs) {
-      const filename = `${preset}.mp4`;
-      jobs.push({ preset, format, lang, filename, output: `${outDir}/${lang}/${format}/${filename}` });
-    }
-  }
-}
-
-const total = jobs.length;
-
-// ── banner ────────────────────────────────────────────────────────────────────
-
-console.log('\n══════════════════════════════════════════════════════════');
-console.log('  Batch Recorder');
-console.log('══════════════════════════════════════════════════════════');
-console.log(`  Presets  : ${presets.join(', ')}`);
-console.log(`  Formats  : ${formats.join(', ')}`);
-console.log(`  Languages: ${langs.join(', ')}`);
-console.log(`  Total    : ${total} recording${total === 1 ? '' : 's'}`);
-console.log(`  Recorder : ${recorder}`);
-console.log(`  Out dir  : ${outDir}`);
-if (dryRun) console.log('\n  *** DRY RUN — no recordings will be made ***');
-console.log('══════════════════════════════════════════════════════════\n');
-
-if (dryRun) {
-  console.log('Plan:\n');
-  jobs.forEach((j, i) =>
-    console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.preset, 12)} ${pad(j.lang, 5)} ${pad(j.format, 8)} → ${j.lang}/${j.format}/${j.filename}`),
-  );
-  console.log('');
-  process.exit(0);
-}
-
-// ── run jobs ──────────────────────────────────────────────────────────────────
-
-mkdirSync(outDir, { recursive: true });
-
-const results = [];
-const wallStart = Date.now();
-
-function logProgress(i, preset, format, lang) {
+function logProgress(wallStart, total, i, preset, format, lang) {
   let etaStr = '';
   if (i > 0) {
     const avgMs = (Date.now() - wallStart) / i;
@@ -171,88 +88,179 @@ function logProgress(i, preset, format, lang) {
   console.log(`${'─'.repeat(62)}`);
 }
 
-if (recorder === 'obs') {
-  const obs = await connectObs(baseOpts.wsUrl ?? 'ws://localhost:4455', baseOpts.wsPassword ?? '');
-  try {
+// Fired without a top-level await — see record-obs.mjs's CLI entry for why.
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+
+async function main() {
+  // ── arg parsing ─────────────────────────────────────────────────────────────
+
+  const batchProgram = new Command('record-all.mjs')
+    .allowUnknownOption(true)
+    .option('--presets <list>', 'comma-separated presets (default: all)')
+    .option('--formats <list>', 'comma-separated formats (default: shorts,yt,tiktok,yt-4k)')
+    .option('--langs <list>', 'comma-separated language codes (default: all supported)')
+    .option('--recorder <name>', 'obs or playwright', 'obs')
+    .option('--dry-run', 'print plan without recording')
+    .option('--out-dir <path>', 'output directory')
+    .option('--continue-on-error', 'keep going after a failed recording (default: true)')
+    .option('--fail-fast', 'stop on first error');
+
+  const { unknown: passthrough } = batchProgram.parseOptions(process.argv.slice(2));
+  const batch = batchProgram.opts();
+
+  const presets = splitList(batch.presets, ALL_PRESETS);
+  const formats = splitList(batch.formats, ALL_FORMATS);
+  const langs = splitList(batch.langs, ALL_LANGS);
+  const recorder = batch.recorder;
+  const dryRun = batch.dryRun === true;
+  const failFast = batch.failFast === true;
+
+  if (!['obs', 'playwright'].includes(recorder)) {
+    console.error(`Unknown recorder: "${recorder}". Use obs or playwright.`);
+    process.exit(1);
+  }
+
+  // Validate passthrough tokens against whichever recorder was picked, upfront,
+  // rather than letting a typo silently do nothing or fail deep inside the
+  // first job.
+  const baseOpts = parseFlags(
+    recorder === 'playwright' ? createRecordPlaywrightProgram() : createRecordObsProgram(),
+    passthrough,
+  );
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const outDir = resolve(__dirname, '..', batch.outDir ?? `../recordings/batch_${ts}`);
+
+  // ── build job list ──────────────────────────────────────────────────────────
+
+  const jobs = [];
+  for (const preset of presets) {
+    for (const format of formats) {
+      for (const lang of langs) {
+        const filename = `${preset}.mp4`;
+        jobs.push({ preset, format, lang, filename, output: `${outDir}/${lang}/${format}/${filename}` });
+      }
+    }
+  }
+
+  const total = jobs.length;
+
+  // ── banner ──────────────────────────────────────────────────────────────────
+
+  console.log('\n══════════════════════════════════════════════════════════');
+  console.log('  Batch Recorder');
+  console.log('══════════════════════════════════════════════════════════');
+  console.log(`  Presets  : ${presets.join(', ')}`);
+  console.log(`  Formats  : ${formats.join(', ')}`);
+  console.log(`  Languages: ${langs.join(', ')}`);
+  console.log(`  Total    : ${total} recording${total === 1 ? '' : 's'}`);
+  console.log(`  Recorder : ${recorder}`);
+  console.log(`  Out dir  : ${outDir}`);
+  if (dryRun) console.log('\n  *** DRY RUN — no recordings will be made ***');
+  console.log('══════════════════════════════════════════════════════════\n');
+
+  if (dryRun) {
+    console.log('Plan:\n');
+    jobs.forEach((j, i) =>
+      console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.preset, 12)} ${pad(j.lang, 5)} ${pad(j.format, 8)} → ${j.lang}/${j.format}/${j.filename}`),
+    );
+    console.log('');
+    return;
+  }
+
+  // ── run jobs ────────────────────────────────────────────────────────────────
+
+  mkdirSync(outDir, { recursive: true });
+
+  const results = [];
+  const wallStart = Date.now();
+
+  if (recorder === 'obs') {
+    const obs = await connectObs(baseOpts.wsUrl ?? 'ws://localhost:4455', baseOpts.wsPassword ?? '');
+    try {
+      for (let i = 0; i < jobs.length; i++) {
+        const { preset, format, lang, output } = jobs[i];
+        const jobNum = `[${i + 1}/${total}]`;
+        logProgress(wallStart, total, i, preset, format, lang);
+
+        try {
+          const resolved = resolveOptions({
+            ...baseOpts,
+            tab: `preset/${preset}/full-window`,
+            format,
+            lang,
+            output,
+          });
+          await recordOne(obs, resolved);
+          console.log(`\n✓ Done    ${jobNum}`);
+          results.push({ ...jobs[i], ok: true });
+        } catch (err) {
+          console.error(`\n✗ FAILED ${jobNum}: ${err.message}`);
+          results.push({ ...jobs[i], ok: false, reason: err.message });
+          if (failFast) {
+            console.error('Stopping (--fail-fast).');
+            break;
+          }
+        }
+      }
+    } finally {
+      await obs.disconnect();
+    }
+  } else {
+    const recorderScript = resolve(__dirname, 'record-playwright.mjs');
     for (let i = 0; i < jobs.length; i++) {
       const { preset, format, lang, output } = jobs[i];
       const jobNum = `[${i + 1}/${total}]`;
-      logProgress(i, preset, format, lang);
+      logProgress(wallStart, total, i, preset, format, lang);
 
-      try {
-        const resolved = resolveOptions({
-          ...baseOpts,
-          tab: `preset/${preset}/full-window`,
-          format,
-          lang,
-          output,
-        });
-        await recordOne(obs, resolved);
-        console.log(`\n✓ Done    ${jobNum}`);
-        results.push({ ...jobs[i], ok: true });
-      } catch (err) {
-        console.error(`\n✗ FAILED ${jobNum}: ${err.message}`);
-        results.push({ ...jobs[i], ok: false, reason: err.message });
+      const args = [
+        recorderScript,
+        '--tab', `preset/${preset}/full-window`,
+        '--format', format,
+        '--lang', lang,
+        '--output', output,
+        ...passthrough,
+      ];
+
+      const result = spawnSync('node', args, { stdio: 'inherit' });
+
+      if (result.error || result.status !== 0) {
+        const reason = result.error?.message ?? `exit ${result.status}`;
+        console.error(`\n✗ FAILED ${jobNum}: ${reason}`);
+        results.push({ ...jobs[i], ok: false, reason });
         if (failFast) {
           console.error('Stopping (--fail-fast).');
           break;
         }
+      } else {
+        console.log(`\n✓ Done    ${jobNum}`);
+        results.push({ ...jobs[i], ok: true });
       }
     }
-  } finally {
-    await obs.disconnect();
   }
-} else {
-  const recorderScript = resolve(__dirname, 'record-playwright.mjs');
-  for (let i = 0; i < jobs.length; i++) {
-    const { preset, format, lang, output } = jobs[i];
-    const jobNum = `[${i + 1}/${total}]`;
-    logProgress(i, preset, format, lang);
 
-    const args = [
-      recorderScript,
-      '--tab', `preset/${preset}/full-window`,
-      '--format', format,
-      '--lang', lang,
-      '--output', output,
-      ...passthrough,
-    ];
+  // ── summary ─────────────────────────────────────────────────────────────────
 
-    const result = spawnSync('node', args, { stdio: 'inherit' });
+  const wallSec = ((Date.now() - wallStart) / 1000).toFixed(0);
+  const passed = results.filter((r) => r.ok).length;
+  const failed = results.filter((r) => !r.ok).length;
 
-    if (result.error || result.status !== 0) {
-      const reason = result.error?.message ?? `exit ${result.status}`;
-      console.error(`\n✗ FAILED ${jobNum}: ${reason}`);
-      results.push({ ...jobs[i], ok: false, reason });
-      if (failFast) {
-        console.error('Stopping (--fail-fast).');
-        break;
-      }
-    } else {
-      console.log(`\n✓ Done    ${jobNum}`);
-      results.push({ ...jobs[i], ok: true });
-    }
+  console.log('\n══════════════════════════════════════════════════════════');
+  console.log('  Batch complete');
+  console.log('══════════════════════════════════════════════════════════');
+  console.log(`  Done in : ${Math.floor(wallSec / 60)}m ${wallSec % 60}s`);
+  console.log(`  Success : ${passed} / ${total}`);
+  if (failed) {
+    console.log(`  Failed  : ${failed}`);
+    results.filter((r) => !r.ok).forEach((r) =>
+      console.log(`    ✗ ${r.preset}_${r.format}_${r.lang}  — ${r.reason}`),
+    );
   }
+  console.log(`  Output  : ${outDir}`);
+  console.log('══════════════════════════════════════════════════════════\n');
+
+  if (failed) process.exitCode = 1;
 }
-
-// ── summary ───────────────────────────────────────────────────────────────────
-
-const wallSec = ((Date.now() - wallStart) / 1000).toFixed(0);
-const passed = results.filter((r) => r.ok).length;
-const failed = results.filter((r) => !r.ok).length;
-
-console.log('\n══════════════════════════════════════════════════════════');
-console.log('  Batch complete');
-console.log('══════════════════════════════════════════════════════════');
-console.log(`  Done in : ${Math.floor(wallSec / 60)}m ${wallSec % 60}s`);
-console.log(`  Success : ${passed} / ${total}`);
-if (failed) {
-  console.log(`  Failed  : ${failed}`);
-  results.filter((r) => !r.ok).forEach((r) =>
-    console.log(`    ✗ ${r.preset}_${r.format}_${r.lang}  — ${r.reason}`),
-  );
-}
-console.log(`  Output  : ${outDir}`);
-console.log('══════════════════════════════════════════════════════════\n');
-
-process.exit(failed ? 1 : 0);
