@@ -148,8 +148,12 @@ function pickPlasmaStops(): number[] {
   }
   return fullyRandomPlasmaStops();
 }
-const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
-const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
+// Slides run 20% shorter than their original timing budget — applied here and
+// to the reading-time contributions in estimateSequenceDurationMs below, so
+// every component of a slide's duration shrinks by the same fraction.
+const SEQUENCE_DURATION_SCALE = 0.8;
+const DEFAULT_SEQUENCE_LINE_DURATION_MS = Math.round(1600 * SEQUENCE_DURATION_SCALE);
+const MAX_SEQUENCE_ITEM_DURATION_MS = Math.round(8500 * SEQUENCE_DURATION_SCALE);
 // The "examples" caption is rendered in the same 3D world-unit space as the title,
 // so it's sized as a direct fraction of the title's own size — no px conversion needed.
 const EXAMPLES_TO_TITLE_RATIO = 0.6;
@@ -257,11 +261,11 @@ function estimateSequenceDurationMs(
   examplesText?: string,
   simultaneousCaptionReveal = true,
 ): number {
-  let duration = minimumMs + estimateReadingTimeMs(text);
+  let duration = minimumMs + estimateReadingTimeMs(text) * SEQUENCE_DURATION_SCALE;
 
   const captionClean = examplesText?.trim();
   if (captionClean) {
-    const captionReadTimeMs = estimateReadingTimeMs(captionClean);
+    const captionReadTimeMs = estimateReadingTimeMs(captionClean) * SEQUENCE_DURATION_SCALE;
     // With a delayed reveal, the caption only appears CAPTION_REVEAL_DELAY_MS
     // after the title lands (see components/three-d-text.tsx), so the slide
     // needs to stay up that much longer for it to actually appear and be read.
