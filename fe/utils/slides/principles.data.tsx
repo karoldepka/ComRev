@@ -309,4 +309,783 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Survivorship bias': {
     examples: 'We only see the successes, so we underestimate the failure rate',
   },
+  'Systems over goals': {
+    examples:
+      'Build repeatable processes; goals set direction, systems create daily progress',
+  },
+  Compounding: {
+    examples:
+      'Small gains repeated consistently become disproportionately valuable over time',
+  },
+  'Margin of safety': {
+    examples:
+      'Leave room for error, delay, and bad luck instead of planning at maximum capacity',
+  },
+  'Barbell strategy': {
+    examples:
+      'Keep most resources safe while making a few bounded, high-upside bets',
+  },
+  Optionality: {
+    examples:
+      'Prefer choices that preserve future paths and limit irreversible commitments',
+  },
+  'Reversible decisions first': {
+    examples:
+      'Move quickly on decisions that are cheap to undo; slow down on one-way doors',
+  },
+  'Expected value': {
+    examples:
+      'Evaluate choices by probability times impact, not by the most vivid outcome',
+  },
+  'Base-rate thinking': {
+    examples:
+      'Start with how similar situations usually turn out before trusting a special story',
+  },
+  'Bayesian updating': {
+    examples:
+      'Revise confidence as new evidence arrives instead of defending the first belief',
+  },
+  Calibration: {
+    examples:
+      'Track predictions against outcomes to learn how reliable your confidence is',
+  },
+  Falsifiability: {
+    examples:
+      'State what evidence would prove you wrong before you become attached to a claim',
+  },
+  'Steelman the opposition': {
+    examples:
+      'Present the strongest version of the opposing view before criticizing it',
+  },
+  'Disconfirming evidence': {
+    examples:
+      'Actively look for facts that could invalidate your preferred explanation',
+  },
+  'Map is not the territory': {
+    examples:
+      'Models simplify reality; test them against what is actually happening',
+  },
+  'Goodhart’s law': {
+    examples:
+      'When a measure becomes the target, it can stop measuring what matters',
+  },
+  'Campbell’s law': {
+    examples:
+      'The more a metric is used for decisions, the more people will distort it',
+  },
+  'Correlation is not causation': {
+    examples:
+      'Two things moving together does not prove that one caused the other',
+  },
+  'Regression to the mean': {
+    examples:
+      'Extreme results often move closer to average on the next observation',
+  },
+  'Law of large numbers': {
+    examples:
+      'Averages become more reliable across many independent observations',
+  },
+  'Selection bias': {
+    examples:
+      'Check who or what was excluded before generalizing from a sample',
+  },
+  'Fundamental attribution error': {
+    examples: 'We explain others by character and ourselves by circumstances',
+  },
+  'Negativity bias': {
+    examples:
+      'Bad news and criticism grab more attention than equivalent positives',
+  },
+  'Planning fallacy': {
+    examples:
+      'Estimate using comparable completed work, not only your optimistic plan',
+  },
+  'Hindsight bias': {
+    examples: 'After an outcome, avoid pretending it was obvious all along',
+  },
+  'Curse of knowledge': {
+    examples:
+      'Once you know something, remember that a beginner does not share your context',
+  },
+  'IKEA effect': {
+    examples: 'We overvalue things we helped create, so seek outside judgment',
+  },
+  'Mere exposure effect': {
+    examples:
+      'Familiarity can feel like quality; distinguish repetition from merit',
+  },
+  'Framing effect': {
+    examples:
+      'Different wording changes decisions even when the facts stay identical',
+  },
+  'Contrast effect': {
+    examples: 'Judgment shifts relative to what came immediately before',
+  },
+  'Decoy effect': {
+    examples:
+      'An inferior third option can manipulate which of two options feels best',
+  },
+  'Recency bias': {
+    examples:
+      'Recent events feel more representative than the full historical record',
+  },
+  'Reciprocal altruism': {
+    examples:
+      'Help reliably and fairly when relationships will continue over time',
+  },
+  'Psychological safety': {
+    examples: 'Make it safe to ask, admit mistakes, and challenge ideas early',
+  },
+  'Radical candor': {
+    examples: 'Care personally while challenging directly and specifically',
+  },
+  'Nonviolent communication': {
+    examples:
+      'Separate observations, feelings, needs, and requests instead of accusations',
+  },
+  'Active listening': {
+    examples: 'Reflect what you heard before preparing your response',
+  },
+  'Assume positive intent': {
+    examples:
+      'Begin with charitable interpretations while still verifying facts',
+  },
+  'Clear is kind': {
+    examples: 'Specific expectations and feedback prevent avoidable confusion',
+  },
+  'Disagree and commit': {
+    examples:
+      'After a good-faith decision, support the chosen direction rather than relitigating it',
+  },
+  'Separate people from problems': {
+    examples:
+      'Treat the issue as shared while preserving the other person’s dignity',
+  },
+  'Interests over positions': {
+    examples:
+      'Ask what need a demand serves, then search for more ways to meet it',
+  },
+  'BATNA awareness': {
+    examples:
+      'Know your best alternative before negotiating so you recognize a bad deal',
+  },
+  'Smallest viable experiment': {
+    examples:
+      'Test the riskiest assumption with the least time, money, and complexity',
+  },
+  'Build-measure-learn': {
+    examples:
+      'Ship a focused test, observe behavior, and adjust using evidence',
+  },
+  'Customer discovery': {
+    examples:
+      'Study real problems and behavior before treating a solution as validated',
+  },
+  'Jobs to be done': {
+    examples: 'Understand the progress people hire a product or tool to make',
+  },
+  'Working backward': {
+    examples:
+      'Describe the desired customer outcome first, then derive the work needed',
+  },
+  'Theory of constraints': {
+    examples:
+      'Improve the limiting bottleneck before optimizing non-constraining parts',
+  },
+  'Little’s law': {
+    examples:
+      'More work in progress usually means longer cycle time; limit WIP',
+  },
+  'Kanban pull system': {
+    examples:
+      'Start new work only when capacity opens instead of continuously pushing more in',
+  },
+  'Single-piece flow': {
+    examples:
+      'Finish a small unit end to end before starting another when feasible',
+  },
+  'Definition of done': {
+    examples: 'Agree on observable completion criteria before work begins',
+  },
+  'Make work visible': {
+    examples:
+      'Expose queues, ownership, and blockers so the system can improve',
+  },
+  'Error budgets': {
+    examples:
+      'Balance reliability and speed by defining how much failure is acceptable',
+  },
+  'Blameless postmortems': {
+    examples:
+      'Investigate system conditions and learning opportunities, not scapegoats',
+  },
+  'Defense in depth': {
+    examples: 'Use multiple safeguards because any single control can fail',
+  },
+  'Principle of least privilege': {
+    examples: 'Give people and systems only the access they need for the task',
+  },
+  'Make the safe path easy': {
+    examples:
+      'Design defaults and tools so the secure, reliable choice is the convenient one',
+  },
+  'Reversibility through versioning': {
+    examples:
+      'Keep history and rollback paths so experimentation does not become destruction',
+  },
+  'Two-way door decisions': {
+    examples:
+      'Classify decisions by reversibility to match deliberation to risk',
+  },
+  'Opportunity solution tree': {
+    examples:
+      'Connect desired outcomes to opportunities, solutions, and small tests',
+  },
+  Essentialism: {
+    examples:
+      'Do fewer things better by protecting the vital few from the trivial many',
+  },
+  'Strategic subtraction': {
+    examples:
+      'Improve a system by removing unnecessary steps, features, and obligations',
+  },
+  'Hell yes or no': {
+    examples:
+      'Use a high bar for commitments when time and attention are scarce',
+  },
+  'Energy management': {
+    examples:
+      'Plan demanding work around your actual physical and mental energy',
+  },
+  'Ultradian rhythm': {
+    examples:
+      'Alternate concentrated effort with restoration before attention collapses',
+  },
+  'Sleep as performance infrastructure': {
+    examples: 'Protect sleep because memory, mood, and judgment depend on it',
+  },
+  'Exercise for cognition': {
+    examples:
+      'Regular movement supports focus, stress regulation, and long-term health',
+  },
+  'Recovery is training': {
+    examples:
+      'Rest is a planned part of sustainable performance, not a reward for burnout',
+  },
+  'Minimum viable habit': {
+    examples:
+      'Make the first version so small that starting is almost impossible to resist',
+  },
+  'Never miss twice': {
+    examples:
+      'A lapse is normal; return to the habit on the next available opportunity',
+  },
+  'Habit tracking': {
+    examples: 'Record repetitions to make progress visible and gaps actionable',
+  },
+  'Fresh start effect': {
+    examples:
+      'Use new weeks, months, and transitions as deliberate moments to restart',
+  },
+  'Behavioral activation': {
+    examples:
+      'Take a small meaningful action first; motivation often follows movement',
+  },
+  'Exposure over avoidance': {
+    examples:
+      'Approach manageable feared situations gradually so avoidance loses its grip',
+  },
+  'Name the emotion': {
+    examples: 'Labeling a feeling creates enough distance to choose a response',
+  },
+  'Response flexibility': {
+    examples:
+      'Create a pause between trigger and action so you can choose deliberately',
+  },
+  'Self-compassion': {
+    examples:
+      'Respond to setbacks with accountability and humane support, not self-contempt',
+  },
+  'Process praise': {
+    examples:
+      'Praise strategies, effort, and learning rather than innate talent alone',
+  },
+  'Desirable difficulty': {
+    examples:
+      'Use effortful learning conditions that strengthen retention without overwhelming you',
+  },
+  Interleaving: {
+    examples:
+      'Mix related skills or problem types to improve discrimination and transfer',
+  },
+  Elaboration: {
+    examples:
+      'Ask how and why new information connects to what you already know',
+  },
+  'Dual coding': {
+    examples: 'Combine concise words with meaningful visuals to improve recall',
+  },
+  'Teach-back': {
+    examples:
+      'Explain a concept from memory to reveal gaps and consolidate understanding',
+  },
+  'Retrieval practice': {
+    examples:
+      'Practice bringing knowledge to mind instead of only reviewing it',
+  },
+  'Errorful learning': {
+    examples:
+      'Attempt an answer before seeing it; corrected mistakes make learning stick',
+  },
+  'Beginner’s mind': {
+    examples:
+      'Meet familiar problems with curiosity instead of assuming you already know',
+  },
+  'Shoshin questions': {
+    examples:
+      'Ask basic questions early; they often uncover the assumptions experts overlook',
+  },
+  'First draft thinking': {
+    examples:
+      'Externalize an imperfect version early so it can be improved by reality',
+  },
+  'Feedback loops': {
+    examples: 'Shorten the time between action, signal, and adjustment',
+  },
+  'Leading indicators': {
+    examples:
+      'Track behaviors that influence future results, not only lagging outcomes',
+  },
+  'Lag measures': {
+    examples:
+      'Use outcome measures to confirm results, while steering with leading measures',
+  },
+  Scoreboards: {
+    examples:
+      'Make the few metrics that matter visible, current, and easy to understand',
+  },
+  'OODA loop': {
+    examples:
+      'Observe, orient, decide, act — cycle faster while staying grounded in reality',
+  },
+  'PDCA cycle': {
+    examples: 'Plan, do, check, act — learn systematically from each iteration',
+  },
+  'Double-loop learning': {
+    examples:
+      'Question the governing assumptions, not just the actions that failed',
+  },
+  'Five whys': {
+    examples:
+      'Ask why repeatedly to find a root cause rather than stopping at a symptom',
+  },
+  'Root cause analysis': {
+    examples: 'Trace a failure to contributing conditions that can be changed',
+  },
+  'Precommit to review': {
+    examples:
+      'Schedule a decision review before outcomes create hindsight and defensiveness',
+  },
+  'Decision journal': {
+    examples:
+      'Record reasoning, assumptions, and confidence before you know the result',
+  },
+  'Kill criteria': {
+    examples:
+      'Set conditions for stopping a project before sunk costs bias the decision',
+  },
+  'Red team review': {
+    examples:
+      'Assign someone to challenge a plan so weak assumptions surface before launch',
+  },
+  'Pre-registration of bets': {
+    examples:
+      'Specify what success means in advance to reduce motivated reinterpretation',
+  },
+  'Skin in the game': {
+    examples:
+      'Give decision-makers meaningful exposure to the consequences of their choices',
+  },
+  'Principal-agent problem': {
+    examples:
+      'Check whether incentives reward the person acting for outcomes you actually want',
+  },
+  'Incentives matter': {
+    examples: 'People adapt to what is rewarded, measured, and made easy',
+  },
+  'Tragedy of the commons': {
+    examples:
+      'Shared resources need clear stewardship or individual incentives can deplete them',
+  },
+  'Network effects': {
+    examples:
+      'A product can become more useful as more compatible participants join',
+  },
+  'Switching costs': {
+    examples:
+      'Account for the time, risk, and habit change required to adopt an alternative',
+  },
+  'Power laws': {
+    examples:
+      'A few causes or opportunities can dominate results, so look for asymmetry',
+  },
+  Leverage: {
+    examples:
+      'Use tools, code, media, and systems to multiply the effect of good judgment',
+  },
+  'Comparative advantage': {
+    examples:
+      'Focus on work where your relative strength creates the most joint value',
+  },
+  'Division of labor': {
+    examples:
+      'Specialization can raise quality when coordination costs remain manageable',
+  },
+  'Make or buy': {
+    examples:
+      'Build only when control or differentiation outweighs acquisition and maintenance cost',
+  },
+  'Long-term orientation': {
+    examples:
+      'Choose actions that remain sensible when viewed across years, not just this week',
+  },
+  'Finite and infinite games': {
+    examples:
+      'Optimize to keep playing and improving the game, not merely to win one round',
+  },
+  'Cathedral thinking': {
+    examples:
+      'Make present choices worthy of a long horizon, even when results arrive slowly',
+  },
+  'Legacy test': {
+    examples:
+      'Ask whether you would be proud to explain this decision to people you respect',
+  },
+  'Reputation compound interest': {
+    examples:
+      'Repeated reliability creates trust that makes future cooperation easier',
+  },
+  'Trust battery': {
+    examples:
+      'Small kept promises charge trust; broken promises drain it quickly',
+  },
+  'Credibility through specificity': {
+    examples:
+      'Make clear commitments with owners and dates instead of vague assurances',
+  },
+  'Default to transparency': {
+    examples:
+      'Share relevant context unless there is a concrete reason to restrict it',
+  },
+  'Write it down': {
+    examples:
+      'Written reasoning exposes ambiguity and creates a durable shared reference',
+  },
+  'Narrative clarity': {
+    examples:
+      'Explain change as a coherent problem, insight, choice, and expected outcome',
+  },
+  'Pyramid principle': {
+    examples:
+      'Lead with the answer, then organize supporting points beneath it',
+  },
+  'One-sentence strategy': {
+    examples:
+      'State the chosen advantage and focus in language people can remember',
+  },
+  'Working agreements': {
+    examples:
+      'Make team norms explicit so coordination does not rely on mind reading',
+  },
+  RACI: {
+    examples:
+      'Clarify who is responsible, accountable, consulted, and informed',
+  },
+  'DRI ownership': {
+    examples:
+      'Give every important outcome one directly responsible individual',
+  },
+  'Delegation by outcomes': {
+    examples:
+      'Define the result, constraints, and authority; avoid prescribing every move',
+  },
+  'Context, not control': {
+    examples:
+      'Give people the information needed to make good decisions close to the work',
+  },
+  'Ladder of inference': {
+    examples:
+      'Distinguish observed data from the story and conclusions you built on it',
+  },
+  'SCARF model': {
+    examples:
+      'Status, certainty, autonomy, relatedness, and fairness shape social reactions',
+  },
+  'Pygmalion effect': {
+    examples:
+      'High, credible expectations can improve performance through changed support and effort',
+  },
+  'Tactical empathy': {
+    examples:
+      'Show that you understand another perspective without surrendering your own interests',
+  },
+  Mirroring: {
+    examples:
+      'Repeat a key phrase with curiosity to invite the other person to elaborate',
+  },
+  'Labeling in negotiation': {
+    examples:
+      'Name the emotion or concern you hear to reduce defensiveness and reveal information',
+  },
+  'Ask calibrated questions': {
+    examples:
+      'Use how and what questions that help others solve the problem with you',
+  },
+  'Zone of proximal development': {
+    examples:
+      'Choose challenges just beyond current ability with enough support to learn',
+  },
+  Scaffolding: {
+    examples: 'Provide temporary structure, then remove it as capability grows',
+  },
+  'Mastery orientation': {
+    examples:
+      'Measure improvement and understanding, not only rank or appearance',
+  },
+  'Autonomy support': {
+    examples:
+      'Offer meaningful choice and rationale rather than relying only on pressure',
+  },
+  'Purpose alignment': {
+    examples:
+      'Connect routine work to the people or outcomes it is meant to serve',
+  },
+  'Ikigai reflection': {
+    examples:
+      'Look for the overlap of what matters to you, what you can do, and what helps others',
+  },
+  'Values-based action': {
+    examples:
+      'Choose behavior that expresses your values even when feelings are inconvenient',
+  },
+  'Eudaimonic wellbeing': {
+    examples:
+      'Build a good life through meaning, virtue, growth, and contribution',
+  },
+  'Hedonic adaptation': {
+    examples:
+      'New gains quickly feel normal, so invest in relationships and practices that renew appreciation',
+  },
+  Savoring: {
+    examples:
+      'Slow down to notice and extend positive experiences instead of rushing past them',
+  },
+  'Broaden-and-build': {
+    examples:
+      'Positive emotions widen attention and help build lasting social and cognitive resources',
+  },
+  'Hope theory': {
+    examples:
+      'Sustain motivation by pairing a valued goal with workable routes and agency',
+  },
+  'Learned optimism': {
+    examples:
+      'Explain setbacks as specific, temporary, and changeable when evidence allows',
+  },
+  'Antifragile mindset': {
+    examples:
+      'Use setbacks as information for adaptation while avoiding needless fragility',
+  },
+  'Stress inoculation': {
+    examples:
+      'Practice under gradually harder conditions before high-stakes performance',
+  },
+  'Cognitive load management': {
+    examples:
+      'Reduce unnecessary complexity so working memory can focus on the real task',
+  },
+  Chunking: {
+    examples:
+      'Group related information into meaningful units that are easier to hold and use',
+  },
+  'External brain': {
+    examples:
+      'Use trusted notes and systems to offload reminders, references, and open loops',
+  },
+  'Progressive summarization': {
+    examples:
+      'Distill notes in layers so the most useful ideas become easier to revisit',
+  },
+  'Commonplace book': {
+    examples:
+      'Collect ideas worth revisiting and connect them to your own work over time',
+  },
+  'Zettelkasten linking': {
+    examples:
+      'Create small linked notes so insights can recombine into new thinking',
+  },
+  'Serendipity by exposure': {
+    examples:
+      'Increase useful accidents by meeting diverse people and sharing unfinished ideas',
+  },
+  'Adjacent possible': {
+    examples:
+      'Explore the next feasible step opened by current capabilities, not only distant leaps',
+  },
+  'Diverge then converge': {
+    examples:
+      'Generate many possibilities before narrowing deliberately with clear criteria',
+  },
+  'Constraints breed creativity': {
+    examples:
+      'Use clear limits to focus invention and prevent endless option searching',
+  },
+  'Lateral thinking': {
+    examples:
+      'Change perspective, assumptions, or framing to find non-obvious solutions',
+  },
+  'Design for the edge case': {
+    examples:
+      'Study difficult cases because they reveal hidden assumptions in the normal path',
+  },
+  'Accessibility by default': {
+    examples:
+      'Design for diverse needs from the start; clarity and flexibility help everyone',
+  },
+  'Universal design': {
+    examples:
+      'Make environments and tools usable by the widest range of people without special adaptation',
+  },
+  'Reduce shame, increase agency': {
+    examples:
+      'Frame problems around controllable next steps instead of personal deficiency',
+  },
+  'Dignity in disagreement': {
+    examples:
+      'Challenge ideas firmly while refusing contempt for the person holding them',
+  },
+  'Charity principle': {
+    examples:
+      'Interpret another view in its most reasonable form before responding',
+  },
+  'Epistemic humility': {
+    examples:
+      'Hold beliefs with confidence proportional to evidence and remain ready to revise',
+  },
+  'Strong opinions, loosely held': {
+    examples:
+      'Commit enough to act, but update quickly when better evidence appears',
+  },
+  'Explore-exploit balance': {
+    examples:
+      'Use proven approaches while reserving capacity to test promising alternatives',
+  },
+  'Portfolio of experiments': {
+    examples:
+      'Run several small, independent bets instead of depending on one grand prediction',
+  },
+  'Asymmetric upside': {
+    examples:
+      'Favor opportunities where potential gains greatly exceed the limited downside',
+  },
+  'Via negativa': {
+    examples:
+      'Improve by removing harmful habits, needless complexity, and predictable sources of error',
+  },
+  'Lindy effect': {
+    examples:
+      'For non-perishable ideas, long survival can suggest a longer remaining life',
+  },
+  'Shirky principle': {
+    examples:
+      'Institutions often preserve the problem they are organized to solve',
+  },
+  'Conway’s law': {
+    examples:
+      'System designs tend to mirror the communication structure of the people who build them',
+  },
+  'Parkinson’s triviality': {
+    examples:
+      'Groups can spend disproportionate time on easy, low-stakes details',
+  },
+  'Law of two feet': {
+    examples:
+      'Leave conversations where you cannot learn or contribute, then find a better use of attention',
+  },
+  'Meeting hygiene': {
+    examples:
+      'Use a purpose, agenda, preparation, decisions, and owners—or do not meet',
+  },
+  'Async by default': {
+    examples:
+      'Use written, time-shifted communication when real-time discussion is not necessary',
+  },
+  'Maker-manager schedule': {
+    examples:
+      'Protect long uninterrupted blocks for creative work from fragmented meeting time',
+  },
+  'Attention residue': {
+    examples:
+      'Switching tasks leaves part of attention behind; finish or park work deliberately',
+  },
+  Monotasking: {
+    examples:
+      'Give one cognitively demanding task your full attention for a defined interval',
+  },
+  'Deep work': {
+    examples:
+      'Protect distraction-free time for work that requires sustained concentration',
+  },
+  'Shallow work boundaries': {
+    examples:
+      'Contain reactive administration so it does not consume the time needed for important creation',
+  },
+  'Inbox zero as triage': {
+    examples:
+      'Process incoming items to a trusted next action, reference, delegate, or delete decision',
+  },
+  'Weekly review': {
+    examples:
+      'Regularly reset priorities, commitments, and systems before drift becomes expensive',
+  },
+  'Monthly retrospective': {
+    examples:
+      'Review patterns, not just events, to choose one or two improvements for the next month',
+  },
+  'Personal board of directors': {
+    examples:
+      'Seek candid perspectives from people with different experience and incentives',
+  },
+  'Mentors and sponsors': {
+    examples:
+      'Learn from mentors and seek sponsors who will advocate when opportunities arise',
+  },
+  'Give credit generously': {
+    examples:
+      'Name others’ contributions accurately; shared wins strengthen trust and collaboration',
+  },
+  'Do the next right thing': {
+    examples:
+      'When the whole path is unclear, take the smallest ethical and useful next action',
+  },
+  'Start before ready': {
+    examples:
+      'Begin with a bounded draft or experiment; readiness grows through action',
+  },
+  'Finish lines matter': {
+    examples:
+      'Define a stopping point so useful work reaches the people it is meant to help',
+  },
+  'Ship, then improve': {
+    examples:
+      'Deliver a sound version, learn from use, and iterate rather than polishing in isolation',
+  },
+  Craftsmanship: {
+    examples:
+      'Care about quality in the details because repeated standards shape trust and pride',
+  },
+  'Professionalism under pressure': {
+    examples:
+      'Keep commitments, communicate early, and preserve respect when circumstances get hard',
+  },
 };

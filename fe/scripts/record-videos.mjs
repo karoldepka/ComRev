@@ -5,10 +5,8 @@
  * recording stops exactly on its last slide (record-obs.mjs's --slides),
  * instead of guessing a fixed --duration.
  *
- * Keep the VIDEOS list below in sync with utils/slides/videos.data.tsx by
- * hand — this is a plain Node script and can't import that .tsx file
- * directly (no JSX/TS transform here), the same reason record-all.mjs
- * mirrors preset ids instead of importing preset-registry.ts.
+ * Video definitions are loaded directly from utils/slides/videos.data.tsx, so
+ * newly declared videos are picked up automatically.
  *
  * Usage:
  *   node scripts/record-videos.mjs [options]
@@ -20,7 +18,8 @@
  *
  * Batch control:
  *   --dry-run                    Print plan without recording
- *   --out-dir   <path>           Output directory (default: ../recordings/videos_<ts>)
+ *   --out-dir   <path>           Output directory (default: ../recordings/videos_<ts>);
+ *                                 files are saved as <format>/<lang>/<video title>.mp4
  *   --continue-on-error          Keep going after a failed recording (default: true)
  *   --fail-fast                  Stop on first error
  *
@@ -41,28 +40,63 @@
  */
 
 import { spawnSync } from 'child_process';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+import vm from 'vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const typescript = require('typescript');
 
-// ── mirrors utils/slides/videos.data.tsx ────────────────────────────────────
+// ── video definitions ───────────────────────────────────────────────────────
 
-const VIDEOS = [
-  { id: 'smarter-7', title: '7 psychological principles to make you smarter', principleCount: 7 },
-  { id: 'counter-intuitive-7', title: '7 counter-intuitive psychological principles that can surprise you', principleCount: 7 },
-  { id: 'decisions-7', title: '7 mental models for better decision-making', principleCount: 7 },
-  { id: 'productivity-7', title: '7 productivity principles that will change how you work', principleCount: 7 },
-  { id: 'habits-7', title: '7 habit-building principles backed by psychology', principleCount: 7 },
-];
+/**
+ * Load the declarative source of truth directly. `videos.data.tsx` currently
+ * contains only type imports and data, so TypeScript can transpile it without
+ * the app's bundler; the resulting CommonJS module is evaluated in a sandbox
+ * that exposes no Node globals.
+ */
+function loadVideos() {
+  const filePath = resolve(__dirname, '..', 'utils/slides/videos.data.tsx');
+  const source = readFileSync(filePath, 'utf8');
+  const { outputText } = typescript.transpileModule(source, {
+    compilerOptions: {
+      module: typescript.ModuleKind.CommonJS,
+      target: typescript.ScriptTarget.ES2022,
+    },
+    fileName: filePath,
+    reportDiagnostics: true,
+  });
+  const module = { exports: {} };
+  vm.runInNewContext(outputText, { module, exports: module.exports }, { filename: filePath });
 
-/** Filesystem-safe slug from a video's title, e.g. "7 counter-intuitive psychological..." -> "7-counter-intuitive-psychological...". */
-function slugifyTitle(title) {
+  const categories = module.exports.VIDEO_CATEGORIES;
+  if (!Array.isArray(categories)) {
+    throw new Error('videos.data.tsx must export VIDEO_CATEGORIES as an array.');
+  }
+
+  const videos = categories.flatMap((category) => category.videos ?? []).map((video) => {
+    const principleCount = Object.keys(video.principles ?? {}).length;
+    if (!video.id || !video.title || principleCount === 0) {
+      throw new Error('Each video must have an id, title, and at least one principle.');
+    }
+    return { id: video.id, title: video.title, principleCount };
+  });
+  if (new Set(videos.map((video) => video.id)).size !== videos.length) {
+    throw new Error('Video ids in videos.data.tsx must be unique.');
+  }
+  return videos;
+}
+
+const VIDEOS = loadVideos();
+
+/** Preserve the readable title while removing characters invalid in file names. */
+function fileNameFromTitle(title) {
   return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+    .replace(/[. ]+$/g, '') || 'untitled-video';
 }
 const ALL_IDS = VIDEOS.map((v) => v.id);
 
@@ -129,17 +163,16 @@ const recorderScript = resolve(__dirname, 'record-obs.mjs');
 
 const jobs = [];
 for (const video of videos) {
-  const titleSlug = slugifyTitle(video.title);
+  const filename = `${fileNameFromTitle(video.title)}.mp4`;
   for (const format of formats) {
     for (const lang of langs) {
-      const filename = `${titleSlug}_${format}_${lang}.mp4`;
       jobs.push({
         id: video.id,
         slides: video.principleCount + 1, // + the title card
         format,
         lang,
         filename,
-        output: `${outDir}/${filename}`,
+        output: `${outDir}/${format}/${lang}/${filename}`,
       });
     }
   }

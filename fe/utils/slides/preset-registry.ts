@@ -140,7 +140,7 @@ function makeSlidesFromKeys(
         name: stripBoldTags(title),
         text: getMantraSlideText(title, entry, lang),
         author: entry.author,
-        examples: entry.examples,
+        examples: getMantraExamples(title, entry, lang),
       };
     });
 }
