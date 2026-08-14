@@ -44,6 +44,7 @@ import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { loadVideos, fileNameFromTitle } from './lib/videos-data.mjs';
+import { assertKnownFlags, flagNamesFromTokens, RECORD_OBS_FLAGS } from './lib/cli-args.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -99,6 +100,11 @@ function splitList(value, allowed, defaultValue = allowed) {
 }
 
 const { batch, passthrough } = parseArgs(process.argv.slice(2));
+// Anything not recognized as a batch key falls through as a passthrough token
+// for record-obs.mjs — validate it against record-obs.mjs's own known flags
+// here, upfront, rather than letting a typo silently do nothing or fail deep
+// inside the first spawned job.
+assertKnownFlags(flagNamesFromTokens(passthrough), RECORD_OBS_FLAGS, 'record-obs.mjs (forwarded from record-videos.mjs)');
 
 const ids     = splitList(batch.ids, ALL_IDS);
 const videos  = VIDEOS.filter((v) => ids.includes(v.id));

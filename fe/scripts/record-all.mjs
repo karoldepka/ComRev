@@ -39,6 +39,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { assertKnownFlags, flagNamesFromTokens, RECORD_OBS_FLAGS, RECORD_PLAYWRIGHT_FLAGS } from './lib/cli-args.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -100,6 +101,15 @@ const langs    = splitList(batch.langs,    ALL_LANGS);
 const recorder = batch.recorder ?? 'obs';
 const dryRun   = batch['dry-run'] === true;
 const failFast = batch['fail-fast'] === true;
+
+// Validate passthrough tokens against whichever recorder was picked, upfront,
+// rather than letting a typo silently do nothing or fail deep inside the
+// first spawned job.
+assertKnownFlags(
+  flagNamesFromTokens(passthrough),
+  recorder === 'playwright' ? RECORD_PLAYWRIGHT_FLAGS : RECORD_OBS_FLAGS,
+  `record-${recorder}.mjs (forwarded from record-all.mjs)`,
+);
 
 if (!['obs', 'playwright'].includes(recorder)) {
   console.error(`Unknown recorder: "${recorder}". Use obs or playwright.`);

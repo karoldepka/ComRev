@@ -106,30 +106,14 @@ import { spawnSync } from "child_process";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { findVideo, fileNameFromTitle } from "./lib/videos-data.mjs";
+import { parseArgs, assertKnownFlags, RECORD_OBS_FLAGS } from "./lib/cli-args.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
 
-function parseArgs(argv) {
-  const result = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2);
-      const next = argv[i + 1];
-      if (!next || next.startsWith("--")) {
-        result[key] = true;
-      } else {
-        result[key] = next;
-        i++;
-      }
-    }
-  }
-  return result;
-}
-
 const args = parseArgs(process.argv.slice(2));
+assertKnownFlags(Object.keys(args), RECORD_OBS_FLAGS, "record-obs.mjs");
 
 // ── --video all: delegate to record-videos.mjs ────────────────────────────────
 // Bare --video (no id) or --video all records every video declared in
