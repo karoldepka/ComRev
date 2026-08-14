@@ -6363,6 +6363,11 @@ export function ThreeDTextScreen({
       index: sequenceLineIndex,
       page: currentSequencePage,
     });
+    // Fire right here, synchronously with the mesh actually being swapped in
+    // (this callback runs from onMeshReady, right after scene.add(mesh)) —
+    // not from a useEffect watching state, which only catches up on the next
+    // render and would leave the sound audibly out of sync with the visual.
+    if (soundEnabled) playTransitionSound(audioContextRef, sequenceLineIndex);
   }, [
     currentSequencePage,
     currentSequencePageKey,
@@ -6372,6 +6377,7 @@ export function ThreeDTextScreen({
     sequenceMode,
     sequenceReady,
     scheduleSequenceFit,
+    soundEnabled,
   ]);
 
   // When OBS sends the start signal (sequenceReady flips to true), fire the
@@ -6390,20 +6396,8 @@ export function ThreeDTextScreen({
       index: sequenceLineIndex,
       page: currentSequencePage,
     });
-  }, [sequenceReady, sequenceMode, currentSequencePageKey, currentSequencePage, sequenceLineIndex]);
-
-  useEffect(() => {
-    if (!sequenceMode || !soundEnabled) return;
-    if (readySequenceTransition?.key !== currentSequencePageKey) return;
-    playTransitionSound(audioContextRef, sequenceLineIndex);
-  }, [
-    currentSequencePageKey,
-    readySequenceTransition?.key,
-    readySequenceTransition?.nonce,
-    sequenceLineIndex,
-    sequenceMode,
-    soundEnabled,
-  ]);
+    if (soundEnabled) playTransitionSound(audioContextRef, sequenceLineIndex);
+  }, [sequenceReady, sequenceMode, currentSequencePageKey, currentSequencePage, sequenceLineIndex, soundEnabled]);
 
 
   useEffect(() => {
