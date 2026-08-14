@@ -85,3 +85,6 @@ backend/.venv/
 my-project
 
 .frames-*
+
+# recorded videos (batch recorder output)
+/recordings/
