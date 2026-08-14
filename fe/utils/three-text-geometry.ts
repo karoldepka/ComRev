@@ -19,7 +19,8 @@ import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 import droidSansRegularFont from '@/assets/fonts/Droid_Sans_Regular.typeface.json';
 import droidSansBoldFont from '@/assets/fonts/Droid_Sans_Bold.typeface.json';
 import { parseBoldSegments, stripBoldTags } from "./rich-text";
-import { runTextGeometryWorker } from "./text-geometry-worker-client";
+import { runTextGeometryWorker, prefetchTextGeometry as prefetchGeometryInWorker } from "./text-geometry-worker-client";
+import type { WorkerGeometryOptions } from "./text-geometry-transfer";
 
 
 /** Per-zone material overrides. Properties not specified inherit from the base material. */
@@ -783,19 +784,18 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
   }
 }
 
-export async function createTextGeometry(
-  options: TextGeometryOptions,
-): Promise<CreateTextGeometryResult> {
-  const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) } as TextGeometryOptions;
-  const { faceZone, bevelZone, extrusionZone } = options;
-
-  // Custom fonts are registered into AVAILABLE_FONTS on the main thread only;
-  // pass the URL through so the worker (a separate realm) can register it too.
+/**
+ * Reduces full TextGeometryOptions down to the geometry-only subset the
+ * worker actually needs (materials stay main-thread-only — see buildTextGroup),
+ * plus the custom-font URL to register in the worker's separate realm.
+ * Shared by createTextGeometry and prefetchTextGeometry so the two can never
+ * compute a different cache key for what's meant to be the same request.
+ */
+function toWorkerRequest(mergedOptions: TextGeometryOptions): { geometryOptions: WorkerGeometryOptions; customFontUrl?: string } {
   const fontDef = AVAILABLE_FONTS.find((f) => f.id === mergedOptions.fontFamily);
   const customFontUrl = fontDef?.isCustom ? fontDef.urls[0] : undefined;
-
-  const mainGroup = await runTextGeometryWorker(
-    {
+  return {
+    geometryOptions: {
       text: mergedOptions.text!,
       fontFamily: mergedOptions.fontFamily,
       size: mergedOptions.size,
@@ -812,7 +812,33 @@ export async function createTextGeometry(
       lineSpacing: mergedOptions.lineSpacing,
     },
     customFontUrl,
-  );
+  };
+}
+
+function mergeTextGeometryOptions(options: TextGeometryOptions): TextGeometryOptions {
+  return { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) } as TextGeometryOptions;
+}
+
+/**
+ * Kicks off building this geometry in the worker ahead of time. Call this for
+ * the *next* slide's title/caption as soon as the *current* slide starts
+ * showing, so createTextGeometry() for it later (on transition) resolves
+ * from cache instead of starting the worker round-trip cold.
+ */
+export function prefetchTextGeometry(options: TextGeometryOptions): void {
+  const mergedOptions = mergeTextGeometryOptions(options);
+  const { geometryOptions, customFontUrl } = toWorkerRequest(mergedOptions);
+  prefetchGeometryInWorker(geometryOptions, customFontUrl);
+}
+
+export async function createTextGeometry(
+  options: TextGeometryOptions,
+): Promise<CreateTextGeometryResult> {
+  const mergedOptions = mergeTextGeometryOptions(options);
+  const { faceZone, bevelZone, extrusionZone } = options;
+
+  const { geometryOptions, customFontUrl } = toWorkerRequest(mergedOptions);
+  const mainGroup = await runTextGeometryWorker(geometryOptions, customFontUrl);
 
   const color =
     mergedOptions.color || new Color().setHSL(Math.random(), 0.8, 0.5);

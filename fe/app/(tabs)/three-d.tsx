@@ -43,6 +43,7 @@ import {
   AVAILABLE_FONTS,
   DEFAULT_3D_FONT_FAMILY,
   registerCustomFontUrl,
+  prefetchTextGeometry,
 } from "@/utils/three-text-geometry";
 import {
   DEFAULT_HEART_SVG,
@@ -6245,6 +6246,46 @@ export function ThreeDTextScreen({
   const displayText = sequenceMode
     ? applyCapitalize(currentSequencePage.text)
     : applyCapitalize(principalText);
+
+  // As soon as a slide becomes current, kick off building the *next* slide's
+  // geometry in the worker in the background, so its actual createTextGeometry
+  // call on transition resolves from cache instead of starting cold. The
+  // caption prefetch can still miss the cache if updateTextMesh ends up
+  // word-wrapping it (that measurement needs the title's already-built bbox,
+  // which isn't available yet here) — harmless, just falls back to a cold
+  // build for that one caption, same as before this existed.
+  useEffect(() => {
+    if (!sequenceMode || sequencePages.length === 0) return;
+    const nextPage = sequencePages[(sequenceLineIndex + 1) % sequencePages.length];
+    if (!nextPage) return;
+    const sharedOptions = {
+      fontFamily: mainTextParams.fontFamily as string | undefined,
+      height: mainTextParams.height as number | undefined,
+      curveSegments: mainTextParams.curveSegments as number | undefined,
+      bevelEnabled: mainTextParams.bevelEnabled as boolean | undefined,
+      bevelThickness: mainTextParams.bevelThickness as number | undefined,
+      bevelSize: mainTextParams.bevelSize as number | undefined,
+      bevelOffset: mainTextParams.bevelOffset as number | undefined,
+      bevelSegments: mainTextParams.bevelSegments as number | undefined,
+      equalizeLineWidths: mainTextParams.equalizeLineWidths as boolean | undefined,
+      equalizationMethod: mainTextParams.equalizationMethod as
+        | "spacing"
+        | "fontSize"
+        | undefined,
+      targetWidth: mainTextParams.targetWidth as number | undefined,
+      lineSpacing: mainTextParams.lineSpacing as number | undefined,
+    };
+    const titleSize = mainTextParams.size as number | undefined;
+    prefetchTextGeometry({ ...sharedOptions, text: applyCapitalize(nextPage.text), size: titleSize });
+    if (nextPage.examples?.trim()) {
+      const captionSize = (titleSize ?? 2.5) * EXAMPLES_TO_TITLE_RATIO;
+      prefetchTextGeometry({ ...sharedOptions, text: nextPage.examples.trim(), size: captionSize });
+    }
+    // Fires once per slide (currentSequencePageKey changes when the current
+    // slide changes) — deliberately not depending on mainTextParams itself,
+    // which would re-fire on every unrelated param tweak.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSequencePageKey, sequenceMode]);
 
   // Stable key that changes only when text content changes, not when display params (bevel etc.) change.
   const principalTextSetsKey = useMemo(
