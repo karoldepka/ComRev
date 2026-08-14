@@ -18,6 +18,12 @@
  *   node scripts/record-obs.mjs [options]
  *
  * Options:
+ *   --video <id>                Record a video declared in utils/slides/videos.data.tsx
+ *                               by id (e.g. smarter-7) instead of a raw --tab/--slides
+ *                               pair. Sets --tab to preset/video-<id>/full-window,
+ *                               --slides to the video's own principle count, and
+ *                               defaults --output to recordings/<lang>/<video title>.mp4.
+ *                               Explicit --tab/--slides/--output still override.
  *   --format <name>             Output format preset (default: shorts)
  *                               Presets: shorts, tiktok, yt, yt-4k
  *   --width <px>                Custom canvas width  (overrides --format)
@@ -92,6 +98,7 @@ import {
 import { createServer } from "http";
 import { OBSWebSocket } from "obs-websocket-js";
 import { dirname } from "path";
+import { findVideo, fileNameFromTitle } from "./lib/videos-data.mjs";
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
 
@@ -160,21 +167,26 @@ if (!width || !height) {
 
 // ── other args ────────────────────────────────────────────────────────────────
 
+// --video <id> looks the declared video up in videos.data.tsx so --tab,
+// --slides, and --output can all default from it below.
+const video = args.video !== undefined ? findVideo(args.video) : null;
+
 const durationExplicit = args.duration !== undefined;
 const durationSec = parseInt(args.duration ?? "60", 10);
-// Slide-count-based stopping is the default (7 slides) — see "Stop signal"
-// below. Passing --duration on its own (without --slides) opts back into the
-// old fixed-duration mode; passing both uses --duration as a safety-net cap
-// on top of the slide-count stop signal.
+// Slide-count-based stopping is the default — see "Stop signal" below.
+// --video defaults it to that video's own principle count (+ title card);
+// otherwise 7. Passing --duration on its own (without --slides) opts back
+// into the old fixed-duration mode; passing both uses --duration as a
+// safety-net cap on top of the slide-count stop signal.
 const slidesCount = args.slides !== undefined
   ? (args.slides === true ? 7 : parseInt(args.slides, 10))
-  : (durationExplicit ? undefined : 7);
+  : (durationExplicit ? undefined : (video ? video.principleCount + 1 : 7));
 const fps = parseInt(args.fps ?? "60", 10);
 const binauralHz = parseFloat(args["binaural-hz"] ?? "6");
 const binauralCarrier = parseFloat(args["binaural-carrier"] ?? "200");
 const binauralVolume = parseFloat(args["binaural-volume"] ?? "0.35");
 const baseUrl = args.url ?? "http://localhost:8081";
-const tab = args.tab ?? "preset/principles/full-window";
+const tab = args.tab ?? (video ? `preset/video-${video.id}/full-window` : "preset/principles/full-window");
 const noTab = args["no-tab"] === true;
 const lang = args.lang ?? "";
 // Only meaningful with --no-tab (see "Ready signal" above); undefined means
@@ -191,7 +203,12 @@ const SCENE_NAME = args.scene ?? "AnimationRecorder";
 const SOURCE_NAME = args.source ?? "AnimationBrowser";
 
 const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-const outputDst = args.output ?? `../recordings/${ts}_animation_${format}.mp4`;
+const langFolder = lang || "en";
+const outputDst = args.output ?? (
+  video
+    ? `../recordings/${langFolder}/${fileNameFromTitle(video.title)}.mp4`
+    : `../recordings/${ts}_animation_${format}.mp4`
+);
 mkdirSync(dirname(outputDst), { recursive: true });
 
 // Build the target URL. Query params are set on a URL object (rather than string
@@ -338,6 +355,7 @@ async function moveFileWithRetry(sourcePath, destinationPath, label) {
 console.log("\n══════════════════════════════════════════");
 console.log("  Animation Recorder (OBS)");
 console.log("══════════════════════════════════════════");
+if (video) console.log(`  Video   : ${video.id}  "${video.title}"`);
 console.log(`  Format  : ${label}`);
 console.log(`  FPS     : ${fps}`);
 console.log(`  Duration: ${durationSec}s`);

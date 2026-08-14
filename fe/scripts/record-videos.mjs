@@ -19,7 +19,7 @@
  * Batch control:
  *   --dry-run                    Print plan without recording
  *   --out-dir   <path>           Output directory (default: ../recordings/videos_<ts>);
- *                                 files are saved as <format>/<lang>/<video title>.mp4
+ *                                 files are saved as <lang>/<format>/<video title>.mp4
  *   --continue-on-error          Keep going after a failed recording (default: true)
  *   --fail-fast                  Stop on first error
  *
@@ -40,64 +40,16 @@
  */
 
 import { spawnSync } from 'child_process';
-import { mkdirSync, readFileSync } from 'fs';
+import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
-import vm from 'vm';
+import { loadVideos, fileNameFromTitle } from './lib/videos-data.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
-const typescript = require('typescript');
 
 // ── video definitions ───────────────────────────────────────────────────────
 
-/**
- * Load the declarative source of truth directly. `videos.data.tsx` currently
- * contains only type imports and data, so TypeScript can transpile it without
- * the app's bundler; the resulting CommonJS module is evaluated in a sandbox
- * that exposes no Node globals.
- */
-function loadVideos() {
-  const filePath = resolve(__dirname, '..', 'utils/slides/videos.data.tsx');
-  const source = readFileSync(filePath, 'utf8');
-  const { outputText } = typescript.transpileModule(source, {
-    compilerOptions: {
-      module: typescript.ModuleKind.CommonJS,
-      target: typescript.ScriptTarget.ES2022,
-    },
-    fileName: filePath,
-    reportDiagnostics: true,
-  });
-  const module = { exports: {} };
-  vm.runInNewContext(outputText, { module, exports: module.exports }, { filename: filePath });
-
-  const categories = module.exports.VIDEO_CATEGORIES;
-  if (!Array.isArray(categories)) {
-    throw new Error('videos.data.tsx must export VIDEO_CATEGORIES as an array.');
-  }
-
-  const videos = categories.flatMap((category) => category.videos ?? []).map((video) => {
-    const principleCount = Object.keys(video.principles ?? {}).length;
-    if (!video.id || !video.title || principleCount === 0) {
-      throw new Error('Each video must have an id, title, and at least one principle.');
-    }
-    return { id: video.id, title: video.title, principleCount };
-  });
-  if (new Set(videos.map((video) => video.id)).size !== videos.length) {
-    throw new Error('Video ids in videos.data.tsx must be unique.');
-  }
-  return videos;
-}
-
 const VIDEOS = loadVideos();
-
-/** Preserve the readable title while removing characters invalid in file names. */
-function fileNameFromTitle(title) {
-  return title
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
-    .replace(/[. ]+$/g, '') || 'untitled-video';
-}
 const ALL_IDS = VIDEOS.map((v) => v.id);
 
 const ALL_FORMATS = ['shorts', 'yt', 'tiktok', 'yt-4k'];
@@ -172,7 +124,7 @@ for (const video of videos) {
         format,
         lang,
         filename,
-        output: `${outDir}/${format}/${lang}/${filename}`,
+        output: `${outDir}/${lang}/${format}/${filename}`,
       });
     }
   }
@@ -198,7 +150,7 @@ console.log('══════════════════════�
 if (dryRun) {
   console.log('Plan:\n');
   jobs.forEach((j, i) =>
-    console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.id, 20)} ${pad(j.format, 8)} ${pad(j.lang, 5)} slides=${j.slides}  → ${j.filename}`),
+    console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} slides=${j.slides}  → ${j.filename}`),
   );
   console.log('');
   process.exit(0);
