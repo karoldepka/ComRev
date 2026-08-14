@@ -20,14 +20,14 @@
  *
  * Options:
  *   --format yt|shorts|yt-4k   Output format (default: yt)
- *   --duration <seconds>        Recording duration (default: 30)
+ *   --duration <seconds>        Recording duration (default: 60)
  *   --tab <path>                App route to open (default: preset/mcon/full-window)
  *   --url <base>                App base URL (default: http://localhost:8081)
  *   --output <path>             Output file path (default: recordings/<timestamp>.<format>.mp4)
  *   --fps <number>              Frames per second (default: 60)
- *   --wait-ms <ms>              Max time to wait (realtime mode only) for the page to signal
- *                               it's ready before recording anyway (default: 3000). See
- *                               "Ready signal" below.
+ *   --wait-ms <ms>              Frame-by-frame mode only: how much fake time to fast-forward
+ *                               through before recording starts (default: 3000). Realtime mode
+ *                               doesn't use this — see "Ready signal" below.
  *   --headless                  Run without a visible browser window
  *   --headed                    Force a visible browser window (frame mode defaults to headless for speed)
  *   --frames                    Use frame-by-frame mode (clock-controlled, perfect quality)
@@ -46,10 +46,11 @@
  *   This script starts a tiny local HTTP server and appends a `ready-port` query
  *   param to the app URL. app/preset/[id]/full-window.tsx pings it — via
  *   navigator.sendBeacon — the moment the first 3D frame has actually rendered,
- *   so recording starts exactly on cue instead of guessing a wait time. If no
- *   ping arrives, recording falls back to starting after --wait-ms regardless.
- *   Frame-by-frame mode doesn't need this — it fast-forwards a fake clock instead
- *   of waiting on wall-clock time.
+ *   so recording starts exactly on cue instead of guessing a wait time. This
+ *   script only ever records this app's own routes, so the ping is guaranteed
+ *   eventually — recording waits for it with no timeout (a guessed fallback that
+ *   starts recording anyway would defeat the point). Frame-by-frame mode doesn't
+ *   need this — it fast-forwards a fake clock instead of waiting on wall-clock time.
  */
 
 import { execFileSync, execSync } from 'child_process';
@@ -83,7 +84,7 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 
 const format     = args.format ?? 'yt';
-const durationSec = parseInt(args.duration ?? '2', 10);
+const durationSec = parseInt(args.duration ?? '60', 10);
 const tab        = args.tab ?? 'preset/mcon/full-window';
 const lang       = args.lang ?? '';
 const baseUrl    = args.url ?? 'http://localhost:8081';
@@ -150,8 +151,6 @@ function hasFFmpeg() {
   try { execSync('ffmpeg -version', { stdio: 'ignore' }); return true; }
   catch { return false; }
 }
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Tiny local HTTP server the recorded page can ping (see "Ready signal" above) once its first frame renders. */
 function startReadyServer() {
@@ -394,17 +393,19 @@ if (frameMode) {
   console.log(`Opening ${fullUrl} ...`);
   await page.goto(recordUrl.toString(), { waitUntil: 'load', timeout: 30_000 });
 
-  console.log(`Waiting for page ready signal (max ${waitMs}ms)...`);
-  const readyOutcome = await Promise.race([
-    readyServer.ready.then(() => 'ready'),
-    sleep(waitMs).then(() => 'timeout'),
-  ]);
+  // This script only ever records this app's own routes (no third-party URL
+  // mode), so the page is guaranteed to ping eventually — wait for it rather
+  // than racing a guessed timeout that would just start recording too early.
+  console.log('Waiting for page ready signal...');
+  let elapsedSec = 0;
+  const heartbeat = setInterval(() => {
+    elapsedSec += 5;
+    console.log(`  ...still waiting for page ready signal (${elapsedSec}s elapsed). Is the dev server running?`);
+  }, 5000);
+  await readyServer.ready;
+  clearInterval(heartbeat);
   readyServer.close();
-  console.log(
-    readyOutcome === 'ready'
-      ? 'Page signalled ready.'
-      : `No ready signal after ${waitMs}ms — starting anyway.`,
-  );
+  console.log('Page signalled ready.');
 
   console.log(`\n● REC  (${durationSec}s)\n`);
   await page.waitForTimeout(durationSec * 1000);

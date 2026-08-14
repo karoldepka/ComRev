@@ -2,9 +2,11 @@
 /**
  * OBS recorder using OBS WebSocket API.
  *
- * Records the animation app via OBS Browser Source — real-time at any resolution
- * regardless of physical screen size.  Page audio (gong, sequence sounds) is
- * captured natively via Browser Source reroute_audio — no ffmpeg synthesis needed.
+ * Records a webpage via OBS Browser Source — real-time at any resolution
+ * regardless of physical screen size. Page audio (gong, sequence sounds, etc.)
+ * is captured natively via Browser Source reroute_audio — no ffmpeg synthesis
+ * needed. Works both for this app's own preset routes (default) and for
+ * arbitrary third-party pages (--no-tab).
  *
  * Prerequisites:
  *   1. OBS Studio 28+ installed and running
@@ -20,12 +22,25 @@
  *                               Presets: shorts, tiktok, yt, yt-4k
  *   --width <px>                Custom canvas width  (overrides --format)
  *   --height <px>               Custom canvas height (overrides --format)
- *   --duration <seconds>        Recording duration (default: 30)
+ *   --slides [count]            Stop recording once this many sequence slides have fully
+ *                               displayed (default: 7 — this is the default stop mode even
+ *                               without passing this flag). See "Stop signal" below.
+ *   --duration <seconds>        Pass this alone (without --slides) to fall back to the old
+ *                               fixed-duration mode instead (default when doing so: 60).
+ *                               Pass alongside --slides to add it as a safety-net cap on top
+ *                               of the slide-count stop signal. See "Stop signal" below.
  *   --fps <number>              Frames per second (default: 60)
- *   --tab <path>                App route to open (default: preset/mcon/full-window)
  *   --url <base>                App base URL (default: http://localhost:8081)
- *   --wait-ms <ms>              Max time to wait for the page to signal it's ready before
- *                               recording anyway (default: 3000). See "Ready signal" below.
+ *   --tab <path>                App route appended to --url (default: preset/principles/full-window)
+ *   --no-tab                    Record --url as-is, without appending --tab — for
+ *                               recording a full third-party page URL instead of
+ *                               one of this app's own preset routes.
+ *   --no-refresh                Skip the frame-0 refresh (see below). Use for pages
+ *                               that shouldn't be reloaded (most useful with --no-tab).
+ *   --wait-ms <ms>              Give up waiting for the ready signal and record anyway after
+ *                               this many ms. Only applies with --no-tab (a third-party page
+ *                               that may never send the signal at all); ignored otherwise —
+ *                               see "Ready signal" below.
  *   --output <path>             Destination path for finished file
  *                               (default: recordings/<ts>_animation_<format>.mp4)
  *   --ws-url <url>              OBS WebSocket URL (default: ws://localhost:4455)
@@ -43,11 +58,28 @@
  *
  * Ready signal:
  *   This script starts a tiny local HTTP server and appends a `ready-port` query
- *   param to the app URL. app/preset/[id]/full-window.tsx pings it — via
+ *   param to the target URL. app/preset/[id]/full-window.tsx pings it — via
  *   navigator.sendBeacon — the moment the first 3D frame has actually rendered,
  *   so recording starts exactly on cue instead of guessing a wait time. The page
  *   pings once per load, so this fires again after the frame-0 refresh below.
- *   If no ping arrives, recording falls back to starting after --wait-ms regardless.
+ *
+ *   In the default (--tab) mode this app always sends the ping eventually, so
+ *   there's no timeout race here — the script just waits for it, logging a
+ *   heartbeat every few seconds so a stuck wait (e.g. dev server not running)
+ *   is visible instead of silently starting a black recording anyway. A guessed
+ *   timeout that "gives up and records anyway" would defeat the entire point.
+ *   --no-tab is the exception: an arbitrary third-party URL may not know about
+ *   `ready-port` and might never ping, so --wait-ms applies there as a cap.
+ *
+ * Stop signal:
+ *   --slides works the same way, on the same local server: the URL gets a
+ *   `stop-after-slides` param, and app/(tabs)/three-d.tsx pings "/stop-recording"
+ *   the moment that many slides have each shown for their own full duration
+ *   (which varies per slide — see estimateSequenceDurationMs). This script then
+ *   waits for that ping instead of counting down a fixed --duration, so the
+ *   recording always ends exactly on a slide boundary regardless of how long
+ *   the content actually took to play. --duration remains available as an
+ *   explicit safety-net cap (see above) if you want one.
  */
 
 import {
@@ -128,15 +160,27 @@ if (!width || !height) {
 
 // ── other args ────────────────────────────────────────────────────────────────
 
-const durationSec = parseInt(args.duration ?? "30", 10);
+const durationExplicit = args.duration !== undefined;
+const durationSec = parseInt(args.duration ?? "60", 10);
+// Slide-count-based stopping is the default (7 slides) — see "Stop signal"
+// below. Passing --duration on its own (without --slides) opts back into the
+// old fixed-duration mode; passing both uses --duration as a safety-net cap
+// on top of the slide-count stop signal.
+const slidesCount = args.slides !== undefined
+  ? (args.slides === true ? 7 : parseInt(args.slides, 10))
+  : (durationExplicit ? undefined : 7);
 const fps = parseInt(args.fps ?? "60", 10);
 const binauralHz = parseFloat(args["binaural-hz"] ?? "6");
 const binauralCarrier = parseFloat(args["binaural-carrier"] ?? "200");
 const binauralVolume = parseFloat(args["binaural-volume"] ?? "0.35");
-const tab = args.tab ?? "preset/motivation/full-window";
-const lang = args.lang ?? "";
 const baseUrl = args.url ?? "http://localhost:8081";
-const waitMs = parseInt(args["wait-ms"] ?? "3000", 10);
+const tab = args.tab ?? "preset/principles/full-window";
+const noTab = args["no-tab"] === true;
+const lang = args.lang ?? "";
+// Only meaningful with --no-tab (see "Ready signal" above); undefined means
+// "wait indefinitely for the ready ping", which is always correct in --tab mode.
+const waitMs = args["wait-ms"] !== undefined ? parseInt(args["wait-ms"], 10) : undefined;
+const noRefresh = args["no-refresh"] === true;
 const wsUrl = args["ws-url"] ?? "ws://localhost:4455";
 const wsPassword = args["ws-password"] ?? "";
 const noResize = args["no-resize"] === true;
@@ -150,52 +194,90 @@ const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const outputDst = args.output ?? `../recordings/${ts}_animation_${format}.mp4`;
 mkdirSync(dirname(outputDst), { recursive: true });
 
-// Build URL — binaural params go to the app (played via Web Audio, captured by OBS reroute_audio)
-const queryParams = new URLSearchParams();
-if (lang) queryParams.set("lang", lang);
+// Build the target URL. Query params are set on a URL object (rather than string
+// concatenation) so they layer cleanly onto --url even when --no-tab is used to
+// record a third-party page that already has its own query string.
+const recordUrl = new URL(noTab ? baseUrl : `${baseUrl}/${tab}`);
+if (lang) recordUrl.searchParams.set("lang", lang);
 if (binauralHz) {
-  queryParams.set("binaural-hz", String(binauralHz));
-  queryParams.set("binaural-carrier", String(binauralCarrier));
-  queryParams.set("binaural-volume", String(binauralVolume));
+  recordUrl.searchParams.set("binaural-hz", String(binauralHz));
+  recordUrl.searchParams.set("binaural-carrier", String(binauralCarrier));
+  recordUrl.searchParams.set("binaural-volume", String(binauralVolume));
 }
-if (obsSync) queryParams.set("pause-until-obs", "1");
-const fullUrl = `${baseUrl}/${tab}${queryParams.size ? `?${queryParams}` : ""}`;
+if (obsSync) recordUrl.searchParams.set("pause-until-obs", "1");
+if (slidesCount !== undefined) recordUrl.searchParams.set("stop-after-slides", String(slidesCount));
+const fullUrl = recordUrl.toString();
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Races a single ping against an optional timeout; timeoutMs undefined waits indefinitely. */
+function armSignal(setResolver, timeoutMs, onHeartbeat) {
+  const racers = [
+    new Promise((resolve) => {
+      setResolver(() => resolve("ready"));
+    }),
+  ];
+  if (typeof timeoutMs === "number") {
+    racers.push(sleep(timeoutMs).then(() => "timeout"));
+  }
+  const heartbeat = onHeartbeat ? setInterval(onHeartbeat, 5000) : null;
+  return Promise.race(racers).finally(() => {
+    setResolver(null);
+    if (heartbeat) clearInterval(heartbeat);
+  });
+}
+
 /**
  * Tiny local HTTP server the recorded page can ping (see "Ready signal" above)
- * once its first frame renders. The page pings once per navigation, so
- * waitForReady() can be called again after a refresh to catch the next ping.
+ * once its first frame renders, and again at "/stop-recording" once a targeted
+ * slide count has fully displayed (see --slides). Each signal can be re-armed
+ * (e.g. the "ready" ping fires once per navigation, so waitForReady() can be
+ * called again after a refresh to catch the next one).
  */
 function startReadyServer() {
   return new Promise((resolveSetup) => {
-    let pendingResolve = null;
+    let pendingReadyResolve = null;
+    let pendingStopResolve = null;
     const server = createServer((req, res) => {
       res.writeHead(204);
       res.end();
-      if (req.url?.startsWith("/ready")) pendingResolve?.();
+      if (req.url?.startsWith("/stop-recording")) pendingStopResolve?.();
+      else if (req.url?.startsWith("/ready")) pendingReadyResolve?.();
     });
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
       resolveSetup({
         port,
-        waitForReady: (timeoutMs) =>
-          Promise.race([
-            new Promise((resolve) => {
-              pendingResolve = () => resolve("ready");
-            }),
-            sleep(timeoutMs).then(() => "timeout"),
-          ]).finally(() => {
-            pendingResolve = null;
-          }),
+        waitForReady: (timeoutMs, onHeartbeat) =>
+          armSignal((r) => { pendingReadyResolve = r; }, timeoutMs, onHeartbeat),
+        waitForStop: (timeoutMs, onHeartbeat) =>
+          armSignal((r) => { pendingStopResolve = r; }, timeoutMs, onHeartbeat),
         close: () => server.close(),
       });
     });
   });
+}
+
+async function waitForSignalAndLog(waitFn, label, timeoutMs) {
+  console.log(
+    typeof timeoutMs === "number"
+      ? `Waiting for ${label} signal (max ${timeoutMs}ms)...`
+      : `Waiting for ${label} signal...`,
+  );
+  let elapsedSec = 0;
+  const outcome = await waitFn(timeoutMs, () => {
+    elapsedSec += 5;
+    console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
+  });
+  console.log(
+    outcome === "ready"
+      ? `${label[0].toUpperCase()}${label.slice(1)} signal received.`
+      : `No ${label} signal after ${timeoutMs}ms — proceeding anyway.`,
+  );
+  return outcome;
 }
 
 function fileSizeMb(path) {
@@ -332,7 +414,6 @@ await obs.call("SetCurrentProgramScene", { sceneName: SCENE_NAME });
 // ── ready signal ──────────────────────────────────────────────────────────────
 
 const readyServer = await startReadyServer();
-const recordUrl = new URL(fullUrl);
 recordUrl.searchParams.set("ready-port", String(readyServer.port));
 const fullUrlWithReady = recordUrl.toString();
 
@@ -388,39 +469,35 @@ if (item) {
 
 // ── wait for page to load, refresh to frame 0, then start in sync ────────────
 
-console.log(`Waiting for page ready signal (max ${waitMs}ms)...`);
-let readyOutcome = await readyServer.waitForReady(waitMs);
-console.log(
-  readyOutcome === "ready"
-    ? "Page signalled ready."
-    : `No ready signal after ${waitMs}ms — continuing anyway.`,
-);
+// --wait-ms only applies to --no-tab (third-party pages that may never ping —
+// see "Ready signal" above); --tab mode always waits for the real signal.
+const effectiveWaitMs = noTab ? waitMs : undefined;
 
-// Refresh so the animation resets to frame 0.
-// With --obs-sync the app holds at frame 0 waiting for our signal, so we only
-// need a short settle wait; without it we wait the full waitMs again. Either
-// way the refreshed page pings the ready server again once its own first
-// frame renders, so we wait for that instead of guessing.
-console.log("Refreshing browser source to reset animation to frame 0...");
-try {
-  await obs.call("PressInputPropertiesButton", {
-    inputName: SOURCE_NAME,
-    propertyName: "refreshnocache",
-  });
-} catch (err) {
-  console.warn("Could not refresh browser source:", err.message);
+await waitForSignalAndLog(readyServer.waitForReady, "page ready", effectiveWaitMs);
+
+// Refresh so the animation resets to frame 0 (skip with --no-refresh, e.g. for
+// third-party pages that shouldn't be reloaded). Refreshing always triggers a
+// new navigation, so the page pings the ready server again once its own first
+// frame renders — we wait for that instead of guessing.
+if (!noRefresh) {
+  console.log("Refreshing browser source to reset animation to frame 0...");
+  try {
+    await obs.call("PressInputPropertiesButton", {
+      inputName: SOURCE_NAME,
+      propertyName: "refreshnocache",
+    });
+  } catch (err) {
+    console.warn("Could not refresh browser source:", err.message);
+  }
+
+  await waitForSignalAndLog(
+    readyServer.waitForReady,
+    obsSync ? "slide 0 ready" : "page ready",
+    effectiveWaitMs,
+  );
 }
 
 if (obsSync) {
-  const settleMs = Math.min(waitMs, 2000);
-  console.log(`Waiting for slide 0 ready signal (max ${settleMs}ms)...`);
-  readyOutcome = await readyServer.waitForReady(settleMs);
-  console.log(
-    readyOutcome === "ready"
-      ? "Slide 0 signalled ready."
-      : `No ready signal after ${settleMs}ms — continuing anyway.`,
-  );
-
   // Signal the app to start the sequence, then immediately begin recording —
   // animation and recording start at the same instant.
   console.log("Signalling app to start sequence (obsCustomEvent: startSequence)...");
@@ -440,31 +517,34 @@ if (obsSync) {
       err.message,
     );
   }
-} else {
-  console.log(`Waiting for page ready signal (max ${waitMs}ms)...`);
-  readyOutcome = await readyServer.waitForReady(waitMs);
-  console.log(
-    readyOutcome === "ready"
-      ? "Page signalled ready."
-      : `No ready signal after ${waitMs}ms — continuing anyway.`,
-  );
 }
-
-readyServer.close();
 
 // ── record ────────────────────────────────────────────────────────────────────
 
-console.log(`\n● REC  (${durationSec}s)\n`);
-await obs.call("StartRecord");
-
-const recStart = Date.now();
-while (Date.now() - recStart < durationSec * 1000) {
-  const elapsed = ((Date.now() - recStart) / 1000).toFixed(0);
-  process.stdout.write(`\r  ${elapsed}s / ${durationSec}s`);
-  await sleep(500);
+if (slidesCount !== undefined) {
+  console.log(`\n● REC  (stopping after ${slidesCount} slide${slidesCount === 1 ? "" : "s"})\n`);
+  await obs.call("StartRecord");
+  // durationSec is only a safety cap here, and only if the caller explicitly
+  // passed --duration — the app always sends the stop signal eventually, so an
+  // unrequested default cap could cut off a legitimately longer slide count.
+  await waitForSignalAndLog(
+    readyServer.waitForStop,
+    "stop-recording",
+    durationExplicit ? durationSec * 1000 : undefined,
+  );
+} else {
+  console.log(`\n● REC  (${durationSec}s)\n`);
+  await obs.call("StartRecord");
+  const recStart = Date.now();
+  while (Date.now() - recStart < durationSec * 1000) {
+    const elapsed = ((Date.now() - recStart) / 1000).toFixed(0);
+    process.stdout.write(`\r  ${elapsed}s / ${durationSec}s`);
+    await sleep(500);
+  }
+  process.stdout.write("\n");
 }
-process.stdout.write("\n");
 
+readyServer.close();
 await obs.call("StopRecord");
 console.log("Stopping — waiting for OBS to finalize file...");
 

@@ -2,6 +2,7 @@ import type { SoundscapeConfig } from '@/store/soundscape-store';
 import type { EffectInstance } from '@/utils/config-store';
 import i18n from '@/utils/i18n';
 import type { MusicKind } from '@/utils/music-tracks';
+import { estimateReadingTimeMs } from '@/utils/reading-time';
 import { stripBoldTags, wrapRichTextWords } from '@/utils/rich-text';
 import { nanoid } from 'nanoid/non-secure';
 import type { MantraEntry, MantraText } from './mcon.data';
@@ -19,6 +20,8 @@ export interface SlideEntry {
   author?: string;
   /** Short explanatory caption, rendered smaller than the main slide text. */
   examples?: string;
+  /** Fixed display duration for this slide, bypassing the usual word-count estimate (e.g. a title card). */
+  durationMsOverride?: number;
   /** Overrides the preset-level soundscape for this specific slide. */
   soundscape?: SoundscapeConfig;
   /** Overrides the full effect pipeline for this specific slide. Off by default (null/undefined = use global). */
@@ -32,6 +35,8 @@ export interface PresetDefinition {
   music?: MusicKind;
   /** Minimum time each slide stays on screen; overrides the app-wide default for this preset. */
   sequenceLineDurationMs?: number;
+  /** 3D scene background color as a hex number (e.g. 0xffffff for white); overrides the default black. Useful for A/B-testing preset variants. */
+  background?: number;
   generateSlides: (
     lang?: string,
     categories?: readonly string[],
@@ -102,6 +107,47 @@ function makeSlides(
     }));
 }
 
+const PRINCIPLES_TITLE = '7 psychological principles to make you smarter';
+
+function getPrinciplesTitleSlide(lang?: string): SlideEntry {
+  const raw = lang
+    ? i18n.t(PRINCIPLES_TITLE, {
+        ns: 'mantras',
+        lng: lang,
+        keySeparator: false,
+        defaultValue: PRINCIPLES_TITLE,
+      })
+    : PRINCIPLES_TITLE;
+  const text = wrapMantraText(raw);
+  return {
+    id: 'principles-title',
+    name: 'Title',
+    text,
+    // Reading-speed formula, not a fixed guess — see estimateReadingTimeMs.
+    // No CAPTION_REVEAL_DELAY_MS floor here: this slide has no caption, so
+    // there's nothing to wait for a reveal.
+    durationMsOverride: estimateReadingTimeMs(text),
+  };
+}
+
+// Shared by `principles` and its A/B-test variants below — only visual
+// styling (e.g. background) should differ between them, so the content and
+// pacing config lives in one place.
+const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
+  soundscape: { beatHz: 10, carrier: 200, volume: 0.35 }, // alpha — relaxed focus
+  music: 'oceanking-patents',
+  // No fixed floor here: estimateSequenceDurationMs already guarantees each
+  // slide stays up for CAPTION_REVEAL_DELAY_MS + however long its own caption
+  // takes to read (see app/(tabs)/three-d.tsx), which scales with content
+  // instead of forcing every slide — even a one-word caption — to a flat 10s.
+  // At the "7 slides" a Short typically shows, that flat floor alone pushed a
+  // ~48s video (in the ideal 30-60s Shorts retention window) to ~72s.
+  generateSlides: (lang?: string, categories?: readonly string[]) => [
+    getPrinciplesTitleSlide(lang),
+    ...makeSlides('principles', PRINCIPLES_MANTRAS, lang, categories),
+  ],
+};
+
 export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
   mcon: {
     label: 'Mantras',
@@ -123,11 +169,13 @@ export const PRESET_REGISTRY: Record<string, PresetDefinition> = {
   },
   principles: {
     label: 'Principles',
-    soundscape: { beatHz: 10, carrier: 200, volume: 0.35 }, // alpha — relaxed focus
-    music: 'oceanking-patents',
-    // Long enough to read the title, then the 3D caption that reveals below it.
-    sequenceLineDurationMs: 10000,
-    generateSlides: (lang?: string, categories?: readonly string[]) =>
-      makeSlides('principles', PRINCIPLES_MANTRAS, lang, categories),
+    ...principlesBase,
+  },
+  // A/B-test variant: identical content and pacing, white background instead
+  // of the default black — record both and compare retention/CTR.
+  'principles-white': {
+    label: 'Principles (White BG)',
+    ...principlesBase,
+    background: 0xffffff,
   },
 };

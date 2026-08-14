@@ -10,6 +10,13 @@ import * as THREE from "three";
 export const CAPTION_REVEAL_DELAY_MS = 3000;
 /** Caption world-unit size relative to the title's `size`, used when `captionSize` isn't supplied. */
 const DEFAULT_CAPTION_SIZE_RATIO = 0.6;
+/** How long the title/caption slide-in entrance takes, in ms. */
+const ENTRANCE_DURATION_MS = 550;
+
+function easeOutCubic(t: number): number {
+  const clamped = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - clamped, 3);
+}
 
 /** Greedy word-wrap using a measured average glyph advance, so long captions break onto multiple lines instead of shrinking below their intended size. */
 function wrapTextToWidth(text: string, avgCharWidth: number, maxWidth: number): string {
@@ -97,6 +104,8 @@ interface ThreeDTextProps {
   captionText?: string;
   /** World-unit size for the caption text; typically a fraction of `size`. */
   captionSize?: number;
+  /** Scene background color as a hex number (default: 0x000000 black). */
+  backgroundColor?: number;
   /** Material override for the front letter-face cap. */
   faceZone?: ZoneMaterialProps;
   /** Material override for the bevel chamfer. */
@@ -107,6 +116,10 @@ interface ThreeDTextProps {
   pipes?: EffectPipe[];
   paused?: boolean;
   onMeshReady?: () => void;
+  /** Fires when the caption actually becomes visible (CAPTION_REVEAL_DELAY_MS after the title lands) — the right moment to re-fit the camera for it. */
+  onCaptionRevealed?: () => void;
+  /** Fires once the title's slide-in entrance finishes (ENTRANCE_DURATION_MS after landing) — guarantees one final re-fit measured at its true rest position, regardless of any re-fit that may have landed mid-animation. */
+  onTitleEntranceSettled?: () => void;
   onPrimaryMeshClick?: () => void;
   onNonPrimaryTap?: (effectInstanceId: string) => void;
   onObjectTranslated?: (effectInstanceId: string, x: number, y: number, z: number) => void;
@@ -135,6 +148,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       lineSpacing,
       captionText,
       captionSize,
+      backgroundColor = 0x000000,
       faceZone,
       bevelZone,
       extrusionZone,
@@ -142,6 +156,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       pipes = [],
       paused = false,
       onMeshReady,
+      onCaptionRevealed,
+      onTitleEntranceSettled,
       onPrimaryMeshClick,
       onNonPrimaryTap,
       onObjectTranslated,
@@ -157,6 +173,20 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const currentTextRef = useRef<string>(text);
     const updateIdRef = useRef(0);
     const captionRevealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** Vertical space (gap + height) reserved below the title for its caption, so fitCamera can anchor the title near the top instead of centering it. 0 when there's no caption. */
+    const captionExtentRef = useRef(0);
+    // Title slides in from the left, caption from the right — each animated by
+    // offsetting position.x from a starting off-screen value down to 0 over
+    // ENTRANCE_DURATION_MS, timestamped from when it should start moving.
+    const titleEntranceStartRef = useRef(0);
+    const titleEntranceOffsetXRef = useRef(0);
+    // True once onTitleEntranceSettled has fired for the current title landing.
+    const titleEntranceSettledRef = useRef(true);
+    const captionGroupRef = useRef<THREE.Group | null>(null);
+    const captionEntranceStartRef = useRef(0);
+    const captionEntranceOffsetXRef = useRef(0);
+    const backgroundColorRef = useRef(backgroundColor);
+    backgroundColorRef.current = backgroundColor;
     const pipelineManagerRef = useRef<PipelineManager | null>(null);
     const pipesRef = useRef<EffectPipe[]>(pipes);
     const glRef = useRef<any>(null);
@@ -170,6 +200,12 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
 
     const onMeshReadyRef = useRef<(() => void) | undefined>(onMeshReady);
     onMeshReadyRef.current = onMeshReady;
+
+    const onCaptionRevealedRef = useRef<(() => void) | undefined>(onCaptionRevealed);
+    onCaptionRevealedRef.current = onCaptionRevealed;
+
+    const onTitleEntranceSettledRef = useRef<(() => void) | undefined>(onTitleEntranceSettled);
+    onTitleEntranceSettledRef.current = onTitleEntranceSettled;
 
     const capturePendingRef = useRef<((data: string | null) => void) | null>(
       null,
@@ -213,6 +249,13 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         // Reset orbit so bounds are measured face-on, not on a rotated mesh.
         rotationRef.current = { x: 0, y: 0 };
         mesh.rotation.set(0, 0, 0);
+        // Measure at the mesh's true rest X, not mid-entrance-slide. A re-fit
+        // that lands while the entrance animation is still in flight (e.g. the
+        // 180ms deferred re-fit from scheduleSequenceFit, well inside the 550ms
+        // slide-in) would otherwise lock the camera onto an off-center in-flight
+        // position instead of where the text actually ends up at rest.
+        const savedMeshX = mesh.position.x;
+        mesh.position.x = 0;
         // Include all visible effect geometry (wings, rays, etc.) but skip
         // background/sky objects which use renderOrder < 0.
         const bbox = new THREE.Box3();
@@ -222,6 +265,14 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           }
         });
         if (bbox.isEmpty()) bbox.setFromObject(mesh);
+        mesh.position.x = savedMeshX;
+        // Extend the fit box downward (not sideways) to reserve room for the
+        // caption below the title. The caption itself stays excluded from
+        // `bbox` above (renderOrder < 0) so a wide caption can't force the
+        // title to zoom out — only its height affects framing, via this.
+        if (captionExtentRef.current > 0) {
+          bbox.min.y -= captionExtentRef.current;
+        }
         const center = new THREE.Vector3();
         bbox.getCenter(center);
         const halfW = (bbox.max.x - bbox.min.x) / 2;
@@ -469,6 +520,12 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     }, [perspective]);
 
     useEffect(() => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      (scene.background as THREE.Color | null)?.setHex(backgroundColor);
+    }, [backgroundColor]);
+
+    useEffect(() => {
       return () => {
         if (animationIdRef.current)
           cancelAnimationFrame(animationIdRef.current);
@@ -559,6 +616,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           clearTimeout(captionRevealTimeoutRef.current);
           captionRevealTimeoutRef.current = null;
         }
+        captionExtentRef.current = 0;
+        captionGroupRef.current = null;
         if (captionText && captionText.trim()) {
           const resolvedCaptionSize = captionSize ?? (size ?? 2) * DEFAULT_CAPTION_SIZE_RATIO;
           const buildCaptionGroup = async (lineText: string) => {
@@ -651,15 +710,37 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
               capGroup.visible = false;
               mesh.add(capGroup);
               const revealGroup = capGroup;
+              const revealExtent = gap + capHeight;
+              const revealWidth = capBox.max.x - capBox.min.x;
               captionRevealTimeoutRef.current = setTimeout(() => {
                 captionRevealTimeoutRef.current = null;
-                if (thisUpdateId === updateIdRef.current) revealGroup.visible = true;
+                if (thisUpdateId === updateIdRef.current) {
+                  revealGroup.visible = true;
+                  // Caption slides in from the right as it reveals (title slides in
+                  // from the left on landing — see titleEntranceOffsetXRef above).
+                  captionGroupRef.current = revealGroup;
+                  captionEntranceOffsetXRef.current = revealWidth + 6;
+                  captionEntranceStartRef.current = performance.now();
+                  // Reserve room for the caption (and re-fit the camera for it) only
+                  // once it's actually visible — reserving it upfront would shift/
+                  // shrink the title the instant it lands, well before the caption
+                  // exists on screen to fill the gap it leaves behind.
+                  captionExtentRef.current = revealExtent;
+                  onCaptionRevealedRef.current?.();
+                }
               }, CAPTION_REVEAL_DELAY_MS);
             } else {
               disposeMeshTree(capGroup);
             }
           }
         }
+
+        // Title slides in from the left as it lands (caption slides in from the
+        // right separately, once revealed — see captionEntranceOffsetXRef above).
+        const titleBoxForEntrance = new THREE.Box3().setFromObject(mesh);
+        titleEntranceOffsetXRef.current = -(titleBoxForEntrance.max.x - titleBoxForEntrance.min.x + 6);
+        titleEntranceStartRef.current = performance.now();
+        titleEntranceSettledRef.current = false;
 
         removeMeshFromScene(scene);
         scene.add(mesh);
@@ -852,7 +933,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       heightRef.current = gl.drawingBufferHeight;
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x000000);
+      scene.background = new THREE.Color(backgroundColorRef.current);
       sceneRef.current = scene;
 
       const camera = new THREE.PerspectiveCamera(
@@ -911,9 +992,24 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           gl.endFrameEXP();
           return;
         }
+        const nowForEntrance = performance.now();
         if (meshRef.current) {
           meshRef.current.rotation.x = rotationRef.current.x;
           meshRef.current.rotation.y = rotationRef.current.y;
+          const titleT = (nowForEntrance - titleEntranceStartRef.current) / ENTRANCE_DURATION_MS;
+          meshRef.current.position.x = titleEntranceOffsetXRef.current * (1 - easeOutCubic(titleT));
+          if (!titleEntranceSettledRef.current && titleT >= 1) {
+            // Guaranteed-correct final re-fit: by construction this only fires
+            // once position.x has actually settled back to 0, so it can't be
+            // thrown off by a re-fit landing mid-animation the way the earlier
+            // fitCamera neutralization alone was meant to guard against.
+            titleEntranceSettledRef.current = true;
+            onTitleEntranceSettledRef.current?.();
+          }
+        }
+        if (captionGroupRef.current) {
+          const captionT = (nowForEntrance - captionEntranceStartRef.current) / ENTRANCE_DURATION_MS;
+          captionGroupRef.current.position.x = captionEntranceOffsetXRef.current * (1 - easeOutCubic(captionT));
         }
 
         // Highlight selected non-primary object with a subtle emissive pulse

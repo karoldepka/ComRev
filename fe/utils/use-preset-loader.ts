@@ -73,6 +73,10 @@ export function usePresetLoader(id: string) {
             ...(preset.sequenceLineDurationMs !== undefined
               ? { sequenceLineDurationMs: preset.sequenceLineDurationMs }
               : {}),
+            // Always set explicitly (not just when the preset overrides it) so
+            // switching from a preset with a custom background back to one
+            // without doesn't leave the old color stuck in persisted params.
+            backgroundColor: preset.background ?? 0x000000,
           },
         },
         ...rest,

@@ -38,6 +38,7 @@
   "bevelSegments": "Bevel Segments",
   "curveSegments": "Curve Segments",
   "equalizeWidths": "Equalize Widths",
+  "orthographic": "Orthographic",
   "perspective3d": "3D Perspective",
   "method": "Method: {{method}}",
   "targetWidth": "Target Width",

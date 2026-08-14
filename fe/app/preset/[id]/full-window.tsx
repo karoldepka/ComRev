@@ -13,6 +13,17 @@ export function generateStaticParams() {
   return Object.keys(PRESET_REGISTRY).map((id) => ({ id }));
 }
 
+/** Fire-and-forget ping to a recorder script's local HTTP server (see scripts/record-obs.mjs "Ready signal"). */
+function pingRecorder(port: number, path: string) {
+  if (!port || typeof window === 'undefined') return;
+  const url = `http://localhost:${port}${path}`;
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(url);
+  } else {
+    fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+  }
+}
+
 export default function PresetFullWindowScreen() {
   const {
     id,
@@ -21,26 +32,24 @@ export default function PresetFullWindowScreen() {
     'binaural-volume': binauralVolumeStr,
     'pause-until-obs': pauseUntilObs,
     'ready-port': readyPortStr,
+    'stop-after-slides': stopAfterSlidesStr,
   } = useLocalSearchParams<{
     id: string;
     'binaural-hz'?: string;
     'binaural-carrier'?: string;
     'binaural-volume'?: string;
     'pause-until-obs'?: string;
-    /** Localhost port a recorder script is listening on for a "first frame rendered" ping. */
+    /** Localhost port a recorder script is listening on for "ready"/"stop-recording" pings. */
     'ready-port'?: string;
+    /** When set, ping the recorder to stop once this many sequence slides have displayed. */
+    'stop-after-slides'?: string;
   }>();
 
-  const handleFirstMeshReady = () => {
-    const port = parseInt(readyPortStr ?? '', 10);
-    if (!port || typeof window === 'undefined') return;
-    const url = `http://localhost:${port}/ready`;
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(url);
-    } else {
-      fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
-    }
-  };
+  const readyPort = parseInt(readyPortStr ?? '', 10) || 0;
+  const stopAfterSlideCount = parseInt(stopAfterSlidesStr ?? '', 10) || undefined;
+
+  const handleFirstMeshReady = () => pingRecorder(readyPort, '/ready');
+  const handleStopAfterSlideCount = () => pingRecorder(readyPort, '/stop-recording');
 
   // When ?pause-until-obs=1, hold the sequence at slide 0 until OBS emits the
   // startSequence custom event — so recording and animation start simultaneously.
@@ -84,6 +93,8 @@ export default function PresetFullWindowScreen() {
         skipSavedConfigLoad
         sequenceReady={sequenceReady}
         onFirstMeshReady={handleFirstMeshReady}
+        stopAfterSlideCount={stopAfterSlideCount}
+        onStopAfterSlideCount={handleStopAfterSlideCount}
       />
     </View>
   );

@@ -180,11 +180,11 @@ export function registerCustomFontUrl(label: string, url: string): string {
 
 const defaultOptions: Partial<TextGeometryOptions> = {
   size: 2,
-  height: 0.8,
+  height: 0.16, // 5x shallower than the original 0.8
   curveSegments: 48,
   bevelEnabled: true,
-  bevelThickness: 0.15,
-  bevelSize: 0.08,
+  bevelThickness: 0.03, // scaled down with height so the bevel doesn't exceed the extrude depth
+  bevelSize: 0.016,
   bevelOffset: 0,
   bevelSegments: 5,
   metalness: 0.95,

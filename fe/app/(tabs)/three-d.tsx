@@ -88,6 +88,7 @@ import {
   rgbNumberToHexColor,
 } from '@/utils/color';
 import { encodeSvgDataUrl } from '@/utils/data-url';
+import { estimateReadingTimeMs } from '@/utils/reading-time';
 import { stripBoldTags } from '@/utils/rich-text';
 import { getCanvasDoubleTapAction } from '@/utils/slideshow-interactions';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
@@ -162,6 +163,8 @@ type PrincipalTextSet = {
   author?: string;
   /** Short explanatory caption, rendered smaller than the main text. */
   examples?: string;
+  /** Fixed display duration for this slide, bypassing the usual word-count estimate (e.g. a title card). */
+  durationMsOverride?: number;
   images?: SlideImage[];
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
   configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
@@ -217,6 +220,8 @@ function normalizePrincipalTextSets(
         text: String(item.text ?? ""),
         author: typeof item.author === "string" ? item.author : undefined,
         examples: typeof item.examples === "string" ? item.examples : undefined,
+        durationMsOverride:
+          typeof item.durationMsOverride === "number" ? item.durationMsOverride : undefined,
         images,
         soundscape: (item.soundscape as any) ?? undefined,
         configOverride: (item.configOverride as any) ?? undefined,
@@ -251,23 +256,18 @@ function estimateSequenceDurationMs(
   minimumMs: number,
   examplesText?: string,
 ): number {
-  const clean = text.trim();
-  const words = clean.split(/\s+/).filter(Boolean).length;
-  const punctuationBonus = /[.!?;:]$/.test(clean) ? 450 : 0;
-  let duration =
-    minimumMs +
-    clean.length * 36 +
-    words * 95 +
-    punctuationBonus;
+  let duration = minimumMs + estimateReadingTimeMs(text);
+  // The title needs at least CAPTION_REVEAL_DELAY_MS on screen by itself before
+  // anything else happens (a caption fading in, or the slide advancing) — see
+  // CAPTION_REVEAL_DELAY_MS in components/three-d-text.tsx.
+  duration = Math.max(duration, CAPTION_REVEAL_DELAY_MS);
 
   const captionClean = examplesText?.trim();
   if (captionClean) {
-    const captionWords = captionClean.split(/\s+/).filter(Boolean).length;
-    const captionReadTimeMs = captionClean.length * 36 + captionWords * 95;
     // The 3D caption only reveals CAPTION_REVEAL_DELAY_MS after the title lands
     // (see components/three-d-text.tsx); keep the slide up long enough for it to
     // actually appear and be read, not just flash past on transition.
-    duration = Math.max(duration, CAPTION_REVEAL_DELAY_MS + captionReadTimeMs);
+    duration = Math.max(duration, CAPTION_REVEAL_DELAY_MS + estimateReadingTimeMs(captionClean));
   }
 
   return Math.max(
@@ -292,7 +292,9 @@ function getSequencePages(
       id: set.id,
       setName: set.name,
       text: set.text,
-      durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs, set.examples),
+      durationMs:
+        set.durationMsOverride ??
+        estimateSequenceDurationMs(set.text, minimumDurationMs, set.examples),
       transition: transitions[setIndex % transitions.length],
       author: set.author,
       examples: set.examples,
@@ -2017,7 +2019,7 @@ function renderText3dControls({
         min={0.05}
         max={3}
         step={0.05}
-        value={(params.height as number) ?? 0.8}
+        value={(params.height as number) ?? 0.16}
         onChange={(v) => onUpdate("height", v)}
         colors={colors}
       />
@@ -2064,7 +2066,7 @@ function renderText3dControls({
             min={0}
             max={0.5}
             step={0.01}
-            value={(params.bevelThickness as number) ?? 0.15}
+            value={(params.bevelThickness as number) ?? 0.03}
             onChange={(v) => onUpdate("bevelThickness", v)}
             colors={colors}
           />
@@ -2073,7 +2075,7 @@ function renderText3dControls({
             min={0}
             max={0.3}
             step={0.01}
-            value={(params.bevelSize as number) ?? 0.08}
+            value={(params.bevelSize as number) ?? 0.016}
             onChange={(v) => onUpdate("bevelSize", v)}
             colors={colors}
           />
@@ -2151,15 +2153,26 @@ function renderText3dControls({
         onChange={(v) => onUpdate("lineSpacing", v)}
         colors={colors}
       />
-      <SliderRow
-        label={t("perspective3d") || "3D Perspective"}
-        min={0}
-        max={1}
-        step={0.01}
-        value={(params.perspective as number) ?? 1.0}
-        onChange={(v) => onUpdate("perspective", v)}
-        colors={colors}
-      />
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>{t("orthographic") || "Orthographic"}</Text>
+        <Switch
+          value={((params.perspective as number) ?? 1.0) <= 0}
+          onValueChange={(v) => onUpdate("perspective", v ? 0 : 1.0)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={((params.perspective as number) ?? 1.0) <= 0 ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
+      {((params.perspective as number) ?? 1.0) > 0 && (
+        <SliderRow
+          label={t("perspective3d") || "3D Perspective"}
+          min={0.01}
+          max={1}
+          step={0.01}
+          value={(params.perspective as number) ?? 1.0}
+          onChange={(v) => onUpdate("perspective", v)}
+          colors={colors}
+        />
+      )}
       {includeTransform && (
         <>
           <SliderRow
@@ -5640,6 +5653,8 @@ export function ThreeDTextScreen({
   fullWindow = false,
   sequenceReady = true,
   onFirstMeshReady,
+  stopAfterSlideCount,
+  onStopAfterSlideCount,
 }: {
   sequenceMode?: boolean;
   skipSavedConfigLoad?: boolean;
@@ -5649,6 +5664,9 @@ export function ThreeDTextScreen({
   sequenceReady?: boolean;
   /** Fires once, the first time the 3D mesh finishes building — a "safe to record now" signal. */
   onFirstMeshReady?: () => void;
+  /** When set, fire onStopAfterSlideCount once this many sequence slides have fully displayed. */
+  stopAfterSlideCount?: number;
+  onStopAfterSlideCount?: () => void;
 }) {
   const { colorScheme, colors } = useAppTheme();
   const { t, i18n: i18nInstance } = useTranslation();
@@ -6108,11 +6126,23 @@ export function ThreeDTextScreen({
     threeDTextRef.current?.updatePipeParams('envMap', { plasmaCustomStops: pickPlasmaStops() });
   }, [currentSequencePage.id, sequenceMode]);
 
+  const stopSlideSignalFiredRef = useRef(false);
   useEffect(() => {
     if (!sequenceMode || sequencePages.length <= 1) return;
     if (isPaused) return;
     if (readySequenceTransition?.key !== currentSequencePageKey) return;
     const timer = setTimeout(() => {
+      // Fires once, right as the target slide's full duration elapses — a
+      // "safe to stop recording now" signal (see onFirstMeshReady above for
+      // the analogous "safe to start" one).
+      if (
+        stopAfterSlideCount != null &&
+        !stopSlideSignalFiredRef.current &&
+        sequenceLineIndex >= stopAfterSlideCount - 1
+      ) {
+        stopSlideSignalFiredRef.current = true;
+        onStopAfterSlideCount?.();
+      }
       setSequenceLineIndex((index) => (index + 1) % sequencePages.length);
     }, currentSequencePage.durationMs);
     return () => clearTimeout(timer);
@@ -6120,9 +6150,12 @@ export function ThreeDTextScreen({
     currentSequencePage.durationMs,
     currentSequencePageKey,
     isPaused,
+    onStopAfterSlideCount,
     readySequenceTransition?.key,
+    sequenceLineIndex,
     sequenceMode,
     sequencePages.length,
+    stopAfterSlideCount,
   ]);
 
   useEffect(() => {
@@ -6802,9 +6835,12 @@ export function ThreeDTextScreen({
               ((mainTextParams.size as number | undefined) ?? 2.5) * EXAMPLES_TO_TITLE_RATIO
             }
             perspective={mainTextParams.perspective as number | undefined}
+            backgroundColor={mainTextParams.backgroundColor as number | undefined}
             pipes={activePipes}
             paused={isPaused}
             onMeshReady={sequenceMode ? handleSequenceMeshReady : undefined}
+            onCaptionRevealed={sequenceMode ? fitVisibleText : undefined}
+            onTitleEntranceSettled={sequenceMode ? fitVisibleText : undefined}
             onPrimaryMeshClick={() => {
               const mainInst = effectInstances.find(
                 (i) => i.type === "mainText",
