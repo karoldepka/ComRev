@@ -14,7 +14,7 @@
  * Filters (comma-separated values or omit for all):
  *   --ids       <list>   smarter-7,habits-7        (default: all declared videos)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok    (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...            (default: en)
+ *   --langs     <list>   en,pl,de,fr,...            (default: en,pl)
  *
  * Batch control:
  *   --dry-run                    Print plan without recording
@@ -29,7 +29,7 @@
  * --scene, --source, ...
  *
  * Examples:
- *   # All videos × shorts+yt × English (default)
+ *   # All videos × shorts+yt × English + Polish (default)
  *   node scripts/record-videos.mjs
  *
  *   # Just the "smarter" video, TikTok format, dry run
@@ -103,7 +103,7 @@ const { batch, passthrough } = parseArgs(process.argv.slice(2));
 const ids     = splitList(batch.ids, ALL_IDS);
 const videos  = VIDEOS.filter((v) => ids.includes(v.id));
 const formats = splitList(batch.formats, ALL_FORMATS, ['shorts', 'yt']);
-const langs   = splitList(batch.langs, ALL_LANGS, ['en']);
+const langs   = splitList(batch.langs, ALL_LANGS, ['en', 'pl']);
 const dryRun  = batch['dry-run'] === true;
 const failFast = batch['fail-fast'] === true;
 
@@ -114,12 +114,14 @@ const recorderScript = resolve(__dirname, 'record-obs.mjs');
 // ── build job list ────────────────────────────────────────────────────────────
 
 const jobs = [];
-for (const video of videos) {
+videos.forEach((video, videoIndex) => {
   const filename = `${fileNameFromTitle(video.title)}.mp4`;
   for (const format of formats) {
     for (const lang of langs) {
       jobs.push({
         id: video.id,
+        videoIndex: videoIndex + 1,
+        videoTotal: videos.length,
         slides: video.principleCount + 1, // + the title card
         format,
         lang,
@@ -128,7 +130,7 @@ for (const video of videos) {
       });
     }
   }
-}
+});
 
 const total = jobs.length;
 
@@ -150,7 +152,7 @@ console.log('══════════════════════�
 if (dryRun) {
   console.log('Plan:\n');
   jobs.forEach((j, i) =>
-    console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} slides=${j.slides}  → ${j.filename}`),
+    console.log(`  ${String(i + 1).padStart(3)}. video ${j.videoIndex} of ${j.videoTotal}  ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} slides=${j.slides}  → ${j.filename}`),
   );
   console.log('');
   process.exit(0);
@@ -164,7 +166,7 @@ const results = [];
 const wallStart = Date.now();
 
 for (let i = 0; i < jobs.length; i++) {
-  const { id, slides, format, lang, output } = jobs[i];
+  const { id, videoIndex, videoTotal, slides, format, lang, output } = jobs[i];
   const jobNum = `[${i + 1}/${total}]`;
 
   // Estimate time remaining from average wall-time of completed jobs
@@ -177,7 +179,7 @@ for (let i = 0; i < jobs.length; i++) {
   }
 
   console.log(`\n${'─'.repeat(62)}`);
-  console.log(`${jobNum} video=${id}  format=${format}  lang=${lang}  slides=${slides}${etaStr}`);
+  console.log(`${jobNum} video ${videoIndex} of ${videoTotal}  id=${id}  format=${format}  lang=${lang}  slides=${slides}${etaStr}`);
   console.log(`${'─'.repeat(62)}`);
 
   const args = [

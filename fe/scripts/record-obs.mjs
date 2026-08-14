@@ -136,7 +136,7 @@ const args = parseArgs(process.argv.slice(2));
 // videos.data.tsx, named by title, instead of a single one. Reuses
 // record-videos.mjs's batch loop rather than duplicating it here.
 if (args.video === true || args.video === "all") {
-  const forwardedArgs = ["--formats", args.format ?? "shorts", "--langs", args.lang ?? "en"];
+  const forwardedArgs = ["--formats", args.format ?? "shorts", "--langs", args.lang ?? "en,pl"];
   for (const key of ["out-dir", "dry-run", "fail-fast", "continue-on-error"]) {
     if (args[key] !== undefined) {
       forwardedArgs.push(`--${key}`);
