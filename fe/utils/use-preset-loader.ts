@@ -13,6 +13,7 @@ export function usePresetLoader(id: string) {
   const setEffectInstances = useThreeDStore((s) => s.setEffectInstances);
   const setMantraMode = useThreeDStore((s) => s.setMantraMode);
   const applyPresetConfig = useSoundscapeStore((s) => s.applyPresetConfig);
+  const playPresetMusic = useSoundscapeStore((s) => s.playPresetMusic);
   const [ready, setReady] = useState(false);
 
   const { lang, categories } = useLocalSearchParams<{
@@ -55,6 +56,7 @@ export function usePresetLoader(id: string) {
       });
     }
     if (preset.soundscape) applyPresetConfig(preset.soundscape);
+    if (preset.music) playPresetMusic(preset.music);
     setMantraMode(true);
     setEffectInstances((instances) => {
       const mainText = instances.find((i) => i.type === 'mainText');
@@ -68,6 +70,9 @@ export function usePresetLoader(id: string) {
             text,
             textSets,
             activeTextSetId: textSets[0]?.id,
+            ...(preset.sequenceLineDurationMs !== undefined
+              ? { sequenceLineDurationMs: preset.sequenceLineDurationMs }
+              : {}),
           },
         },
         ...rest,
@@ -87,6 +92,7 @@ export function usePresetLoader(id: string) {
     setEffectInstances,
     setMantraMode,
     applyPresetConfig,
+    playPresetMusic,
     text,
     textSets,
     displayLang,

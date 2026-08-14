@@ -266,6 +266,8 @@ export interface SoundscapePreset {
   birds: SoundscapeBirdsState;
   /** Optional so presets saved before the stutter gate existed still load fine. */
   stutterGate?: { enabled: boolean; bpm: number };
+  /** Optional so presets saved before background music existed still load fine. */
+  music?: Record<string, SoundscapeLayerState>;
 }
 
 function requestPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -676,6 +678,7 @@ export interface LastSoundscapeState {
   extraBinaural: Record<string, SoundscapeLayerState>;
   noise: Record<string, SoundscapeLayerState>;
   ambience: Record<string, SoundscapeLayerState>;
+  music: Record<string, SoundscapeLayerState>;
   birds: SoundscapeBirdsState;
   stutterGate: { enabled: boolean; bpm: number };
   recentLayerKeys: string[];
@@ -718,6 +721,7 @@ function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | nul
     extraBinaural: record.extraBinaural ?? {},
     noise: record.noise ?? {},
     ambience: record.ambience ?? {},
+    music: record.music ?? {},
     birds: record.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 },
     stutterGate: record.stutterGate ?? { enabled: false, bpm: 120 },
     recentLayerKeys,

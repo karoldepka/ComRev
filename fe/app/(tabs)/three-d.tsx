@@ -5,6 +5,7 @@ import { ExportModal } from "@/components/ExportModal";
 import { ImagePickerModal } from "@/components/ImagePickerModal";
 import {
   ThreeDText,
+  CAPTION_REVEAL_DELAY_MS,
   type CameraFitOptions,
   type ThreeDTextHandle,
 } from "@/components/three-d-text";
@@ -148,6 +149,9 @@ function pickPlasmaStops(): number[] {
 }
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = 1600;
 const MAX_SEQUENCE_ITEM_DURATION_MS = 8500;
+// The "examples" caption is rendered in the same 3D world-unit space as the title,
+// so it's sized as a direct fraction of the title's own size — no px conversion needed.
+const EXAMPLES_TO_TITLE_RATIO = 0.6;
 
 
 type PrincipalTextSet = {
@@ -156,6 +160,8 @@ type PrincipalTextSet = {
   text: string;
   /** Quote attribution, rendered bottom-right instead of baked into the main text geometry. */
   author?: string;
+  /** Short explanatory caption, rendered smaller than the main text. */
+  examples?: string;
   images?: SlideImage[];
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
   configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
@@ -168,6 +174,7 @@ type SequencePage = {
   durationMs: number;
   transition: "flare" | "slide" | "zoom" | "wipe";
   author?: string;
+  examples?: string;
   soundscape?: import('@/store/soundscape-store').SoundscapeConfig;
   configOverride?: { effectInstances?: import('@/utils/config-store').EffectInstance[] };
   images?: SlideImage[];
@@ -209,6 +216,7 @@ function normalizePrincipalTextSets(
         name: stripBoldTags(String(item.name || `Set ${index + 1}`)),
         text: String(item.text ?? ""),
         author: typeof item.author === "string" ? item.author : undefined,
+        examples: typeof item.examples === "string" ? item.examples : undefined,
         images,
         soundscape: (item.soundscape as any) ?? undefined,
         configOverride: (item.configOverride as any) ?? undefined,
@@ -238,15 +246,30 @@ function getPrincipalText(params: Record<string, unknown>): string {
   return getActivePrincipalTextSet(params).text;
 }
 
-function estimateSequenceDurationMs(text: string, minimumMs: number): number {
+function estimateSequenceDurationMs(
+  text: string,
+  minimumMs: number,
+  examplesText?: string,
+): number {
   const clean = text.trim();
   const words = clean.split(/\s+/).filter(Boolean).length;
   const punctuationBonus = /[.!?;:]$/.test(clean) ? 450 : 0;
-  const duration =
+  let duration =
     minimumMs +
     clean.length * 36 +
     words * 95 +
     punctuationBonus;
+
+  const captionClean = examplesText?.trim();
+  if (captionClean) {
+    const captionWords = captionClean.split(/\s+/).filter(Boolean).length;
+    const captionReadTimeMs = captionClean.length * 36 + captionWords * 95;
+    // The 3D caption only reveals CAPTION_REVEAL_DELAY_MS after the title lands
+    // (see components/three-d-text.tsx); keep the slide up long enough for it to
+    // actually appear and be read, not just flash past on transition.
+    duration = Math.max(duration, CAPTION_REVEAL_DELAY_MS + captionReadTimeMs);
+  }
+
   return Math.max(
     minimumMs,
     Math.min(MAX_SEQUENCE_ITEM_DURATION_MS, Math.round(duration)),
@@ -269,9 +292,10 @@ function getSequencePages(
       id: set.id,
       setName: set.name,
       text: set.text,
-      durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs),
+      durationMs: estimateSequenceDurationMs(set.text, minimumDurationMs, set.examples),
       transition: transitions[setIndex % transitions.length],
       author: set.author,
+      examples: set.examples,
       images: set.images,
       soundscape: set.soundscape,
       configOverride: set.configOverride,
@@ -5615,6 +5639,7 @@ export function ThreeDTextScreen({
   skipSavedConfigLoad = false,
   fullWindow = false,
   sequenceReady = true,
+  onFirstMeshReady,
 }: {
   sequenceMode?: boolean;
   skipSavedConfigLoad?: boolean;
@@ -5622,6 +5647,8 @@ export function ThreeDTextScreen({
   fullWindow?: boolean;
   /** When false, hold the sequence at slide 0 until set to true (OBS sync). */
   sequenceReady?: boolean;
+  /** Fires once, the first time the 3D mesh finishes building — a "safe to record now" signal. */
+  onFirstMeshReady?: () => void;
 }) {
   const { colorScheme, colors } = useAppTheme();
   const { t, i18n: i18nInstance } = useTranslation();
@@ -6125,9 +6152,14 @@ export function ThreeDTextScreen({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [moveSequenceSlide, sequenceMode, slideJumpMode, toggleSequencePause]);
 
+  const firstMeshReadyFiredRef = useRef(false);
   const handleSequenceMeshReady = React.useCallback(() => {
     fitVisibleText();
     scheduleSequenceFit(180);
+    if (!firstMeshReadyFiredRef.current) {
+      firstMeshReadyFiredRef.current = true;
+      onFirstMeshReady?.();
+    }
     if (!sequenceMode) return;
     if (readySequencePageKeyRef.current === currentSequencePageKey) return;
 
@@ -6150,6 +6182,7 @@ export function ThreeDTextScreen({
     currentSequencePage,
     currentSequencePageKey,
     fitVisibleText,
+    onFirstMeshReady,
     sequenceLineIndex,
     sequenceMode,
     sequenceReady,
@@ -6760,6 +6793,14 @@ export function ThreeDTextScreen({
             }
             targetWidth={mainTextParams.targetWidth as number | undefined}
             lineSpacing={mainTextParams.lineSpacing as number | undefined}
+            captionText={
+              sequenceMode
+                ? visibleSequencePage.examples
+                : getActivePrincipalTextSet(mainTextParams).examples
+            }
+            captionSize={
+              ((mainTextParams.size as number | undefined) ?? 2.5) * EXAMPLES_TO_TITLE_RATIO
+            }
             perspective={mainTextParams.perspective as number | undefined}
             pipes={activePipes}
             paused={isPaused}

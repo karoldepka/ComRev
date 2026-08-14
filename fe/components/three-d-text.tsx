@@ -6,6 +6,44 @@ import React, { useCallback, useEffect, useImperativeHandle, useRef } from "reac
 import { LayoutChangeEvent, View } from "react-native";
 import * as THREE from "three";
 
+/** Caption text starts hidden and fades in this long after the title mesh lands, so it reads as a follow-up beat rather than competing with the title. */
+export const CAPTION_REVEAL_DELAY_MS = 3000;
+/** Caption world-unit size relative to the title's `size`, used when `captionSize` isn't supplied. */
+const DEFAULT_CAPTION_SIZE_RATIO = 0.6;
+
+/** Greedy word-wrap using a measured average glyph advance, so long captions break onto multiple lines instead of shrinking below their intended size. */
+function wrapTextToWidth(text: string, avgCharWidth: number, maxWidth: number): string {
+  if (avgCharWidth <= 0 || !Number.isFinite(avgCharWidth)) return text;
+  const maxChars = Math.max(4, Math.floor(maxWidth / avgCharWidth));
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join("\n");
+}
+
+function disposeMeshTree(obj: THREE.Object3D) {
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry?.dispose();
+      if (Array.isArray(child.material)) {
+        child.material.forEach((m: any) => m?.dispose());
+      } else {
+        (child.material as any)?.dispose();
+      }
+    }
+  });
+}
+
 export type CameraFitInsets = {
   top?: number;
   right?: number;
@@ -55,6 +93,10 @@ interface ThreeDTextProps {
   equalizationMethod?: "spacing" | "fontSize";
   targetWidth?: number;
   lineSpacing?: number;
+  /** Short caption text (e.g. slide "examples"), rendered in the same 3D style below the main text. */
+  captionText?: string;
+  /** World-unit size for the caption text; typically a fraction of `size`. */
+  captionSize?: number;
   /** Material override for the front letter-face cap. */
   faceZone?: ZoneMaterialProps;
   /** Material override for the bevel chamfer. */
@@ -91,6 +133,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       equalizationMethod = "fontSize",
       targetWidth = 20,
       lineSpacing,
+      captionText,
+      captionSize,
       faceZone,
       bevelZone,
       extrusionZone,
@@ -112,6 +156,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const envMapRef = useRef<THREE.Texture | null>(null);
     const currentTextRef = useRef<string>(text);
     const updateIdRef = useRef(0);
+    const captionRevealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pipelineManagerRef = useRef<PipelineManager | null>(null);
     const pipesRef = useRef<EffectPipe[]>(pipes);
     const glRef = useRef<any>(null);
@@ -404,6 +449,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       equalizationMethod,
       targetWidth,
       lineSpacing,
+      captionText,
+      captionSize,
     ]);
 
     useEffect(() => {
@@ -425,6 +472,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       return () => {
         if (animationIdRef.current)
           cancelAnimationFrame(animationIdRef.current);
+        if (captionRevealTimeoutRef.current)
+          clearTimeout(captionRevealTimeoutRef.current);
         pipelineManagerRef.current?.dispose();
       };
     }, []);
@@ -505,6 +554,113 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
           mesh.castShadow = true;
           mesh.receiveShadow = true;
         }
+
+        if (captionRevealTimeoutRef.current) {
+          clearTimeout(captionRevealTimeoutRef.current);
+          captionRevealTimeoutRef.current = null;
+        }
+        if (captionText && captionText.trim()) {
+          const resolvedCaptionSize = captionSize ?? (size ?? 2) * DEFAULT_CAPTION_SIZE_RATIO;
+          const buildCaptionGroup = async (lineText: string) => {
+            const result = await createTextGeometry({
+              text: lineText,
+              fontFamily,
+              size: resolvedCaptionSize,
+              height,
+              curveSegments,
+              bevelEnabled,
+              bevelThickness,
+              bevelSize,
+              bevelOffset,
+              bevelSegments,
+              color: color !== undefined ? new THREE.Color(color) : undefined,
+              metalness,
+              roughness,
+              envMap,
+              envMapIntensity,
+              lineSpacing,
+            });
+            const zoneMaterials = [
+              result.faceMaterial,
+              result.material,
+              result.bevelMaterial ?? result.material,
+            ];
+            const group = result.geometry as THREE.Group;
+            group.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.material = zoneMaterials as any;
+                child.castShadow = true;
+                child.receiveShadow = true;
+                // Caption is often much wider than the title (full sentence vs. a
+                // few words); keep it out of fitCamera's bounding box so it can't
+                // force the title to zoom out and shrink. Same convention as the
+                // renderOrder < 0 background/sky exclusion above.
+                child.renderOrder = -1;
+              }
+            });
+            return group;
+          };
+
+          let capGroup = await buildCaptionGroup(captionText.trim());
+          if (thisUpdateId !== updateIdRef.current) {
+            disposeMeshTree(capGroup);
+          } else {
+            // The camera frames the title only (caption is excluded from fitCamera's
+            // bounds above), so a long caption sentence can run wider than the title
+            // and spill off-screen. Word-wrap it to fit — at full size — rather than
+            // shrinking the font, which would defeat the fixed size-vs-title ratio.
+            const mainBox = new THREE.Box3().setFromObject(mesh);
+            const mainWidth = mainBox.max.x - mainBox.min.x;
+            // fitCamera frames the title with roughly a 1.18–1.32x margin (see
+            // slideshowFitOptions in three-d.tsx); 1.1x keeps the caption safely
+            // inside that frame without needing to know which margin was used.
+            const maxWidth = Math.max(mainWidth * 1.1, resolvedCaptionSize * 8);
+            const capBoxInitial = new THREE.Box3().setFromObject(capGroup);
+            const capWidthRaw = capBoxInitial.max.x - capBoxInitial.min.x;
+
+            if (capWidthRaw > maxWidth) {
+              const avgCharWidth = capWidthRaw / Math.max(1, captionText.trim().length);
+              const wrapped = wrapTextToWidth(captionText.trim(), avgCharWidth, maxWidth);
+              if (wrapped.includes("\n")) {
+                const rewrapped = await buildCaptionGroup(wrapped);
+                if (thisUpdateId !== updateIdRef.current) {
+                  disposeMeshTree(rewrapped);
+                } else {
+                  disposeMeshTree(capGroup);
+                  capGroup = rewrapped;
+                }
+              }
+            }
+
+            if (thisUpdateId === updateIdRef.current) {
+              // Last-resort safety net for a single word too long to wrap — clamp to
+              // maxWidth (generous vs. the title) rather than the tight title width.
+              const capBoxRaw = new THREE.Box3().setFromObject(capGroup);
+              const finalWidth = capBoxRaw.max.x - capBoxRaw.min.x;
+              if (finalWidth > maxWidth && finalWidth > 0) {
+                capGroup.scale.multiplyScalar(maxWidth / finalWidth);
+              }
+
+              // Sit the caption directly under the title's lowest point, in the
+              // title's own local space so it inherits the title's rotation.
+              const capBox = new THREE.Box3().setFromObject(capGroup);
+              const capHeight = capBox.max.y - capBox.min.y;
+              const gap = capHeight * 0.9;
+              capGroup.position.y += mainBox.min.y - gap - capBox.max.y;
+              // Revealed a beat after the title lands, so it reads as a follow-up, not competing for attention.
+              capGroup.visible = false;
+              mesh.add(capGroup);
+              const revealGroup = capGroup;
+              captionRevealTimeoutRef.current = setTimeout(() => {
+                captionRevealTimeoutRef.current = null;
+                if (thisUpdateId === updateIdRef.current) revealGroup.visible = true;
+              }, CAPTION_REVEAL_DELAY_MS);
+            } else {
+              disposeMeshTree(capGroup);
+            }
+          }
+        }
+
         removeMeshFromScene(scene);
         scene.add(mesh);
         meshRef.current = mesh;

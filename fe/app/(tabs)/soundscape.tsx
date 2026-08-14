@@ -6,6 +6,7 @@ import { useConfirmDialog } from '@/components/confirm-dialog';
 import type { ThemeColors } from '@/constants/theme';
 import {
   AMBIENCE_KINDS,
+  MUSIC_KINDS,
   NOISE_COLORS,
   WAVE_PRESETS,
   useSoundscapeStore,
@@ -391,6 +392,10 @@ export default function SoundscapeScreen() {
   const toggleAmbience = useSoundscapeStore((s) => s.toggleAmbience);
   const setAmbienceVolume = useSoundscapeStore((s) => s.setAmbienceVolume);
 
+  const music = useSoundscapeStore((s) => s.music);
+  const toggleMusic = useSoundscapeStore((s) => s.toggleMusic);
+  const setMusicVolume = useSoundscapeStore((s) => s.setMusicVolume);
+
   const triggerBassSwipe = useSoundscapeStore((s) => s.triggerBassSwipe);
   const stutterGate = useSoundscapeStore((s) => s.stutterGate);
   const toggleStutterGate = useSoundscapeStore((s) => s.toggleStutterGate);
@@ -524,6 +529,17 @@ export default function SoundscapeScreen() {
       volume: layer.volume,
       onToggle: () => toggleAmbience(a.key),
       onVolumeChange: (v) => setAmbienceVolume(a.key, v),
+    });
+  }
+  for (const m of MUSIC_KINDS) {
+    const layer = music[m.key] ?? { playing: false, volume: 0.35 };
+    registerLayer({
+      key: `music:${m.key}`,
+      label: m.label,
+      playing: layer.playing,
+      volume: layer.volume,
+      onToggle: () => toggleMusic(m.key),
+      onVolumeChange: (v) => setMusicVolume(m.key, v),
     });
   }
 
@@ -787,6 +803,28 @@ export default function SoundscapeScreen() {
               volume={layer.volume}
               onToggle={() => toggleNoise(n.key)}
               onVolumeChange={(v) => setNoiseVolume(n.key, v)}
+              c={c}
+              dark={dark}
+              cardWidth={cardWidth}
+            />
+          );
+        })}
+      </View>
+
+      {/* ---------------- Music ---------------- */}
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>MUSIC</Text>
+      <View style={styles.layerGrid}>
+        {MUSIC_KINDS.map((m) => {
+          const layer = music[m.key];
+          if (!layer) return null;
+          return (
+            <LayerRow
+              key={m.key}
+              label={m.label}
+              playing={layer.playing}
+              volume={layer.volume}
+              onToggle={() => toggleMusic(m.key)}
+              onVolumeChange={(v) => setMusicVolume(m.key, v)}
               c={c}
               dark={dark}
               cardWidth={cardWidth}

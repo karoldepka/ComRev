@@ -11,6 +11,7 @@
 import { getOrCreateAudioContext, getMasterBus, resumeAudioContext } from './audio-context';
 import { createNoiseBuffer, type NoiseColor } from './noise-buffers';
 import { AMBIENCE_SOURCES, resolveAssetUri, type AmbienceKind } from './ambience-tracks';
+import { MUSIC_SOURCES, type MusicKind } from './music-tracks';
 
 interface Track {
   stop: () => void;
@@ -23,6 +24,7 @@ export function stopTrack(id: string) {
   tracks.get(id)?.stop();
   tracks.delete(id);
   ambienceLoadTokens.delete(id);
+  musicLoadTokens.delete(id);
 }
 
 export function setTrackVolume(id: string, volume: number) {
@@ -102,6 +104,67 @@ export async function startAmbienceTrack(id: string, kind: AmbienceKind, volume:
 
   // A newer start/stop for this id happened while we were loading — abandon this one.
   if (ambienceLoadTokens.get(id) !== token) return false;
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+
+  const gain = ctx.createGain();
+  gain.gain.value = volume;
+
+  source.connect(gain).connect(getMasterBus() ?? ctx.destination);
+  source.start();
+  resumeAudioContext();
+
+  tracks.set(id, {
+    stop: () => {
+      try { source.stop(); } catch { /* already stopped */ }
+      source.disconnect();
+      gain.disconnect();
+    },
+    setVolume: (v) => gain.gain.setTargetAtTime(v, ctx.currentTime, 0.05),
+  });
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Background music: full tracks from assets/music, looped like ambience.
+// Decoded buffers are cached per kind so re-toggling never re-fetches.
+// ---------------------------------------------------------------------------
+
+const musicBufferCache = new Map<MusicKind, AudioBuffer>();
+const musicLoadTokens = new Map<string, symbol>();
+
+async function loadMusicBuffer(ctx: AudioContext, kind: MusicKind): Promise<AudioBuffer> {
+  const cached = musicBufferCache.get(kind);
+  if (cached) return cached;
+  const source = MUSIC_SOURCES.find((s) => s.kind === kind);
+  if (!source) throw new Error(`No music source registered for "${kind}"`);
+  const response = await fetch(resolveAssetUri(source.file));
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = await ctx.decodeAudioData(arrayBuffer);
+  musicBufferCache.set(kind, buffer);
+  return buffer;
+}
+
+export async function startMusicTrack(id: string, kind: MusicKind, volume: number): Promise<boolean> {
+  const ctx = getOrCreateAudioContext();
+  if (!ctx) return false;
+  stopTrack(id);
+
+  const token = Symbol();
+  musicLoadTokens.set(id, token);
+
+  let buffer: AudioBuffer;
+  try {
+    buffer = await loadMusicBuffer(ctx, kind);
+  } catch (err) {
+    console.warn('sound-engine: failed to load music track', kind, err);
+    return false;
+  }
+
+  // A newer start/stop for this id happened while we were loading — abandon this one.
+  if (musicLoadTokens.get(id) !== token) return false;
 
   const source = ctx.createBufferSource();
   source.buffer = buffer;

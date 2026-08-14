@@ -16,6 +16,8 @@ import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 import { Font } from "three/examples/jsm/loaders/FontLoader.js";
 import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
 import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
+import droidSansRegularFont from '@/assets/fonts/Droid_Sans_Regular.typeface.json';
+import droidSansBoldFont from '@/assets/fonts/Droid_Sans_Bold.typeface.json';
 import { parseBoldSegments, stripBoldTags } from "./rich-text";
 
 
@@ -71,6 +73,8 @@ export interface FontDef {
   isCustom?: boolean;
 }
 
+// Bundled locally rather than fetched from a CDN, so the first render never
+// blocks on a network round-trip — offline-first per the project constitution.
 export const DEFAULT_3D_FONT_FAMILY = 'droid_sans';
 export const LATIN_EXT_SANS_3D_FONT_FAMILY = 'inter';
 
@@ -78,10 +82,7 @@ export const AVAILABLE_FONTS: FontDef[] = [
   {
     id: 'droid_sans',
     label: 'Droid Sans',
-    urls: [
-      'https://threejs.org/examples/fonts/droid/droid_sans_regular.typeface.json',
-      'https://unpkg.com/three@latest/examples/fonts/droid/droid_sans_regular.typeface.json',
-    ],
+    urls: [],
   },
   {
     id: 'inter',
@@ -144,10 +145,7 @@ export const AVAILABLE_FONTS: FontDef[] = [
   {
     id: 'droid_sans_bold',
     label: 'Droid Sans Bold',
-    urls: [
-      'https://threejs.org/examples/fonts/droid/droid_sans_bold.typeface.json',
-      'https://unpkg.com/three@latest/examples/fonts/droid/droid_sans_bold.typeface.json',
-    ],
+    urls: [],
   },
   {
     id: 'droid_serif',
@@ -355,22 +353,22 @@ function getBoldFontId(fontId: string): string {
   return BOLD_FONT_MAP[fontId] ?? fontId;
 }
 
+// Bundled locally (imported at build time) rather than fetched from a CDN.
+const BUNDLED_FONT_DATA: Record<string, unknown> = {
+  roboto: robotoRegularFont,
+  inter: interRegularFont,
+  droid_sans: droidSansRegularFont,
+  droid_sans_bold: droidSansBoldFont,
+};
+
 async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
   if (fontCache.has(fontId)) return fontCache.get(fontId)!;
 
   const def = AVAILABLE_FONTS.find(f => f.id === fontId) ?? AVAILABLE_FONTS[0];
 
-  if (def.id === 'roboto') {
-    const font = new Font(robotoRegularFont as any);
-    fontCache.set(def.id, font);
-    if (fontId !== def.id) {
-      fontCache.set(fontId, font);
-    }
-    return font;
-  }
-
-  if (def.id === 'inter') {
-    const font = new Font(interRegularFont as any);
+  const bundledData = BUNDLED_FONT_DATA[def.id];
+  if (bundledData) {
+    const font = new Font(bundledData as any);
     fontCache.set(def.id, font);
     if (fontId !== def.id) {
       fontCache.set(fontId, font);

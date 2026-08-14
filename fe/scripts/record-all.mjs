@@ -43,7 +43,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── constants pulled from the app ─────────────────────────────────────────────
 
-const ALL_PRESETS = ['mcon', 'motivation'];
+const ALL_PRESETS = ['mcon', 'motivation', 'quotes', 'principles'];
 
 const ALL_FORMATS = ['shorts', 'yt', 'tiktok', 'yt-4k'];
 

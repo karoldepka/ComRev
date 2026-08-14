@@ -17,6 +17,7 @@
     "record": "node ./scripts/record-playwright.mjs",
     "record-obs": "node ./scripts/record-obs.mjs",
     "record-all": "node ./scripts/record-all.mjs",
+    "record-webpage": "node ./scripts/record-webpage-obs.mts",
     "deploy": "node scripts/generate-build-info.cjs && vercel --prod",
     "postinstall": "node scripts/patch-three-exports.cjs"
   },

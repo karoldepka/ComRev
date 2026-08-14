@@ -20,13 +20,27 @@ export default function PresetFullWindowScreen() {
     'binaural-carrier': binauralCarrierStr,
     'binaural-volume': binauralVolumeStr,
     'pause-until-obs': pauseUntilObs,
+    'ready-port': readyPortStr,
   } = useLocalSearchParams<{
     id: string;
     'binaural-hz'?: string;
     'binaural-carrier'?: string;
     'binaural-volume'?: string;
     'pause-until-obs'?: string;
+    /** Localhost port a recorder script is listening on for a "first frame rendered" ping. */
+    'ready-port'?: string;
   }>();
+
+  const handleFirstMeshReady = () => {
+    const port = parseInt(readyPortStr ?? '', 10);
+    if (!port || typeof window === 'undefined') return;
+    const url = `http://localhost:${port}/ready`;
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url);
+    } else {
+      fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+    }
+  };
 
   // When ?pause-until-obs=1, hold the sequence at slide 0 until OBS emits the
   // startSequence custom event — so recording and animation start simultaneously.
@@ -64,7 +78,13 @@ export default function PresetFullWindowScreen() {
   }
   return (
     <View style={styles.container}>
-      <ThreeDTextScreen sequenceMode fullWindow skipSavedConfigLoad sequenceReady={sequenceReady} />
+      <ThreeDTextScreen
+        sequenceMode
+        fullWindow
+        skipSavedConfigLoad
+        sequenceReady={sequenceReady}
+        onFirstMeshReady={handleFirstMeshReady}
+      />
     </View>
   );
 }

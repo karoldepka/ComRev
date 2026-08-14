@@ -10,6 +10,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Make positive associations between positive things': {
     examples: 'Work and providing value in capitalism',
   },
+  'Be in here and now': {},
   "Don't dramatize": {},
   'Smile :-)': {},
   'Agape - unconditional love': {},

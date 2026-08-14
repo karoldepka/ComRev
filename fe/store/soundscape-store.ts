@@ -11,6 +11,7 @@ import {
   startBinauralLayer,
   startBirdsTrack,
   isTrackPlaying,
+  startMusicTrack,
   startNoiseTrack,
   stopTrack,
   updateBinauralLayer,
@@ -20,6 +21,7 @@ import {
 import { setGlobalAudioPaused, setMasterGain } from '@/utils/audio-context';
 import type { NoiseColor } from '@/utils/noise-buffers';
 import { AMBIENCE_SOURCES, type AmbienceKind, type AmbienceCategory } from '@/utils/ambience-tracks';
+import { MUSIC_SOURCES, type MusicKind } from '@/utils/music-tracks';
 import {
   startStutterGate,
   stopStutterGate,
@@ -74,6 +76,11 @@ export const AMBIENCE_KINDS: { key: AmbienceKind; label: string; category: Ambie
     category: s.category,
   }));
 
+export const MUSIC_KINDS: { key: MusicKind; label: string }[] = MUSIC_SOURCES.map((s) => ({
+  key: s.kind,
+  label: s.label,
+}));
+
 export interface LayerState {
   playing: boolean;
   volume: number;
@@ -101,6 +108,7 @@ function playingLayerKeys(state: {
   extraBinaural: Record<string, LayerState>;
   noise: Record<NoiseColor, LayerState>;
   ambience: Record<AmbienceKind, LayerState>;
+  music: Record<MusicKind, LayerState>;
   birds: BirdsState;
 }): string[] {
   const keys: string[] = [];
@@ -114,6 +122,9 @@ function playingLayerKeys(state: {
   if (state.birds.playing) keys.push('birds');
   for (const source of AMBIENCE_SOURCES) {
     if (state.ambience[source.kind]?.playing) keys.push(`ambience:${source.kind}`);
+  }
+  for (const source of MUSIC_SOURCES) {
+    if (state.music[source.kind]?.playing) keys.push(`music:${source.kind}`);
   }
   return keys;
 }
@@ -161,6 +172,13 @@ interface SoundscapeState {
   ambience: Record<AmbienceKind, LayerState>;
   toggleAmbience: (kind: AmbienceKind) => void;
   setAmbienceVolume: (kind: AmbienceKind, volume: number) => void;
+
+  // --- Background music tracks, sourced from assets/music ---
+  music: Record<MusicKind, LayerState>;
+  toggleMusic: (kind: MusicKind) => void;
+  setMusicVolume: (kind: MusicKind, volume: number) => void;
+  /** Starts a music track only if it isn't already playing — used by presets on load. */
+  playPresetMusic: (kind: MusicKind) => void;
 
   birds: BirdsState;
   toggleBirds: () => void;
@@ -243,6 +261,9 @@ function stopCurrentPlayback(state: SoundscapeState): void {
   for (const kind of Object.keys(state.ambience) as AmbienceKind[]) {
     if (state.ambience[kind].playing) stopTrack(`ambience:${kind}`);
   }
+  for (const kind of Object.keys(state.music) as MusicKind[]) {
+    if (state.music[kind].playing) stopTrack(`music:${kind}`);
+  }
   if (state.birds.playing) stopTrack('birds');
   if (state.stutterGate.enabled) stopStutterGate();
 }
@@ -252,6 +273,7 @@ function hasAudibleLayers(state: {
   extraBinaural: Record<string, LayerState>;
   noise: Record<NoiseColor, LayerState>;
   ambience: Record<AmbienceKind, LayerState>;
+  music: Record<MusicKind, LayerState>;
   birds: BirdsState;
 }): boolean {
   return playingLayerKeys(state).length > 0;
@@ -273,6 +295,11 @@ function startMissingPlayback(state: SoundscapeState): void {
     const layer = state.ambience[source.kind];
     const id = `ambience:${source.kind}`;
     if (layer?.playing && !isTrackPlaying(id)) void startAmbienceTrack(id, source.kind, layer.volume);
+  }
+  for (const source of MUSIC_SOURCES) {
+    const layer = state.music[source.kind];
+    const id = `music:${source.kind}`;
+    if (layer?.playing && !isTrackPlaying(id)) void startMusicTrack(id, source.kind, layer.volume);
   }
   if (state.birds.playing && !isTrackPlaying('birds')) {
     startBirdsTrack('birds', state.birds.volume, state.birds.pitch, state.birds.speed);
@@ -460,6 +487,40 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     if (layer.playing) setTrackVolume(`ambience:${kind}`, volume);
   },
 
+  music: Object.fromEntries(MUSIC_SOURCES.map((s) => [s.kind, defaultLayer()])) as Record<
+    MusicKind,
+    LayerState
+  >,
+
+  toggleMusic: (kind) => {
+    const layer = get().music[kind];
+    const id = `music:${kind}`;
+    const wasPlaying = layer.playing;
+    if (wasPlaying) {
+      stopTrack(id);
+    } else if (!get().masterPaused) {
+      // Fire-and-forget, mirroring toggleAmbience: the recording loads/decodes
+      // async while the UI toggles optimistically.
+      void startMusicTrack(id, kind, layer.volume);
+    }
+    const recentLayerKeys = wasPlaying
+      ? get().recentLayerKeys
+      : promoteRecentLayerKey(get().recentLayerKeys, `music:${kind}`);
+    set({ music: { ...get().music, [kind]: { ...layer, playing: !wasPlaying } }, recentLayerKeys });
+  },
+
+  setMusicVolume: (kind, volume) => {
+    const layer = get().music[kind];
+    set({ music: { ...get().music, [kind]: { ...layer, volume } } });
+    if (layer.playing) setTrackVolume(`music:${kind}`, volume);
+  },
+
+  playPresetMusic: (kind) => {
+    const layer = get().music[kind];
+    if (!layer || layer.playing) return;
+    get().toggleMusic(kind);
+  },
+
   birds: { playing: false, volume: 0.35, pitch: 1, speed: 1 },
 
   toggleBirds: () => {
@@ -554,6 +615,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       extraBinaural: state.extraBinaural,
       noise: state.noise,
       ambience: state.ambience,
+      music: state.music,
       birds: state.birds,
       stutterGate: state.stutterGate,
     };
@@ -606,6 +668,15 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       ambience[s.kind] = layer;
     }
 
+    const music = {} as Record<MusicKind, LayerState>;
+    for (const s of MUSIC_SOURCES) {
+      const layer = { ...(preset.music?.[s.kind] ?? defaultLayer()) };
+      if (layer.playing && shouldStartAudio) {
+        void startMusicTrack(`music:${s.kind}`, s.kind, layer.volume);
+      }
+      music[s.kind] = layer;
+    }
+
     const birds = { ...(preset.birds ?? { playing: false, volume: 0.35, pitch: 1, speed: 1 }) };
     if (birds.playing && shouldStartAudio) {
       birds.playing = startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
@@ -617,7 +688,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     }
     const recentLayerKeys = mergeRecentLayerKeys(
       state.recentLayerKeys,
-      playingLayerKeys({ playing, extraBinaural, noise, ambience, birds }),
+      playingLayerKeys({ playing, extraBinaural, noise, ambience, music, birds }),
     );
 
     set({
@@ -628,6 +699,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       extraBinaural,
       noise,
       ambience,
+      music,
       birds,
       stutterGate,
       recentLayerKeys,
@@ -712,6 +784,17 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
         }
       }
 
+      const music = normalizeLayerRecord(
+        MUSIC_SOURCES.map((s) => s.kind),
+        last.music,
+      ) as SoundscapeState['music'];
+      for (const source of MUSIC_SOURCES) {
+        const layer = music[source.kind];
+        if (layer.playing && shouldStartAudio) {
+          void startMusicTrack(`music:${source.kind}`, source.kind, layer.volume);
+        }
+      }
+
       const birds = normalizeBirds(last.birds);
       if (birds.playing && shouldStartAudio) {
         birds.playing = startBirdsTrack('birds', birds.volume, birds.pitch, birds.speed);
@@ -723,7 +806,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
       }
       const recentLayerKeys = mergeRecentLayerKeys(
         last.recentLayerKeys,
-        playingLayerKeys({ playing, extraBinaural, noise, ambience, birds }),
+        playingLayerKeys({ playing, extraBinaural, noise, ambience, music, birds }),
       );
 
       set({
@@ -736,6 +819,7 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
         extraBinaural,
         noise,
         ambience,
+        music,
         birds,
         stutterGate,
         recentLayerKeys,
@@ -769,6 +853,7 @@ useSoundscapeStore.subscribe(() => {
       extraBinaural: state.extraBinaural,
       noise: state.noise,
       ambience: state.ambience,
+      music: state.music,
       birds: state.birds,
       stutterGate: state.stutterGate,
       recentLayerKeys: state.recentLayerKeys,

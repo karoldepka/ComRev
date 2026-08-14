@@ -24,7 +24,8 @@
  *   --fps <number>              Frames per second (default: 60)
  *   --tab <path>                App route to open (default: preset/mcon/full-window)
  *   --url <base>                App base URL (default: http://localhost:8081)
- *   --wait-ms <ms>              Wait after browser source loads before recording (default: 3000)
+ *   --wait-ms <ms>              Max time to wait for the page to signal it's ready before
+ *                               recording anyway (default: 3000). See "Ready signal" below.
  *   --output <path>             Destination path for finished file
  *                               (default: recordings/<ts>_animation_<format>.mp4)
  *   --ws-url <url>              OBS WebSocket URL (default: ws://localhost:4455)
@@ -39,6 +40,14 @@
  *   --obs-sync                  Pause the animation at slide 0 until OBS is ready to record,
  *                               then signal the app to start and begin recording simultaneously.
  *                               Requires the obs-browser plugin (bundled with OBS Studio).
+ *
+ * Ready signal:
+ *   This script starts a tiny local HTTP server and appends a `ready-port` query
+ *   param to the app URL. app/preset/[id]/full-window.tsx pings it — via
+ *   navigator.sendBeacon — the moment the first 3D frame has actually rendered,
+ *   so recording starts exactly on cue instead of guessing a wait time. The page
+ *   pings once per load, so this fires again after the frame-0 refresh below.
+ *   If no ping arrives, recording falls back to starting after --wait-ms regardless.
  */
 
 import {
@@ -48,6 +57,7 @@ import {
   statSync,
   unlinkSync,
 } from "fs";
+import { createServer } from "http";
 import { OBSWebSocket } from "obs-websocket-js";
 import { dirname } from "path";
 
@@ -154,6 +164,39 @@ const fullUrl = `${baseUrl}/${tab}${queryParams.size ? `?${queryParams}` : ""}`;
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Tiny local HTTP server the recorded page can ping (see "Ready signal" above)
+ * once its first frame renders. The page pings once per navigation, so
+ * waitForReady() can be called again after a refresh to catch the next ping.
+ */
+function startReadyServer() {
+  return new Promise((resolveSetup) => {
+    let pendingResolve = null;
+    const server = createServer((req, res) => {
+      res.writeHead(204);
+      res.end();
+      if (req.url?.startsWith("/ready")) pendingResolve?.();
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      resolveSetup({
+        port,
+        waitForReady: (timeoutMs) =>
+          Promise.race([
+            new Promise((resolve) => {
+              pendingResolve = () => resolve("ready");
+            }),
+            sleep(timeoutMs).then(() => "timeout"),
+          ]).finally(() => {
+            pendingResolve = null;
+          }),
+        close: () => server.close(),
+      });
+    });
+  });
+}
 
 function fileSizeMb(path) {
   try {
@@ -286,10 +329,17 @@ if (!scenes.some((s) => s.sceneName === SCENE_NAME)) {
 }
 await obs.call("SetCurrentProgramScene", { sceneName: SCENE_NAME });
 
+// ── ready signal ──────────────────────────────────────────────────────────────
+
+const readyServer = await startReadyServer();
+const recordUrl = new URL(fullUrl);
+recordUrl.searchParams.set("ready-port", String(readyServer.port));
+const fullUrlWithReady = recordUrl.toString();
+
 // ── browser source ────────────────────────────────────────────────────────────
 
 const browserSettings = {
-  url: fullUrl,
+  url: fullUrlWithReady,
   width,
   height,
   fps,
@@ -338,12 +388,19 @@ if (item) {
 
 // ── wait for page to load, refresh to frame 0, then start in sync ────────────
 
-console.log(`Waiting ${waitMs}ms for page to load...`);
-await sleep(waitMs);
+console.log(`Waiting for page ready signal (max ${waitMs}ms)...`);
+let readyOutcome = await readyServer.waitForReady(waitMs);
+console.log(
+  readyOutcome === "ready"
+    ? "Page signalled ready."
+    : `No ready signal after ${waitMs}ms — continuing anyway.`,
+);
 
 // Refresh so the animation resets to frame 0.
 // With --obs-sync the app holds at frame 0 waiting for our signal, so we only
-// need a short settle wait; without it we wait the full waitMs again.
+// need a short settle wait; without it we wait the full waitMs again. Either
+// way the refreshed page pings the ready server again once its own first
+// frame renders, so we wait for that instead of guessing.
 console.log("Refreshing browser source to reset animation to frame 0...");
 try {
   await obs.call("PressInputPropertiesButton", {
@@ -355,10 +412,14 @@ try {
 }
 
 if (obsSync) {
-  // Give the page just enough time to fully render slide 0 before we fire.
   const settleMs = Math.min(waitMs, 2000);
-  console.log(`Waiting ${settleMs}ms for slide 0 to render...`);
-  await sleep(settleMs);
+  console.log(`Waiting for slide 0 ready signal (max ${settleMs}ms)...`);
+  readyOutcome = await readyServer.waitForReady(settleMs);
+  console.log(
+    readyOutcome === "ready"
+      ? "Slide 0 signalled ready."
+      : `No ready signal after ${settleMs}ms — continuing anyway.`,
+  );
 
   // Signal the app to start the sequence, then immediately begin recording —
   // animation and recording start at the same instant.
@@ -380,9 +441,16 @@ if (obsSync) {
     );
   }
 } else {
-  console.log(`Waiting ${waitMs}ms for animation to reach frame 0...`);
-  await sleep(waitMs);
+  console.log(`Waiting for page ready signal (max ${waitMs}ms)...`);
+  readyOutcome = await readyServer.waitForReady(waitMs);
+  console.log(
+    readyOutcome === "ready"
+      ? "Page signalled ready."
+      : `No ready signal after ${waitMs}ms — continuing anyway.`,
+  );
 }
+
+readyServer.close();
 
 // ── record ────────────────────────────────────────────────────────────────────
 

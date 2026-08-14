@@ -25,7 +25,9 @@
  *   --url <base>                App base URL (default: http://localhost:8081)
  *   --output <path>             Output file path (default: recordings/<timestamp>.<format>.mp4)
  *   --fps <number>              Frames per second (default: 60)
- *   --wait-ms <ms>              Wait after page load before recording starts (default: 3000)
+ *   --wait-ms <ms>              Max time to wait (realtime mode only) for the page to signal
+ *                               it's ready before recording anyway (default: 3000). See
+ *                               "Ready signal" below.
  *   --headless                  Run without a visible browser window
  *   --headed                    Force a visible browser window (frame mode defaults to headless for speed)
  *   --frames                    Use frame-by-frame mode (clock-controlled, perfect quality)
@@ -39,10 +41,20 @@
  *   --binaural-volume <0-1>     Binaural tone amplitude (default: 0.35)
  *   --scale <0.1-1>             Render at this fraction of full resolution, then upscale in ffmpeg.
  *                               Use 0.5 for ~4x faster test renders. (default: 1)
+ *
+ * Ready signal (realtime mode only):
+ *   This script starts a tiny local HTTP server and appends a `ready-port` query
+ *   param to the app URL. app/preset/[id]/full-window.tsx pings it — via
+ *   navigator.sendBeacon — the moment the first 3D frame has actually rendered,
+ *   so recording starts exactly on cue instead of guessing a wait time. If no
+ *   ping arrives, recording falls back to starting after --wait-ms regardless.
+ *   Frame-by-frame mode doesn't need this — it fast-forwards a fake clock instead
+ *   of waiting on wall-clock time.
  */
 
 import { execFileSync, execSync } from 'child_process';
 import { mkdirSync, renameSync, rmSync, unlinkSync, statSync } from 'fs';
+import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -137,6 +149,26 @@ const fullUrl = `${baseUrl}/${tab}${lang ? `?lang=${lang}` : ''}`;
 function hasFFmpeg() {
   try { execSync('ffmpeg -version', { stdio: 'ignore' }); return true; }
   catch { return false; }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Tiny local HTTP server the recorded page can ping (see "Ready signal" above) once its first frame renders. */
+function startReadyServer() {
+  return new Promise((resolveSetup) => {
+    let resolveReady;
+    const ready = new Promise((resolve) => { resolveReady = resolve; });
+    const server = createServer((req, res) => {
+      res.writeHead(204);
+      res.end();
+      if (req.url?.startsWith('/ready')) resolveReady();
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolveSetup({ port, ready, close: () => server.close() });
+    });
+  });
 }
 
 function fileSizeMb(filePath) {
@@ -355,11 +387,24 @@ if (frameMode) {
   });
   const page = await context.newPage();
 
-  console.log(`Opening ${fullUrl} ...`);
-  await page.goto(fullUrl, { waitUntil: 'load', timeout: 30_000 });
+  const readyServer = await startReadyServer();
+  const recordUrl = new URL(fullUrl);
+  recordUrl.searchParams.set('ready-port', String(readyServer.port));
 
-  console.log(`Waiting ${waitMs}ms for animation to settle...`);
-  await page.waitForTimeout(waitMs);
+  console.log(`Opening ${fullUrl} ...`);
+  await page.goto(recordUrl.toString(), { waitUntil: 'load', timeout: 30_000 });
+
+  console.log(`Waiting for page ready signal (max ${waitMs}ms)...`);
+  const readyOutcome = await Promise.race([
+    readyServer.ready.then(() => 'ready'),
+    sleep(waitMs).then(() => 'timeout'),
+  ]);
+  readyServer.close();
+  console.log(
+    readyOutcome === 'ready'
+      ? 'Page signalled ready.'
+      : `No ready signal after ${waitMs}ms — starting anyway.`,
+  );
 
   console.log(`\n● REC  (${durationSec}s)\n`);
   await page.waitForTimeout(durationSec * 1000);
