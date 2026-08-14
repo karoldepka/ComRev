@@ -13,7 +13,8 @@
  * Recorder control:
  *   --recorder  obs|playwright   Which recorder to call (default: obs)
  *   --dry-run                    Print plan without recording
- *   --out-dir   <path>           Output directory (default: ../recordings/batch_<ts>)
+ *   --out-dir   <path>           Output directory (default: ../recordings/batch_<ts>);
+ *                                 files are saved as <lang>/<format>/<preset>.mp4
  *   --continue-on-error          Keep going after a failed recording (default: true)
  *   --fail-fast                  Stop on first error
  *
@@ -115,8 +116,8 @@ const jobs = [];
 for (const preset of presets) {
   for (const format of formats) {
     for (const lang of langs) {
-      const filename = `${preset}_${format}_${lang}.mp4`;
-      jobs.push({ preset, format, lang, filename, output: `${outDir}/${filename}` });
+      const filename = `${preset}.mp4`;
+      jobs.push({ preset, format, lang, filename, output: `${outDir}/${lang}/${format}/${filename}` });
     }
   }
 }
@@ -142,7 +143,7 @@ console.log('══════════════════════�
 if (dryRun) {
   console.log('Plan:\n');
   jobs.forEach((j, i) =>
-    console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.preset, 12)} ${pad(j.format, 8)} ${pad(j.lang, 5)} → ${j.filename}`),
+    console.log(`  ${String(i + 1).padStart(3)}. ${pad(j.preset, 12)} ${pad(j.lang, 5)} ${pad(j.format, 8)} → ${j.lang}/${j.format}/${j.filename}`),
   );
   console.log('');
   process.exit(0);
