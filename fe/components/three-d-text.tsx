@@ -11,7 +11,12 @@ export const CAPTION_REVEAL_DELAY_MS = 3000;
 /** Caption world-unit size relative to the title's `size`, used when `captionSize` isn't supplied. */
 const DEFAULT_CAPTION_SIZE_RATIO = 0.6;
 /** How long the title/caption slide-in entrance takes, in ms. */
-const ENTRANCE_DURATION_MS = 550;
+const ENTRANCE_DURATION_MS = 400;
+/** Fixed world-unit travel distance for the slide-in — deliberately NOT scaled
+ * by text width. A width-proportional distance made long captions travel far
+ * in the same fixed duration, which (with ease-out timing) reads as a slow
+ * crawl at the end rather than a quick entrance. */
+const ENTRANCE_OFFSET_X = 10;
 
 function easeOutCubic(t: number): number {
   const clamped = Math.min(1, Math.max(0, t));
@@ -106,6 +111,8 @@ interface ThreeDTextProps {
   captionSize?: number;
   /** Scene background color as a hex number (default: 0x000000 black). */
   backgroundColor?: number;
+  /** Slide the title/caption in from off-screen on entrance (default: false). */
+  slidingTexts?: boolean;
   /** Material override for the front letter-face cap. */
   faceZone?: ZoneMaterialProps;
   /** Material override for the bevel chamfer. */
@@ -149,6 +156,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       captionText,
       captionSize,
       backgroundColor = 0x000000,
+      slidingTexts = false,
       faceZone,
       bevelZone,
       extrusionZone,
@@ -187,6 +195,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const captionEntranceOffsetXRef = useRef(0);
     const backgroundColorRef = useRef(backgroundColor);
     backgroundColorRef.current = backgroundColor;
+    const slidingTextsRef = useRef(slidingTexts);
+    slidingTextsRef.current = slidingTexts;
     const pipelineManagerRef = useRef<PipelineManager | null>(null);
     const pipesRef = useRef<EffectPipe[]>(pipes);
     const glRef = useRef<any>(null);
@@ -713,7 +723,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
               mesh.add(capGroup);
               const revealGroup = capGroup;
               const revealExtent = gap + capHeight;
-              const revealWidth = capBox.max.x - capBox.min.x;
               captionRevealTimeoutRef.current = setTimeout(() => {
                 captionRevealTimeoutRef.current = null;
                 if (thisUpdateId === updateIdRef.current) {
@@ -721,7 +730,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
                   // Caption slides in from the right as it reveals (title slides in
                   // from the left on landing — see titleEntranceOffsetXRef above).
                   captionGroupRef.current = revealGroup;
-                  captionEntranceOffsetXRef.current = revealWidth + 6;
+                  captionEntranceOffsetXRef.current = slidingTextsRef.current ? ENTRANCE_OFFSET_X : 0;
                   captionEntranceStartRef.current = performance.now();
                   // Reserve room for the caption (and re-fit the camera for it) only
                   // once it's actually visible — reserving it upfront would shift/
@@ -739,10 +748,11 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
 
         // Title slides in from the left as it lands (caption slides in from the
         // right separately, once revealed — see captionEntranceOffsetXRef above).
-        const titleBoxForEntrance = new THREE.Box3().setFromObject(mesh);
-        titleEntranceOffsetXRef.current = -(titleBoxForEntrance.max.x - titleBoxForEntrance.min.x + 6);
+        titleEntranceOffsetXRef.current = slidingTextsRef.current ? -ENTRANCE_OFFSET_X : 0;
         titleEntranceStartRef.current = performance.now();
-        titleEntranceSettledRef.current = false;
+        // No animation when disabled → already "settled", so the guaranteed
+        // final re-fit below never needs to fire (there's nothing to race).
+        titleEntranceSettledRef.current = !slidingTextsRef.current;
 
         removeMeshFromScene(scene);
         scene.add(mesh);

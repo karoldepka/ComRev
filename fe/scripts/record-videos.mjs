@@ -50,12 +50,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── mirrors utils/slides/videos.data.tsx ────────────────────────────────────
 
 const VIDEOS = [
-  { id: 'smarter-7', principleCount: 7 },
-  { id: 'counter-intuitive-7', principleCount: 7 },
-  { id: 'decisions-7', principleCount: 7 },
-  { id: 'productivity-7', principleCount: 7 },
-  { id: 'habits-7', principleCount: 7 },
+  { id: 'smarter-7', title: '7 psychological principles to make you smarter', principleCount: 7 },
+  { id: 'counter-intuitive-7', title: '7 counter-intuitive psychological principles that can surprise you', principleCount: 7 },
+  { id: 'decisions-7', title: '7 mental models for better decision-making', principleCount: 7 },
+  { id: 'productivity-7', title: '7 productivity principles that will change how you work', principleCount: 7 },
+  { id: 'habits-7', title: '7 habit-building principles backed by psychology', principleCount: 7 },
 ];
+
+/** Filesystem-safe slug from a video's title, e.g. "7 counter-intuitive psychological..." -> "7-counter-intuitive-psychological...". */
+function slugifyTitle(title) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 const ALL_IDS = VIDEOS.map((v) => v.id);
 
 const ALL_FORMATS = ['shorts', 'yt', 'tiktok', 'yt-4k'];
@@ -121,9 +129,10 @@ const recorderScript = resolve(__dirname, 'record-obs.mjs');
 
 const jobs = [];
 for (const video of videos) {
+  const titleSlug = slugifyTitle(video.title);
   for (const format of formats) {
     for (const lang of langs) {
-      const filename = `${video.id}_${format}_${lang}.mp4`;
+      const filename = `${titleSlug}_${format}_${lang}.mp4`;
       jobs.push({
         id: video.id,
         slides: video.principleCount + 1, // + the title card

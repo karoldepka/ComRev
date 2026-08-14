@@ -2173,6 +2173,15 @@ function renderText3dControls({
           colors={colors}
         />
       )}
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>{t("slidingTexts") || "Sliding Text Entrance"}</Text>
+        <Switch
+          value={params.slidingTexts === true}
+          onValueChange={(v) => onUpdate("slidingTexts", v)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={params.slidingTexts === true ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
       {includeTransform && (
         <>
           <SliderRow
@@ -6836,6 +6845,7 @@ export function ThreeDTextScreen({
             }
             perspective={mainTextParams.perspective as number | undefined}
             backgroundColor={mainTextParams.backgroundColor as number | undefined}
+            slidingTexts={mainTextParams.slidingTexts === true}
             pipes={activePipes}
             paused={isPaused}
             onMeshReady={sequenceMode ? handleSequenceMeshReady : undefined}

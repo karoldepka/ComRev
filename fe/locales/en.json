@@ -39,6 +39,7 @@
   "curveSegments": "Curve Segments",
   "equalizeWidths": "Equalize Widths",
   "orthographic": "Orthographic",
+  "slidingTexts": "Sliding Text Entrance",
   "perspective3d": "3D Perspective",
   "method": "Method: {{method}}",
   "targetWidth": "Target Width",

@@ -39,6 +39,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
         targetWidth: 20,
         lineSpacing: 1.0,
         perspective: 1.0,
+        slidingTexts: false,
       };
     case "bloom":
       return { strength: 0.8, threshold: 0.2, radius: 0.5 };
@@ -210,6 +211,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
         color: 0xff6600, metalness: 0.95, roughness: 0.15, envMapIntensity: 1.5,
         equalizeLineWidths: false, equalizationMethod: "fontSize", targetWidth: 20, lineSpacing: 1.0,
         perspective: 1.0,
+        slidingTexts: false,
         posX: 0, posY: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0,
       };
     case "graphics":
