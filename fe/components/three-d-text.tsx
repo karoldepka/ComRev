@@ -702,9 +702,11 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
 
               // Sit the caption directly under the title's lowest point, in the
               // title's own local space so it inherits the title's rotation.
+              // Small gap, not a full caption-height of empty space — it should
+              // read as "right below the title", not as a separate block.
               const capBox = new THREE.Box3().setFromObject(capGroup);
               const capHeight = capBox.max.y - capBox.min.y;
-              const gap = capHeight * 0.9;
+              const gap = capHeight * 0.2;
               capGroup.position.y += mainBox.min.y - gap - capBox.max.y;
               // Revealed a beat after the title lands, so it reads as a follow-up, not competing for attention.
               capGroup.visible = false;
