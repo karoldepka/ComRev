@@ -106,12 +106,15 @@ export async function runBatch(options = {}) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outDir = resolve(__dirname, '..', outDirOpt ?? `../recordings/videos_${ts}`);
 
+  // Grouped by language first (then video, then format) so a run produces
+  // complete language batches in sequence, rather than interleaving languages
+  // within each video.
   const jobs = [];
-  videos.forEach((video, videoIndex) => {
-    for (const format of formats) {
-      for (const lang of langs) {
-        // Filename tracks the language being recorded, not always the English title.
-        const filename = `${fileNameFromTitle(titleForLang(video.title, lang))}.mp4`;
+  for (const lang of langs) {
+    videos.forEach((video, videoIndex) => {
+      // Filename tracks the language being recorded, not always the English title.
+      const filename = `${fileNameFromTitle(titleForLang(video.title, lang))}.mp4`;
+      for (const format of formats) {
         jobs.push({
           id: video.id,
           videoIndex: videoIndex + 1,
@@ -123,8 +126,8 @@ export async function runBatch(options = {}) {
           output: `${outDir}/${lang}/${format}/${filename}`,
         });
       }
-    }
-  });
+    });
+  }
 
   const total = jobs.length;
 
