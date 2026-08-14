@@ -85,6 +85,22 @@ function getMantraSlideText(
   return wrapMantraText(raw);
 }
 
+/** Translated caption ("examples"), looked up under `${title}__examples` — a separate key from the title itself so both can be translated independently. */
+function getMantraExamples(
+  title: string,
+  entry: MantraEntry,
+  lang?: string,
+): string | undefined {
+  if (entry.examples === undefined) return undefined;
+  if (!lang) return entry.examples;
+  return i18n.t(`${title}__examples`, {
+    ns: 'mantras',
+    lng: lang,
+    keySeparator: false,
+    defaultValue: entry.examples,
+  });
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 function makeSlides(
@@ -104,7 +120,7 @@ function makeSlides(
       name: stripBoldTags(title),
       text: getMantraSlideText(title, entry, lang),
       author: entry.author,
-      examples: entry.examples,
+      examples: getMantraExamples(title, entry, lang),
     }));
 }
 

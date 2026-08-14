@@ -6,13 +6,20 @@ import en from '../locales/en.json';
 import pl from '../locales/pl.json';
 import mantrasPl from '../locales/mantras.pl.json';
 import de from '../locales/de.json';
+import mantrasDe from '../locales/mantras.de.json';
 import it from '../locales/it.json';
+import mantrasIt from '../locales/mantras.it.json';
 import fr from '../locales/fr.json';
+import mantrasFr from '../locales/mantras.fr.json';
 import ca from '../locales/ca.json';
+import mantrasCa from '../locales/mantras.ca.json';
 import csb from '../locales/csb.json';
 import zh from '../locales/zh.json';
+import mantrasZh from '../locales/mantras.zh.json';
 import pt from '../locales/pt.json';
+import mantrasPt from '../locales/mantras.pt.json';
 import es from '../locales/es.json';
+import mantrasEs from '../locales/mantras.es.json';
 import hi from '../locales/hi.json';
 import ar from '../locales/ar.json';
 
@@ -65,15 +72,15 @@ i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en, mantras: {} },
     pl: { translation: pl, mantras: mantrasPl },
-    de: { translation: de },
-    it: { translation: it },
-    fr: { translation: fr },
-    ca: { translation: ca },
-    cat: { translation: ca },
+    de: { translation: de, mantras: mantrasDe },
+    it: { translation: it, mantras: mantrasIt },
+    fr: { translation: fr, mantras: mantrasFr },
+    ca: { translation: ca, mantras: mantrasCa },
+    cat: { translation: ca, mantras: mantrasCa },
     csb: { translation: csb },
-    zh: { translation: zh },
-    pt: { translation: pt },
-    es: { translation: es },
+    zh: { translation: zh, mantras: mantrasZh },
+    pt: { translation: pt, mantras: mantrasPt },
+    es: { translation: es, mantras: mantrasEs },
     hi: { translation: hi },
     ar: { translation: ar },
   },
