@@ -185,7 +185,7 @@ const defaultOptions: Partial<TextGeometryOptions> = {
   height: 0.16, // 5x shallower than the original 0.8
   curveSegments: 48,
   bevelEnabled: true,
-  bevelThickness: 0.045, // 1.5x the previous 0.03 baseline; scaled down with height so the bevel doesn't exceed the extrude depth
+  bevelThickness: 0.09, // 2x thicker again on top of the previous 0.045; scaled down with height so the bevel doesn't exceed the extrude depth
   bevelSize: 0.036, // 1.5x wider again on top of the previous 0.024
   bevelOffset: 0,
   bevelSegments: 5,
