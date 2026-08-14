@@ -581,30 +581,85 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       const thisUpdateId = ++updateIdRef.current;
 
       try {
-        const { geometry, material, faceMaterial, bevelMaterial } = await createTextGeometry({
-          text: textContent,
-          fontFamily,
-          size,
-          height,
-          curveSegments,
-          bevelEnabled,
-          bevelThickness,
-          bevelSize,
-          bevelOffset,
-          bevelSegments,
-          color: color !== undefined ? new THREE.Color(color) : undefined,
-          metalness,
-          roughness,
-          envMap,
-          envMapIntensity,
-          equalizeLineWidths,
-          equalizationMethod,
-          targetWidth,
-          lineSpacing,
-          faceZone,
-          bevelZone,
-          extrusionZone,
-        });
+        const resolvedCaptionSize = captionSize ?? (size ?? 2) * DEFAULT_CAPTION_SIZE_RATIO;
+        const buildCaptionGroup = async (lineText: string) => {
+          const result = await createTextGeometry({
+            text: lineText,
+            fontFamily,
+            size: resolvedCaptionSize,
+            height,
+            curveSegments,
+            bevelEnabled,
+            bevelThickness,
+            bevelSize,
+            bevelOffset,
+            bevelSegments,
+            color: color !== undefined ? new THREE.Color(color) : undefined,
+            metalness,
+            roughness,
+            envMap,
+            envMapIntensity,
+            lineSpacing,
+          });
+          const zoneMaterials = [
+            result.faceMaterial,
+            result.material,
+            result.bevelMaterial ?? result.material,
+          ];
+          const group = result.geometry as THREE.Group;
+          group.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.material = zoneMaterials as any;
+              child.castShadow = true;
+              child.receiveShadow = true;
+              // Caption is often much wider than the title (full sentence vs. a
+              // few words); keep it out of fitCamera's bounding box so it can't
+              // force the title to zoom out and shrink. Same convention as the
+              // renderOrder < 0 background/sky exclusion above.
+              child.renderOrder = -1;
+            }
+          });
+          return group;
+        };
+
+        const capTextTrimmed = captionText?.trim() ?? "";
+        const hasCaption = capTextTrimmed.length > 0;
+        // The title build and the caption's first (unwrapped) build don't
+        // depend on each other — only the *wrap decision* below needs the
+        // title's measured width, and by then both have already resolved.
+        // Running them as two sequential worker round-trips nearly doubled
+        // mesh-ready latency for every slide with a caption; in parallel it
+        // costs whichever one is slower, not both added together.
+        const [
+          { geometry, material, faceMaterial, bevelMaterial },
+          capGroupInitial,
+        ] = await Promise.all([
+          createTextGeometry({
+            text: textContent,
+            fontFamily,
+            size,
+            height,
+            curveSegments,
+            bevelEnabled,
+            bevelThickness,
+            bevelSize,
+            bevelOffset,
+            bevelSegments,
+            color: color !== undefined ? new THREE.Color(color) : undefined,
+            metalness,
+            roughness,
+            envMap,
+            envMapIntensity,
+            equalizeLineWidths,
+            equalizationMethod,
+            targetWidth,
+            lineSpacing,
+            faceZone,
+            bevelZone,
+            extrusionZone,
+          }),
+          hasCaption ? buildCaptionGroup(capTextTrimmed) : Promise.resolve(null),
+        ]);
 
         if (thisUpdateId !== updateIdRef.current) return;
 
@@ -633,49 +688,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         }
         captionExtentRef.current = 0;
         captionGroupRef.current = null;
-        if (captionText && captionText.trim()) {
-          const resolvedCaptionSize = captionSize ?? (size ?? 2) * DEFAULT_CAPTION_SIZE_RATIO;
-          const buildCaptionGroup = async (lineText: string) => {
-            const result = await createTextGeometry({
-              text: lineText,
-              fontFamily,
-              size: resolvedCaptionSize,
-              height,
-              curveSegments,
-              bevelEnabled,
-              bevelThickness,
-              bevelSize,
-              bevelOffset,
-              bevelSegments,
-              color: color !== undefined ? new THREE.Color(color) : undefined,
-              metalness,
-              roughness,
-              envMap,
-              envMapIntensity,
-              lineSpacing,
-            });
-            const zoneMaterials = [
-              result.faceMaterial,
-              result.material,
-              result.bevelMaterial ?? result.material,
-            ];
-            const group = result.geometry as THREE.Group;
-            group.traverse((child) => {
-              if (child instanceof THREE.Mesh) {
-                child.material = zoneMaterials as any;
-                child.castShadow = true;
-                child.receiveShadow = true;
-                // Caption is often much wider than the title (full sentence vs. a
-                // few words); keep it out of fitCamera's bounding box so it can't
-                // force the title to zoom out and shrink. Same convention as the
-                // renderOrder < 0 background/sky exclusion above.
-                child.renderOrder = -1;
-              }
-            });
-            return group;
-          };
-
-          let capGroup = await buildCaptionGroup(captionText.trim());
+        if (capGroupInitial) {
+          let capGroup = capGroupInitial;
           if (thisUpdateId !== updateIdRef.current) {
             disposeMeshTree(capGroup);
           } else {
@@ -693,8 +707,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
             const capWidthRaw = capBoxInitial.max.x - capBoxInitial.min.x;
 
             if (capWidthRaw > maxWidth) {
-              const avgCharWidth = capWidthRaw / Math.max(1, captionText.trim().length);
-              const wrapped = wrapTextToWidth(captionText.trim(), avgCharWidth, maxWidth);
+              const avgCharWidth = capWidthRaw / Math.max(1, capTextTrimmed.length);
+              const wrapped = wrapTextToWidth(capTextTrimmed, avgCharWidth, maxWidth);
               if (wrapped.includes("\n")) {
                 const rewrapped = await buildCaptionGroup(wrapped);
                 if (thisUpdateId !== updateIdRef.current) {

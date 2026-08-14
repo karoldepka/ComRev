@@ -6412,6 +6412,10 @@ export function ThreeDTextScreen({
     // (this callback runs from onMeshReady, right after scene.add(mesh)) —
     // not from a useEffect watching state, which only catches up on the next
     // render and would leave the sound audibly out of sync with the visual.
+    // (sequenceReady defaults to true and isn't a proxy for "mesh visually
+    // ready" — don't be tempted to gate/trigger sound on it directly; the
+    // visual itself only swaps once the mesh is built, worker latency and
+    // all, so sound has to stay tied to that same moment too.)
     if (soundEnabled) playTransitionSound(audioContextRef, sequenceLineIndex);
   }, [
     currentSequencePage,
