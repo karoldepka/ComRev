@@ -250,7 +250,7 @@ export const VIDEO_CATEGORIES: VideoCategory[] = [
         title: '7 principles to negotiate better',
         principles: {
           'Interests over positions': {},
-          'BATNA awareness': {},
+          'BATNA (Best Alternative to a Negotiated Agreement)': {},
           'Tactical empathy': {},
           Mirroring: {},
           'Labeling in negotiation': {},

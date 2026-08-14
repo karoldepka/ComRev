@@ -465,7 +465,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     examples:
       'Ask what need a demand serves, then search for more ways to meet it',
   },
-  'BATNA awareness': {
+  'BATNA (Best Alternative to a Negotiated Agreement)': {
     examples:
       'Know your best alternative before negotiating so you recognize a bad deal',
   },
