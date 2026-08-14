@@ -6981,7 +6981,12 @@ export function ThreeDTextScreen({
             lineSpacing={mainTextParams.lineSpacing as number | undefined}
             captionText={
               sequenceMode
-                ? visibleSequencePage.examples
+                // Sourced from currentSequencePage (like the title's displayText
+                // above), not visibleSequencePage — that one only catches up to
+                // the new slide once its mesh finishes building and fires
+                // onMeshReady, which left the *previous* slide's caption showing
+                // alongside the *new* slide's title for one build cycle.
+                ? currentSequencePage.examples
                 : getActivePrincipalTextSet(mainTextParams).examples
             }
             captionSize={
