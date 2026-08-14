@@ -17,7 +17,7 @@
  * Filters (comma-separated values or omit for all):
  *   --ids       <list>   smarter-7,habits-7        (default: all declared videos)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok    (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...            (default: en,pl)
+ *   --langs     <list>   en,pl,de,fr,...            (default: pl,en — Polish batch first)
  *
  * Batch control:
  *   --dry-run                    Print plan without recording
@@ -32,7 +32,7 @@
  * --ws-password, --no-resize, --scene, --source, ...
  *
  * Examples:
- *   # All videos × shorts+yt × English + Polish (default)
+ *   # All videos × shorts+yt × Polish + English (default)
  *   node scripts/record-videos.mjs
  *
  *   # Just the "smarter" video, TikTok format, dry run
@@ -79,7 +79,7 @@ const pad = (s, n) => String(s).padEnd(n);
  * @param {object} options
  * @param {string[]} [options.ids] video ids to include (default: all declared videos)
  * @param {string[]} [options.formats] (default: ['shorts', 'yt'])
- * @param {string[]} [options.langs] (default: ['en', 'pl'])
+ * @param {string[]} [options.langs] (default: ['pl', 'en'] — Polish batch runs first)
  * @param {boolean} [options.dryRun]
  * @param {string} [options.outDir]
  * @param {boolean} [options.failFast]
@@ -93,7 +93,7 @@ export async function runBatch(options = {}) {
   const {
     ids,
     formats = ['shorts', 'yt'],
-    langs = ['en', 'pl'],
+    langs = ['pl', 'en'],
     dryRun = false,
     outDir: outDirOpt,
     failFast = false,
@@ -237,7 +237,7 @@ async function main() {
     .allowUnknownOption(true)
     .option('--ids <list>', 'comma-separated video ids (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt)')
-    .option('--langs <list>', 'comma-separated language codes (default: en,pl)')
+    .option('--langs <list>', 'comma-separated language codes (default: pl,en)')
     .option('--dry-run', 'print plan without recording')
     .option('--out-dir <path>', 'output directory')
     .option('--continue-on-error', 'keep going after a failed recording (default: true)')
@@ -253,7 +253,7 @@ async function main() {
   const allVideoIds = loadVideos().map((v) => v.id);
   const ids = splitList(batchOpts.ids, allVideoIds);
   const formats = splitList(batchOpts.formats, ALL_FORMATS, ['shorts', 'yt']);
-  const langs = splitList(batchOpts.langs, ALL_LANGS, ['en', 'pl']);
+  const langs = splitList(batchOpts.langs, ALL_LANGS, ['pl', 'en']);
 
   const { results } = await runBatch({
     ids,
