@@ -18,12 +18,17 @@
  *   node scripts/record-obs.mjs [options]
  *
  * Options:
- *   --video <id>                Record a video declared in utils/slides/videos.data.tsx
+ *   --video <id|all>            Record a video declared in utils/slides/videos.data.tsx
  *                               by id (e.g. smarter-7) instead of a raw --tab/--slides
  *                               pair. Sets --tab to preset/video-<id>/full-window,
  *                               --slides to the video's own principle count, and
  *                               defaults --output to recordings/<lang>/<video title>.mp4.
  *                               Explicit --tab/--slides/--output still override.
+ *                               --video with no id, or --video all, records every
+ *                               declared video instead of just one (delegates to
+ *                               record-videos.mjs; --formats/--langs come from
+ *                               --format/--lang, --out-dir/--dry-run/--fail-fast/
+ *                               --continue-on-error are forwarded as-is).
  *   --format <name>             Output format preset (default: shorts)
  *                               Presets: shorts, tiktok, yt, yt-4k
  *   --width <px>                Custom canvas width  (overrides --format)
@@ -97,8 +102,12 @@ import {
 } from "fs";
 import { createServer } from "http";
 import { OBSWebSocket } from "obs-websocket-js";
-import { dirname } from "path";
+import { spawnSync } from "child_process";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import { findVideo, fileNameFromTitle } from "./lib/videos-data.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
 
@@ -121,6 +130,26 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
+
+// ── --video all: delegate to record-videos.mjs ────────────────────────────────
+// Bare --video (no id) or --video all records every video declared in
+// videos.data.tsx, named by title, instead of a single one. Reuses
+// record-videos.mjs's batch loop rather than duplicating it here.
+if (args.video === true || args.video === "all") {
+  const forwardedArgs = ["--formats", args.format ?? "shorts", "--langs", args.lang ?? "en"];
+  for (const key of ["out-dir", "dry-run", "fail-fast", "continue-on-error"]) {
+    if (args[key] !== undefined) {
+      forwardedArgs.push(`--${key}`);
+      if (args[key] !== true) forwardedArgs.push(args[key]);
+    }
+  }
+  const result = spawnSync(
+    "node",
+    [resolve(__dirname, "record-videos.mjs"), ...forwardedArgs],
+    { stdio: "inherit" },
+  );
+  process.exit(result.status ?? 1);
+}
 
 // ── format presets ────────────────────────────────────────────────────────────
 
