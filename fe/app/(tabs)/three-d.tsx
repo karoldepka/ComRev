@@ -255,19 +255,21 @@ function estimateSequenceDurationMs(
   text: string,
   minimumMs: number,
   examplesText?: string,
+  simultaneousCaptionReveal = true,
 ): number {
   let duration = minimumMs + estimateReadingTimeMs(text);
-  // The title needs at least CAPTION_REVEAL_DELAY_MS on screen by itself before
-  // anything else happens (a caption fading in, or the slide advancing) — see
-  // CAPTION_REVEAL_DELAY_MS in components/three-d-text.tsx.
-  duration = Math.max(duration, CAPTION_REVEAL_DELAY_MS);
 
   const captionClean = examplesText?.trim();
   if (captionClean) {
-    // The 3D caption only reveals CAPTION_REVEAL_DELAY_MS after the title lands
-    // (see components/three-d-text.tsx); keep the slide up long enough for it to
-    // actually appear and be read, not just flash past on transition.
-    duration = Math.max(duration, CAPTION_REVEAL_DELAY_MS + estimateReadingTimeMs(captionClean));
+    const captionReadTimeMs = estimateReadingTimeMs(captionClean);
+    // With a delayed reveal, the caption only appears CAPTION_REVEAL_DELAY_MS
+    // after the title lands (see components/three-d-text.tsx), so the slide
+    // needs to stay up that much longer for it to actually appear and be read.
+    // With a simultaneous reveal (the default) there's no such delay to cover
+    // — just make sure there's time to read the caption too.
+    duration = simultaneousCaptionReveal
+      ? Math.max(duration, minimumMs + captionReadTimeMs)
+      : Math.max(duration, CAPTION_REVEAL_DELAY_MS + captionReadTimeMs);
   }
 
   return Math.max(
@@ -279,6 +281,7 @@ function estimateSequenceDurationMs(
 function getSequencePages(
   textSets: PrincipalTextSet[],
   minimumDurationMs: number,
+  simultaneousCaptionReveal = true,
 ): SequencePage[] {
   const transitions: SequencePage["transition"][] = [
     "flare",
@@ -294,7 +297,7 @@ function getSequencePages(
       text: set.text,
       durationMs:
         set.durationMsOverride ??
-        estimateSequenceDurationMs(set.text, minimumDurationMs, set.examples),
+        estimateSequenceDurationMs(set.text, minimumDurationMs, set.examples, simultaneousCaptionReveal),
       transition: transitions[setIndex % transitions.length],
       author: set.author,
       examples: set.examples,
@@ -2180,6 +2183,15 @@ function renderText3dControls({
           onValueChange={(v) => onUpdate("slidingTexts", v)}
           trackColor={{ false: "#767577", true: colors.tint }}
           thumbColor={params.slidingTexts === true ? colors.tint : "#f4f3f4"}
+        />
+      </Row>
+      <Row>
+        <Text style={[styles.label, { color: colors.text }]}>{t("simultaneousCaptionReveal") || "Caption Appears With Title"}</Text>
+        <Switch
+          value={params.simultaneousCaptionReveal !== false}
+          onValueChange={(v) => onUpdate("simultaneousCaptionReveal", v)}
+          trackColor={{ false: "#767577", true: colors.tint }}
+          thumbColor={params.simultaneousCaptionReveal !== false ? colors.tint : "#f4f3f4"}
         />
       </Row>
       {includeTransform && (
@@ -6020,9 +6032,10 @@ export function ThreeDTextScreen({
   const sequenceLineDurationMs =
     (mainTextParams.sequenceLineDurationMs as number | undefined) ??
     DEFAULT_SEQUENCE_LINE_DURATION_MS;
+  const simultaneousCaptionReveal = mainTextParams.simultaneousCaptionReveal !== false;
   const sequencePages = useMemo(
-    () => getSequencePages(principalTextSets, sequenceLineDurationMs),
-    [principalTextSets, sequenceLineDurationMs],
+    () => getSequencePages(principalTextSets, sequenceLineDurationMs, simultaneousCaptionReveal),
+    [principalTextSets, sequenceLineDurationMs, simultaneousCaptionReveal],
   );
   const [sequenceLineIndex, setSequenceLineIndex] = useState(0);
   const [slideJumpMode, setSlideJumpMode] = useState(false);
@@ -6846,6 +6859,7 @@ export function ThreeDTextScreen({
             perspective={mainTextParams.perspective as number | undefined}
             backgroundColor={mainTextParams.backgroundColor as number | undefined}
             slidingTexts={mainTextParams.slidingTexts === true}
+            simultaneousCaptionReveal={simultaneousCaptionReveal}
             pipes={activePipes}
             paused={isPaused}
             onMeshReady={sequenceMode ? handleSequenceMeshReady : undefined}

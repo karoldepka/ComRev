@@ -113,6 +113,8 @@ interface ThreeDTextProps {
   backgroundColor?: number;
   /** Slide the title/caption in from off-screen on entrance (default: false). */
   slidingTexts?: boolean;
+  /** Reveal the caption at the same time as the title, instead of CAPTION_REVEAL_DELAY_MS later (default: true). */
+  simultaneousCaptionReveal?: boolean;
   /** Material override for the front letter-face cap. */
   faceZone?: ZoneMaterialProps;
   /** Material override for the bevel chamfer. */
@@ -157,6 +159,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       captionSize,
       backgroundColor = 0x000000,
       slidingTexts = false,
+      simultaneousCaptionReveal = true,
       faceZone,
       bevelZone,
       extrusionZone,
@@ -197,6 +200,8 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     backgroundColorRef.current = backgroundColor;
     const slidingTextsRef = useRef(slidingTexts);
     slidingTextsRef.current = slidingTexts;
+    const simultaneousCaptionRevealRef = useRef(simultaneousCaptionReveal);
+    simultaneousCaptionRevealRef.current = simultaneousCaptionReveal;
     const pipelineManagerRef = useRef<PipelineManager | null>(null);
     const pipesRef = useRef<EffectPipe[]>(pipes);
     const glRef = useRef<any>(null);
@@ -718,28 +723,36 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
               const capHeight = capBox.max.y - capBox.min.y;
               const gap = capHeight * 0.2;
               capGroup.position.y += mainBox.min.y - gap - capBox.max.y;
-              // Revealed a beat after the title lands, so it reads as a follow-up, not competing for attention.
               capGroup.visible = false;
               mesh.add(capGroup);
               const revealGroup = capGroup;
               const revealExtent = gap + capHeight;
-              captionRevealTimeoutRef.current = setTimeout(() => {
-                captionRevealTimeoutRef.current = null;
-                if (thisUpdateId === updateIdRef.current) {
-                  revealGroup.visible = true;
-                  // Caption slides in from the right as it reveals (title slides in
-                  // from the left on landing — see titleEntranceOffsetXRef above).
-                  captionGroupRef.current = revealGroup;
-                  captionEntranceOffsetXRef.current = slidingTextsRef.current ? ENTRANCE_OFFSET_X : 0;
-                  captionEntranceStartRef.current = performance.now();
-                  // Reserve room for the caption (and re-fit the camera for it) only
-                  // once it's actually visible — reserving it upfront would shift/
-                  // shrink the title the instant it lands, well before the caption
-                  // exists on screen to fill the gap it leaves behind.
-                  captionExtentRef.current = revealExtent;
-                  onCaptionRevealedRef.current?.();
-                }
-              }, CAPTION_REVEAL_DELAY_MS);
+              const revealCaption = () => {
+                if (thisUpdateId !== updateIdRef.current) return;
+                revealGroup.visible = true;
+                // Caption slides in from the right as it reveals (title slides in
+                // from the left on landing — see titleEntranceOffsetXRef above).
+                captionGroupRef.current = revealGroup;
+                captionEntranceOffsetXRef.current = slidingTextsRef.current ? ENTRANCE_OFFSET_X : 0;
+                captionEntranceStartRef.current = performance.now();
+                // Reserve room for the caption (and re-fit the camera for it) only
+                // once it's actually visible — reserving it upfront would shift/
+                // shrink the title the instant it lands, well before the caption
+                // exists on screen to fill the gap it leaves behind.
+                captionExtentRef.current = revealExtent;
+                onCaptionRevealedRef.current?.();
+              };
+              if (simultaneousCaptionRevealRef.current) {
+                // Default: appears together with the title, no delay.
+                revealCaption();
+              } else {
+                // Revealed a beat after the title lands, so it reads as a follow-up
+                // rather than competing with the title for attention.
+                captionRevealTimeoutRef.current = setTimeout(() => {
+                  captionRevealTimeoutRef.current = null;
+                  revealCaption();
+                }, CAPTION_REVEAL_DELAY_MS);
+              }
             } else {
               disposeMeshTree(capGroup);
             }
