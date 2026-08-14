@@ -58,14 +58,13 @@ import { mkdirSync, renameSync, rmSync, unlinkSync, statSync } from 'fs';
 import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { parseArgs, assertKnownFlags, RECORD_PLAYWRIGHT_FLAGS } from './lib/cli-args.mjs';
+import { createRecordPlaywrightProgram, parseFlags } from './lib/cli-args.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
 
-const args = parseArgs(process.argv.slice(2));
-assertKnownFlags(Object.keys(args), RECORD_PLAYWRIGHT_FLAGS, 'record-playwright.mjs');
+const args = parseFlags(createRecordPlaywrightProgram(), process.argv.slice(2));
 
 const format     = args.format ?? 'yt';
 const durationSec = parseInt(args.duration ?? '60', 10);
@@ -73,18 +72,18 @@ const tab        = args.tab ?? 'preset/mcon/full-window';
 const lang       = args.lang ?? '';
 const baseUrl    = args.url ?? 'http://localhost:8081';
 const fps        = parseInt(args.fps ?? '60', 10);
-const waitMs     = parseInt(args['wait-ms'] ?? '3000', 10);
+const waitMs     = parseInt(args.waitMs ?? '3000', 10);
 const frameMode       = args.frames === true;
 const forceHeadless   = args.headless === true;
 const forceHeaded     = args.headed === true;
 const headless        = forceHeaded ? false : (forceHeadless || frameMode);
 const usePng          = args.png === true;
-const jpegQuality     = parseInt(args['jpeg-quality'] ?? '92', 10);
-const noFfmpeg        = args['no-ffmpeg'] === true;
-const keepFrames      = args['keep-frames'] === true;
-const binauralHz      = parseFloat(args['binaural-hz'] ?? '6');
-const binauralCarrier = parseFloat(args['binaural-carrier'] ?? '200');
-const binauralVolume  = parseFloat(args['binaural-volume'] ?? '0.35');
+const jpegQuality     = parseInt(args.jpegQuality ?? '92', 10);
+const noFfmpeg        = args.ffmpeg === false;
+const keepFrames      = args.keepFrames === true;
+const binauralHz      = parseFloat(args.binauralHz ?? '6');
+const binauralCarrier = parseFloat(args.binauralCarrier ?? '200');
+const binauralVolume  = parseFloat(args.binauralVolume ?? '0.35');
 const renderScale     = Math.min(1, Math.max(0.1, parseFloat(args.scale ?? '1')));
 
 // ── format config ─────────────────────────────────────────────────────────────

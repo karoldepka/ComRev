@@ -5,7 +5,7 @@
  * (batch recording across all declared videos).
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -70,4 +70,34 @@ export function fileNameFromTitle(title) {
   return title
     .replace(INVALID_FILENAME_CHARS, '')
     .replace(/[. ]+$/g, '') || 'untitled-video';
+}
+
+const mantrasCache = new Map();
+
+function loadMantras(lang) {
+  if (mantrasCache.has(lang)) return mantrasCache.get(lang);
+  const filePath = resolve(__dirname, '..', '..', `locales/mantras.${lang}.json`);
+  let data = {};
+  if (existsSync(filePath)) {
+    try {
+      data = JSON.parse(readFileSync(filePath, 'utf8'));
+    } catch (err) {
+      console.warn(`Could not parse ${filePath}: ${err.message}`);
+    }
+  }
+  mantrasCache.set(lang, data);
+  return data;
+}
+
+/**
+ * Localized title for a video, so filenames match the language being
+ * recorded. locales/mantras.<lang>.json keys translations by the raw English
+ * title (keySeparator:false, same convention the app itself uses); falls
+ * back to the English title for 'en', for languages without a mantras file
+ * (e.g. hi, ar), or for a title that isn't in the translation file.
+ */
+export function titleForLang(title, lang) {
+  if (!lang || lang === 'en') return title;
+  const mantras = loadMantras(lang);
+  return mantras[title] ?? title;
 }
