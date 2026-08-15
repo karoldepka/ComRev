@@ -18,7 +18,9 @@ import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
 import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 import droidSansRegularFont from '@/assets/fonts/Droid_Sans_Regular.typeface.json';
 import droidSansBoldFont from '@/assets/fonts/Droid_Sans_Bold.typeface.json';
+import vazirmatnRegularFont from '@/assets/fonts/Vazirmatn_Regular.typeface.json';
 import { parseBoldSegments, stripBoldTags } from "./rich-text";
+import { reshapeForRtlDisplay } from "./persian-text";
 import { runTextGeometryWorker, prefetchTextGeometry as prefetchGeometryInWorker } from "./text-geometry-worker-client";
 import type { WorkerGeometryOptions } from "./text-geometry-transfer";
 
@@ -79,6 +81,18 @@ export interface FontDef {
 // blocks on a network round-trip — offline-first per the project constitution.
 export const DEFAULT_3D_FONT_FAMILY = 'droid_sans';
 export const LATIN_EXT_SANS_3D_FONT_FAMILY = 'inter';
+// Only bundled font with Arabic-script glyphs (see scripts/generate-persian-font.mjs)
+// — required for fa/ar, since none of the Latin fonts above have any Persian/Arabic coverage.
+export const PERSIAN_ARABIC_3D_FONT_FAMILY = 'vazirmatn';
+
+const RTL_SCRIPT_LANGS = new Set(['fa', 'ar']);
+
+/** Font id to force for a given content language, or undefined to leave the
+ * caller's own font choice alone. Only fa/ar need this — every other
+ * supported language renders fine in the default Latin-ext fonts. */
+export function fontFamilyForLang(lang?: string): string | undefined {
+  return lang && RTL_SCRIPT_LANGS.has(lang) ? PERSIAN_ARABIC_3D_FONT_FAMILY : undefined;
+}
 
 export const AVAILABLE_FONTS: FontDef[] = [
   {
@@ -94,6 +108,11 @@ export const AVAILABLE_FONTS: FontDef[] = [
   {
     id: 'roboto',
     label: 'Roboto (Latin-ext: PL, DE, ES)',
+    urls: [],
+  },
+  {
+    id: 'vazirmatn',
+    label: 'Vazirmatn (Persian/Arabic)',
     urls: [],
   },
   {
@@ -361,6 +380,7 @@ const BUNDLED_FONT_DATA: Record<string, unknown> = {
   inter: interRegularFont,
   droid_sans: droidSansRegularFont,
   droid_sans_bold: droidSansBoldFont,
+  vazirmatn: vazirmatnRegularFont,
 };
 
 async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
@@ -425,13 +445,20 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
   // Always reclassify so each zone has its own materialIndex regardless of
   // whether the caller supplied explicit zone overrides.
   const needsReclassify = true;
+  const fontIdToUse = mergedOptions.fontFamily ?? DEFAULT_3D_FONT_FAMILY;
   const rawLines = mergedOptions.text!.split('\n');
   const hasBold = rawLines.some(l => /<b>/i.test(l));
-  // Strip tags for measurement; raw lines used for bold-aware rendering below
-  const lines = rawLines.map(stripBoldTags);
+  // Strip tags for measurement; raw lines used for bold-aware rendering below.
+  // The Vazirmatn font id implies Persian/Arabic content (see fontFamilyForLang) —
+  // reshape each line into the font's presentation-form glyphs and reverse it
+  // for RTL display. Must happen after any upstream word-wrapping (which
+  // works on plain logical text) and per-line (not on the whole multi-line
+  // string, which would also reverse line order) — see utils/persian-text.ts.
+  const lines = rawLines
+    .map(stripBoldTags)
+    .map((line) => (fontIdToUse === PERSIAN_ARABIC_3D_FONT_FAMILY ? reshapeForRtlDisplay(line) : line));
 
   try {
-    const fontIdToUse = mergedOptions.fontFamily ?? DEFAULT_3D_FONT_FAMILY;
     const boldFontId = getBoldFontId(fontIdToUse);
     const [font, boldFontOrNull] = await Promise.all([
       loadFont(fontIdToUse),

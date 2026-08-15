@@ -4,6 +4,7 @@ import { createEffectInstance } from '@/utils/effect-defaults';
 import { useThreeDStore } from '@/store/three-d-store';
 import { useSoundscapeStore } from '@/store/soundscape-store';
 import i18n from '@/utils/i18n';
+import { fontFamilyForLang } from '@/utils/three-text-geometry';
 import {
   parseCategoriesParam,
   PRESET_REGISTRY,
@@ -58,6 +59,11 @@ export function usePresetLoader(id: string) {
     if (preset.soundscape) applyPresetConfig(preset.soundscape);
     if (preset.music) playPresetMusic(preset.music);
     setMantraMode(true);
+    // fa/ar have no glyphs in the default Latin fonts — force the bundled
+    // Persian/Arabic font for those languages. Only ever set when actually
+    // needed so it never overrides a font the user picked manually for any
+    // other language (see fontFamilyForLang).
+    const rtlFontFamily = fontFamilyForLang(displayLang);
     setEffectInstances((instances) => {
       const mainText = instances.find((i) => i.type === 'mainText');
       const next = mainText ?? createEffectInstance('mainText');
@@ -77,6 +83,7 @@ export function usePresetLoader(id: string) {
             // switching from a preset with a custom background back to one
             // without doesn't leave the old color stuck in persisted params.
             backgroundColor: preset.background ?? 0x000000,
+            ...(rtlFontFamily ? { fontFamily: rtlFontFamily } : {}),
           },
         },
         ...rest,
