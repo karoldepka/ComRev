@@ -67,6 +67,24 @@ function wrapMantraText(text: string, maxChars = 12): string {
   return wrapRichTextWords(text, maxChars);
 }
 
+/**
+ * Set by the recording harness (see app/preset/[id]/full-window.tsx) to learn
+ * about a translation key that i18n silently fell back to English for —
+ * "silently" being the problem: without this, a video recorded for language X
+ * can end up showing English content with no indication anything went wrong.
+ */
+type MissingTranslationListener = (key: string, lang: string) => void;
+let missingTranslationListener: MissingTranslationListener | null = null;
+export function setMissingTranslationListener(listener: MissingTranslationListener | null): void {
+  missingTranslationListener = listener;
+}
+
+function reportIfMissing(key: string, lang: string | undefined): void {
+  if (!lang || lang === 'en' || !missingTranslationListener) return;
+  if (i18n.exists(key, { ns: 'mantras', lng: lang, keySeparator: false })) return;
+  missingTranslationListener(key, lang);
+}
+
 function getMantraSlideText(
   title: string,
   entry: MantraEntry,
@@ -74,6 +92,7 @@ function getMantraSlideText(
 ): string {
   const fallback =
     entry.text === undefined ? title : normalizeMantraText(entry.text);
+  reportIfMissing(title, lang);
   const raw = lang
     ? i18n.t(title, {
         ns: 'mantras',
@@ -93,6 +112,7 @@ function getMantraExamples(
 ): string | undefined {
   if (entry.examples === undefined) return undefined;
   if (!lang) return entry.examples;
+  reportIfMissing(`${title}__examples`, lang);
   return i18n.t(`${title}__examples`, {
     ns: 'mantras',
     lng: lang,
@@ -146,6 +166,7 @@ function makeSlidesFromKeys(
 }
 
 function makeTitleSlide(id: string, title: string, lang?: string): SlideEntry {
+  reportIfMissing(title, lang);
   const raw = lang
     ? i18n.t(title, {
         ns: 'mantras',

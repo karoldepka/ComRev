@@ -117,11 +117,27 @@ function startReadyServer() {
   return new Promise((resolveSetup) => {
     let pendingReadyResolve = null;
     let pendingStopResolve = null;
+    // Unlike ready/stop, this is a single one-shot promise for the whole
+    // recording, not re-armed per wait — the app can report a miss at any
+    // point (most likely during the initial page load, while it's building
+    // the slide list), so every wait below races against this same promise.
+    let resolveTranslationMissing;
+    const translationMissing = new Promise((r) => { resolveTranslationMissing = r; });
+
     const server = createServer((req, res) => {
       res.writeHead(204);
       res.end();
-      if (req.url?.startsWith("/stop-recording")) pendingStopResolve?.();
-      else if (req.url?.startsWith("/ready")) pendingReadyResolve?.();
+      if (req.url?.startsWith("/stop-recording")) {
+        pendingStopResolve?.();
+      } else if (req.url?.startsWith("/ready")) {
+        pendingReadyResolve?.();
+      } else if (req.url?.startsWith("/translation-missing")) {
+        const url = new URL(req.url, "http://localhost");
+        resolveTranslationMissing({
+          key: url.searchParams.get("key") ?? "(unknown)",
+          lang: url.searchParams.get("lang") ?? "(unknown)",
+        });
+      }
     });
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
@@ -132,23 +148,42 @@ function startReadyServer() {
           armSignal((r) => { pendingReadyResolve = r; }, timeoutMs, onHeartbeat),
         waitForStop: (timeoutMs, onHeartbeat) =>
           armSignal((r) => { pendingStopResolve = r; }, timeoutMs, onHeartbeat),
+        translationMissing,
         close: () => server.close(),
       });
     });
   });
 }
 
-async function waitForSignalAndLog(waitFn, label, timeoutMs) {
+/**
+ * Races `promise` against the recording's one-shot translation-missing
+ * signal, throwing if that signal wins — so a video for language X never
+ * silently finishes recording with English content in it.
+ */
+async function raceTranslationMissing(promise, readyServer) {
+  const result = await Promise.race([promise, readyServer.translationMissing]);
+  if (result && typeof result === "object" && "key" in result) {
+    throw new Error(
+      `Translation missing for "${result.key}" (lang=${result.lang}) — aborting recording instead of shipping English content.`,
+    );
+  }
+  return result;
+}
+
+async function waitForSignalAndLog(waitFn, label, timeoutMs, readyServer) {
   console.log(
     typeof timeoutMs === "number"
       ? `Waiting for ${label} signal (max ${timeoutMs}ms)...`
       : `Waiting for ${label} signal...`,
   );
   let elapsedSec = 0;
-  const outcome = await waitFn(timeoutMs, () => {
-    elapsedSec += 5;
-    console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
-  });
+  const outcome = await raceTranslationMissing(
+    waitFn(timeoutMs, () => {
+      elapsedSec += 5;
+      console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
+    }),
+    readyServer,
+  );
   console.log(
     outcome === "ready"
       ? `${label[0].toUpperCase()}${label.slice(1)} signal received.`
@@ -426,6 +461,18 @@ export async function recordOne(obs, resolved) {
   recordUrl.searchParams.set("ready-port", String(readyServer.port));
   const fullUrlWithReady = recordUrl.toString();
 
+  // Synchronously checkable alongside the waitForSignalAndLog races below —
+  // covers the gap right before StartRecord, which isn't itself a wait point.
+  let translationMissingInfo = null;
+  readyServer.translationMissing.then((info) => { translationMissingInfo = info; });
+  const assertNoTranslationMissing = () => {
+    if (translationMissingInfo) {
+      throw new Error(
+        `Translation missing for "${translationMissingInfo.key}" (lang=${translationMissingInfo.lang}) — aborting recording instead of shipping English content.`,
+      );
+    }
+  };
+
   // ── browser source ───────────────────────────────────────────────────────────
 
   const browserSettings = {
@@ -475,7 +522,7 @@ export async function recordOne(obs, resolved) {
   // see "Ready signal" above); --tab mode always waits for the real signal.
   const effectiveWaitMs = noTab ? waitMs : undefined;
 
-  await waitForSignalAndLog(readyServer.waitForReady, "page ready", effectiveWaitMs);
+  await waitForSignalAndLog(readyServer.waitForReady, "page ready", effectiveWaitMs, readyServer);
 
   // Refresh so the animation resets to frame 0 (skip with --no-refresh, e.g. for
   // third-party pages that shouldn't be reloaded). Refreshing always triggers a
@@ -493,6 +540,7 @@ export async function recordOne(obs, resolved) {
       readyServer.waitForReady,
       obsSync ? "slide 0 ready" : "page ready",
       effectiveWaitMs,
+      readyServer,
     );
   }
 
@@ -517,6 +565,8 @@ export async function recordOne(obs, resolved) {
 
   // ── record ───────────────────────────────────────────────────────────────────
 
+  assertNoTranslationMissing();
+
   if (slidesCount !== undefined) {
     console.log(`\n● REC  (stopping after ${slidesCount} slide${slidesCount === 1 ? "" : "s"})\n`);
     await obs.call("StartRecord");
@@ -527,12 +577,14 @@ export async function recordOne(obs, resolved) {
       readyServer.waitForStop,
       "stop-recording",
       durationExplicit ? durationSec * 1000 : undefined,
+      readyServer,
     );
   } else {
     console.log(`\n● REC  (${durationSec}s)\n`);
     await obs.call("StartRecord");
     const recStart = Date.now();
     while (Date.now() - recStart < durationSec * 1000) {
+      assertNoTranslationMissing();
       const elapsed = ((Date.now() - recStart) / 1000).toFixed(0);
       process.stdout.write(`\r  ${elapsed}s / ${durationSec}s`);
       await sleep(500);
