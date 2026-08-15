@@ -245,6 +245,22 @@ async function moveFileWithRetry(sourcePath, destinationPath, label) {
   }
 }
 
+/** Polls GetRecordStatus until outputActive is false, tolerating the few
+ * seconds OBS can spend finalizing the previous job's file after StopRecord
+ * before it actually reports itself idle (see the comment at recordOne's
+ * call site). Throws only if it's still stuck after `timeoutMs`. */
+async function waitForRecordingInactive(obs, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const { outputActive } = await obs.call("GetRecordStatus");
+    if (!outputActive) return;
+    if (Date.now() >= deadline) {
+      throw new Error("OBS is already recording. Stop the current recording first.");
+    }
+    await sleep(500);
+  }
+}
+
 /** Adds a one-shot listener for the STOPPED transition and removes itself —
  * repeated recordOne() calls on a shared `obs` connection would otherwise
  * stack up a permanent listener per recording. */
@@ -424,11 +440,13 @@ export async function recordOne(obs, resolved) {
   }
   console.log("══════════════════════════════════════════\n");
 
-  // Abort cleanly if OBS is already recording
-  const { outputActive } = await obs.call("GetRecordStatus");
-  if (outputActive) {
-    throw new Error("OBS is already recording. Stop the current recording first.");
-  }
+  // Abort cleanly if OBS is already recording. Right after the previous job's
+  // StopRecord, GetRecordStatus can keep reporting outputActive: true for a
+  // few seconds while OBS finishes finalizing the prior file (observed during
+  // batch runs — RecordStateChanged(STOPPED) had already fired, yet this
+  // still read true) — poll briefly instead of hard-failing on that transient
+  // window, only giving up if it's still stuck after a real timeout.
+  await waitForRecordingInactive(obs);
 
   const recordingStopped = waitForRecordStopped(obs);
 
