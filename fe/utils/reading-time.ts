@@ -20,9 +20,10 @@ export function estimateReadingTimeMs(text: string): number {
  * below; scaling the title down by the same aggressive fraction as a 2-3
  * word content slide made it flash by unreadably fast.
  * History: 0.8 (20% shorter) -> 0.4 (2x shorter again) -> 0.4/1.5 (1.5x
- * shorter again) -> 0.4/3 (2x shorter again) -> this (2x longer again).
+ * shorter again) -> 0.4/3 (2x shorter again) -> (0.4/3)*2 (2x longer again)
+ * -> this (1.5x longer again).
  */
-export const SEQUENCE_DURATION_SCALE = (0.4 / 3) * 2;
+export const SEQUENCE_DURATION_SCALE = (0.4 / 3) * 2 * 1.5;
 
 /**
  * The intro title slide (utils/slides/preset-registry.ts's makeTitleSlide)
