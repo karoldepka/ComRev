@@ -149,10 +149,11 @@ function pickPlasmaStops(): number[] {
   }
   return fullyRandomPlasmaStops();
 }
-// Slides run 20% shorter than their original timing budget — applied here and
-// to the reading-time contributions in estimateSequenceDurationMs below, so
-// every component of a slide's duration shrinks by the same fraction.
-const SEQUENCE_DURATION_SCALE = 0.8;
+// Slides run 2x shorter again on top of the previous 20%-shorter baseline
+// (0.8 * 0.5) — applied here and to the reading-time contributions in
+// estimateSequenceDurationMs below, so every component of a slide's duration
+// shrinks by the same fraction.
+const SEQUENCE_DURATION_SCALE = 0.4;
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = Math.round(1600 * SEQUENCE_DURATION_SCALE);
 const MAX_SEQUENCE_ITEM_DURATION_MS = Math.round(8500 * SEQUENCE_DURATION_SCALE);
 // The "examples" caption is rendered in the same 3D world-unit space as the title,
