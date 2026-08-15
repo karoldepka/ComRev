@@ -73,7 +73,7 @@ import { createServer } from "http";
 import { OBSWebSocket } from "obs-websocket-js";
 import { dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
-import { findVideo, fileNameFromTitle, titleForLang } from "./lib/videos-data.mjs";
+import { findVideo, fileNameFromTitle, titleForLang, missingTranslations } from "./lib/videos-data.mjs";
 import { createRecordObsProgram, parseFlags } from "./lib/cli-args.mjs";
 
 // ── format presets ────────────────────────────────────────────────────────────
@@ -301,6 +301,20 @@ export function resolveOptions(rawOpts) {
     : (rawOpts.tab ?? (video ? `preset/video-${video.id}/full-window` : "preset/principles/full-window"));
   const noTab = rawOpts.tab === false;
   const lang = rawOpts.lang ?? "";
+
+  // Fail before ever touching OBS if this video's title/principles/captions
+  // aren't actually translated into `lang` — otherwise the recording silently
+  // shows English content in a video meant for another language.
+  if (video) {
+    const missing = missingTranslations(video, lang);
+    if (missing.length > 0) {
+      throw new Error(
+        `Video "${video.id}" is missing ${missing.length} translation(s) for language "${lang}":\n` +
+        missing.map((key) => `  - ${key}`).join("\n"),
+      );
+    }
+  }
+
   // Only meaningful with --no-tab (see "Ready signal" above); undefined means
   // "wait indefinitely for the ready ping", which is always correct in --tab mode.
   const waitMs = rawOpts.waitMs !== undefined ? parseInt(rawOpts.waitMs, 10) : undefined;

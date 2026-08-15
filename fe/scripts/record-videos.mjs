@@ -46,7 +46,7 @@ import { mkdirSync } from 'fs';
 import { Command } from 'commander';
 import { resolve, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { loadVideos, fileNameFromTitle, titleForLang } from './lib/videos-data.mjs';
+import { loadVideos, fileNameFromTitle, titleForLang, missingTranslations } from './lib/videos-data.mjs';
 import { createRecordObsProgram, parseFlags } from './lib/cli-args.mjs';
 import { connectObs, recordOne, resolveOptions } from './record-obs.mjs';
 
@@ -141,6 +141,25 @@ export async function runBatch(options = {}) {
   console.log(`  Out dir  : ${outDir}`);
   if (dryRun) console.log('\n  *** DRY RUN — no recordings will be made ***');
   console.log('══════════════════════════════════════════════════════════\n');
+
+  // Fail before recording anything if any video/language combination in this
+  // batch isn't actually translated — otherwise recordings silently show
+  // English content in a video meant for another language.
+  const translationIssues = [];
+  for (const lang of langs) {
+    for (const video of videos) {
+      const missing = missingTranslations(video, lang);
+      if (missing.length > 0) translationIssues.push({ id: video.id, lang, missing });
+    }
+  }
+  if (translationIssues.length > 0) {
+    console.error(`✗ Missing translations — aborting before recording (${translationIssues.length} video/language combination(s)):\n`);
+    for (const issue of translationIssues) {
+      console.error(`  ${issue.id} (${issue.lang}): ${issue.missing.length} missing`);
+      issue.missing.forEach((key) => console.error(`    - ${key}`));
+    }
+    throw new Error(`${translationIssues.length} video/language combination(s) have missing translations.`);
+  }
 
   if (dryRun) {
     console.log('Plan:\n');
