@@ -19,6 +19,10 @@
  * then cached in scripts/.youtube-token.json (also gitignored) so future runs
  * don't need to re-consent.
  *
+ * The auth/upload/playlist functions below are also imported directly by
+ * scripts/upload-youtube-batch.mjs, so a whole batch of uploads shares one
+ * authorized client instead of re-running the OAuth flow per video.
+ *
  * Usage:
  *   node scripts/upload-youtube.mjs --file <path> [options]
  *
@@ -40,11 +44,11 @@
 import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { createServer } from "http";
 import { basename, dirname, resolve } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+export const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const result = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -62,68 +66,22 @@ function parseArgs(argv) {
   return result;
 }
 
-const args = parseArgs(process.argv.slice(2));
+export const DEFAULT_CREDENTIALS_PATH = `${__dirname}/.youtube-oauth-client.json`;
+export const DEFAULT_TOKEN_PATH = `${__dirname}/.youtube-token.json`;
 
-if (!args.file || args.file === true) {
-  console.error("Missing --file <path to video>.");
-  process.exit(1);
-}
-
-const filePath = resolve(args.file);
-if (!existsSync(filePath)) {
-  console.error(`File not found: ${filePath}`);
-  process.exit(1);
-}
-
-const title = args.title && args.title !== true ? args.title : basename(filePath).replace(/\.[^.]+$/, "");
-const description = args.description && args.description !== true ? args.description : "";
-const tags = args.tags && args.tags !== true
-  ? String(args.tags).split(",").map((t) => t.trim()).filter(Boolean)
-  : [];
-const categoryId = args.category && args.category !== true ? String(args.category) : "27"; // Education
-const privacyStatus = args.privacy && args.privacy !== true ? args.privacy : "private";
-if (!["private", "unlisted", "public"].includes(privacyStatus)) {
-  console.error(`Invalid --privacy "${privacyStatus}". Use private, unlisted, or public.`);
-  process.exit(1);
-}
-const playlistId = args.playlist && args.playlist !== true ? args.playlist : undefined;
-const madeForKids = args["made-for-kids"] === true;
-const credentialsPath = resolve(args.credentials && args.credentials !== true
-  ? args.credentials
-  : `${__dirname}/.youtube-oauth-client.json`);
-const tokenPath = resolve(args.token && args.token !== true
-  ? args.token
-  : `${__dirname}/.youtube-token.json`);
-
-// ── OAuth client library ─────────────────────────────────────────────────────
-
-let google;
-try {
-  ({ google } = await import("googleapis"));
-} catch {
-  console.error(
-    "The googleapis package is not installed. Run:\n" +
-    "  npm install --save-dev googleapis\n" +
-    "then try again.",
-  );
-  process.exit(1);
-}
-
-if (!existsSync(credentialsPath)) {
-  console.error(
-    `OAuth client credentials not found at: ${credentialsPath}\n` +
-    "See the setup steps at the top of this script (Google Cloud Console →\n" +
-    "OAuth client ID → Desktop app → download JSON) and save it there,\n" +
-    "or pass --credentials <path>.",
-  );
-  process.exit(1);
-}
-
-const { installed, web } = JSON.parse(readFileSync(credentialsPath, "utf8"));
-const clientConfig = installed ?? web;
-if (!clientConfig) {
-  console.error(`${credentialsPath} doesn't look like an OAuth client JSON (no "installed" or "web" key).`);
-  process.exit(1);
+/** Dynamically imports googleapis with a friendly error if it's not installed
+ * (kept optional — nothing else in the app needs it). */
+export async function getGoogleApis() {
+  try {
+    return await import("googleapis");
+  } catch {
+    console.error(
+      "The googleapis package is not installed. Run:\n" +
+      "  npm install --save-dev googleapis\n" +
+      "then try again.",
+    );
+    process.exit(1);
+  }
 }
 
 const SCOPES = ["https://www.googleapis.com/auth/youtube.upload"];
@@ -153,7 +111,30 @@ function startOAuthCallbackServer(port) {
   });
 }
 
-async function getAuthorizedClient() {
+/** Loads the OAuth client JSON and validates it looks right. */
+export function loadClientConfig(credentialsPath) {
+  if (!existsSync(credentialsPath)) {
+    console.error(
+      `OAuth client credentials not found at: ${credentialsPath}\n` +
+      "See the setup steps at the top of this file (Google Cloud Console →\n" +
+      "OAuth client ID → Desktop app → download JSON) and save it there,\n" +
+      "or pass --credentials <path>.",
+    );
+    process.exit(1);
+  }
+  const { installed, web } = JSON.parse(readFileSync(credentialsPath, "utf8"));
+  const clientConfig = installed ?? web;
+  if (!clientConfig) {
+    console.error(`${credentialsPath} doesn't look like an OAuth client JSON (no "installed" or "web" key).`);
+    process.exit(1);
+  }
+  return clientConfig;
+}
+
+/** Returns an authorized OAuth2 client, reusing a cached token if present,
+ * otherwise walking the user through the consent flow once. */
+export async function getAuthorizedClient(google, credentialsPath = DEFAULT_CREDENTIALS_PATH, tokenPath = DEFAULT_TOKEN_PATH) {
+  const clientConfig = loadClientConfig(credentialsPath);
   const redirectPort = 53_682; // arbitrary fixed loopback port; must match a redirect URI registered on the OAuth client
   const redirectUri = `http://127.0.0.1:${redirectPort}/oauth2callback`;
   const oauth2Client = new google.auth.OAuth2(clientConfig.client_id, clientConfig.client_secret, redirectUri);
@@ -180,65 +161,156 @@ async function getAuthorizedClient() {
   return oauth2Client;
 }
 
-// ── banner ────────────────────────────────────────────────────────────────────
+/**
+ * Uploads one video file. Returns { videoId, url }.
+ * @param {import('googleapis').youtube_v3.Youtube} youtube
+ */
+export async function uploadVideo(youtube, {
+  filePath, title, description = "", tags = [], categoryId = "27",
+  privacyStatus = "private", madeForKids = false, onProgress,
+}) {
+  const fileSize = statSync(filePath).size;
+  let lastLoggedPercent = -1;
+  const res = await youtube.videos.insert(
+    {
+      part: ["snippet", "status"],
+      requestBody: {
+        snippet: { title, description, tags, categoryId },
+        status: { privacyStatus, selfDeclaredMadeForKids: madeForKids },
+      },
+      media: { body: createReadStream(filePath) },
+    },
+    {
+      onUploadProgress: (evt) => {
+        const percent = Math.round((evt.bytesRead / fileSize) * 100);
+        if (percent !== lastLoggedPercent) {
+          lastLoggedPercent = percent;
+          (onProgress ?? ((p) => process.stdout.write(`\r  ${p}%`)))(percent);
+        }
+      },
+    },
+  );
+  const videoId = res.data.id;
+  return { videoId, url: `https://youtu.be/${videoId}` };
+}
 
-const fileSizeMb = (statSync(filePath).size / 1024 / 1024).toFixed(1);
-console.log("\n══════════════════════════════════════════");
-console.log("  YouTube Upload");
-console.log("══════════════════════════════════════════");
-console.log(`  File     : ${filePath}  (${fileSizeMb} MB)`);
-console.log(`  Title    : ${title}`);
-console.log(`  Privacy  : ${privacyStatus}`);
-console.log(`  Category : ${categoryId}`);
-if (tags.length) console.log(`  Tags     : ${tags.join(", ")}`);
-if (playlistId) console.log(`  Playlist : ${playlistId}`);
-console.log("══════════════════════════════════════════\n");
+export async function addVideoToPlaylist(youtube, videoId, playlistId) {
+  await youtube.playlistItems.insert({
+    part: ["snippet"],
+    requestBody: {
+      snippet: {
+        playlistId,
+        resourceId: { kind: "youtube#video", videoId },
+      },
+    },
+  });
+}
 
-const auth = await getAuthorizedClient();
-const youtube = google.youtube({ version: "v3", auth });
+/**
+ * Finds a playlist owned by the authorized user with an exact title match,
+ * or creates one if none exists. Returns the playlist ID either way — used
+ * so re-running a batch upload doesn't create duplicate "language" playlists.
+ */
+export async function findOrCreatePlaylist(youtube, { title, description = "", privacyStatus = "private" }) {
+  let pageToken;
+  do {
+    const res = await youtube.playlists.list({
+      part: ["snippet"],
+      mine: true,
+      maxResults: 50,
+      pageToken,
+    });
+    const match = res.data.items?.find((p) => p.snippet?.title === title);
+    if (match) return match.id;
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
 
-// ── upload ────────────────────────────────────────────────────────────────────
-
-console.log("Uploading...");
-let lastLoggedPercent = -1;
-const res = await youtube.videos.insert(
-  {
+  const res = await youtube.playlists.insert({
     part: ["snippet", "status"],
     requestBody: {
-      snippet: { title, description, tags, categoryId },
-      status: { privacyStatus, selfDeclaredMadeForKids: madeForKids },
+      snippet: { title, description },
+      status: { privacyStatus },
     },
-    media: { body: createReadStream(filePath) },
-  },
-  {
-    onUploadProgress: (evt) => {
-      const percent = Math.round((evt.bytesRead / (statSync(filePath).size)) * 100);
-      if (percent !== lastLoggedPercent) {
-        lastLoggedPercent = percent;
-        process.stdout.write(`\r  ${percent}%`);
-      }
-    },
-  },
-);
-process.stdout.write("\n");
+  });
+  return res.data.id;
+}
 
-const videoId = res.data.id;
-console.log(`\n✓ Uploaded: https://youtu.be/${videoId}`);
+// ── CLI entry (single-file upload) ──────────────────────────────────────────
 
-if (playlistId) {
-  console.log(`Adding to playlist ${playlistId}...`);
-  try {
-    await youtube.playlistItems.insert({
-      part: ["snippet"],
-      requestBody: {
-        snippet: {
-          playlistId,
-          resourceId: { kind: "youtube#video", videoId },
-        },
-      },
-    });
-    console.log("✓ Added to playlist.");
-  } catch (err) {
-    console.warn("Could not add to playlist:", err.message);
+const isMainModule = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isMainModule) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (!args.file || args.file === true) {
+    console.error("Missing --file <path to video>.");
+    process.exit(1);
+  }
+
+  const filePath = resolve(args.file);
+  if (!existsSync(filePath)) {
+    console.error(`File not found: ${filePath}`);
+    process.exit(1);
+  }
+
+  const title = args.title && args.title !== true ? args.title : basename(filePath).replace(/\.[^.]+$/, "");
+  const description = args.description && args.description !== true ? args.description : "";
+  const tags = args.tags && args.tags !== true
+    ? String(args.tags).split(",").map((t) => t.trim()).filter(Boolean)
+    : [];
+  const categoryId = args.category && args.category !== true ? String(args.category) : "27"; // Education
+  const privacyStatus = args.privacy && args.privacy !== true ? args.privacy : "private";
+  if (!["private", "unlisted", "public"].includes(privacyStatus)) {
+    console.error(`Invalid --privacy "${privacyStatus}". Use private, unlisted, or public.`);
+    process.exit(1);
+  }
+  const playlistId = args.playlist && args.playlist !== true ? args.playlist : undefined;
+  const madeForKids = args["made-for-kids"] === true;
+  const credentialsPath = resolve(args.credentials && args.credentials !== true
+    ? args.credentials
+    : DEFAULT_CREDENTIALS_PATH);
+  const tokenPath = resolve(args.token && args.token !== true
+    ? args.token
+    : DEFAULT_TOKEN_PATH);
+
+  const { google } = await getGoogleApis();
+
+  const fileSizeMb = (statSync(filePath).size / 1024 / 1024).toFixed(1);
+  console.log("\n══════════════════════════════════════════");
+  console.log("  YouTube Upload");
+  console.log("══════════════════════════════════════════");
+  console.log(`  File     : ${filePath}  (${fileSizeMb} MB)`);
+  console.log(`  Title    : ${title}`);
+  console.log(`  Privacy  : ${privacyStatus}`);
+  console.log(`  Category : ${categoryId}`);
+  if (tags.length) console.log(`  Tags     : ${tags.join(", ")}`);
+  if (playlistId) console.log(`  Playlist : ${playlistId}`);
+  console.log("══════════════════════════════════════════\n");
+
+  const auth = await getAuthorizedClient(google, credentialsPath, tokenPath);
+  const youtube = google.youtube({ version: "v3", auth });
+
+  console.log("Uploading...");
+  const { videoId, url } = await uploadVideo(youtube, {
+    filePath, title, description, tags, categoryId, privacyStatus, madeForKids,
+  });
+  process.stdout.write("\n");
+  console.log(`\n✓ Uploaded: ${url}`);
+
+  if (playlistId) {
+    console.log(`Adding to playlist ${playlistId}...`);
+    try {
+      await addVideoToPlaylist(youtube, videoId, playlistId);
+      console.log("✓ Added to playlist.");
+    } catch (err) {
+      console.warn("Could not add to playlist:", err.message);
+    }
   }
 }

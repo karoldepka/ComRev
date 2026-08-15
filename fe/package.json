@@ -19,6 +19,7 @@
     "record-all": "node ./scripts/record-all.mjs",
     "record-videos": "node ./scripts/record-videos.mjs",
     "upload-youtube": "node ./scripts/upload-youtube.mjs",
+    "upload-youtube-batch": "node ./scripts/upload-youtube-batch.mjs",
     "deploy": "node scripts/generate-build-info.cjs && vercel --prod",
     "postinstall": "node scripts/patch-three-exports.cjs"
   },
