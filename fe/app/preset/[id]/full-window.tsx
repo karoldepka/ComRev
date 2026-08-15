@@ -1,12 +1,15 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { ThreeDTextScreen } from '@/app/(tabs)/three-d';
-import { useBinauralBeat } from '@/utils/use-binaural-beat';
+import { ThreeDTextScreen, type TransitionSoundVariant } from '@/app/(tabs)/three-d';
 import { usePresetLoader } from '@/utils/use-preset-loader';
-import { PRESET_REGISTRY, setMissingTranslationListener } from '@/utils/slides/preset-registry';
+import {
+  PRESET_REGISTRY,
+  setAudioConfigListener,
+  setMissingTranslationListener,
+} from '@/utils/slides/preset-registry';
 
 // Pre-render one HTML file per known preset ID at build time.
 export function generateStaticParams() {
@@ -35,20 +38,27 @@ function pingMissingTranslation(port: number, key: string, lang: string) {
   pingRecorder(port, `/translation-missing?key=${encodeURIComponent(key)}&lang=${encodeURIComponent(lang)}`);
 }
 
+/** The site itself never plays this sound — see the TRANSITION_SOUND_VARIANTS
+ * comment in three-d.tsx. `tMs` is relative to the same ready-ping that marks
+ * the recording's own t=0 (see recordingStartPerfNowRef below), so the
+ * recorder can place the real audio at the right spot during post-processing. */
+function pingSoundEvent(port: number, variant: TransitionSoundVariant, tMs: number) {
+  pingRecorder(port, `/sound-event?variant=${encodeURIComponent(variant)}&t=${Math.round(tMs)}`);
+}
+
+function pingAudioConfig(port: number, music: string | undefined) {
+  if (!music) return;
+  pingRecorder(port, `/sound-config?music=${encodeURIComponent(music)}`);
+}
+
 export default function PresetFullWindowScreen() {
   const {
     id,
-    'binaural-hz': binauralHzStr,
-    'binaural-carrier': binauralCarrierStr,
-    'binaural-volume': binauralVolumeStr,
     'pause-until-obs': pauseUntilObs,
     'ready-port': readyPortStr,
     'stop-after-slides': stopAfterSlidesStr,
   } = useLocalSearchParams<{
     id: string;
-    'binaural-hz'?: string;
-    'binaural-carrier'?: string;
-    'binaural-volume'?: string;
     'pause-until-obs'?: string;
     /** Localhost port a recorder script is listening on for "ready"/"stop-recording" pings. */
     'ready-port'?: string;
@@ -59,14 +69,30 @@ export default function PresetFullWindowScreen() {
   const readyPort = parseInt(readyPortStr ?? '', 10) || 0;
   const stopAfterSlideCount = parseInt(stopAfterSlidesStr ?? '', 10) || undefined;
 
-  const handleFirstMeshReady = () => pingRecorder(readyPort, '/ready');
+  // performance.now() at the moment the *last* "page ready" ping fires (i.e.
+  // the post-refresh one — record-obs.mjs calls StartRecord right after
+  // receiving it), so it's the same instant as the video's own t=0. Every
+  // later sound event's timestamp is reported relative to this anchor.
+  const recordingStartPerfNowRef = useRef<number | null>(null);
+  const handleFirstMeshReady = () => {
+    recordingStartPerfNowRef.current = typeof performance !== 'undefined' ? performance.now() : 0;
+    pingRecorder(readyPort, '/ready');
+  };
   const handleStopAfterSlideCount = () => pingRecorder(readyPort, '/stop-recording');
+  const handleTransitionSound = (variant: TransitionSoundVariant) => {
+    const anchor = recordingStartPerfNowRef.current;
+    const tMs = anchor != null && typeof performance !== 'undefined' ? performance.now() - anchor : 0;
+    pingSoundEvent(readyPort, variant, tMs);
+  };
 
   // Registered synchronously (not in an effect) so it's in place before
   // usePresetLoader below builds this preset's slides — the recorder needs to
   // hear about a miss the moment it happens, not on some later render pass.
   setMissingTranslationListener(
     readyPort ? (key, lang) => pingMissingTranslation(readyPort, key, lang) : null,
+  );
+  setAudioConfigListener(
+    readyPort ? (music) => pingAudioConfig(readyPort, music) : null,
   );
 
   // When ?pause-until-obs=1, hold the sequence at slide 0 until OBS emits the
@@ -82,11 +108,6 @@ export default function PresetFullWindowScreen() {
     return () => window.removeEventListener('obsCustomEvent', handler);
   }, [pauseUntilObs]);
 
-  useBinauralBeat({
-    beatHz: parseFloat(binauralHzStr ?? '0'),
-    carrier: parseFloat(binauralCarrierStr ?? '200'),
-    volume: parseFloat(binauralVolumeStr ?? '0.35'),
-  });
   const { ready, notFound } = usePresetLoader(id);
 
   if (notFound) {
@@ -113,6 +134,7 @@ export default function PresetFullWindowScreen() {
         onFirstMeshReady={handleFirstMeshReady}
         stopAfterSlideCount={stopAfterSlideCount}
         onStopAfterSlideCount={handleStopAfterSlideCount}
+        onTransitionSound={handleTransitionSound}
       />
     </View>
   );

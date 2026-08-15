@@ -12,3 +12,13 @@ export function estimateReadingTimeMs(text: string): number {
   const punctuationBonus = /[.!?;:]$/.test(clean) ? 450 : 0;
   return clean.length * 36 + words * 95 + punctuationBonus;
 }
+
+/**
+ * How much every slide's reading-time-derived duration is compressed by —
+ * shared so the intro title slide (utils/slides/preset-registry.ts, via a
+ * fixed durationMsOverride) shrinks by the same fraction as regular content
+ * slides (app/(tabs)/three-d.tsx's estimateSequenceDurationMs), instead of
+ * only the latter shrinking and the title card being left at full length.
+ * History: 0.8 (20% shorter) -> 0.4 (2x shorter again) -> this (1.5x shorter again).
+ */
+export const SEQUENCE_DURATION_SCALE = 0.4 / 1.5;

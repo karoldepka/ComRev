@@ -2,7 +2,7 @@ import type { SoundscapeConfig } from '@/store/soundscape-store';
 import type { EffectInstance } from '@/utils/config-store';
 import i18n from '@/utils/i18n';
 import type { MusicKind } from '@/utils/music-tracks';
-import { estimateReadingTimeMs } from '@/utils/reading-time';
+import { estimateReadingTimeMs, SEQUENCE_DURATION_SCALE } from '@/utils/reading-time';
 import { stripBoldTags, wrapRichTextWords } from '@/utils/rich-text';
 import { nanoid } from 'nanoid/non-secure';
 import type { MantraEntry, MantraText } from './mcon.data';
@@ -83,6 +83,22 @@ function reportIfMissing(key: string, lang: string | undefined): void {
   if (!lang || lang === 'en' || !missingTranslationListener) return;
   if (i18n.exists(key, { ns: 'mantras', lng: lang, keySeparator: false })) return;
   missingTranslationListener(key, lang);
+}
+
+/**
+ * Set by the recording harness (see app/preset/[id]/full-window.tsx) to learn
+ * which background-music track a preset wants — the site no longer plays it
+ * live (see the TRANSITION_SOUND_VARIANTS comment in three-d.tsx for why),
+ * so the recorder needs this reported out-of-band to mix it into the video
+ * during post-processing instead.
+ */
+type AudioConfigListener = (music: MusicKind | undefined) => void;
+let audioConfigListener: AudioConfigListener | null = null;
+export function setAudioConfigListener(listener: AudioConfigListener | null): void {
+  audioConfigListener = listener;
+}
+export function reportAudioConfig(music: MusicKind | undefined): void {
+  audioConfigListener?.(music);
 }
 
 function getMantraSlideText(
@@ -182,8 +198,10 @@ function makeTitleSlide(id: string, title: string, lang?: string): SlideEntry {
     text,
     // Reading-speed formula, not a fixed guess — see estimateReadingTimeMs.
     // No CAPTION_REVEAL_DELAY_MS floor here: title-only slides have no
-    // caption, so there's nothing to wait for a reveal.
-    durationMsOverride: estimateReadingTimeMs(text),
+    // caption, so there's nothing to wait for a reveal. Scaled by the same
+    // SEQUENCE_DURATION_SCALE as regular content slides (three-d.tsx) so the
+    // intro title isn't left at full length while the rest of the video sped up.
+    durationMsOverride: Math.round(estimateReadingTimeMs(text) * SEQUENCE_DURATION_SCALE),
   };
 }
 

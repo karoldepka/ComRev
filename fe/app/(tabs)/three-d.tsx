@@ -89,7 +89,7 @@ import {
   rgbNumberToHexColor,
 } from '@/utils/color';
 import { encodeSvgDataUrl } from '@/utils/data-url';
-import { estimateReadingTimeMs } from '@/utils/reading-time';
+import { estimateReadingTimeMs, SEQUENCE_DURATION_SCALE } from '@/utils/reading-time';
 import { stripBoldTags } from '@/utils/rich-text';
 import { getCanvasDoubleTapAction } from '@/utils/slideshow-interactions';
 const DEFAULT_MAIN_TEXT = "Hi\nHello World\nThis is a very long line of text";
@@ -149,11 +149,9 @@ function pickPlasmaStops(): number[] {
   }
   return fullyRandomPlasmaStops();
 }
-// Slides run 2x shorter again on top of the previous 20%-shorter baseline
-// (0.8 * 0.5) — applied here and to the reading-time contributions in
-// estimateSequenceDurationMs below, so every component of a slide's duration
-// shrinks by the same fraction.
-const SEQUENCE_DURATION_SCALE = 0.4;
+// SEQUENCE_DURATION_SCALE now lives in utils/reading-time.ts, shared with the
+// intro title slide's duration (utils/slides/preset-registry.ts) so it
+// shrinks by the same fraction as regular content slides below.
 const DEFAULT_SEQUENCE_LINE_DURATION_MS = Math.round(1600 * SEQUENCE_DURATION_SCALE);
 const MAX_SEQUENCE_ITEM_DURATION_MS = Math.round(8500 * SEQUENCE_DURATION_SCALE);
 // The "examples" caption is rendered in the same 3D world-unit space as the title,
@@ -324,231 +322,23 @@ function getSequencePages(
       ];
 }
 
-/** Shared setup for the transition-sound synthesizers below: acquires/resumes the shared AudioContext and wires a master gain through a gentle limiter. Returns null if audio isn't available/ready yet. */
-function setupTransitionAudio(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  if (typeof window === "undefined") return null;
-  const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioCtor) return null;
-  const ctx = audioContextRef.current ?? new AudioCtor();
-  audioContextRef.current = ctx;
-  ctx.resume?.().catch(() => undefined);
-  if (ctx.state === "suspended") return null;
+// The site no longer synthesizes or plays these sounds live — doing so
+// disrupted whatever else was happening on the user's speakers regardless of
+// whether a recorder was even listening. Instead each slide transition is
+// deterministically named per index (same rotation that used to pick which
+// Web Audio synth to call) and reported via onTransitionSound, so a recorder
+// can log {variant, timestamp} pairs and the real audio gets mixed back into
+// the video during post-processing — see scripts/generate-transition-sfx.mjs
+// (where these variant names' sounds are pre-rendered to WAV assets, ported
+// from the synthesis that used to live here) and scripts/lib/audio-mix.mjs
+// (where they get placed back into the video at their logged timestamps).
+const TRANSITION_SOUND_VARIANTS = ["chime", "bell", "padSwell", "sparkle"] as const;
+export type TransitionSoundVariant = (typeof TRANSITION_SOUND_VARIANTS)[number];
 
-  const now = ctx.currentTime;
-  const master = ctx.createGain();
-  master.gain.setValueAtTime(1, now);
-  const limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.setValueAtTime(-20, now);
-  limiter.knee.setValueAtTime(24, now);
-  limiter.ratio.setValueAtTime(12, now);
-  limiter.attack.setValueAtTime(0.003, now);
-  limiter.release.setValueAtTime(0.25, now);
-  master.connect(limiter);
-  limiter.connect(ctx.destination);
-  return { ctx, now, master };
-}
-
-/** Epic brass-stab fanfare — cinematic and punchy. Not part of the default rotation (see TRANSITION_SOUNDS) since it's too much to repeat on every slide, but kept available. */
-function playFanfareSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  const audio = setupTransitionAudio(audioContextRef);
-  if (!audio) return;
-  const { ctx, now, master } = audio;
-
-  // A "brass section" voice: a small stack of detuned sawtooths through a
-  // lowpass filter whose envelope snaps open on attack — reads as horns
-  // punching in, not a glockenspiel chime.
-  function brassVoice(freq: number, t0: number, decay: number, gainPeak: number) {
-    const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.Q.setValueAtTime(1.5, t0);
-    filter.frequency.setValueAtTime(freq * 1.2, t0);
-    filter.frequency.exponentialRampToValueAtTime(freq * 6, t0 + 0.025);
-    filter.frequency.exponentialRampToValueAtTime(freq * 2, t0 + decay);
-    const voiceGain = ctx.createGain();
-    voiceGain.gain.setValueAtTime(0.0001, t0);
-    voiceGain.gain.exponentialRampToValueAtTime(gainPeak, t0 + 0.015);
-    voiceGain.gain.exponentialRampToValueAtTime(gainPeak * 0.55, t0 + 0.1);
-    voiceGain.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
-    filter.connect(voiceGain);
-    voiceGain.connect(master);
-    for (const detune of [-9, 0, 9]) {
-      const osc = ctx.createOscillator();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(freq, t0);
-      osc.detune.setValueAtTime(detune, t0);
-      osc.connect(filter);
-      osc.start(t0);
-      osc.stop(t0 + decay + 0.05);
-    }
-  }
-
-  // Short rising two-note call (G4-C5), then a full major chord stab lands
-  // on the new slide — the classic fanfare shape.
-  brassVoice(392.0, now + 0.0, 0.16, 0.22);
-  brassVoice(523.25, now + 0.14, 0.16, 0.24);
-  const stabStart = now + 0.3;
-  const chordFreqs = [261.63, 329.63, 392.0, 523.25, 659.25]; // C4 E4 G4 C5 E5
-  for (const freq of chordFreqs) brassVoice(freq, stabStart, 1.3, 0.26);
-
-  // Low impact "boom" under the stab for cinematic weight.
-  const boom = ctx.createOscillator();
-  const boomGain = ctx.createGain();
-  boom.type = "sine";
-  boom.frequency.setValueAtTime(110, stabStart);
-  boom.frequency.exponentialRampToValueAtTime(55, stabStart + 0.4);
-  boomGain.gain.setValueAtTime(0.0001, stabStart);
-  boomGain.gain.exponentialRampToValueAtTime(0.6, stabStart + 0.02);
-  boomGain.gain.exponentialRampToValueAtTime(0.0001, stabStart + 0.9);
-  boom.connect(boomGain);
-  boomGain.connect(master);
-  boom.start(stabStart);
-  boom.stop(stabStart + 1.0);
-
-  // Bright cymbal-like sheen swelling under the stab for extra sparkle.
-  const sheenStart = stabStart;
-  const bufLen = Math.ceil(ctx.sampleRate * 1.4);
-  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 1.6);
-  const sheen = ctx.createBufferSource();
-  const sf = ctx.createBiquadFilter();
-  sf.type = "highpass";
-  sf.frequency.setValueAtTime(4000, sheenStart);
-  const sg = ctx.createGain();
-  sg.gain.setValueAtTime(0.0001, sheenStart);
-  sg.gain.exponentialRampToValueAtTime(0.18, sheenStart + 0.03);
-  sg.gain.exponentialRampToValueAtTime(0.0001, sheenStart + 1.3);
-  sheen.buffer = buf;
-  sheen.connect(sf);
-  sf.connect(sg);
-  sg.connect(master);
-  sheen.start(sheenStart);
-}
-
-/** Soft three-note chime, gently ascending — like a wind chime, with a quiet octave overtone for warmth. */
-function playChimeSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  const audio = setupTransitionAudio(audioContextRef);
-  if (!audio) return;
-  const { ctx, now, master } = audio;
-  const notes = [523.25, 659.25, 783.99]; // C5 E5 G5
-  notes.forEach((freq, i) => {
-    const t0 = now + i * 0.13;
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(freq, t0);
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.3);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + 1.4);
-
-    const overtone = ctx.createOscillator();
-    overtone.type = "sine";
-    overtone.frequency.setValueAtTime(freq * 2, t0);
-    const overtoneGain = ctx.createGain();
-    overtoneGain.gain.setValueAtTime(0.0001, t0);
-    overtoneGain.gain.exponentialRampToValueAtTime(0.05, t0 + 0.03);
-    overtoneGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8);
-    overtone.connect(overtoneGain);
-    overtoneGain.connect(master);
-    overtone.start(t0);
-    overtone.stop(t0 + 0.9);
-  });
-}
-
-/** A single meditation-bowl-like tone: slightly inharmonic partials over a long, soft decay. */
-function playBellSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  const audio = setupTransitionAudio(audioContextRef);
-  if (!audio) return;
-  const { ctx, now, master } = audio;
-  const fundamental = 329.63; // E4
-  const partials = [1, 2.01, 3.03, 4.2]; // slightly detuned from true harmonics, like a real bell
-  partials.forEach((mult, i) => {
-    const t0 = now;
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(fundamental * mult, t0);
-    const gain = ctx.createGain();
-    const peak = 0.3 / (i + 1);
-    const decay = 2.4 - i * 0.3;
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + decay + 0.1);
-  });
-}
-
-/** A slow filtered pad swell — a soft ambient "whoosh" rather than a percussive hit. */
-function playPadSwellSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  const audio = setupTransitionAudio(audioContextRef);
-  if (!audio) return;
-  const { ctx, now, master } = audio;
-  const t0 = now;
-  const filter = ctx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.Q.setValueAtTime(0.7, t0);
-  filter.frequency.setValueAtTime(300, t0);
-  filter.frequency.linearRampToValueAtTime(1600, t0 + 0.6);
-  filter.frequency.linearRampToValueAtTime(300, t0 + 1.7);
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.5);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.9);
-  filter.connect(gain);
-  gain.connect(master);
-  for (const [freq, detune] of [[220, -4], [220, 4], [329.63, 0]] as const) { // root, root, fifth above
-    const osc = ctx.createOscillator();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(freq, t0);
-    osc.detune.setValueAtTime(detune, t0);
-    osc.connect(filter);
-    osc.start(t0);
-    osc.stop(t0 + 2.0);
-  }
-}
-
-/** A light, airy ascending glissando of high, quiet tones — a sparkle, not a fanfare stab. */
-function playSparkleSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  const audio = setupTransitionAudio(audioContextRef);
-  if (!audio) return;
-  const { ctx, now, master } = audio;
-  const freqs = [783.99, 987.77, 1174.66, 1567.98]; // G5 B5 D6 G6
-  freqs.forEach((freq, i) => {
-    const t0 = now + i * 0.07;
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(freq, t0);
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.11, t0 + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + 0.55);
-  });
-}
-
-// Default rotation for slide transitions: soothing, low-key sounds meant to be
-// heard many times in a row without becoming grating. playFanfareSound is
-// intentionally excluded — it's the "epic cinematic" outlier, not soothing.
-const TRANSITION_SOUNDS = [playChimeSound, playBellSound, playPadSwellSound, playSparkleSound];
-
-/** Plays a transition sound cycling deterministically by slide index — same idea as the visual `transition` cycling in getSequencePages. */
-function playTransitionSound(audioContextRef: React.MutableRefObject<AudioContext | null>, index: number) {
-  const sounds = TRANSITION_SOUNDS;
-  const sound = sounds[((index % sounds.length) + sounds.length) % sounds.length];
-  try {
-    sound(audioContextRef);
-  } catch (error) {
-    console.warn("Unable to play slide transition sound:", error);
-  }
+/** Same deterministic cycling by slide index as the visual `transition` cycling in getSequencePages. */
+function transitionSoundVariant(index: number): TransitionSoundVariant {
+  const variants = TRANSITION_SOUND_VARIANTS;
+  return variants[((index % variants.length) + variants.length) % variants.length];
 }
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
@@ -5812,6 +5602,7 @@ export function ThreeDTextScreen({
   onFirstMeshReady,
   stopAfterSlideCount,
   onStopAfterSlideCount,
+  onTransitionSound,
 }: {
   sequenceMode?: boolean;
   skipSavedConfigLoad?: boolean;
@@ -5824,6 +5615,11 @@ export function ThreeDTextScreen({
   /** When set, fire onStopAfterSlideCount once this many sequence slides have fully displayed. */
   stopAfterSlideCount?: number;
   onStopAfterSlideCount?: () => void;
+  /** Fires the moment a slide transition would have made a sound, synchronously with the
+   * mesh swap — see the TRANSITION_SOUND_VARIANTS comment above for why nothing is played
+   * live here anymore. The caller (see full-window.tsx) is what turns this into a timestamped
+   * log entry a recorder script can mix back into the video afterward. */
+  onTransitionSound?: (variant: TransitionSoundVariant) => void;
 }) {
   const { colorScheme, colors } = useAppTheme();
   const { t, i18n: i18nInstance } = useTranslation();
@@ -5971,7 +5767,6 @@ export function ThreeDTextScreen({
   const controlsScrollRef = useRef<ScrollView | null>(null);
   const effectListContainerY = useRef<number>(0);
   const pendingScrollNewId = useRef<string | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const soundEnabled = !isMuted && sequenceMode;
 
@@ -6417,12 +6212,13 @@ export function ThreeDTextScreen({
     // ready" — don't be tempted to gate/trigger sound on it directly; the
     // visual itself only swaps once the mesh is built, worker latency and
     // all, so sound has to stay tied to that same moment too.)
-    if (soundEnabled) playTransitionSound(audioContextRef, sequenceLineIndex);
+    if (soundEnabled) onTransitionSound?.(transitionSoundVariant(sequenceLineIndex));
   }, [
     currentSequencePage,
     currentSequencePageKey,
     fitVisibleText,
     onFirstMeshReady,
+    onTransitionSound,
     sequenceLineIndex,
     sequenceMode,
     sequenceReady,
@@ -6446,24 +6242,8 @@ export function ThreeDTextScreen({
       index: sequenceLineIndex,
       page: currentSequencePage,
     });
-    if (soundEnabled) playTransitionSound(audioContextRef, sequenceLineIndex);
-  }, [sequenceReady, sequenceMode, currentSequencePageKey, currentSequencePage, sequenceLineIndex, soundEnabled]);
-
-
-  useEffect(() => {
-    if (!sequenceMode || !soundEnabled || typeof window === "undefined") return;
-    const unlockAudio = () => {
-      playTransitionSound(audioContextRef, 0);
-      window.removeEventListener("pointerdown", unlockAudio);
-      window.removeEventListener("keydown", unlockAudio);
-    };
-    window.addEventListener("pointerdown", unlockAudio, { once: true });
-    window.addEventListener("keydown", unlockAudio, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", unlockAudio);
-      window.removeEventListener("keydown", unlockAudio);
-    };
-  }, [sequenceLineIndex, sequenceMode, soundEnabled]);
+    if (soundEnabled) onTransitionSound?.(transitionSoundVariant(sequenceLineIndex));
+  }, [sequenceReady, sequenceMode, currentSequencePageKey, currentSequencePage, sequenceLineIndex, soundEnabled, onTransitionSound]);
 
   const reorderEffectByIndex = (from: number, to: number) => {
     if (from === to) return;

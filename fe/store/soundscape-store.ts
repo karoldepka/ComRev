@@ -177,8 +177,6 @@ interface SoundscapeState {
   music: Record<MusicKind, LayerState>;
   toggleMusic: (kind: MusicKind) => void;
   setMusicVolume: (kind: MusicKind, volume: number) => void;
-  /** Starts a music track only if it isn't already playing — used by presets on load. */
-  playPresetMusic: (kind: MusicKind) => void;
 
   birds: BirdsState;
   toggleBirds: () => void;
@@ -513,12 +511,6 @@ export const useSoundscapeStore = create<SoundscapeState>((set, get) => ({
     const layer = get().music[kind];
     set({ music: { ...get().music, [kind]: { ...layer, volume } } });
     if (layer.playing) setTrackVolume(`music:${kind}`, volume);
-  },
-
-  playPresetMusic: (kind) => {
-    const layer = get().music[kind];
-    if (!layer || layer.playing) return;
-    get().toggleMusic(kind);
   },
 
   birds: { playing: false, volume: 0.35, pitch: 1, speed: 1 },

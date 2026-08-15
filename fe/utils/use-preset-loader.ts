@@ -8,13 +8,13 @@ import { fontFamilyForLang } from '@/utils/three-text-geometry';
 import {
   parseCategoriesParam,
   PRESET_REGISTRY,
+  reportAudioConfig,
 } from '@/utils/slides/preset-registry';
 
 export function usePresetLoader(id: string) {
   const setEffectInstances = useThreeDStore((s) => s.setEffectInstances);
   const setMantraMode = useThreeDStore((s) => s.setMantraMode);
   const applyPresetConfig = useSoundscapeStore((s) => s.applyPresetConfig);
-  const playPresetMusic = useSoundscapeStore((s) => s.playPresetMusic);
   const [ready, setReady] = useState(false);
 
   const { lang, categories } = useLocalSearchParams<{
@@ -57,7 +57,12 @@ export function usePresetLoader(id: string) {
       });
     }
     if (preset.soundscape) applyPresetConfig(preset.soundscape);
-    if (preset.music) playPresetMusic(preset.music);
+    // The site no longer auto-plays music (or any other sound) on preset
+    // load — it was disrupting whatever else was happening on the user's
+    // speakers just from navigating here. Report which track the preset
+    // wants instead, so a recorder can mix it into the video afterward
+    // (see reportAudioConfig / setAudioConfigListener in preset-registry.ts).
+    reportAudioConfig(preset.music);
     setMantraMode(true);
     // fa/ar have no glyphs in the default Latin fonts — force the bundled
     // Persian/Arabic font for those languages. Only ever set when actually
@@ -103,7 +108,6 @@ export function usePresetLoader(id: string) {
     setEffectInstances,
     setMantraMode,
     applyPresetConfig,
-    playPresetMusic,
     text,
     textSets,
     displayLang,
