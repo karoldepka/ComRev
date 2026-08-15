@@ -77,6 +77,14 @@ import { findVideo, fileNameFromTitle, titleForLang, missingTranslations } from 
 import { createRecordObsProgram, parseFlags, cliArgv } from "./lib/cli-args.mjs";
 import { mixAudioIntoVideo } from "./lib/audio-mix.mjs";
 
+// Turned off for now: slide-transition SFX piled up into a muddy, garbled
+// mix once slides got fast (each transition sound decays for up to ~2.6s —
+// see scripts/generate-transition-sfx.mjs), and binaural wasn't wanted
+// either. The event-logging/mixing code for both is left in place (see
+// scripts/lib/audio-mix.mjs) rather than deleted, so either can be flipped
+// back on here later. Music mixing is unaffected by this flag.
+const MIX_TRANSITION_SFX_AND_BINAURAL = false;
+
 // ── format presets ────────────────────────────────────────────────────────────
 
 export const FORMAT_PRESETS = {
@@ -649,9 +657,14 @@ export async function recordOne(obs, resolved) {
     await moveFileWithRetry(obsOutputPath, outputDst, "Moving OBS recording to output path");
     console.log(`\n✓ Saved: ${outputDst}  (${fileSizeMb(outputDst)} MB)`);
     // The recording itself is silent (see "Sound events" above) — mix the
-    // logged transition sounds, background music, and binaural beat in now.
+    // background music in now (plus transition SFX/binaural, if re-enabled —
+    // see MIX_TRANSITION_SFX_AND_BINAURAL above).
     try {
-      mixAudioIntoVideo(outputDst, soundLog, binauralHz ? { hz: binauralHz, carrier: binauralCarrier, volume: binauralVolume } : null);
+      const mixSoundLog = MIX_TRANSITION_SFX_AND_BINAURAL ? soundLog : { music: soundLog.music, events: [] };
+      const mixBinaural = MIX_TRANSITION_SFX_AND_BINAURAL && binauralHz
+        ? { hz: binauralHz, carrier: binauralCarrier, volume: binauralVolume }
+        : null;
+      mixAudioIntoVideo(outputDst, mixSoundLog, mixBinaural);
     } catch (err) {
       console.warn(`Audio mix failed; recording stays silent: ${err.message}`);
     }

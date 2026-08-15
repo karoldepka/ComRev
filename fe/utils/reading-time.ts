@@ -14,11 +14,20 @@ export function estimateReadingTimeMs(text: string): number {
 }
 
 /**
- * How much every slide's reading-time-derived duration is compressed by —
- * shared so the intro title slide (utils/slides/preset-registry.ts, via a
- * fixed durationMsOverride) shrinks by the same fraction as regular content
- * slides (app/(tabs)/three-d.tsx's estimateSequenceDurationMs), instead of
- * only the latter shrinking and the title card being left at full length.
- * History: 0.8 (20% shorter) -> 0.4 (2x shorter again) -> this (1.5x shorter again).
+ * How much every regular content slide's reading-time-derived duration is
+ * compressed by (app/(tabs)/three-d.tsx's estimateSequenceDurationMs). Does
+ * NOT apply to the intro title slide — see TITLE_SLIDE_DURATION_MS_RANGE
+ * below; scaling the title down by the same aggressive fraction as a 2-3
+ * word content slide made it flash by unreadably fast.
+ * History: 0.8 (20% shorter) -> 0.4 (2x shorter again) -> 0.4/1.5 (1.5x
+ * shorter again) -> this (2x shorter again).
  */
-export const SEQUENCE_DURATION_SCALE = 0.4 / 1.5;
+export const SEQUENCE_DURATION_SCALE = 0.4 / 3;
+
+/**
+ * The intro title slide (utils/slides/preset-registry.ts's makeTitleSlide)
+ * is a whole video title, not a 2-3 word content slide, so it gets its own
+ * fixed floor/ceiling instead of SEQUENCE_DURATION_SCALE — long enough to
+ * actually read, short enough not to drag.
+ */
+export const TITLE_SLIDE_DURATION_MS_RANGE = { min: 2000, max: 4000 };

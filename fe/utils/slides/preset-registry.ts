@@ -2,7 +2,7 @@ import type { SoundscapeConfig } from '@/store/soundscape-store';
 import type { EffectInstance } from '@/utils/config-store';
 import i18n from '@/utils/i18n';
 import type { MusicKind } from '@/utils/music-tracks';
-import { estimateReadingTimeMs, SEQUENCE_DURATION_SCALE } from '@/utils/reading-time';
+import { estimateReadingTimeMs, TITLE_SLIDE_DURATION_MS_RANGE } from '@/utils/reading-time';
 import { stripBoldTags, wrapRichTextWords } from '@/utils/rich-text';
 import { nanoid } from 'nanoid/non-secure';
 import type { MantraEntry, MantraText } from './mcon.data';
@@ -196,12 +196,16 @@ function makeTitleSlide(id: string, title: string, lang?: string): SlideEntry {
     id,
     name: 'Title',
     text,
-    // Reading-speed formula, not a fixed guess — see estimateReadingTimeMs.
-    // No CAPTION_REVEAL_DELAY_MS floor here: title-only slides have no
-    // caption, so there's nothing to wait for a reveal. Scaled by the same
-    // SEQUENCE_DURATION_SCALE as regular content slides (three-d.tsx) so the
-    // intro title isn't left at full length while the rest of the video sped up.
-    durationMsOverride: Math.round(estimateReadingTimeMs(text) * SEQUENCE_DURATION_SCALE),
+    // Reading-speed formula, not a fixed guess — see estimateReadingTimeMs —
+    // clamped to TITLE_SLIDE_DURATION_MS_RANGE rather than scaled down by
+    // SEQUENCE_DURATION_SCALE like a 2-3 word content slide: it's a whole
+    // video title, so it needs its own floor to stay readable and its own
+    // ceiling so it doesn't drag. No CAPTION_REVEAL_DELAY_MS floor here:
+    // title-only slides have no caption, so there's nothing to wait for a reveal.
+    durationMsOverride: Math.min(
+      TITLE_SLIDE_DURATION_MS_RANGE.max,
+      Math.max(TITLE_SLIDE_DURATION_MS_RANGE.min, Math.round(estimateReadingTimeMs(text))),
+    ),
   };
 }
 
