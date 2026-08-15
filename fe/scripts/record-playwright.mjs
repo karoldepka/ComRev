@@ -58,13 +58,13 @@ import { mkdirSync, renameSync, rmSync, unlinkSync, statSync } from 'fs';
 import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createRecordPlaywrightProgram, parseFlags } from './lib/cli-args.mjs';
+import { createRecordPlaywrightProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
 
-const args = parseFlags(createRecordPlaywrightProgram(), process.argv.slice(2));
+const args = parseFlags(createRecordPlaywrightProgram(), cliArgv());
 
 const format     = args.format ?? 'yt';
 const durationSec = parseInt(args.duration ?? '60', 10);

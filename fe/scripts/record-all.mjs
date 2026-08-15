@@ -46,7 +46,7 @@ import { mkdirSync } from 'fs';
 import { Command } from 'commander';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createRecordObsProgram, createRecordPlaywrightProgram, parseFlags } from './lib/cli-args.mjs';
+import { createRecordObsProgram, createRecordPlaywrightProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
 import { connectObs, recordOne, resolveOptions } from './record-obs.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -108,7 +108,7 @@ async function main() {
     .option('--continue-on-error', 'keep going after a failed recording (default: true)')
     .option('--fail-fast', 'stop on first error');
 
-  const { unknown: passthrough } = batchProgram.parseOptions(process.argv.slice(2));
+  const { unknown: passthrough } = batchProgram.parseOptions(cliArgv());
   const batch = batchProgram.opts();
 
   const presets = splitList(batch.presets, ALL_PRESETS);

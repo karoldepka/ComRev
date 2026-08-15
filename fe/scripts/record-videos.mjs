@@ -47,7 +47,7 @@ import { Command } from 'commander';
 import { resolve, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { loadVideos, fileNameFromTitle, titleForLang, missingTranslations } from './lib/videos-data.mjs';
-import { createRecordObsProgram, parseFlags } from './lib/cli-args.mjs';
+import { createRecordObsProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
 import { connectObs, recordOne, resolveOptions } from './record-obs.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -265,7 +265,7 @@ async function main() {
   // Anything not recognized above falls through as a passthrough token for
   // record-obs.mjs — validate it against record-obs.mjs's own known flags
   // here, upfront, rather than letting a typo fail deep inside the first job.
-  const { unknown } = batchProgram.parseOptions(process.argv.slice(2));
+  const { unknown } = batchProgram.parseOptions(cliArgv());
   const batchOpts = batchProgram.opts();
   const baseOpts = parseFlags(createRecordObsProgram(), unknown);
 

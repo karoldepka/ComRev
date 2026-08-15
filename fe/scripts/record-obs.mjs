@@ -74,7 +74,7 @@ import { OBSWebSocket } from "obs-websocket-js";
 import { dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { findVideo, fileNameFromTitle, titleForLang, missingTranslations } from "./lib/videos-data.mjs";
-import { createRecordObsProgram, parseFlags } from "./lib/cli-args.mjs";
+import { createRecordObsProgram, parseFlags, cliArgv } from "./lib/cli-args.mjs";
 
 // ── format presets ────────────────────────────────────────────────────────────
 
@@ -632,7 +632,7 @@ if (isMainModule) {
 }
 
 async function main() {
-  const rawOpts = parseFlags(createRecordObsProgram(), process.argv.slice(2));
+  const rawOpts = parseFlags(createRecordObsProgram(), cliArgv());
 
   if (rawOpts.video === true || rawOpts.video === "all") {
     // Delegates in-process (no subprocess spawn) to record-videos.mjs's

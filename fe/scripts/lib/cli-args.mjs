@@ -7,6 +7,19 @@
 
 import { Command } from 'commander';
 
+/**
+ * `npm run script -- --flag` / `pnpm run script -- --flag` is the standard
+ * way to pass flags through a package-manager script — the `--` is meant to
+ * be a no-op separator, stripped before the underlying command ever sees it.
+ * Some pnpm versions instead forward it literally, which Commander (having
+ * no positional arguments defined) rejects as "too many arguments". None of
+ * these scripts have any legitimate use for a bare `--` token, so strip it
+ * unconditionally rather than depending on package-manager/version behavior.
+ */
+export function cliArgv() {
+  return process.argv.slice(2).filter((token) => token !== '--');
+}
+
 /** Options record-obs.mjs accepts, both when run directly and when its flags
  * are forwarded (as raw passthrough tokens) from record-videos.mjs/record-all.mjs. */
 export function createRecordObsProgram() {
