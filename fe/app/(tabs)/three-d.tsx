@@ -6043,22 +6043,17 @@ export function ThreeDTextScreen({
     ? applyCapitalize(currentSequencePage.text)
     : applyCapitalize(principalText);
 
-  // As soon as a slide becomes current, kick off building several *upcoming*
-  // slides' geometry in the worker in the background, so each one's actual
-  // createTextGeometry call on transition resolves from cache instead of
-  // starting cold. Looking ahead just 1 slide left barely any real lead time:
-  // the worker processes postMessage requests one at a time, so slide N+1's
-  // build was only ever queued behind slide N's own (title + caption + any
-  // rewrap) requests, which often ate up as much time as slide N's own
-  // duration budget — meaning the *next* slide's build latency ended up
-  // tacked onto slide N's visible time instead of overlapping it. Queuing
-  // several slides ahead gives farther-out ones proportionally more time
-  // sitting in the queue before they're actually needed. The caption
-  // prefetch can still miss the cache if updateTextMesh ends up word-wrapping
-  // it (that measurement needs the title's already-built bbox, which isn't
-  // available yet here) — harmless, just falls back to a cold build for that
-  // one caption, same as before this existed.
-  const PREFETCH_LOOKAHEAD = 3;
+  // As soon as a sequence loads, kick off building *every* slide's geometry
+  // in the worker pool up front, instead of only the next slide or two.
+  // A 1-slide (and later 3-slide) lookahead still wasn't enough lead time in
+  // practice: with a single shared worker, slide N+1's build was queued
+  // right behind slide N's own (title + caption + any rewrap) requests, so
+  // its build latency routinely ended up tacked onto slide N's visible time
+  // instead of finishing during it. text-geometry-worker-client.ts now pools
+  // several workers so independent slides' geometry genuinely builds in
+  // parallel across cores — precomputing the whole sequence up front lets
+  // that parallelism actually get ahead of playback instead of perpetually
+  // chasing whichever slide is current.
   useEffect(() => {
     if (!sequenceMode || sequencePages.length === 0) return;
     const sharedOptions = {
@@ -6079,21 +6074,25 @@ export function ThreeDTextScreen({
       lineSpacing: mainTextParams.lineSpacing as number | undefined,
     };
     const titleSize = mainTextParams.size as number | undefined;
-    const lookahead = Math.min(PREFETCH_LOOKAHEAD, sequencePages.length - 1);
-    for (let offset = 1; offset <= lookahead; offset++) {
-      const page = sequencePages[(sequenceLineIndex + offset) % sequencePages.length];
-      if (!page) continue;
-      prefetchTextGeometry({ ...sharedOptions, text: applyCapitalize(page.text), size: titleSize });
+    const batchStart = performance.now();
+    const requests: Promise<void>[] = [];
+    for (const page of sequencePages) {
+      requests.push(prefetchTextGeometry({ ...sharedOptions, text: applyCapitalize(page.text), size: titleSize }));
       if (page.examples?.trim()) {
         const captionSize = (titleSize ?? 2.5) * EXAMPLES_TO_TITLE_RATIO;
-        prefetchTextGeometry({ ...sharedOptions, text: page.examples.trim(), size: captionSize });
+        requests.push(prefetchTextGeometry({ ...sharedOptions, text: page.examples.trim(), size: captionSize }));
       }
     }
-    // Fires once per slide (currentSequencePageKey changes when the current
-    // slide changes) — deliberately not depending on mainTextParams itself,
-    // which would re-fire on every unrelated param tweak.
+    // eslint-disable-next-line no-console
+    console.log(`[text-geometry] precomputing ${requests.length} mesh(es) for ${sequencePages.length} slide(s)...`);
+    void Promise.all(requests).then(() => {
+      // eslint-disable-next-line no-console
+      console.log(`[text-geometry] precompute batch done: ${requests.length} mesh(es) in ${(performance.now() - batchStart).toFixed(0)}ms wall-clock`);
+    });
+    // Deliberately not depending on mainTextParams itself, which would
+    // re-fire this whole-sequence precompute on every unrelated param tweak.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSequencePageKey, sequenceMode]);
+  }, [sequencePages, sequenceMode]);
 
   // Stable key that changes only when text content changes, not when display params (bevel etc.) change.
   const principalTextSetsKey = useMemo(

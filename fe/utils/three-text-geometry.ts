@@ -855,15 +855,17 @@ function mergeTextGeometryOptions(options: TextGeometryOptions): TextGeometryOpt
 }
 
 /**
- * Kicks off building this geometry in the worker ahead of time. Call this for
- * the *next* slide's title/caption as soon as the *current* slide starts
- * showing, so createTextGeometry() for it later (on transition) resolves
- * from cache instead of starting the worker round-trip cold.
+ * Kicks off building this geometry in the worker pool ahead of time. Call
+ * this for any slide's title/caption before it's actually needed, so
+ * createTextGeometry() for it later (on transition) resolves from cache
+ * instead of starting the worker round-trip cold. Returns a promise that
+ * settles once this one build is done, so a caller precomputing many slides
+ * at once (see app/(tabs)/three-d.tsx) can await the whole batch.
  */
-export function prefetchTextGeometry(options: TextGeometryOptions): void {
+export function prefetchTextGeometry(options: TextGeometryOptions): Promise<void> {
   const mergedOptions = mergeTextGeometryOptions(options);
   const { geometryOptions, customFontUrl } = toWorkerRequest(mergedOptions);
-  prefetchGeometryInWorker(geometryOptions, customFontUrl);
+  return prefetchGeometryInWorker(geometryOptions, customFontUrl);
 }
 
 export async function createTextGeometry(
