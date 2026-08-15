@@ -202,7 +202,15 @@ export function registerCustomFontUrl(label: string, url: string): string {
 const defaultOptions: Partial<TextGeometryOptions> = {
   size: 2,
   height: 0.16, // 5x shallower than the original 0.8
-  curveSegments: 48,
+  // 48 (the old default) generates ~40-60K vertices per character — fine for
+  // a short title, but a full-sentence caption (see components/three-d-text.tsx's
+  // buildCaptionGroup) could hit several million vertices, which the text
+  // geometry worker (utils/text-geometry.worker.ts) would take a very long
+  // time to build/serialize/transfer — long enough to look like a hang and
+  // stall every subsequent slide behind it, since a Worker processes
+  // postMessage requests one at a time. 8 still reads as smoothly curved at
+  // normal viewing size.
+  curveSegments: 8,
   bevelEnabled: true,
   bevelThickness: 0.09, // 2x thicker again on top of the previous 0.045; scaled down with height so the bevel doesn't exceed the extrude depth
   bevelSize: 0.036, // 1.5x wider again on top of the previous 0.024

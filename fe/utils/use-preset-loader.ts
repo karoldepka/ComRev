@@ -73,6 +73,14 @@ export function usePresetLoader(id: string) {
       const mainText = instances.find((i) => i.type === 'mainText');
       const next = mainText ?? createEffectInstance('mainText');
       const rest = instances.filter((i) => i.type !== 'mainText');
+      // Hard cap at 8, always applied (not just for fresh instances): a
+      // curveSegments value persisted from before this cap existed (the old
+      // default was 48) can make a full-sentence caption's geometry balloon
+      // to millions of vertices, which the text-geometry worker can take so
+      // long to build/serialize that it looks hung — and since a Worker
+      // processes one postMessage at a time, every slide after it stalls too.
+      // See the curveSegments comment in utils/three-text-geometry.ts.
+      const safeCurveSegments = Math.min((next.params.curveSegments as number | undefined) ?? 8, 8);
       return [
         {
           ...next,
@@ -89,6 +97,7 @@ export function usePresetLoader(id: string) {
             // without doesn't leave the old color stuck in persisted params.
             backgroundColor: preset.background ?? 0x000000,
             ...(rtlFontFamily ? { fontFamily: rtlFontFamily } : {}),
+            curveSegments: safeCurveSegments,
           },
         },
         ...rest,

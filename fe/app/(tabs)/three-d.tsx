@@ -2033,7 +2033,7 @@ function renderText3dControls({
         min={2}
         max={128}
         step={1}
-        value={(params.curveSegments as number) ?? 48}
+        value={(params.curveSegments as number) ?? 8}
         onChange={(v) => onUpdate("curveSegments", Math.round(v))}
         colors={colors}
       />

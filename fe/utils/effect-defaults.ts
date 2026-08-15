@@ -24,7 +24,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
         fontFamily: "droid_sans",
         size: 2,
         height: 0.16, // 5x shallower than the original 0.8
-        curveSegments: 48,
+        curveSegments: 8, // see the matching constant in utils/three-text-geometry.ts for why not 48
         bevelEnabled: true,
         bevelThickness: 0.03, // scaled down with height so the bevel doesn't exceed the extrude depth
         bevelSize: 0.016,
@@ -207,7 +207,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "fractalBackground": return { fractalType: "mandelbrot", scheme: "psychedelic", maxIter: 128, zoom: 0.35, cx: -0.5, cy: 0, juliaRe: -0.7, juliaIm: 0.27, animateJulia: true, juliaSpeed: 0.3, width: 60, height: 40, offsetZ: -8 };
     case "text3d":
       return {
-        text: "Text 3D", fontFamily: "droid_sans", size: 2, height: 0.16, curveSegments: 48,
+        text: "Text 3D", fontFamily: "droid_sans", size: 2, height: 0.16, curveSegments: 8,
         bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.016, bevelOffset: 0, bevelSegments: 5,
         color: 0xff6600, metalness: 0.95, roughness: 0.15, envMapIntensity: 1.5,
         equalizeLineWidths: false, equalizationMethod: "fontSize", targetWidth: 20, lineSpacing: 1.0,
