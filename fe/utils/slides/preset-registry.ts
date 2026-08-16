@@ -224,7 +224,7 @@ function getPrinciplesTitleSlide(lang?: string): SlideEntry {
 const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
   soundscape: { beatHz: 10, carrier: 200, volume: 0.35 }, // alpha — relaxed focus
   music: 'oceanking-patents',
-  backgroundPipe: { type: 'mandala' },
+  backgroundPipe: { type: 'mandala', params: { complexity: 3 } },
   // No fixed floor here: estimateSequenceDurationMs already guarantees each
   // slide stays up for CAPTION_REVEAL_DELAY_MS + however long its own caption
   // takes to read (see app/(tabs)/three-d.tsx), which scales with content
@@ -246,8 +246,16 @@ const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
 // rather than a wash of near-identical radial patterns. See utils/three-text-pipes.
 const BACKGROUND_PIPE_TYPES: EffectType[] = ['mandala', 'starburstRays', 'concentricRipples', 'auroraGlow'];
 
+// Mandala's own complexity range (see MandalaPipeParams.complexity): 1 is the
+// original simple single-ring pattern, 6 is a dense, layered, intricate one.
+// Cycled independently across just the videos that land on 'mandala' below,
+// so that family alone still spans "subtle circular" to "intricate detailed"
+// rather than every mandala video looking identical.
+const MANDALA_COMPLEXITY_RANGE = [1, 2, 3, 4, 5, 6];
+
 const videoPresetEntries: Record<string, PresetDefinition> = {};
 let videoIndex = 0;
+let mandalaIndex = 0;
 for (const category of VIDEO_CATEGORIES) {
   for (const video of category.videos) {
     const presetId = `video-${video.id}`;
@@ -259,12 +267,16 @@ for (const category of VIDEO_CATEGORIES) {
     // video for visual variety across a batch, always the same one for a
     // given video across re-recordings.
     const backgroundPipeType = BACKGROUND_PIPE_TYPES[videoIndex % BACKGROUND_PIPE_TYPES.length];
+    const backgroundPipeParams =
+      backgroundPipeType === 'mandala'
+        ? { complexity: MANDALA_COMPLEXITY_RANGE[mandalaIndex++ % MANDALA_COMPLEXITY_RANGE.length] }
+        : undefined;
     videoIndex++;
     videoPresetEntries[presetId] = {
       label: `${category.label}: ${video.title}`,
       soundscape: principlesBase.soundscape,
       music,
-      backgroundPipe: { type: backgroundPipeType },
+      backgroundPipe: { type: backgroundPipeType, params: backgroundPipeParams },
       generateSlides: (lang?: string) => [
         makeTitleSlide(`${presetId}-title`, video.title, lang),
         ...makeSlidesFromKeys(presetId, PRINCIPLES_MANTRAS, Object.keys(video.principles), lang),

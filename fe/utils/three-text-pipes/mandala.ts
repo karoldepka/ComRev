@@ -6,6 +6,10 @@ export interface MandalaPipeParams {
   opacity?: number;
   petals?: number;
   rings?: number;
+  /** Number of nested pattern layers, 1-6. 1 keeps the original simple single-ring
+   * look; higher values add progressively more (and finer, counter-rotating)
+   * layers for a denser, more intricate sacred-geometry feel. */
+  complexity?: number;
   speed?: number;
   size?: number;
   offsetZ?: number;
@@ -29,6 +33,7 @@ export class MandalaPipe implements EffectPipe {
         uOpacity: { value: this.params.opacity ?? 0.16 },
         uPetals: { value: this.params.petals ?? 12 },
         uRings: { value: this.params.rings ?? 4 },
+        uComplexity: { value: this.params.complexity ?? 1 },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -44,15 +49,32 @@ export class MandalaPipe implements EffectPipe {
         uniform float uOpacity;
         uniform float uPetals;
         uniform float uRings;
+        uniform float uComplexity;
+        const int MAX_LAYERS = 6;
         void main() {
           vec2 p = vUv - 0.5;
           float radius = length(p);
-          float angle = atan(p.y, p.x) + uTime * 0.08;
-          float petalWave = cos(angle * uPetals) * 0.5 + 0.5;
-          float ringWave = cos(radius * uRings * 18.0 - uTime * 0.45) * 0.5 + 0.5;
-          float petals = smoothstep(0.56, 0.92, petalWave * ringWave);
-          float halo = smoothstep(0.02, 0.19, radius) * smoothstep(0.74, 0.28, radius);
-          gl_FragColor = vec4(uColor, petals * halo * uOpacity);
+          float baseAngle = atan(p.y, p.x);
+          // Each layer nests in its own radius band with its own petal count
+          // and counter-rotating speed — at uComplexity=1 this collapses back
+          // to the original single-ring look; higher values stack more, finer
+          // rings inward and outward for a denser, more intricate pattern.
+          float pattern = 0.0;
+          for (int i = 0; i < MAX_LAYERS; i++) {
+            if (float(i) >= uComplexity) break;
+            float fi = float(i);
+            float dir = mod(fi, 2.0) < 0.5 ? 1.0 : -1.0;
+            float angle = baseAngle + uTime * 0.08 * dir * (1.0 + fi * 0.15);
+            float layerPetals = uPetals + fi * 6.0;
+            float petalWave = cos(angle * layerPetals) * 0.5 + 0.5;
+            float ringWave = cos(radius * (uRings + fi * 3.0) * 18.0 - uTime * 0.45 * (1.0 + fi * 0.1)) * 0.5 + 0.5;
+            float layerPattern = smoothstep(0.56, 0.92, petalWave * ringWave);
+            float bandInner = 0.02 + fi * 0.025;
+            float bandOuter = 0.74 - fi * 0.045;
+            float halo = smoothstep(bandInner, bandInner + 0.19, radius) * smoothstep(bandOuter, bandOuter - 0.46, radius);
+            pattern = max(pattern, layerPattern * halo);
+          }
+          gl_FragColor = vec4(uColor, pattern * uOpacity);
         }
       `,
       transparent: true,
@@ -73,6 +95,7 @@ export class MandalaPipe implements EffectPipe {
     material.uniforms.uOpacity.value = this.params.opacity ?? 0.16;
     material.uniforms.uPetals.value = this.params.petals ?? 12;
     material.uniforms.uRings.value = this.params.rings ?? 4;
+    material.uniforms.uComplexity.value = this.params.complexity ?? 1;
     this.mesh.position.z = this.params.offsetZ ?? -50;
   }
 
