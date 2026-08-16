@@ -583,35 +583,30 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       try {
         const resolvedCaptionSize = captionSize ?? (size ?? 2) * DEFAULT_CAPTION_SIZE_RATIO;
         const buildCaptionGroup = async (lineText: string) => {
+          // Flat, unlit white — no bevel/extrude, no metallic PBR look, so the
+          // caption reads as plain supporting text instead of competing with
+          // the title's 3D treatment. Also meaningfully cheaper to build than
+          // the title's full bevel+extrude geometry (fewer vertices: no bevel
+          // chamfer, no side walls).
           const result = await createTextGeometry({
             text: lineText,
             fontFamily,
             size: resolvedCaptionSize,
-            height,
+            height: 0,
             curveSegments,
-            bevelEnabled,
-            bevelThickness,
-            bevelSize,
-            bevelOffset,
-            bevelSegments,
-            color: color !== undefined ? new THREE.Color(color) : undefined,
-            metalness,
-            roughness,
-            envMap,
-            envMapIntensity,
+            bevelEnabled: false,
             lineSpacing,
           });
-          const zoneMaterials = [
-            result.faceMaterial,
-            result.material,
-            result.bevelMaterial ?? result.material,
-          ];
+          result.material.dispose();
+          result.faceMaterial?.dispose();
+          result.bevelMaterial?.dispose();
+          const captionMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
           const group = result.geometry as THREE.Group;
           group.traverse((child) => {
             if (child instanceof THREE.Mesh) {
-              child.material = zoneMaterials as any;
-              child.castShadow = true;
-              child.receiveShadow = true;
+              child.material = captionMaterial;
+              child.castShadow = false;
+              child.receiveShadow = false;
               // Caption is often much wider than the title (full sentence vs. a
               // few words); keep it out of fitCamera's bounding box so it can't
               // force the title to zoom out and shrink. Same convention as the
