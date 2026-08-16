@@ -1,12 +1,19 @@
 /**
- * Tiny local HTTP server that a recorded page pings — ready/stop signals and
- * the sound-event log (see app/preset/[id]/full-window.tsx's pingRecorder
- * calls, and "Ready signal"/"Stop signal"/"Sound events" in record-obs.mjs's
- * file header for the full protocol). Shared by record-obs.mjs (OBS, waits on
- * real wall-clock time via the promise-based waitForReady/waitForStop) and
- * record-playwright.mjs's frame-by-frame mode (drives a fake browser clock
- * instead, so it polls the synchronous isReady()/isStopped() getters between
- * frame advances rather than awaiting a promise).
+ * Tiny local HTTP server that a recorded page pings — ready/precompute-done/
+ * stop signals and the sound-event log (see app/preset/[id]/full-window.tsx's
+ * pingRecorder calls, and "Ready signal"/"Stop signal"/"Sound events" in
+ * record-obs.mjs's file header for the full protocol). Shared by
+ * record-obs.mjs (OBS, waits on real wall-clock time via the promise-based
+ * waitForReady/waitForPrecomputeDone/waitForStop) and record-playwright.mjs's
+ * frame-by-frame mode (drives a fake browser clock instead, so it polls the
+ * synchronous isReady()/isPrecomputeDone()/isStopped() getters between frame
+ * advances rather than awaiting a promise).
+ *
+ * /precompute-done fires once every slide's text geometry has finished
+ * building in the worker pool (see onAllMeshesPrecomputed in
+ * app/(tabs)/three-d.tsx) — recording waits for it after /ready so no slide's
+ * display gets silently stretched by a mid-recording mesh-build stall, and so
+ * the frame-by-frame engine never contends with live worker builds.
  */
 
 import { createServer } from 'http';
@@ -41,8 +48,10 @@ export function startReadyServer() {
   return new Promise((resolveSetup) => {
     let pendingReadyResolve = null;
     let pendingStopResolve = null;
+    let pendingPrecomputeDoneResolve = null;
     let readyReceived = false;
     let stopReceived = false;
+    let precomputeDoneReceived = false;
     // Unlike ready/stop, this is a single one-shot promise for the whole
     // recording, not re-armed per wait — the app can report a miss at any
     // point (most likely during the initial page load, while it's building
@@ -66,6 +75,9 @@ export function startReadyServer() {
       } else if (req.url?.startsWith('/ready')) {
         readyReceived = true;
         pendingReadyResolve?.();
+      } else if (req.url?.startsWith('/precompute-done')) {
+        precomputeDoneReceived = true;
+        pendingPrecomputeDoneResolve?.();
       } else if (req.url?.startsWith('/translation-missing')) {
         const url = new URL(req.url, 'http://localhost');
         resolveTranslationMissing({
@@ -91,8 +103,11 @@ export function startReadyServer() {
           armSignal((r) => { pendingReadyResolve = r; }, timeoutMs, onHeartbeat),
         waitForStop: (timeoutMs, onHeartbeat) =>
           armSignal((r) => { pendingStopResolve = r; }, timeoutMs, onHeartbeat),
+        waitForPrecomputeDone: (timeoutMs, onHeartbeat) =>
+          armSignal((r) => { pendingPrecomputeDoneResolve = r; }, timeoutMs, onHeartbeat),
         isReady: () => readyReceived,
         isStopped: () => stopReceived,
+        isPrecomputeDone: () => precomputeDoneReceived,
         translationMissing,
         getSoundLog: () => ({ music: musicKind, events: soundEvents }),
         close: () => server.close(),

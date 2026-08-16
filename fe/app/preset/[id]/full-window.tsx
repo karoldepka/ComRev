@@ -51,6 +51,15 @@ function pingAudioConfig(port: number, music: string | undefined) {
   pingRecorder(port, `/sound-config?music=${encodeURIComponent(music)}`);
 }
 
+/** Fires once every slide's mesh has finished building in the worker pool —
+ * a stronger "safe to start recording" signal than the first-mesh-ready one,
+ * with zero risk of a later slide stalling on its own build mid-recording.
+ * See ThreeDTextScreen's onAllMeshesPrecomputed and recorder-server.mjs's
+ * /precompute-done handling. */
+function pingPrecomputeDone(port: number) {
+  pingRecorder(port, '/precompute-done');
+}
+
 export default function PresetFullWindowScreen() {
   const {
     id,
@@ -78,6 +87,15 @@ export default function PresetFullWindowScreen() {
     recordingStartPerfNowRef.current = typeof performance !== 'undefined' ? performance.now() : 0;
     pingRecorder(readyPort, '/ready');
   };
+  const handleAllMeshesPrecomputed = () => {
+    pingPrecomputeDone(readyPort);
+    // Self-release the slide-0 pause the instant every mesh is ready, instead
+    // of only reacting to an externally-emitted obsCustomEvent — works
+    // whether or not OBS's obs-browser plugin (which the vendor-event path
+    // below needs) is even installed, and equally for the frame-by-frame
+    // Playwright engine, which never emits that event at all.
+    if (pauseUntilObs === '1') setSequenceReady(true);
+  };
   const handleStopAfterSlideCount = () => pingRecorder(readyPort, '/stop-recording');
   const handleTransitionSound = (variant: TransitionSoundVariant) => {
     const anchor = recordingStartPerfNowRef.current;
@@ -95,8 +113,12 @@ export default function PresetFullWindowScreen() {
     readyPort ? (music) => pingAudioConfig(readyPort, music) : null,
   );
 
-  // When ?pause-until-obs=1, hold the sequence at slide 0 until OBS emits the
-  // startSequence custom event — so recording and animation start simultaneously.
+  // When ?pause-until-obs=1, hold the sequence at slide 0 until either every
+  // slide's mesh has finished precomputing (handleAllMeshesPrecomputed above —
+  // the normal path) or OBS emits the startSequence custom event (below —
+  // for setups that want tighter, externally-driven synchronization instead).
+  // Either way, recording and animation content effectively start together,
+  // with zero mid-recording mesh-build stalls.
   const [sequenceReady, setSequenceReady] = useState(pauseUntilObs !== '1');
 
   useEffect(() => {
@@ -132,6 +154,7 @@ export default function PresetFullWindowScreen() {
         skipSavedConfigLoad
         sequenceReady={sequenceReady}
         onFirstMeshReady={handleFirstMeshReady}
+        onAllMeshesPrecomputed={handleAllMeshesPrecomputed}
         stopAfterSlideCount={stopAfterSlideCount}
         onStopAfterSlideCount={handleStopAfterSlideCount}
         onTransitionSound={handleTransitionSound}

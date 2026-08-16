@@ -21,9 +21,17 @@ interface PendingRequest {
  * serialized one request at a time behind a single worker's message queue —
  * that serialization was the real reason a deep prefetch lookahead still
  * didn't stop a slow build from delaying whatever slide needed it next.
+ *
+ * Sized to the full logical core count (not capped at 4): the whole-sequence
+ * precompute (see precomputeAllSlideGeometry in app/(tabs)/three-d.tsx) fires
+ * a batch of ~15-20 independent builds at once, and recording now waits for
+ * that whole batch to finish before starting — so the limiting factor is how
+ * many of them can genuinely run in parallel, not leaving a core free for
+ * the main thread (there's nothing else CPU-heavy competing during that
+ * wait, unlike during live interactive editing).
  */
 const POOL_SIZE = typeof navigator !== "undefined" && navigator.hardwareConcurrency
-  ? Math.max(2, Math.min(4, navigator.hardwareConcurrency - 1))
+  ? Math.max(2, navigator.hardwareConcurrency)
   : 2;
 
 interface PoolWorker {
@@ -66,14 +74,31 @@ function logBuildTiming(options: WorkerGeometryOptions, ms: number) {
   );
 }
 
-async function createPoolWorker(): Promise<PoolWorker> {
-  const res = await fetch(WORKER_BUNDLE_URL);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch text-geometry worker bundle: HTTP ${res.status}`);
+// The bundle is identical for every pool worker — fetched (and, in dev,
+// transformed by Metro) exactly once and cached, rather than once per pool
+// worker. That N-way redundant fetch was the actual bottleneck behind
+// growing POOL_SIZE: Metro's own internal jest-worker transform pool has to
+// service all of them, and with enough concurrent requests it queued up
+// worse than the geometry-building work this pool exists to parallelize.
+let blobUrlPromise: Promise<string> | null = null;
+function getWorkerBlobUrl(): Promise<string> {
+  if (!blobUrlPromise) {
+    blobUrlPromise = fetch(WORKER_BUNDLE_URL).then(async (res) => {
+      if (!res.ok) {
+        throw new Error(`Failed to fetch text-geometry worker bundle: HTTP ${res.status}`);
+      }
+      const code = await res.text();
+      const blob = new Blob([code], { type: "application/javascript" });
+      return URL.createObjectURL(blob);
+    });
+    // Don't let a failed fetch poison every future worker creation.
+    blobUrlPromise.catch(() => { blobUrlPromise = null; });
   }
-  const code = await res.text();
-  const blob = new Blob([code], { type: "application/javascript" });
-  const blobUrl = URL.createObjectURL(blob);
+  return blobUrlPromise;
+}
+
+async function createPoolWorker(): Promise<PoolWorker> {
+  const blobUrl = await getWorkerBlobUrl();
   const worker = new Worker(blobUrl);
   const entry: PoolWorker = { worker, pending: 0 };
 

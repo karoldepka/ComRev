@@ -12,17 +12,23 @@
  *     in sync with) and should make recording much faster.
  *
  *     NOT RECOMMENDED for this app's own preset/video routes as currently
- *     built: measured slower than the OBS engine, not faster. The fake clock
- *     only controls the main-thread timers — it can't accelerate the real,
- *     CPU-bound text-geometry mesh building that happens in a Web Worker
- *     (350ms-2.7s per unique slide, observed), and running that concurrently
- *     with per-frame page.screenshot() calls causes severe GPU contention
- *     (screenshots taking up to 13s each — "GPU stall due to ReadPixels").
- *     There's also an unresolved correctness bug: the slide sequence can race
- *     ahead of the ready-signal warm-up loop, making --slides stop far too
- *     early. Left in place (opt-in via --frames / --engine frames) as clean,
- *     reusable infrastructure for pages that *are* purely timer/RAF driven —
- *     just don't reach for it here without fixing both issues above first.
+ *     built: measured slower than the OBS engine, not faster. Now waits for
+ *     the full precompute-done signal (see recorder-server.mjs) before frame
+ *     capture starts, which fixed the GPU-contention slowdown that used to
+ *     come from mesh-building racing screenshots (precompute itself is fast:
+ *     ~3.3s total for a whole 8-slide video, once utils/text-geometry-worker-
+ *     client.ts's pool stopped redundantly re-fetching its own bundle once
+ *     per worker). Two problems remain even so:
+ *       1. page.screenshot() itself is slow in this headless/WebGL context —
+ *          observed ~2s/frame even with zero concurrent worker load, which
+ *          alone makes this engine slower than real-time OBS capture.
+ *       2. An unresolved correctness bug: the slide sequence can still race
+ *          ahead and hit --slides' stop condition almost immediately, even
+ *          with the sequence held at slide 0 until precompute-done and the
+ *          frame loop starting right after. Not yet root-caused.
+ *     Left in place (opt-in via --frames / --engine frames) as clean, reusable
+ *     infrastructure for pages that *are* purely timer/RAF driven — just
+ *     don't reach for it here without solving both issues above first.
  *     Shares --video/--slides/--variant/--format with record-obs.mjs (same
  *     resolveOptions()) — see record-videos.mjs's --engine frames for batch use.
  *
@@ -147,13 +153,12 @@ export async function recordFramesOne(resolved, options = {}) {
       recordUrl.searchParams.set('binaural-volume', String(binauralVolume));
     }
     if (slidesCount !== undefined) recordUrl.searchParams.set('stop-after-slides', String(slidesCount));
-    // Hold the sequence at slide 0 during warm-up below — otherwise slides
-    // would advance (and even finish, hitting stop-after-slides) while we're
-    // still just waiting for the first mesh to render, before a single frame
-    // has been captured. app/preset/[id]/full-window.tsx listens for the same
-    // `obsCustomEvent: startSequence` signal record-obs.mjs's --obs-sync emits
-    // via the OBS vendor API — dispatched directly from Playwright below
-    // instead, since there's no OBS in this engine.
+    // Hold the sequence at slide 0 until every slide's mesh has finished
+    // precomputing — otherwise slides would advance (and even finish, hitting
+    // stop-after-slides) while we're still just waiting for the first mesh to
+    // render, before a single frame has been captured. The app self-releases
+    // this the instant precompute finishes (see /precompute-done below) —
+    // no OBS, no manual event dispatch needed.
     recordUrl.searchParams.set('pause-until-obs', '1');
     const fullUrl = recordUrl.toString();
 
@@ -164,32 +169,45 @@ export async function recordFramesOne(resolved, options = {}) {
 
     const frameDurationMs = 1000 / fps;
 
-    // Advance the fake clock frame-by-frame (not screenshotting yet) until the
-    // page pings /ready — i.e. its first mesh has actually rendered — instead
-    // of guessing a fixed fast-forward like this script used to. Bounded by
-    // --wait-ms of *fake* time so a page that never pings can't hang forever.
-    // The sequence itself is paused (see pause-until-obs above), so this can't
-    // burn through slides before recording has even started.
+    // Advance the fake clock frame-by-frame (not screenshotting yet) until
+    // the page pings /ready — its first mesh has actually rendered — instead
+    // of guessing a fixed fast-forward like this script used to. Each
+    // page.clock.runFor() call is a real await, so real Worker mesh-build
+    // responses (never fake-clock-gated — Workers run on their own real
+    // clock) get a chance to arrive and resolve during this loop too, not
+    // just literally "wait for frame 0". Bounded by --wait-ms of *fake* time
+    // so a page that never pings can't hang forever.
     console.log('Advancing fake clock until first-frame ready signal...');
-    const warmupDeadlineMs = waitMs ?? 15_000;
+    const readyDeadlineMs = waitMs ?? 15_000;
     let warmedMs = 0;
-    while (!readyServer.isReady() && warmedMs < warmupDeadlineMs) {
+    while (!readyServer.isReady() && warmedMs < readyDeadlineMs) {
       await page.clock.runFor(frameDurationMs);
       warmedMs += frameDurationMs;
       assertNoTranslationMissing();
     }
     if (!readyServer.isReady()) {
-      console.warn(`No ready signal after ${warmupDeadlineMs}ms of fake time — proceeding anyway.`);
+      console.warn(`No ready signal after ${readyDeadlineMs}ms of fake time — proceeding anyway.`);
     } else {
       console.log(`Ready signal received after ${warmedMs.toFixed(0)}ms of fake time.`);
     }
 
-    // Start the sequence now — recording (frame capture) begins immediately
-    // after, so animation and "recording" start on the same frame, same as
-    // --obs-sync does for the OBS engine.
-    await page.evaluate(() => {
-      window.dispatchEvent(new CustomEvent('obsCustomEvent', { detail: { action: 'startSequence' } }));
-    });
+    // Keep advancing until every slide's mesh has finished building — a much
+    // more generous budget than the ready wait above, since precomputing an
+    // entire sequence genuinely takes longer than the first mesh alone. This
+    // is what makes the frame-by-frame engine actually fast: once this
+    // resolves, frame capture below never contends with live Worker/GPU work.
+    console.log('Advancing fake clock until precompute-done signal...');
+    const precomputeDeadlineMs = Math.max(readyDeadlineMs, 60_000);
+    while (!readyServer.isPrecomputeDone() && warmedMs < precomputeDeadlineMs) {
+      await page.clock.runFor(frameDurationMs);
+      warmedMs += frameDurationMs;
+      assertNoTranslationMissing();
+    }
+    if (!readyServer.isPrecomputeDone()) {
+      console.warn(`No precompute-done signal after ${precomputeDeadlineMs}ms of fake time — proceeding anyway.`);
+    } else {
+      console.log(`Precompute-done signal received after ${warmedMs.toFixed(0)}ms of fake time total.`);
+    }
 
     const framesDir = join(dirname(outputDst), `.frames-${Date.now()}`);
     mkdirSync(framesDir, { recursive: true });

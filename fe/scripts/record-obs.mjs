@@ -51,6 +51,16 @@
  *   --no-tab is the exception: an arbitrary third-party URL may not know about
  *   `ready-port` and might never ping, so --wait-ms applies there as a cap.
  *
+ * Precompute-done signal:
+ *   The URL also gets `pause-until-obs=1` (for this app's own routes) so the
+ *   sequence holds at slide 0 while every slide's text geometry builds in the
+ *   worker pool up front (see precomputeAllSlideGeometry in
+ *   app/(tabs)/three-d.tsx). Once that finishes, the page pings
+ *   "/precompute-done" and self-releases the pause — this script waits for
+ *   that ping before StartRecord, so no slide's on-screen duration ends up
+ *   silently stretched by a mesh-build stall mid-recording, the way it could
+ *   when only the very first mesh (the old "ready" signal alone) was awaited.
+ *
  * Stop signal:
  *   --slides works the same way, on the same local server: the URL gets a
  *   `stop-after-slides` param, and app/(tabs)/three-d.tsx pings "/stop-recording"
@@ -333,7 +343,12 @@ export async function recordOne(obs, resolved) {
     recordUrl.searchParams.set("binaural-carrier", String(binauralCarrier));
     recordUrl.searchParams.set("binaural-volume", String(binauralVolume));
   }
-  if (obsSync) recordUrl.searchParams.set("pause-until-obs", "1");
+  // Always hold at slide 0 (for this app's own routes) until every slide's
+  // mesh has finished precomputing — see the precompute-done wait below.
+  // Safe unconditionally (not just for --obs-sync): the app self-releases
+  // this the instant precompute finishes, with no dependency on OBS's
+  // obs-browser plugin the way the --obs-sync vendor-event path needs.
+  if (!noTab) recordUrl.searchParams.set("pause-until-obs", "1");
   if (slidesCount !== undefined) recordUrl.searchParams.set("stop-after-slides", String(slidesCount));
   const fullUrl = recordUrl.toString();
 
@@ -466,15 +481,33 @@ export async function recordOne(obs, resolved) {
 
     await waitForSignalAndLog(
       readyServer.waitForReady,
-      obsSync ? "slide 0 ready" : "page ready",
+      noTab ? "page ready" : "slide 0 ready",
+      effectiveWaitMs,
+      readyServer,
+    );
+  }
+
+  // Wait for every slide's mesh to finish building before recording starts,
+  // so no slide's on-screen duration gets silently stretched by a
+  // mid-recording mesh-build stall (see /precompute-done in
+  // recorder-server.mjs). The app self-releases its slide-0 pause the
+  // instant this fires (see pause-until-obs above), so recording and
+  // animation start together regardless of whether the obsCustomEvent below
+  // ever gets emitted.
+  if (!noTab) {
+    await waitForSignalAndLog(
+      readyServer.waitForPrecomputeDone,
+      "precompute-done",
       effectiveWaitMs,
       readyServer,
     );
   }
 
   if (obsSync) {
-    // Signal the app to start the sequence, then immediately begin recording —
-    // animation and recording start at the same instant.
+    // Explicit extra nudge for setups that want OBS itself to be the trigger —
+    // the app has already self-released its pause by this point (see above),
+    // so this is normally a harmless no-op; kept for whatever external
+    // synchronization --obs-sync was originally set up for.
     console.log("Signalling app to start sequence (obsCustomEvent: startSequence)...");
     try {
       await obs.call("CallVendorRequest", {

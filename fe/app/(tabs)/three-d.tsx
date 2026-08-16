@@ -5612,6 +5612,7 @@ export function ThreeDTextScreen({
   fullWindow = false,
   sequenceReady = true,
   onFirstMeshReady,
+  onAllMeshesPrecomputed,
   stopAfterSlideCount,
   onStopAfterSlideCount,
   onTransitionSound,
@@ -5624,6 +5625,10 @@ export function ThreeDTextScreen({
   sequenceReady?: boolean;
   /** Fires once, the first time the 3D mesh finishes building — a "safe to record now" signal. */
   onFirstMeshReady?: () => void;
+  /** Fires once per sequence, when every slide's title (and caption, if any) geometry has
+   * finished building in the worker pool — a "safe to start recording with zero mesh-build
+   * stalls" signal, stronger than onFirstMeshReady. See precomputeAllSlideGeometry below. */
+  onAllMeshesPrecomputed?: () => void;
   /** When set, fire onStopAfterSlideCount once this many sequence slides have fully displayed. */
   stopAfterSlideCount?: number;
   onStopAfterSlideCount?: () => void;
@@ -6100,11 +6105,12 @@ export function ThreeDTextScreen({
     void Promise.all(requests).then(() => {
       // eslint-disable-next-line no-console
       console.log(`[text-geometry] precompute batch done: ${requests.length} mesh(es) in ${(performance.now() - batchStart).toFixed(0)}ms wall-clock`);
+      onAllMeshesPrecomputed?.();
     });
     // Deliberately not depending on mainTextParams itself, which would
     // re-fire this whole-sequence precompute on every unrelated param tweak.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sequencePages, sequenceMode]);
+  }, [sequencePages, sequenceMode, onAllMeshesPrecomputed]);
 
   // Stable key that changes only when text content changes, not when display params (bevel etc.) change.
   const principalTextSetsKey = useMemo(
