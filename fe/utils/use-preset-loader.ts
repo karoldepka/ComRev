@@ -85,7 +85,15 @@ export function usePresetLoader(id: string) {
     setEffectInstances((instances) => {
       const mainText = instances.find((i) => i.type === 'mainText');
       const next = mainText ?? createEffectInstance('mainText');
-      const rest = instances.filter((i) => i.type !== 'mainText');
+      const backgroundPipeType = preset.backgroundPipe?.type;
+      let backgroundPipeInstance = null;
+      if (backgroundPipeType) {
+        const base = createEffectInstance(backgroundPipeType);
+        backgroundPipeInstance = { ...base, params: { ...base.params, ...preset.backgroundPipe?.params } };
+      }
+      const rest = instances.filter(
+        (i) => i.type !== 'mainText' && i.type !== backgroundPipeType,
+      );
       // Hard cap at 8, always applied (not just for fresh instances): a
       // curveSegments value persisted from before this cap existed (the old
       // default was 48) can make a full-sentence caption's geometry balloon
@@ -113,6 +121,7 @@ export function usePresetLoader(id: string) {
             curveSegments: safeCurveSegments,
           },
         },
+        ...(backgroundPipeInstance ? [backgroundPipeInstance] : []),
         ...rest,
       ];
     });

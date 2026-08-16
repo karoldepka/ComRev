@@ -5,6 +5,7 @@ import {
   AnimChromaticPipe,
   AntialiasingPipe,
   AuraPipe,
+  AuroraGlowPipe,
   BackgroundPlanePipe,
   BendPipe,
   BloomPipe,
@@ -20,6 +21,7 @@ import {
   ColorGradingPipe,
   ColorOverlayPipe,
   CometTrailPipe,
+  ConcentricRipplesPipe,
   ConfettiPipe,
   CrosshatchPipe,
   CrtCurvaturePipe,
@@ -125,6 +127,7 @@ import {
   SpiralDeformPipe,
   SpotlightPipe,
   SquishPipe,
+  StarburstRaysPipe,
   StarField3dPipe,
   StrobePipe,
   StudioLightPipe,
@@ -267,6 +270,9 @@ function buildPipe(effect: EffectInstance): EffectPipe {
     case "floatingCubes":  return new FloatingCubesPipe(effect.params as any);
     case "mirrorPlane":    return new MirrorPlanePipe(effect.params as any);
     case "mandala":        return new MandalaPipe(effect.params as any);
+    case "starburstRays":  return new StarburstRaysPipe(effect.params as any);
+    case "concentricRipples": return new ConcentricRipplesPipe(effect.params as any);
+    case "auroraGlow":     return new AuroraGlowPipe(effect.params as any);
     case "spin":           return new SpinPipe(effect.params as any);
     case "bounce":         return new BouncePipe(effect.params as any);
     case "levitation":     return new LevitationPipe(effect.params as any);

@@ -40,6 +40,7 @@ export type EffectType =
   | "floatingRings" | "starField3d" | "snow" | "rain" | "confetti"
   | "sparkle" | "aura" | "gridFloor" | "orbiter" | "portalRing"
   | "cometTrail" | "floatingCubes" | "mirrorPlane" | "mandala"
+  | "starburstRays" | "concentricRipples" | "auroraGlow"
   // animation
   | "pulse" | "spin" | "bounce" | "levitation" | "swing" | "tremble"
   | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"

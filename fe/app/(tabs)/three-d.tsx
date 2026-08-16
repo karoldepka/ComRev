@@ -684,6 +684,9 @@ type EffectType =
   | "floatingCubes"
   | "mirrorPlane"
   | "mandala"
+  | "starburstRays"
+  | "concentricRipples"
+  | "auroraGlow"
   // animation
   | "pulse"
   | "spin"
@@ -943,6 +946,9 @@ const EFFECT_TYPES: {
   },
   { type: "mirrorPlane", label: "Mirror Plane", target: "geometry" },
   { type: "mandala", label: "Mandala", target: "geometry", animated: true },
+  { type: "starburstRays", label: "Starburst Rays", target: "geometry", animated: true },
+  { type: "concentricRipples", label: "Concentric Ripples", target: "geometry", animated: true },
+  { type: "auroraGlow", label: "Aurora Glow", target: "geometry", animated: true },
   { type: "shadowFloor", label: "Shadow Floor", target: "geometry" },
   { type: "backgroundPlane", label: "Background Plane", target: "geometry" },
   { type: "fogEffect", label: "Fog", target: "geometry" },
@@ -1013,6 +1019,9 @@ const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
   skySphere:      ["sky", "background", "environment", "space", "horizon", "aurora", "nebula", "night", "sunset", "day"],
   fractalBackground: ["fractal", "mandelbrot", "julia", "plasma", "math", "chaos", "infinite", "zoom", "psychedelic", "pattern"],
   mandala:         ["mandala", "sacred geometry", "radial", "petals", "lotus", "meditation", "pattern"],
+  starburstRays:  ["starburst", "rays", "beams", "sunburst", "radiate", "shine", "light"],
+  concentricRipples: ["ripple", "ripples", "waves", "water", "concentric", "sonar", "pulse"],
+  auroraGlow:     ["aurora", "glow", "bands", "gradient", "flowing", "borealis", "ambient"],
   graphics:       ["image", "picture", "photo", "icon", "svg", "artwork", "logo", "texture"],
   text3d:         ["text", "words", "letters", "font", "typography", "write", "caption"],
   bloom:          ["glow", "light", "luminous", "radiance", "shine", "halo", "bright"],

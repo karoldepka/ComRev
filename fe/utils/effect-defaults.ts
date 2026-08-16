@@ -181,6 +181,9 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "floatingCubes":  return { count: 12, color: 0xff6600, spread: 10, speed: 0.5 };
     case "mirrorPlane":    return { opacity: 0.3, axis: "y", offset: 0 };
     case "mandala":        return { color: 0xff9800, opacity: 0.16, petals: 12, rings: 4, speed: 1, size: 400, offsetZ: -50 };
+    case "starburstRays":  return { color: 0xff9800, opacity: 0.14, rays: 16, speed: 1, size: 400, offsetZ: -50 };
+    case "concentricRipples": return { color: 0xff9800, opacity: 0.13, rings: 6, speed: 1, size: 400, offsetZ: -50 };
+    case "auroraGlow":     return { color: 0xff9800, color2: 0x2266ff, opacity: 0.13, speed: 1, size: 400, offsetZ: -50 };
     // animation
     case "spin":           return { speedX: 0, speedY: 1, speedZ: 0 };
     case "bounce":         return { height: 1.5, speed: 2 };

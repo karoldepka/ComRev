@@ -116,6 +116,9 @@ export * from './comet-trail';
 export * from './floating-cubes';
 export * from './mirror-plane';
 export * from './mandala';
+export * from './starburst-rays';
+export * from './concentric-ripples';
+export * from './aurora-glow';
 
 // ── AI-generated / custom JS pipe ─────────────────────────────────────────────
 export * from './custom-js';

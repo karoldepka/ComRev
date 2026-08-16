@@ -1,5 +1,5 @@
 import type { SoundscapeConfig } from '@/store/soundscape-store';
-import type { EffectInstance } from '@/utils/config-store';
+import type { EffectInstance, EffectType } from '@/utils/config-store';
 import i18n from '@/utils/i18n';
 import type { MusicKind } from '@/utils/music-tracks';
 import { MUSIC_SOURCES } from '@/utils/music-tracks';
@@ -39,6 +39,8 @@ export interface PresetDefinition {
   sequenceLineDurationMs?: number;
   /** 3D scene background color as a hex number (e.g. 0xffffff for white); overrides the default black. Useful for A/B-testing preset variants. */
   background?: number;
+  /** Persistent animated background visual (e.g. mandala) applied for the whole preset, in addition to the mainText instance — see utils/three-text-pipes. */
+  backgroundPipe?: { type: EffectType; params?: Record<string, unknown> };
   generateSlides: (
     lang?: string,
     categories?: readonly string[],
@@ -222,6 +224,7 @@ function getPrinciplesTitleSlide(lang?: string): SlideEntry {
 const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
   soundscape: { beatHz: 10, carrier: 200, volume: 0.35 }, // alpha — relaxed focus
   music: 'oceanking-patents',
+  backgroundPipe: { type: 'mandala' },
   // No fixed floor here: estimateSequenceDurationMs already guarantees each
   // slide stays up for CAPTION_REVEAL_DELAY_MS + however long its own caption
   // takes to read (see app/(tabs)/three-d.tsx), which scales with content
@@ -238,6 +241,11 @@ const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
 // video, e.g. `preset/video-smarter-7/full-window`. All current videos draw
 // their principles from principles.data.tsx, so they reuse principlesBase's
 // soundscape/music rather than repeating it per video.
+// Cycled per video (see backgroundPipe below) — kept small and distinct
+// rather than every MandalaPipe-family type, so each is clearly recognizable
+// rather than a wash of near-identical radial patterns. See utils/three-text-pipes.
+const BACKGROUND_PIPE_TYPES: EffectType[] = ['mandala', 'starburstRays', 'concentricRipples', 'auroraGlow'];
+
 const videoPresetEntries: Record<string, PresetDefinition> = {};
 let videoIndex = 0;
 for (const category of VIDEO_CATEGORIES) {
@@ -247,11 +255,16 @@ for (const category of VIDEO_CATEGORIES) {
     // declaration order — deterministic (same video always gets the same
     // track) rather than random, so re-recording doesn't shuffle music.
     const music = MUSIC_SOURCES[videoIndex % MUSIC_SOURCES.length].kind;
+    // Same idea for the animated background pattern — a different one per
+    // video for visual variety across a batch, always the same one for a
+    // given video across re-recordings.
+    const backgroundPipeType = BACKGROUND_PIPE_TYPES[videoIndex % BACKGROUND_PIPE_TYPES.length];
     videoIndex++;
     videoPresetEntries[presetId] = {
       label: `${category.label}: ${video.title}`,
       soundscape: principlesBase.soundscape,
       music,
+      backgroundPipe: { type: backgroundPipeType },
       generateSlides: (lang?: string) => [
         makeTitleSlide(`${presetId}-title`, video.title, lang),
         ...makeSlidesFromKeys(presetId, PRINCIPLES_MANTRAS, Object.keys(video.principles), lang),
