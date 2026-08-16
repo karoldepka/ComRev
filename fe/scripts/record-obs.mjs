@@ -698,7 +698,7 @@ async function main() {
     // runBatch, so the whole batch shares this single OBS connection instead
     // of opening a new one per video.
     const { runBatch } = await import("./record-videos.mjs");
-    const langs = (rawOpts.lang || "pl,en").split(",").map((s) => s.trim()).filter(Boolean);
+    const langs = (rawOpts.lang || "en").split(",").map((s) => s.trim()).filter(Boolean);
     const { results } = await runBatch({
       formats: [rawOpts.format ?? "shorts"],
       langs,

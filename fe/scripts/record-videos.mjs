@@ -17,7 +17,7 @@
  * Filters (comma-separated values or omit for all):
  *   --ids       <list>   smarter-7,habits-7        (default: all declared videos)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok    (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...            (default: pl,en — Polish batch first)
+ *   --langs     <list>   en,pl,de,fr,...            (default: en)
  *
  * Batch control:
  *   --dry-run                    Print plan without recording
@@ -32,7 +32,7 @@
  * --ws-password, --no-resize, --scene, --source, ...
  *
  * Examples:
- *   # All videos × shorts+yt × Polish + English (default)
+ *   # All videos × shorts+yt × English (default)
  *   node scripts/record-videos.mjs
  *
  *   # Just the "smarter" video, TikTok format, dry run
@@ -42,12 +42,21 @@
  *   node scripts/record-videos.mjs --formats shorts,yt,yt-4k,tiktok --langs en,pl
  */
 
-import { mkdirSync } from 'fs';
 import { Command } from 'commander';
-import { resolve, dirname } from 'path';
+import { mkdirSync } from 'fs';
+import { dirname, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { loadVideos, fileNameFromTitle, titleForLang, missingTranslations } from './lib/videos-data.mjs';
-import { createRecordObsProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
+import {
+  cliArgv,
+  createRecordObsProgram,
+  parseFlags,
+} from './lib/cli-args.mjs';
+import {
+  fileNameFromTitle,
+  loadVideos,
+  missingTranslations,
+  titleForLang,
+} from './lib/videos-data.mjs';
 import { connectObs, recordOne, resolveOptions } from './record-obs.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -55,12 +64,25 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ALL_FORMATS = ['shorts', 'yt', 'tiktok', 'yt-4k'];
 
 const ALL_LANGS = [
-  'en', 'pl', 'de', 'it', 'fr', 'ca', 'zh', 'pt', 'es', 'hi', 'ar',
+  'en',
+  'pl',
+  'de',
+  'it',
+  'fr',
+  'ca',
+  'zh',
+  'pt',
+  'es',
+  'hi',
+  'ar',
 ];
 
 function splitList(value, allowed, defaultValue = allowed) {
   if (!value) return defaultValue;
-  const items = String(value).split(',').map((s) => s.trim()).filter(Boolean);
+  const items = String(value)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const unknown = items.filter((v) => !allowed.includes(v));
   if (unknown.length) {
     console.error(`Unknown value(s): ${unknown.join(', ')}`);
@@ -79,7 +101,7 @@ const pad = (s, n) => String(s).padEnd(n);
  * @param {object} options
  * @param {string[]} [options.ids] video ids to include (default: all declared videos)
  * @param {string[]} [options.formats] (default: ['shorts', 'yt'])
- * @param {string[]} [options.langs] (default: ['pl', 'en'] — Polish batch runs first)
+ * @param {string[]} [options.langs] (default: ['en'])
  * @param {boolean} [options.dryRun]
  * @param {string} [options.outDir]
  * @param {boolean} [options.failFast]
@@ -93,7 +115,7 @@ export async function runBatch(options = {}) {
   const {
     ids,
     formats = ['shorts', 'yt'],
-    langs = ['pl', 'en'],
+    langs = ['en'],
     dryRun = false,
     outDir: outDirOpt,
     failFast = false,
@@ -104,7 +126,11 @@ export async function runBatch(options = {}) {
   const videos = ids ? allVideos.filter((v) => ids.includes(v.id)) : allVideos;
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const outDir = resolve(__dirname, '..', outDirOpt ?? `../recordings/videos_${ts}`);
+  const outDir = resolve(
+    __dirname,
+    '..',
+    outDirOpt ?? `../recordings/videos_${ts}`,
+  );
 
   // Grouped by language first (then video, then format) so a run produces
   // complete language batches in sequence, rather than interleaving languages
@@ -149,22 +175,31 @@ export async function runBatch(options = {}) {
   for (const lang of langs) {
     for (const video of videos) {
       const missing = missingTranslations(video, lang);
-      if (missing.length > 0) translationIssues.push({ id: video.id, lang, missing });
+      if (missing.length > 0)
+        translationIssues.push({ id: video.id, lang, missing });
     }
   }
   if (translationIssues.length > 0) {
-    console.error(`✗ Missing translations — aborting before recording (${translationIssues.length} video/language combination(s)):\n`);
+    console.error(
+      `✗ Missing translations — aborting before recording (${translationIssues.length} video/language combination(s)):\n`,
+    );
     for (const issue of translationIssues) {
-      console.error(`  ${issue.id} (${issue.lang}): ${issue.missing.length} missing`);
+      console.error(
+        `  ${issue.id} (${issue.lang}): ${issue.missing.length} missing`,
+      );
       issue.missing.forEach((key) => console.error(`    - ${key}`));
     }
-    throw new Error(`${translationIssues.length} video/language combination(s) have missing translations.`);
+    throw new Error(
+      `${translationIssues.length} video/language combination(s) have missing translations.`,
+    );
   }
 
   if (dryRun) {
     console.log('Plan:\n');
     jobs.forEach((j, i) =>
-      console.log(`  ${String(i + 1).padStart(3)}. video ${j.videoIndex} of ${j.videoTotal}  ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} slides=${j.slides}  → ${j.filename}`),
+      console.log(
+        `  ${String(i + 1).padStart(3)}. video ${j.videoIndex} of ${j.videoTotal}  ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} slides=${j.slides}  → ${j.filename}`,
+      ),
     );
     console.log('');
     return { jobs, results: [] };
@@ -172,7 +207,10 @@ export async function runBatch(options = {}) {
 
   mkdirSync(outDir, { recursive: true });
 
-  const obs = await connectObs(baseOpts.wsUrl ?? 'ws://localhost:4455', baseOpts.wsPassword ?? '');
+  const obs = await connectObs(
+    baseOpts.wsUrl ?? 'ws://localhost:4455',
+    baseOpts.wsPassword ?? '',
+  );
 
   const results = [];
   const wallStart = Date.now();
@@ -191,7 +229,9 @@ export async function runBatch(options = {}) {
       }
 
       console.log(`\n${'─'.repeat(62)}`);
-      console.log(`${jobNum} video ${job.videoIndex} of ${job.videoTotal}  id=${job.id}  format=${job.format}  lang=${job.lang}  slides=${job.slides}${etaStr}`);
+      console.log(
+        `${jobNum} video ${job.videoIndex} of ${job.videoTotal}  id=${job.id}  format=${job.format}  lang=${job.lang}  slides=${job.slides}${etaStr}`,
+      );
       console.log(`${'─'.repeat(62)}`);
 
       try {
@@ -229,9 +269,11 @@ export async function runBatch(options = {}) {
   console.log(`  Success : ${passed} / ${total}`);
   if (failed) {
     console.log(`  Failed  : ${failed}`);
-    results.filter((r) => !r.ok).forEach((r) =>
-      console.log(`    ✗ ${r.id}_${r.format}_${r.lang}  — ${r.reason}`),
-    );
+    results
+      .filter((r) => !r.ok)
+      .forEach((r) =>
+        console.log(`    ✗ ${r.id}_${r.format}_${r.lang}  — ${r.reason}`),
+      );
   }
   console.log(`  Output  : ${outDir}`);
   console.log('══════════════════════════════════════════════════════════\n');
@@ -241,7 +283,8 @@ export async function runBatch(options = {}) {
 
 // ── CLI entry ────────────────────────────────────────────────────────────────
 
-const isMainModule = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+const isMainModule =
+  process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 if (isMainModule) {
   // Fired without a top-level await — see record-obs.mjs's CLI entry for why.
@@ -256,10 +299,13 @@ async function main() {
     .allowUnknownOption(true)
     .option('--ids <list>', 'comma-separated video ids (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt)')
-    .option('--langs <list>', 'comma-separated language codes (default: pl,en)')
+    .option('--langs <list>', 'comma-separated language codes (default: en)')
     .option('--dry-run', 'print plan without recording')
     .option('--out-dir <path>', 'output directory')
-    .option('--continue-on-error', 'keep going after a failed recording (default: true)')
+    .option(
+      '--continue-on-error',
+      'keep going after a failed recording (default: true)',
+    )
     .option('--fail-fast', 'stop on first error');
 
   // Anything not recognized above falls through as a passthrough token for
@@ -272,7 +318,7 @@ async function main() {
   const allVideoIds = loadVideos().map((v) => v.id);
   const ids = splitList(batchOpts.ids, allVideoIds);
   const formats = splitList(batchOpts.formats, ALL_FORMATS, ['shorts', 'yt']);
-  const langs = splitList(batchOpts.langs, ALL_LANGS, ['pl', 'en']);
+  const langs = splitList(batchOpts.langs, ALL_LANGS, ['en']);
 
   const { results } = await runBatch({
     ids,
