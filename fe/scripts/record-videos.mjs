@@ -18,6 +18,7 @@
  *   --ids       <list>   smarter-7,habits-7        (default: all declared videos)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok    (default: shorts,yt)
  *   --langs     <list>   en,pl,de,fr,...            (default: en)
+ *   --variants  <list>   default,fast,slow           (default: default) — see utils/slides/ab-variants.ts
  *
  * Batch control:
  *   --dry-run                    Print plan without recording
@@ -77,6 +78,11 @@ const ALL_LANGS = [
   'ar',
 ];
 
+// Mirrors utils/slides/ab-variants.ts's AB_VARIANTS keys — duplicated rather
+// than transpiling that module for Node, same reasoning as MUSIC_FILES in
+// scripts/lib/audio-mix.mjs and LANG_NAMES in upload-youtube-batch.mjs.
+const ALL_VARIANTS = ['default', 'fast', 'slow'];
+
 function splitList(value, allowed, defaultValue = allowed) {
   if (!value) return defaultValue;
   const items = String(value)
@@ -102,6 +108,7 @@ const pad = (s, n) => String(s).padEnd(n);
  * @param {string[]} [options.ids] video ids to include (default: all declared videos)
  * @param {string[]} [options.formats] (default: ['shorts', 'yt'])
  * @param {string[]} [options.langs] (default: ['en'])
+ * @param {string[]} [options.variants] A/B-test variant ids from ab-variants.ts (default: ['default'])
  * @param {boolean} [options.dryRun]
  * @param {string} [options.outDir]
  * @param {boolean} [options.failFast]
@@ -116,6 +123,7 @@ export async function runBatch(options = {}) {
     ids,
     formats = ['shorts', 'yt'],
     langs = ['en'],
+    variants = ['default'],
     dryRun = false,
     outDir: outDirOpt,
     failFast = false,
@@ -132,25 +140,31 @@ export async function runBatch(options = {}) {
     outDirOpt ?? `../recordings/videos_${ts}`,
   );
 
-  // Grouped by language first (then video, then format) so a run produces
-  // complete language batches in sequence, rather than interleaving languages
-  // within each video.
+  // Grouped by language first (then video, then format, then variant) so a
+  // run produces complete language batches in sequence, rather than
+  // interleaving languages within each video.
   const jobs = [];
   for (const lang of langs) {
     videos.forEach((video, videoIndex) => {
-      // Filename tracks the language being recorded, not always the English title.
-      const filename = `${fileNameFromTitle(titleForLang(video.title, lang))}.mp4`;
       for (const format of formats) {
-        jobs.push({
-          id: video.id,
-          videoIndex: videoIndex + 1,
-          videoTotal: videos.length,
-          slides: video.principleCount + 1, // + the title card; display only, resolveOptions derives its own
-          format,
-          lang,
-          filename,
-          output: `${outDir}/${lang}/${format}/${filename}`,
-        });
+        for (const variant of variants) {
+          // Filename tracks the language being recorded, not always the
+          // English title, and carries a variant suffix when non-default so
+          // sibling A/B recordings of the same video don't collide.
+          const variantSuffix = variant !== 'default' ? `_${variant}` : '';
+          const filename = `${fileNameFromTitle(titleForLang(video.title, lang))}${variantSuffix}.mp4`;
+          jobs.push({
+            id: video.id,
+            videoIndex: videoIndex + 1,
+            videoTotal: videos.length,
+            slides: video.principleCount + 1, // + the title card; display only, resolveOptions derives its own
+            format,
+            lang,
+            variant,
+            filename,
+            output: `${outDir}/${lang}/${format}/${filename}`,
+          });
+        }
       }
     });
   }
@@ -163,6 +177,7 @@ export async function runBatch(options = {}) {
   console.log(`  Videos   : ${videos.map((v) => v.id).join(', ')}`);
   console.log(`  Formats  : ${formats.join(', ')}`);
   console.log(`  Languages: ${langs.join(', ')}`);
+  console.log(`  Variants : ${variants.join(', ')}`);
   console.log(`  Total    : ${total} recording${total === 1 ? '' : 's'}`);
   console.log(`  Out dir  : ${outDir}`);
   if (dryRun) console.log('\n  *** DRY RUN — no recordings will be made ***');
@@ -198,7 +213,7 @@ export async function runBatch(options = {}) {
     console.log('Plan:\n');
     jobs.forEach((j, i) =>
       console.log(
-        `  ${String(i + 1).padStart(3)}. video ${j.videoIndex} of ${j.videoTotal}  ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} slides=${j.slides}  → ${j.filename}`,
+        `  ${String(i + 1).padStart(3)}. video ${j.videoIndex} of ${j.videoTotal}  ${pad(j.id, 20)} ${pad(j.lang, 5)} ${pad(j.format, 8)} ${pad(j.variant, 8)} slides=${j.slides}  → ${j.filename}`,
       ),
     );
     console.log('');
@@ -230,7 +245,7 @@ export async function runBatch(options = {}) {
 
       console.log(`\n${'─'.repeat(62)}`);
       console.log(
-        `${jobNum} video ${job.videoIndex} of ${job.videoTotal}  id=${job.id}  format=${job.format}  lang=${job.lang}  slides=${job.slides}${etaStr}`,
+        `${jobNum} video ${job.videoIndex} of ${job.videoTotal}  id=${job.id}  format=${job.format}  lang=${job.lang}  variant=${job.variant}  slides=${job.slides}${etaStr}`,
       );
       console.log(`${'─'.repeat(62)}`);
 
@@ -240,6 +255,7 @@ export async function runBatch(options = {}) {
           video: job.id,
           format: job.format,
           lang: job.lang,
+          variant: job.variant,
           output: job.output,
         });
         await recordOne(obs, resolved);
@@ -272,7 +288,7 @@ export async function runBatch(options = {}) {
     results
       .filter((r) => !r.ok)
       .forEach((r) =>
-        console.log(`    ✗ ${r.id}_${r.format}_${r.lang}  — ${r.reason}`),
+        console.log(`    ✗ ${r.id}_${r.format}_${r.lang}_${r.variant}  — ${r.reason}`),
       );
   }
   console.log(`  Output  : ${outDir}`);
@@ -300,6 +316,7 @@ async function main() {
     .option('--ids <list>', 'comma-separated video ids (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt)')
     .option('--langs <list>', 'comma-separated language codes (default: en)')
+    .option('--variants <list>', 'comma-separated A/B-test variant ids from ab-variants.ts (default: default)')
     .option('--dry-run', 'print plan without recording')
     .option('--out-dir <path>', 'output directory')
     .option(
@@ -319,11 +336,13 @@ async function main() {
   const ids = splitList(batchOpts.ids, allVideoIds);
   const formats = splitList(batchOpts.formats, ALL_FORMATS, ['shorts', 'yt']);
   const langs = splitList(batchOpts.langs, ALL_LANGS, ['en']);
+  const variants = splitList(batchOpts.variants, ALL_VARIANTS, ['default']);
 
   const { results } = await runBatch({
     ids,
     formats,
     langs,
+    variants,
     dryRun: batchOpts.dryRun === true,
     outDir: batchOpts.outDir,
     failFast: batchOpts.failFast === true,

@@ -2,6 +2,7 @@ import type { SoundscapeConfig } from '@/store/soundscape-store';
 import type { EffectInstance } from '@/utils/config-store';
 import i18n from '@/utils/i18n';
 import type { MusicKind } from '@/utils/music-tracks';
+import { MUSIC_SOURCES } from '@/utils/music-tracks';
 import { estimateReadingTimeMs, TITLE_SLIDE_DURATION_MS_RANGE } from '@/utils/reading-time';
 import { stripBoldTags, wrapRichTextWords } from '@/utils/rich-text';
 import { nanoid } from 'nanoid/non-secure';
@@ -238,13 +239,19 @@ const principlesBase: Omit<PresetDefinition, 'label' | 'background'> = {
 // their principles from principles.data.tsx, so they reuse principlesBase's
 // soundscape/music rather than repeating it per video.
 const videoPresetEntries: Record<string, PresetDefinition> = {};
+let videoIndex = 0;
 for (const category of VIDEO_CATEGORIES) {
   for (const video of category.videos) {
     const presetId = `video-${video.id}`;
+    // Each video gets its own track, cycling through MUSIC_SOURCES by
+    // declaration order — deterministic (same video always gets the same
+    // track) rather than random, so re-recording doesn't shuffle music.
+    const music = MUSIC_SOURCES[videoIndex % MUSIC_SOURCES.length].kind;
+    videoIndex++;
     videoPresetEntries[presetId] = {
       label: `${category.label}: ${video.title}`,
       soundscape: principlesBase.soundscape,
-      music: principlesBase.music,
+      music,
       generateSlides: (lang?: string) => [
         makeTitleSlide(`${presetId}-title`, video.title, lang),
         ...makeSlidesFromKeys(presetId, PRINCIPLES_MANTRAS, Object.keys(video.principles), lang),

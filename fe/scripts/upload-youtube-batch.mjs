@@ -57,6 +57,7 @@ import {
   uploadVideo,
 } from "./upload-youtube.mjs";
 import { fileNameFromTitle, loadVideos, titleForLang } from "./lib/videos-data.mjs";
+import { musicCreditLine, musicKindForVideoIndex } from "./lib/music-attribution.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RECORDINGS_ROOT = resolve(__dirname, "..", "..", "recordings");
@@ -100,12 +101,15 @@ function detectLangs(batchDir) {
 }
 
 /** Builds the description for one video: the principles it covers (from the
- * same declared data the video itself was built from), plus a #Shorts hint. */
-function buildDescription(video, lang) {
+ * same declared data the video itself was built from), a #Shorts hint, and a
+ * credit line for the CC-BY background track the recording used (required by
+ * the license — see scripts/lib/music-attribution.mjs). */
+function buildDescription(video, lang, videoIndex) {
   const principleList = video.principleTitles
     .map((title, i) => `${i + 1}. ${titleForLang(title, lang)}`)
     .join("\n");
-  return `${principleList}\n\n#Shorts #ComRev`;
+  const credit = musicCreditLine(musicKindForVideoIndex(videoIndex));
+  return `${principleList}\n\n#Shorts #ComRev${credit ? `\n\n${credit}` : ""}`;
 }
 
 async function main() {
@@ -136,13 +140,13 @@ async function main() {
   const jobs = [];
   for (const lang of langs) {
     for (const format of formats) {
-      for (const video of declaredVideos) {
+      declaredVideos.forEach((video, videoIndex) => {
         const fileName = `${fileNameFromTitle(titleForLang(video.title, lang))}.mp4`;
         const filePath = join(batchDir, lang, format, fileName);
         if (existsSync(filePath)) {
-          jobs.push({ video, lang, format, filePath, title: titleForLang(video.title, lang) });
+          jobs.push({ video, videoIndex, lang, format, filePath, title: titleForLang(video.title, lang) });
         }
-      }
+      });
     }
   }
 
@@ -213,7 +217,7 @@ async function main() {
       const { videoId, url } = await uploadVideo(youtube, {
         filePath: job.filePath,
         title: job.title,
-        description: buildDescription(job.video, job.lang),
+        description: buildDescription(job.video, job.lang, job.videoIndex),
         tags: ["shorts", "psychology", "mentalmodels", job.lang],
         categoryId: "27", // Education
         privacyStatus,

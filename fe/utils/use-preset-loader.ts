@@ -5,11 +5,13 @@ import { useThreeDStore } from '@/store/three-d-store';
 import { useSoundscapeStore } from '@/store/soundscape-store';
 import i18n from '@/utils/i18n';
 import { fontFamilyForLang } from '@/utils/three-text-geometry';
+import { resolveAbVariant } from '@/utils/slides/ab-variants';
 import {
   parseCategoriesParam,
   PRESET_REGISTRY,
   reportAudioConfig,
 } from '@/utils/slides/preset-registry';
+import { shiftMusicKind } from '@/utils/music-tracks';
 
 export function usePresetLoader(id: string) {
   const setEffectInstances = useThreeDStore((s) => s.setEffectInstances);
@@ -17,9 +19,10 @@ export function usePresetLoader(id: string) {
   const applyPresetConfig = useSoundscapeStore((s) => s.applyPresetConfig);
   const [ready, setReady] = useState(false);
 
-  const { lang, categories } = useLocalSearchParams<{
+  const { lang, categories, variant } = useLocalSearchParams<{
     lang?: string;
     categories?: string | string[];
+    variant?: string;
   }>();
   const displayLang = lang || undefined;
   const selectedCategories = useMemo(
@@ -27,6 +30,7 @@ export function usePresetLoader(id: string) {
     [categories],
   );
   const selectedCategoriesKey = selectedCategories.join(',');
+  const abVariant = useMemo(() => resolveAbVariant(variant), [variant]);
 
   const preset = PRESET_REGISTRY[id];
 
@@ -36,6 +40,15 @@ export function usePresetLoader(id: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [id, displayLang, selectedCategoriesKey],
   );
+
+  // The title slide is always textSets[0] (see makeTitleSlide) — override its
+  // duration in place rather than threading the variant through every
+  // generateSlides implementation.
+  const effectiveTextSets = useMemo(() => {
+    if (!abVariant.titleSlideDurationMs || textSets.length === 0) return textSets;
+    const [titleSlide, ...rest] = textSets;
+    return [{ ...titleSlide, durationMsOverride: abVariant.titleSlideDurationMs }, ...rest];
+  }, [textSets, abVariant.titleSlideDurationMs]);
 
   const text = useMemo(
     () => textSets.map((s) => s.text).join('\n\n'),
@@ -62,7 +75,7 @@ export function usePresetLoader(id: string) {
     // speakers just from navigating here. Report which track the preset
     // wants instead, so a recorder can mix it into the video afterward
     // (see reportAudioConfig / setAudioConfigListener in preset-registry.ts).
-    reportAudioConfig(preset.music);
+    reportAudioConfig(shiftMusicKind(preset.music, abVariant.musicOffset ?? 0));
     setMantraMode(true);
     // fa/ar have no glyphs in the default Latin fonts — force the bundled
     // Persian/Arabic font for those languages. Only ever set when actually
@@ -87,10 +100,10 @@ export function usePresetLoader(id: string) {
           params: {
             ...next.params,
             text,
-            textSets,
-            activeTextSetId: textSets[0]?.id,
-            ...(preset.sequenceLineDurationMs !== undefined
-              ? { sequenceLineDurationMs: preset.sequenceLineDurationMs }
+            textSets: effectiveTextSets,
+            activeTextSetId: effectiveTextSets[0]?.id,
+            ...((abVariant.sequenceLineDurationMs ?? preset.sequenceLineDurationMs) !== undefined
+              ? { sequenceLineDurationMs: abVariant.sequenceLineDurationMs ?? preset.sequenceLineDurationMs }
               : {}),
             // Always set explicitly (not just when the preset overrides it) so
             // switching from a preset with a custom background back to one
@@ -118,8 +131,9 @@ export function usePresetLoader(id: string) {
     setMantraMode,
     applyPresetConfig,
     text,
-    textSets,
+    effectiveTextSets,
     displayLang,
+    abVariant,
   ]);
 
   return { ready, notFound: !preset };

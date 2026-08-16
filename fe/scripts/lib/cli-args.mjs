@@ -38,6 +38,7 @@ export function createRecordObsProgram() {
     .option('--no-refresh', 'Skip the frame-0 refresh')
     .option('--wait-ms <ms>', 'Give up waiting for the ready signal after this long (only with --no-tab)')
     .option('--lang <code>', 'Language query param', '')
+    .option('--variant <id>', 'A/B test variant id (see utils/slides/ab-variants.ts)', 'default')
     .option('--output <path>', 'Destination path for the finished file')
     .option('--ws-url <url>', 'OBS WebSocket URL', 'ws://localhost:4455')
     .option('--ws-password <pass>', 'OBS WebSocket password', '')

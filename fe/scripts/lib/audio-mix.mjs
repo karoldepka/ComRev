@@ -22,6 +22,24 @@ const REPO_ROOT = resolve(__dirname, '..', '..');
 const MUSIC_FILES = {
   'oceanking-patents': 'oceanking-patents-219735.mp3',
   'oceanking-street-lights': 'oceanking-street-lights-219744.mp3',
+  'almost-in-f': 'almost-in-f.mp3',
+  'ambiment': 'ambiment.mp3',
+  'bathed-in-the-light': 'bathed-in-the-light.mp3',
+  'chill-wave': 'chill-wave.mp3',
+  'fluidscape': 'fluidscape.mp3',
+  'light-awash': 'light-awash.mp3',
+  'magic-forest': 'magic-forest.mp3',
+  'perspectives': 'perspectives.mp3',
+  'silver-blue-light': 'silver-blue-light.mp3',
+  'tranquility-base': 'tranquility-base.mp3',
+  'at-rest': 'at-rest.mp3',
+  'clear-waters': 'clear-waters.mp3',
+  'concentration': 'concentration.mp3',
+  'deep-relaxation': 'deep-relaxation.mp3',
+  'healing': 'healing.mp3',
+  'heartwarming': 'heartwarming.mp3',
+  'peace-of-mind': 'peace-of-mind.mp3',
+  'soaring': 'soaring.mp3',
 };
 
 const SFX_DIR = resolve(REPO_ROOT, 'assets', 'sfx');

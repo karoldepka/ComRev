@@ -377,6 +377,7 @@ export function resolveOptions(rawOpts) {
     : (rawOpts.tab ?? (video ? `preset/video-${video.id}/full-window` : "preset/principles/full-window"));
   const noTab = rawOpts.tab === false;
   const lang = rawOpts.lang ?? "";
+  const variant = rawOpts.variant && rawOpts.variant !== true ? rawOpts.variant : "default";
 
   // Fail before ever touching OBS if this video's title/principles/captions
   // aren't actually translated into `lang` — otherwise the recording silently
@@ -406,16 +407,17 @@ export function resolveOptions(rawOpts) {
 
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const langFolder = lang || "en";
+  const variantSuffix = variant !== "default" ? `_${variant}` : "";
   const outputDst = rawOpts.output ?? (
     video
-      ? `../recordings/${langFolder}/${fileNameFromTitle(titleForLang(video.title, lang))}.mp4`
-      : `../recordings/${ts}_animation_${format}.mp4`
+      ? `../recordings/${langFolder}/${fileNameFromTitle(titleForLang(video.title, lang))}${variantSuffix}.mp4`
+      : `../recordings/${ts}_animation_${format}${variantSuffix}.mp4`
   );
 
   return {
     video, format, width, height, label, fps, durationSec, durationExplicit,
     slidesCount, binauralHz, binauralCarrier, binauralVolume, baseUrl, tab,
-    noTab, lang, waitMs, noRefresh, wsUrl, wsPassword, noResize, obsSync,
+    noTab, lang, variant, waitMs, noRefresh, wsUrl, wsPassword, noResize, obsSync,
     sceneName, sourceName, outputDst,
   };
 }
@@ -427,7 +429,7 @@ export function resolveOptions(rawOpts) {
 export async function recordOne(obs, resolved) {
   const {
     video, label, fps, durationSec, durationExplicit, slidesCount, binauralHz,
-    binauralCarrier, binauralVolume, baseUrl, tab, noTab, lang, waitMs,
+    binauralCarrier, binauralVolume, baseUrl, tab, noTab, lang, variant, waitMs,
     noRefresh, noResize, obsSync, sceneName, sourceName, outputDst,
     width, height,
   } = resolved;
@@ -439,6 +441,7 @@ export async function recordOne(obs, resolved) {
   // is used to record a third-party page that already has its own query string.
   const recordUrl = new URL(noTab ? baseUrl : `${baseUrl}/${tab}`);
   if (lang) recordUrl.searchParams.set("lang", lang);
+  if (variant && variant !== "default") recordUrl.searchParams.set("variant", variant);
   if (binauralHz) {
     recordUrl.searchParams.set("binaural-hz", String(binauralHz));
     recordUrl.searchParams.set("binaural-carrier", String(binauralCarrier));
@@ -452,6 +455,7 @@ export async function recordOne(obs, resolved) {
   console.log("  Animation Recorder (OBS)");
   console.log("══════════════════════════════════════════");
   if (video) console.log(`  Video   : ${video.id}  "${video.title}"`);
+  if (variant && variant !== "default") console.log(`  Variant : ${variant}`);
   console.log(`  Format  : ${label}`);
   console.log(`  FPS     : ${fps}`);
   console.log(`  Duration: ${durationSec}s`);
