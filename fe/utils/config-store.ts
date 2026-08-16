@@ -39,7 +39,7 @@ export type EffectType =
   | "dust" | "wireframe" | "outline" | "echoCopies" | "rays"
   | "floatingRings" | "starField3d" | "snow" | "rain" | "confetti"
   | "sparkle" | "aura" | "gridFloor" | "orbiter" | "portalRing"
-  | "cometTrail" | "floatingCubes" | "mirrorPlane"
+  | "cometTrail" | "floatingCubes" | "mirrorPlane" | "mandala"
   // animation
   | "pulse" | "spin" | "bounce" | "levitation" | "swing" | "tremble"
   | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"

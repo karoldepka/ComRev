@@ -198,7 +198,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
     const captionEntranceOffsetXRef = useRef(0);
     const backgroundColorRef = useRef(backgroundColor);
     backgroundColorRef.current = backgroundColor;
-    const mandalaMeshRef = useRef<THREE.Mesh | null>(null);
     const slidingTextsRef = useRef(slidingTexts);
     slidingTextsRef.current = slidingTexts;
     const simultaneousCaptionRevealRef = useRef(simultaneousCaptionReveal);
@@ -548,10 +547,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         if (captionRevealTimeoutRef.current)
           clearTimeout(captionRevealTimeoutRef.current);
         pipelineManagerRef.current?.dispose();
-        if (mandalaMeshRef.current) {
-          mandalaMeshRef.current.geometry?.dispose();
-          (mandalaMeshRef.current.material as THREE.ShaderMaterial)?.dispose();
-        }
       };
     }, []);
 
@@ -1007,56 +1002,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
       p2.position.set(8, -5, 8);
       scene.add(p2);
 
-      // Subtle animated mandala — a slowly rotating radial pattern glowing
-      // faintly behind the text, far enough back (renderOrder -1, no depth
-      // write) that it never competes with the text for attention. Large
-      // enough (400x400 at z=-50) to cover every recorded aspect ratio
-      // without needing to resize alongside the camera.
-      const mandalaGeometry = new THREE.PlaneGeometry(400, 400);
-      const mandalaMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-          uTime: { value: 0 },
-          uColor: { value: new THREE.Color(0xff9800) }, // brand orange
-          uOpacity: { value: 0.16 },
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec2 vUv;
-          uniform float uTime;
-          uniform vec3 uColor;
-          uniform float uOpacity;
-          void main() {
-            vec2 p = vUv - 0.5;
-            float radius = length(p);
-            float angle = atan(p.y, p.x);
-            float segments = 12.0;
-            float twoPi = 6.28318530718;
-            float wedge = abs(mod(angle + uTime * 0.05, twoPi / segments) - twoPi / segments * 0.5);
-            float petals = sin(wedge * segments * 1.5) * 0.5 + 0.5;
-            float rings = sin(radius * 36.0 - uTime * 0.3) * 0.5 + 0.5;
-            float pattern = smoothstep(0.6, 1.0, petals * rings);
-            // Soft annulus: fades in from the center, fades back out toward
-            // the edges, so it reads as a halo rather than a hard-edged square.
-            float annulus = smoothstep(0.03, 0.24, radius) * smoothstep(0.78, 0.32, radius);
-            gl_FragColor = vec4(uColor, pattern * annulus * uOpacity);
-          }
-        `,
-        transparent: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const mandalaMesh = new THREE.Mesh(mandalaGeometry, mandalaMaterial);
-      mandalaMesh.position.z = -50;
-      mandalaMesh.renderOrder = -1;
-      scene.add(mandalaMesh);
-      mandalaMeshRef.current = mandalaMesh;
-
       const envMap = createDefaultEnvMap();
       envMapRef.current = envMap;
       if (envMap) scene.environment = envMap;
@@ -1124,10 +1069,6 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
         const time = (now - startTimeRef.current) / 1000;
         const delta = (now - lastFrameTimeRef.current) / 1000;
         lastFrameTimeRef.current = now;
-
-        if (mandalaMeshRef.current) {
-          (mandalaMeshRef.current.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
-        }
 
         const frameCtx = {
           scene,

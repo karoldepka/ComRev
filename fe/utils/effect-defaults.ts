@@ -180,6 +180,7 @@ export function createDefaultEffectParams(type: EffectType): Record<string, unkn
     case "cometTrail":     return { color: 0xffffff, speed: 1.2, count: 3 };
     case "floatingCubes":  return { count: 12, color: 0xff6600, spread: 10, speed: 0.5 };
     case "mirrorPlane":    return { opacity: 0.3, axis: "y", offset: 0 };
+    case "mandala":        return { color: 0xff9800, opacity: 0.16, petals: 12, rings: 4, speed: 1, size: 400, offsetZ: -50 };
     // animation
     case "spin":           return { speedX: 0, speedY: 1, speedZ: 0 };
     case "bounce":         return { height: 1.5, speed: 2 };

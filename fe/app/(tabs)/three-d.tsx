@@ -683,6 +683,7 @@ type EffectType =
   | "cometTrail"
   | "floatingCubes"
   | "mirrorPlane"
+  | "mandala"
   // animation
   | "pulse"
   | "spin"
@@ -941,6 +942,7 @@ const EFFECT_TYPES: {
     animated: true,
   },
   { type: "mirrorPlane", label: "Mirror Plane", target: "geometry" },
+  { type: "mandala", label: "Mandala", target: "geometry", animated: true },
   { type: "shadowFloor", label: "Shadow Floor", target: "geometry" },
   { type: "backgroundPlane", label: "Background Plane", target: "geometry" },
   { type: "fogEffect", label: "Fog", target: "geometry" },
@@ -1010,6 +1012,7 @@ const EFFECT_KEYWORDS: Partial<Record<EffectType, string[]>> = {
   smoke:          ["fog", "mist", "haze", "cloud", "vapor", "steam", "grey"],
   skySphere:      ["sky", "background", "environment", "space", "horizon", "aurora", "nebula", "night", "sunset", "day"],
   fractalBackground: ["fractal", "mandelbrot", "julia", "plasma", "math", "chaos", "infinite", "zoom", "psychedelic", "pattern"],
+  mandala:         ["mandala", "sacred geometry", "radial", "petals", "lotus", "meditation", "pattern"],
   graphics:       ["image", "picture", "photo", "icon", "svg", "artwork", "logo", "texture"],
   text3d:         ["text", "words", "letters", "font", "typography", "write", "caption"],
   bloom:          ["glow", "light", "luminous", "radiance", "shine", "halo", "bright"],

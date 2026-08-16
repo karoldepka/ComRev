@@ -71,6 +71,7 @@ import {
   LevitationPipe,
   LightningFlashPipe,
   MainTextPipe,
+  MandalaPipe,
   MatcapPipe,
   MeltPipe,
   MetallicPresetPipe,
@@ -265,6 +266,7 @@ function buildPipe(effect: EffectInstance): EffectPipe {
     case "cometTrail":     return new CometTrailPipe(effect.params as any);
     case "floatingCubes":  return new FloatingCubesPipe(effect.params as any);
     case "mirrorPlane":    return new MirrorPlanePipe(effect.params as any);
+    case "mandala":        return new MandalaPipe(effect.params as any);
     case "spin":           return new SpinPipe(effect.params as any);
     case "bounce":         return new BouncePipe(effect.params as any);
     case "levitation":     return new LevitationPipe(effect.params as any);

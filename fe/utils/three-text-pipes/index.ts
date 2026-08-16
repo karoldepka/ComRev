@@ -115,6 +115,7 @@ export * from './portal-ring';
 export * from './comet-trail';
 export * from './floating-cubes';
 export * from './mirror-plane';
+export * from './mandala';
 
 // ── AI-generated / custom JS pipe ─────────────────────────────────────────────
 export * from './custom-js';
@@ -166,4 +167,3 @@ export * from './fire';
 export * from './smoke';
 export * from './sky-sphere';
 export * from './fractal-background';
-
