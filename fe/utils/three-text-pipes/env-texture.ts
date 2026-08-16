@@ -97,13 +97,17 @@ void main() {
        v +=sin((vUv.x+vUv.y)*s*0.65+uTime*0.75);
        v +=sin(sqrt(pow(vUv.x-0.5,2.0)+pow(vUv.y-0.5,2.0))*s*2.5-uTime*1.2);
   float t=(sin(v*1.5)+1.0)*0.5;
-  // Several palettes (fire/electric/neon/grayscale/...) have a near-black stop
-  // at t=0 — fine for fractal coloring, but this texture also lights/reflects
-  // the text (and can show as scene.background), so a black patch there reads
-  // as a hole and makes the text unreadable. Floor it so it stays dark but
-  // never black.
-  vec3 col = max(palette(t), vec3(0.12));
-  gl_FragColor=vec4(col,1.0);
+  // Several palettes (fire/electric/neon/grayscale/...) dip to near-black —
+  // fine for fractal coloring, but this texture also lights/reflects the text
+  // (and can show as scene.background), so dark patches there kill contrast
+  // and make the text unreadable. Lift luminance to a bright floor instead of
+  // clamping per-channel, so hue/saturation stay intact rather than washing
+  // out to gray.
+  vec3 col = palette(t);
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  float minLum = 0.55;
+  if (lum < minLum) col += (minLum - lum);
+  gl_FragColor=vec4(clamp(col, 0.0, 1.0),1.0);
 }
 `;
 
