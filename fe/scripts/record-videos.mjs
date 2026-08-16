@@ -20,6 +20,13 @@
  *   --langs     <list>   en,pl,de,fr,...            (default: en)
  *   --variants  <list>   default,fast,slow           (default: default) — see utils/slides/ab-variants.ts
  *
+ * Engine:
+ *   --engine    obs|frames  (default: obs) — obs records in real time via OBS
+ *                Browser Source; frames uses a fake browser clock (Playwright)
+ *                to record frame-by-frame, decoupled from wall-clock time —
+ *                much faster, and doesn't need OBS running at all. See
+ *                record-playwright.mjs's recordFramesOne.
+ *
  * Batch control:
  *   --dry-run                    Print plan without recording
  *   --out-dir   <path>           Output directory (default: ../recordings/videos_<ts>);
@@ -49,6 +56,7 @@ import { dirname, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import {
   cliArgv,
+  createRecordFramesProgram,
   createRecordObsProgram,
   parseFlags,
 } from './lib/cli-args.mjs';
@@ -109,13 +117,19 @@ const pad = (s, n) => String(s).padEnd(n);
  * @param {string[]} [options.formats] (default: ['shorts', 'yt'])
  * @param {string[]} [options.langs] (default: ['en'])
  * @param {string[]} [options.variants] A/B-test variant ids from ab-variants.ts (default: ['default'])
+ * @param {'obs'|'frames'} [options.engine] 'obs' (default, real-time via OBS
+ *   Browser Source) or 'frames' (fake-clock frame-by-frame via Playwright —
+ *   see record-playwright.mjs's recordFramesOne; much faster wall-clock since
+ *   the recording was never bound to real time in the first place, but needs
+ *   no OBS connection at all — a shared headless browser is used instead).
  * @param {boolean} [options.dryRun]
  * @param {string} [options.outDir]
  * @param {boolean} [options.failFast]
  * @param {object} [options.baseOpts] Commander-opts-shaped object (as returned
- *   by createRecordObsProgram()'s .opts()) providing shared per-recording
- *   settings (fps, binaural, ws-url, ...) — video/format/lang/output are
- *   overridden per job.
+ *   by createRecordObsProgram()'s or createRecordFramesProgram()'s .opts(),
+ *   matching `engine`) providing shared per-recording settings (fps,
+ *   binaural, ws-url, scale, ...) — video/format/lang/output are overridden
+ *   per job.
  * @returns {Promise<{ jobs: object[], results: object[] }>}
  */
 export async function runBatch(options = {}) {
@@ -124,6 +138,7 @@ export async function runBatch(options = {}) {
     formats = ['shorts', 'yt'],
     langs = ['en'],
     variants = ['default'],
+    engine = 'obs',
     dryRun = false,
     outDir: outDirOpt,
     failFast = false,
@@ -178,6 +193,7 @@ export async function runBatch(options = {}) {
   console.log(`  Formats  : ${formats.join(', ')}`);
   console.log(`  Languages: ${langs.join(', ')}`);
   console.log(`  Variants : ${variants.join(', ')}`);
+  console.log(`  Engine   : ${engine}`);
   console.log(`  Total    : ${total} recording${total === 1 ? '' : 's'}`);
   console.log(`  Out dir  : ${outDir}`);
   if (dryRun) console.log('\n  *** DRY RUN — no recordings will be made ***');
@@ -222,10 +238,27 @@ export async function runBatch(options = {}) {
 
   mkdirSync(outDir, { recursive: true });
 
-  const obs = await connectObs(
-    baseOpts.wsUrl ?? 'ws://localhost:4455',
-    baseOpts.wsPassword ?? '',
-  );
+  let obs = null;
+  let sharedBrowser = null;
+  let recordFramesOne = null;
+  if (engine === 'frames') {
+    ({ recordFramesOne } = await import('./record-playwright.mjs'));
+    const { chromium } = await import('playwright');
+    sharedBrowser = await chromium.launch({
+      headless: true,
+      args: [
+        '--disable-infobars',
+        '--no-first-run',
+        '--disable-blink-features=AutomationControlled',
+        '--ignore-gpu-blocklist',
+      ],
+    });
+  } else {
+    obs = await connectObs(
+      baseOpts.wsUrl ?? 'ws://localhost:4455',
+      baseOpts.wsPassword ?? '',
+    );
+  }
 
   const results = [];
   const wallStart = Date.now();
@@ -258,7 +291,17 @@ export async function runBatch(options = {}) {
           variant: job.variant,
           output: job.output,
         });
-        await recordOne(obs, resolved);
+        if (engine === 'frames') {
+          await recordFramesOne(resolved, {
+            browser: sharedBrowser,
+            renderScale: Math.min(1, Math.max(0.1, parseFloat(baseOpts.scale ?? '1'))),
+            usePng: baseOpts.png === true,
+            jpegQuality: parseInt(baseOpts.jpegQuality ?? '92', 10),
+            keepFrames: baseOpts.keepFrames === true,
+          });
+        } else {
+          await recordOne(obs, resolved);
+        }
         console.log(`\n✓ Done    ${jobNum}`);
         results.push({ ...job, ok: true });
       } catch (err) {
@@ -271,7 +314,8 @@ export async function runBatch(options = {}) {
       }
     }
   } finally {
-    await obs.disconnect();
+    if (obs) await obs.disconnect();
+    if (sharedBrowser) await sharedBrowser.close();
   }
 
   const wallSec = ((Date.now() - wallStart) / 1000).toFixed(0);
@@ -317,6 +361,7 @@ async function main() {
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt)')
     .option('--langs <list>', 'comma-separated language codes (default: en)')
     .option('--variants <list>', 'comma-separated A/B-test variant ids from ab-variants.ts (default: default)')
+    .option('--engine <obs|frames>', 'recording engine: obs (default, real-time via OBS) or frames (fake-clock frame-by-frame, no OBS needed — NOT currently faster for these videos, see record-playwright.mjs header)', 'obs')
     .option('--dry-run', 'print plan without recording')
     .option('--out-dir <path>', 'output directory')
     .option(
@@ -326,11 +371,16 @@ async function main() {
     .option('--fail-fast', 'stop on first error');
 
   // Anything not recognized above falls through as a passthrough token for
-  // record-obs.mjs — validate it against record-obs.mjs's own known flags
-  // here, upfront, rather than letting a typo fail deep inside the first job.
+  // the chosen engine's own program — validate it against that program's
+  // known flags here, upfront, rather than letting a typo fail deep inside
+  // the first job.
   const { unknown } = batchProgram.parseOptions(cliArgv());
   const batchOpts = batchProgram.opts();
-  const baseOpts = parseFlags(createRecordObsProgram(), unknown);
+  const engine = batchOpts.engine === 'frames' ? 'frames' : 'obs';
+  const baseOpts = parseFlags(
+    engine === 'frames' ? createRecordFramesProgram() : createRecordObsProgram(),
+    unknown,
+  );
 
   const allVideoIds = loadVideos().map((v) => v.id);
   const ids = splitList(batchOpts.ids, allVideoIds);
@@ -343,6 +393,7 @@ async function main() {
     formats,
     langs,
     variants,
+    engine,
     dryRun: batchOpts.dryRun === true,
     outDir: batchOpts.outDir,
     failFast: batchOpts.failFast === true,

@@ -69,21 +69,28 @@ import {
   statSync,
   unlinkSync,
 } from "fs";
-import { createServer } from "http";
 import { OBSWebSocket } from "obs-websocket-js";
 import { dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { findVideo, fileNameFromTitle, titleForLang, missingTranslations } from "./lib/videos-data.mjs";
 import { createRecordObsProgram, parseFlags, cliArgv } from "./lib/cli-args.mjs";
 import { mixAudioIntoVideo } from "./lib/audio-mix.mjs";
+import {
+  sleep,
+  startReadyServer,
+  waitForSignalAndLog,
+  makeTranslationMissingChecker,
+} from "./lib/recorder-server.mjs";
 
 // Turned off for now: slide-transition SFX piled up into a muddy, garbled
 // mix once slides got fast (each transition sound decays for up to ~2.6s —
 // see scripts/generate-transition-sfx.mjs), and binaural wasn't wanted
 // either. The event-logging/mixing code for both is left in place (see
 // scripts/lib/audio-mix.mjs) rather than deleted, so either can be flipped
-// back on here later. Music mixing is unaffected by this flag.
-const MIX_TRANSITION_SFX_AND_BINAURAL = false;
+// back on here later. Music mixing is unaffected by this flag. Exported so
+// record-playwright.mjs's frame-by-frame engine applies the same choice
+// instead of drifting out of sync with this one.
+export const MIX_TRANSITION_SFX_AND_BINAURAL = false;
 
 // ── format presets ────────────────────────────────────────────────────────────
 
@@ -95,127 +102,6 @@ export const FORMAT_PRESETS = {
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Races a single ping against an optional timeout; timeoutMs undefined waits indefinitely. */
-function armSignal(setResolver, timeoutMs, onHeartbeat) {
-  const racers = [
-    new Promise((resolve) => {
-      setResolver(() => resolve("ready"));
-    }),
-  ];
-  if (typeof timeoutMs === "number") {
-    racers.push(sleep(timeoutMs).then(() => "timeout"));
-  }
-  const heartbeat = onHeartbeat ? setInterval(onHeartbeat, 5000) : null;
-  return Promise.race(racers).finally(() => {
-    setResolver(null);
-    if (heartbeat) clearInterval(heartbeat);
-  });
-}
-
-/**
- * Tiny local HTTP server the recorded page can ping (see "Ready signal" above)
- * once its first frame renders, and again at "/stop-recording" once a targeted
- * slide count has fully displayed (see --slides). Each signal can be re-armed
- * (e.g. the "ready" ping fires once per navigation, so waitForReady() can be
- * called again after a refresh to catch the next one).
- */
-function startReadyServer() {
-  return new Promise((resolveSetup) => {
-    let pendingReadyResolve = null;
-    let pendingStopResolve = null;
-    // Unlike ready/stop, this is a single one-shot promise for the whole
-    // recording, not re-armed per wait — the app can report a miss at any
-    // point (most likely during the initial page load, while it's building
-    // the slide list), so every wait below races against this same promise.
-    let resolveTranslationMissing;
-    const translationMissing = new Promise((r) => { resolveTranslationMissing = r; });
-
-    // Populated over the course of the whole recording (see "Sound events"
-    // in the file header) — read out by recordOne() once recording stops, to
-    // feed the post-recording audio mix instead of anything being played
-    // live by the browser.
-    const soundEvents = [];
-    let musicKind;
-
-    const server = createServer((req, res) => {
-      res.writeHead(204);
-      res.end();
-      if (req.url?.startsWith("/stop-recording")) {
-        pendingStopResolve?.();
-      } else if (req.url?.startsWith("/ready")) {
-        pendingReadyResolve?.();
-      } else if (req.url?.startsWith("/translation-missing")) {
-        const url = new URL(req.url, "http://localhost");
-        resolveTranslationMissing({
-          key: url.searchParams.get("key") ?? "(unknown)",
-          lang: url.searchParams.get("lang") ?? "(unknown)",
-        });
-      } else if (req.url?.startsWith("/sound-event")) {
-        const url = new URL(req.url, "http://localhost");
-        const variant = url.searchParams.get("variant");
-        const tMs = parseInt(url.searchParams.get("t") ?? "", 10);
-        if (variant && Number.isFinite(tMs)) soundEvents.push({ variant, tMs });
-      } else if (req.url?.startsWith("/sound-config")) {
-        const url = new URL(req.url, "http://localhost");
-        musicKind = url.searchParams.get("music") ?? musicKind;
-      }
-    });
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      resolveSetup({
-        port,
-        waitForReady: (timeoutMs, onHeartbeat) =>
-          armSignal((r) => { pendingReadyResolve = r; }, timeoutMs, onHeartbeat),
-        waitForStop: (timeoutMs, onHeartbeat) =>
-          armSignal((r) => { pendingStopResolve = r; }, timeoutMs, onHeartbeat),
-        translationMissing,
-        getSoundLog: () => ({ music: musicKind, events: soundEvents }),
-        close: () => server.close(),
-      });
-    });
-  });
-}
-
-/**
- * Races `promise` against the recording's one-shot translation-missing
- * signal, throwing if that signal wins — so a video for language X never
- * silently finishes recording with English content in it.
- */
-async function raceTranslationMissing(promise, readyServer) {
-  const result = await Promise.race([promise, readyServer.translationMissing]);
-  if (result && typeof result === "object" && "key" in result) {
-    throw new Error(
-      `Translation missing for "${result.key}" (lang=${result.lang}) — aborting recording instead of shipping English content.`,
-    );
-  }
-  return result;
-}
-
-async function waitForSignalAndLog(waitFn, label, timeoutMs, readyServer) {
-  console.log(
-    typeof timeoutMs === "number"
-      ? `Waiting for ${label} signal (max ${timeoutMs}ms)...`
-      : `Waiting for ${label} signal...`,
-  );
-  let elapsedSec = 0;
-  const outcome = await raceTranslationMissing(
-    waitFn(timeoutMs, () => {
-      elapsedSec += 5;
-      console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
-    }),
-    readyServer,
-  );
-  console.log(
-    outcome === "ready"
-      ? `${label[0].toUpperCase()}${label.slice(1)} signal received.`
-      : `No ${label} signal after ${timeoutMs}ms — proceeding anyway.`,
-  );
-  return outcome;
-}
 
 function fileSizeMb(path) {
   try {
@@ -510,15 +396,7 @@ export async function recordOne(obs, resolved) {
 
   // Synchronously checkable alongside the waitForSignalAndLog races below —
   // covers the gap right before StartRecord, which isn't itself a wait point.
-  let translationMissingInfo = null;
-  readyServer.translationMissing.then((info) => { translationMissingInfo = info; });
-  const assertNoTranslationMissing = () => {
-    if (translationMissingInfo) {
-      throw new Error(
-        `Translation missing for "${translationMissingInfo.key}" (lang=${translationMissingInfo.lang}) — aborting recording instead of shipping English content.`,
-      );
-    }
-  };
+  const assertNoTranslationMissing = makeTranslationMissingChecker(readyServer);
 
   // ── browser source ───────────────────────────────────────────────────────────
 

@@ -4,153 +4,62 @@
  *
  * Two modes:
  *
+ *   frame-by-frame  (--frames)
+ *     Installs a fake browser clock (Playwright's page.clock), then advances
+ *     it by exactly 1/fps seconds per iteration and screenshots the canvas —
+ *     in principle this decouples recording from wall-clock time entirely
+ *     (the page never plays audio live, so there's nothing real-time to stay
+ *     in sync with) and should make recording much faster.
+ *
+ *     NOT RECOMMENDED for this app's own preset/video routes as currently
+ *     built: measured slower than the OBS engine, not faster. The fake clock
+ *     only controls the main-thread timers — it can't accelerate the real,
+ *     CPU-bound text-geometry mesh building that happens in a Web Worker
+ *     (350ms-2.7s per unique slide, observed), and running that concurrently
+ *     with per-frame page.screenshot() calls causes severe GPU contention
+ *     (screenshots taking up to 13s each — "GPU stall due to ReadPixels").
+ *     There's also an unresolved correctness bug: the slide sequence can race
+ *     ahead of the ready-signal warm-up loop, making --slides stop far too
+ *     early. Left in place (opt-in via --frames / --engine frames) as clean,
+ *     reusable infrastructure for pages that *are* purely timer/RAF driven —
+ *     just don't reach for it here without fixing both issues above first.
+ *     Shares --video/--slides/--variant/--format with record-obs.mjs (same
+ *     resolveOptions()) — see record-videos.mjs's --engine frames for batch use.
+ *
  *   realtime (default)
  *     Records using Playwright's built-in video capture (webm → MP4 via ffmpeg).
  *     Fast to produce, but subject to OS scheduling jitter and dropped frames.
- *
- *   frame-by-frame  (--frames)
- *     Pauses the browser clock after page load, then advances it by exactly
- *     1/fps seconds per iteration, screenshots the canvas, and stitches frames
- *     into MP4 via ffmpeg.  THREE.js sees perfectly uniform performance.now()
- *     deltas → zero jitter, zero dropped frames, correct motion blur.
- *     Slower to produce (one screenshot per frame) but pixel-perfect output.
+ *     Does not know about --video/--slides/--variant — --tab/--duration only.
  *
  * Usage:
- *   node scripts/record-playwright.mjs [options]
+ *   node scripts/record-playwright.mjs [options]              (realtime)
+ *   node scripts/record-playwright.mjs --frames [options]     (frame-by-frame)
+ *   node scripts/record-playwright.mjs --frames --video <id>  (frame-by-frame, declared video)
+ *   node scripts/record-playwright.mjs --frames --help        (full frame-mode flag reference)
  *
- * Options:
- *   --format yt|shorts|yt-4k   Output format (default: yt)
- *   --duration <seconds>        Recording duration (default: 60)
- *   --tab <path>                App route to open (default: preset/mcon/full-window)
- *   --url <base>                App base URL (default: http://localhost:8081)
- *   --output <path>             Output file path (default: recordings/<timestamp>.<format>.mp4)
- *   --fps <number>              Frames per second (default: 60)
- *   --wait-ms <ms>              Frame-by-frame mode only: how much fake time to fast-forward
- *                               through before recording starts (default: 3000). Realtime mode
- *                               doesn't use this — see "Ready signal" below.
- *   --headless                  Run without a visible browser window
- *   --headed                    Force a visible browser window (frame mode defaults to headless for speed)
- *   --frames                    Use frame-by-frame mode (clock-controlled, perfect quality)
- *   --png                       Use PNG for intermediate frames instead of JPEG (slower but lossless)
- *   --jpeg-quality <1-100>      JPEG quality for intermediate frames (default: 92)
- *   --no-ffmpeg                 Keep raw output, skip MP4 conversion (realtime: .webm; frames: no-op)
- *   --keep-frames               Keep temporary frame files directory after encoding
- *   --binaural-hz <number>      Add binaural beat audio track at this frequency in Hz (default: 6).
- *                               Requires headphones to work. Use 0 to disable.
- *   --binaural-carrier <number> Carrier sine frequency in Hz (default: 200)
- *   --binaural-volume <0-1>     Binaural tone amplitude (default: 0.35)
- *   --scale <0.1-1>             Render at this fraction of full resolution, then upscale in ffmpeg.
- *                               Use 0.5 for ~4x faster test renders. (default: 1)
- *
- * Ready signal (realtime mode only):
- *   This script starts a tiny local HTTP server and appends a `ready-port` query
- *   param to the app URL. app/preset/[id]/full-window.tsx pings it — via
- *   navigator.sendBeacon — the moment the first 3D frame has actually rendered,
- *   so recording starts exactly on cue instead of guessing a wait time. This
- *   script only ever records this app's own routes, so the ping is guaranteed
- *   eventually — recording waits for it with no timeout (a guessed fallback that
- *   starts recording anyway would defeat the point). Frame-by-frame mode doesn't
- *   need this — it fast-forwards a fake clock instead of waiting on wall-clock time.
+ * Frame-by-frame ready/stop signals work exactly like record-obs.mjs's (see
+ * that file's header): a local HTTP server receives a `/ready` ping once the
+ * first frame has actually rendered (query param `ready-port`), and a
+ * `/stop-recording` ping once --slides slides have each shown for their full
+ * duration (query param `stop-after-slides`) — see scripts/lib/recorder-server.mjs.
  */
 
 import { execFileSync, execSync } from 'child_process';
 import { mkdirSync, renameSync, rmSync, unlinkSync, statSync } from 'fs';
-import { createServer } from 'http';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createRecordPlaywrightProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
+import { createRecordPlaywrightProgram, createRecordFramesProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
+import { startReadyServer, waitForSignalAndLog, makeTranslationMissingChecker } from './lib/recorder-server.mjs';
+import { mixAudioIntoVideo } from './lib/audio-mix.mjs';
+import { resolveOptions, MIX_TRANSITION_SFX_AND_BINAURAL } from './record-obs.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── arg parsing ───────────────────────────────────────────────────────────────
-
-const args = parseFlags(createRecordPlaywrightProgram(), cliArgv());
-
-const format     = args.format ?? 'yt';
-const durationSec = parseInt(args.duration ?? '60', 10);
-const tab        = args.tab ?? 'preset/mcon/full-window';
-const lang       = args.lang ?? '';
-const baseUrl    = args.url ?? 'http://localhost:8081';
-const fps        = parseInt(args.fps ?? '60', 10);
-const waitMs     = parseInt(args.waitMs ?? '3000', 10);
-const frameMode       = args.frames === true;
-const forceHeadless   = args.headless === true;
-const forceHeaded     = args.headed === true;
-const headless        = forceHeaded ? false : (forceHeadless || frameMode);
-const usePng          = args.png === true;
-const jpegQuality     = parseInt(args.jpegQuality ?? '92', 10);
-const noFfmpeg        = args.ffmpeg === false;
-const keepFrames      = args.keepFrames === true;
-const binauralHz      = parseFloat(args.binauralHz ?? '6');
-const binauralCarrier = parseFloat(args.binauralCarrier ?? '200');
-const binauralVolume  = parseFloat(args.binauralVolume ?? '0.35');
-const renderScale     = Math.min(1, Math.max(0.1, parseFloat(args.scale ?? '1')));
-
-// ── format config ─────────────────────────────────────────────────────────────
-
-const FORMAT_CONFIGS = {
-  yt: {
-    label: 'YouTube 1920x1080',
-    width: 1920,
-    height: 1080,
-    vfilter: 'scale=1920:1080',
-    bitrate: '12M',
-  },
-  shorts: {
-    label: 'YouTube Shorts 1080x1920',
-    width: 1080,
-    height: 1920,
-    vfilter: 'scale=1080:1920',
-    bitrate: '12M',
-  },
-  'yt-4k': {
-    label: 'YouTube 4K 3840x2160 (upscaled)',
-    width: 1920,
-    height: 1080,
-    vfilter: 'scale=3840:2160:flags=lanczos',
-    bitrate: '48M',
-  },
-};
-
-const config = FORMAT_CONFIGS[format];
-if (!config) {
-  console.error(`Unknown format: "${format}". Available: ${Object.keys(FORMAT_CONFIGS).join(', ')}`);
-  process.exit(1);
-}
-
-// ── output paths ──────────────────────────────────────────────────────────────
-
-const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const rawOutput = args.output ?? `recordings/${ts}_animation_${format}.mp4`;
-const outputMp4 = /\.(mp4|mov|mkv|webm)$/i.test(rawOutput) ? rawOutput : `${rawOutput}.mp4`;
-const outputDir = dirname(outputMp4);
-mkdirSync(outputDir, { recursive: true });
-
-const fullUrl = `${baseUrl}/${tab}${lang ? `?lang=${lang}` : ''}`;
-
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── shared helpers ───────────────────────────────────────────────────────────
 
 function hasFFmpeg() {
   try { execSync('ffmpeg -version', { stdio: 'ignore' }); return true; }
   catch { return false; }
-}
-
-/** Tiny local HTTP server the recorded page can ping (see "Ready signal" above) once its first frame renders. */
-function startReadyServer() {
-  return new Promise((resolveSetup) => {
-    let resolveReady;
-    const ready = new Promise((resolve) => { resolveReady = resolve; });
-    const server = createServer((req, res) => {
-      res.writeHead(204);
-      res.end();
-      if (req.url?.startsWith('/ready')) resolveReady();
-    });
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : 0;
-      resolveSetup({ port, ready, close: () => server.close() });
-    });
-  });
 }
 
 function fileSizeMb(filePath) {
@@ -158,222 +67,372 @@ function fileSizeMb(filePath) {
   catch { return '?'; }
 }
 
-// audioOpts: { beatHz, carrier, volume, durationSec } or null for no audio
-function ffmpegEncode(inputArg, extraInputArgs, outputPath, audioOpts = null, outputFps = null) {
-  const bitrateNum = parseInt(config.bitrate.replace('M', ''), 10);
+// ── frame-by-frame engine ─────────────────────────────────────────────────────
 
-  // Left ear: carrier Hz  |  Right ear: carrier + beatHz
-  // The brain perceives the difference as a binaural beat at beatHz.
-  const audioInputArgs = audioOpts ? [
-    '-f', 'lavfi',
-    '-i', [
-      `aevalsrc=`,
-      `${audioOpts.volume}*sin(2*PI*${audioOpts.carrier}*t)`,
-      `|`,
-      `${audioOpts.volume}*sin(2*PI*${audioOpts.carrier + audioOpts.beatHz}*t)`,
-      `:c=stereo:s=44100`,
-    ].join(''),
-  ] : [];
+/**
+ * Records one job frame-by-frame. `resolved` is the same shape resolveOptions()
+ * (from record-obs.mjs) produces — video/format/width/height/fps/slidesCount/
+ * durationSec/durationExplicit/baseUrl/tab/noTab/lang/variant/binauralHz/outputDst.
+ * Pass a shared `browser` (a launched playwright.chromium instance) across
+ * multiple calls — e.g. record-videos.mjs's --engine frames batch — to avoid
+ * relaunching Chromium per job; omit it to launch/close one just for this call.
+ *
+ * @param {object} resolved
+ * @param {object} [options]
+ * @param {import('playwright').Browser} [options.browser] Shared browser instance
+ * @param {number} [options.renderScale] Fraction of full resolution to render at (default 1)
+ * @param {boolean} [options.usePng] PNG instead of JPEG for intermediate frames
+ * @param {number} [options.jpegQuality] JPEG quality 1-100 (default 92)
+ * @param {boolean} [options.keepFrames] Keep the temporary frames directory after encoding
+ * @returns {Promise<string>} outputDst
+ */
+export async function recordFramesOne(resolved, options = {}) {
+  const {
+    browser: sharedBrowser,
+    renderScale = 1,
+    usePng = false,
+    jpegQuality = 92,
+    keepFrames = false,
+  } = options;
+  const {
+    video, width, height, label, fps, durationSec, durationExplicit,
+    slidesCount, binauralHz, binauralCarrier, binauralVolume, baseUrl, tab,
+    noTab, lang, variant, waitMs, outputDst,
+  } = resolved;
 
-  const audioOutputArgs = audioOpts
-    ? ['-c:a', 'aac', '-b:a', '192k', '-t', String(audioOpts.durationSec)]
-    : ['-an'];
+  if (!hasFFmpeg()) {
+    throw new Error('ffmpeg is required for frame-by-frame mode (winget install Gyan.FFmpeg)');
+  }
 
-  const ffmpegArgs = [
-    '-y',
-    ...extraInputArgs,
-    '-i', inputArg,
-    ...audioInputArgs,
-    '-vf', config.vfilter,
-    '-c:v', 'libx264',
-    '-preset', 'slow',
-    '-profile:v', 'high',
-    '-level', '4.2',
-    '-crf', '18',
-    '-maxrate', config.bitrate,
-    '-bufsize', `${bitrateNum * 2}M`,
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    ...(outputFps ? ['-r', String(outputFps)] : []),
-    ...audioOutputArgs,
-    outputPath,
-  ];
-  console.log(`\nffmpeg ${ffmpegArgs.join(' ')}\n`);
-  execFileSync('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
+  const browser = sharedBrowser ?? await (await import('playwright')).chromium.launch({
+    headless: true,
+    args: [
+      '--disable-infobars',
+      '--no-first-run',
+      '--disable-blink-features=AutomationControlled',
+      '--ignore-gpu-blocklist',
+    ],
+  });
+
+  const renderWidth = Math.round(width * renderScale);
+  const renderHeight = Math.round(height * renderScale);
+  const context = await browser.newContext({ viewport: { width: renderWidth, height: renderHeight } });
+  const page = await context.newPage();
+
+  console.log('\n══════════════════════════════════════════');
+  console.log('  Animation Recorder (Playwright, frame-by-frame)');
+  console.log('══════════════════════════════════════════');
+  if (video) console.log(`  Video   : ${video.id}  "${video.title}"`);
+  if (variant && variant !== 'default') console.log(`  Variant : ${variant}`);
+  console.log(`  Format  : ${label}`);
+  console.log(`  FPS     : ${fps}`);
+  console.log(`  Slides  : ${slidesCount ?? `(fixed ${durationSec}s)`}`);
+  console.log(`  Output  : ${outputDst}`);
+  console.log('══════════════════════════════════════════\n');
+
+  try {
+    // Install the fake clock BEFORE navigation so every timer (RAF, setTimeout,
+    // setInterval, performance.now, Date) is under our control from the start.
+    await page.clock.install();
+    await page.clock.setSystemTime(Date.now());
+
+    const readyServer = await startReadyServer();
+    const recordUrl = new URL(noTab ? baseUrl : `${baseUrl}/${tab}`);
+    recordUrl.searchParams.set('ready-port', String(readyServer.port));
+    if (lang) recordUrl.searchParams.set('lang', lang);
+    if (variant && variant !== 'default') recordUrl.searchParams.set('variant', variant);
+    if (binauralHz) {
+      recordUrl.searchParams.set('binaural-hz', String(binauralHz));
+      recordUrl.searchParams.set('binaural-carrier', String(binauralCarrier));
+      recordUrl.searchParams.set('binaural-volume', String(binauralVolume));
+    }
+    if (slidesCount !== undefined) recordUrl.searchParams.set('stop-after-slides', String(slidesCount));
+    // Hold the sequence at slide 0 during warm-up below — otherwise slides
+    // would advance (and even finish, hitting stop-after-slides) while we're
+    // still just waiting for the first mesh to render, before a single frame
+    // has been captured. app/preset/[id]/full-window.tsx listens for the same
+    // `obsCustomEvent: startSequence` signal record-obs.mjs's --obs-sync emits
+    // via the OBS vendor API — dispatched directly from Playwright below
+    // instead, since there's no OBS in this engine.
+    recordUrl.searchParams.set('pause-until-obs', '1');
+    const fullUrl = recordUrl.toString();
+
+    const assertNoTranslationMissing = makeTranslationMissingChecker(readyServer);
+
+    console.log(`Opening ${fullUrl} ...`);
+    await page.goto(fullUrl, { waitUntil: 'load', timeout: 30_000 });
+
+    const frameDurationMs = 1000 / fps;
+
+    // Advance the fake clock frame-by-frame (not screenshotting yet) until the
+    // page pings /ready — i.e. its first mesh has actually rendered — instead
+    // of guessing a fixed fast-forward like this script used to. Bounded by
+    // --wait-ms of *fake* time so a page that never pings can't hang forever.
+    // The sequence itself is paused (see pause-until-obs above), so this can't
+    // burn through slides before recording has even started.
+    console.log('Advancing fake clock until first-frame ready signal...');
+    const warmupDeadlineMs = waitMs ?? 15_000;
+    let warmedMs = 0;
+    while (!readyServer.isReady() && warmedMs < warmupDeadlineMs) {
+      await page.clock.runFor(frameDurationMs);
+      warmedMs += frameDurationMs;
+      assertNoTranslationMissing();
+    }
+    if (!readyServer.isReady()) {
+      console.warn(`No ready signal after ${warmupDeadlineMs}ms of fake time — proceeding anyway.`);
+    } else {
+      console.log(`Ready signal received after ${warmedMs.toFixed(0)}ms of fake time.`);
+    }
+
+    // Start the sequence now — recording (frame capture) begins immediately
+    // after, so animation and "recording" start on the same frame, same as
+    // --obs-sync does for the OBS engine.
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent('obsCustomEvent', { detail: { action: 'startSequence' } }));
+    });
+
+    const framesDir = join(dirname(outputDst), `.frames-${Date.now()}`);
+    mkdirSync(framesDir, { recursive: true });
+    const frameExt = usePng ? 'png' : 'jpg';
+
+    // Slide-count mode stops on the /stop-recording ping (like record-obs.mjs),
+    // capped at durationSec*fps frames only if --duration was explicitly passed
+    // (a safety net, not a guess); otherwise capped at a generous absolute
+    // ceiling so a page that never stops can't loop forever. Bare-duration mode
+    // (no --video/--slides) just captures exactly durationSec*fps frames.
+    const ABSOLUTE_SAFETY_FRAMES = 600 * fps; // 10 minutes of video, worst case
+    const frameCap = slidesCount !== undefined
+      ? (durationExplicit ? Math.ceil(durationSec * fps) : ABSOLUTE_SAFETY_FRAMES)
+      : Math.ceil(durationSec * fps);
+
+    console.log(`\n● Recording ${slidesCount !== undefined ? `until stop signal (cap ${frameCap} frames)` : `${frameCap} frames`} @ ${fps} fps...\n`);
+    const startWall = Date.now();
+    let i = 0;
+    for (; i < frameCap; i++) {
+      if (slidesCount !== undefined && readyServer.isStopped()) break;
+
+      await page.clock.runFor(frameDurationMs);
+      assertNoTranslationMissing();
+
+      const framePath = join(framesDir, `frame-${String(i).padStart(6, '0')}.${frameExt}`);
+      await page.screenshot({
+        path: framePath,
+        type: usePng ? 'png' : 'jpeg',
+        ...(usePng ? {} : { quality: jpegQuality }),
+      });
+
+      if (i % fps === fps - 1) {
+        const elapsed = ((Date.now() - startWall) / 1000).toFixed(1);
+        process.stdout.write(`\r  ${Math.floor((i + 1) / fps)}s of animation captured  (wall: ${elapsed}s)   `);
+      }
+    }
+    if (slidesCount !== undefined && !readyServer.isStopped()) {
+      console.warn(`\nHit the ${frameCap}-frame safety cap without a stop signal — recording may be cut off.`);
+    }
+    const totalFrames = i;
+    const wallSec = ((Date.now() - startWall) / 1000).toFixed(1);
+    console.log(`\n\n${totalFrames} frames captured in ${wallSec}s wall-clock (${(totalFrames / fps).toFixed(1)}s of animation).`);
+
+    const soundLog = readyServer.getSoundLog();
+    readyServer.close();
+    await context.close();
+
+    mkdirSync(dirname(outputDst), { recursive: true });
+    console.log('Encoding MP4...');
+    const scaleFilter = renderScale < 1 ? ['-vf', `scale=${width}:${height}:flags=lanczos`] : [];
+    execFileSync('ffmpeg', [
+      '-y',
+      '-framerate', String(fps),
+      '-i', join(framesDir, `frame-%06d.${frameExt}`),
+      ...scaleFilter,
+      '-c:v', 'libx264',
+      '-preset', 'slow',
+      '-profile:v', 'high',
+      '-level', '4.2',
+      '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-an', // silent — real audio gets mixed in below, same pipeline as record-obs.mjs
+      outputDst,
+    ], { stdio: 'inherit' });
+
+    if (!keepFrames) rmSync(framesDir, { recursive: true, force: true });
+    console.log(`\n✓ Saved: ${outputDst}  (${fileSizeMb(outputDst)} MB)`);
+
+    // The recording itself is silent — mix the background music in now (plus
+    // transition SFX/binaural, if MIX_TRANSITION_SFX_AND_BINAURAL is re-enabled
+    // in record-obs.mjs — this engine follows that same flag).
+    try {
+      const mixSoundLog = MIX_TRANSITION_SFX_AND_BINAURAL ? soundLog : { music: soundLog.music, events: [] };
+      const mixBinaural = MIX_TRANSITION_SFX_AND_BINAURAL && binauralHz
+        ? { hz: binauralHz, carrier: binauralCarrier, volume: binauralVolume }
+        : null;
+      mixAudioIntoVideo(outputDst, mixSoundLog, mixBinaural);
+    } catch (err) {
+      console.warn(`Audio mix failed; recording stays silent: ${err.message}`);
+    }
+
+    return outputDst;
+  } finally {
+    await context.close().catch(() => {});
+    if (!sharedBrowser) await browser.close();
+  }
 }
 
-function binauralOpts() {
-  if (!binauralHz) return null;
-  return { beatHz: binauralHz, carrier: binauralCarrier, volume: binauralVolume, durationSec };
-}
+// ── CLI entry ────────────────────────────────────────────────────────────────
 
-// Fired without a top-level await — see record-obs.mjs's CLI entry for why.
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isMainModule) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
 
 async function main() {
-
-// ── banner ────────────────────────────────────────────────────────────────────
-
-console.log('\n══════════════════════════════════════════');
-console.log('  Animation Recorder (Playwright)');
-console.log('══════════════════════════════════════════');
-console.log(`  Mode    : ${frameMode ? 'frame-by-frame (clock-controlled)' : 'realtime'}`);
-console.log(`  Format  : ${config.label}`);
-console.log(`  FPS     : ${fps}`);
-console.log(`  Duration: ${durationSec}s`);
-console.log(`  URL     : ${fullUrl}`);
-console.log(`  Output  : ${outputMp4}`);
-console.log(`  Browser : ${headless ? 'headless' : 'headed'}`);
-if (frameMode) {
-  const totalFrames = Math.ceil(durationSec * fps);
-  const frameFormat = usePng ? 'PNG' : `JPEG q${jpegQuality}`;
-  console.log(`  Frames  : ${totalFrames} ${frameFormat} → MP4`);
+  const argv = cliArgv();
+  if (argv.includes('--frames')) {
+    await mainFrames();
+  } else {
+    await mainRealtime();
+  }
 }
-if (renderScale < 1) {
-  const rw = Math.round(config.width * renderScale);
-  const rh = Math.round(config.height * renderScale);
-  console.log(`  Scale   : ${renderScale} (render ${rw}×${rh}, upscale in ffmpeg)`);
+
+async function mainFrames() {
+  const rawOpts = parseFlags(createRecordFramesProgram(), cliArgv());
+
+  if (rawOpts.video === true || rawOpts.video === 'all') {
+    const { runBatch } = await import('./record-videos.mjs');
+    const langs = (rawOpts.lang || 'en').split(',').map((s) => s.trim()).filter(Boolean);
+    const { results } = await runBatch({
+      formats: [rawOpts.format ?? 'shorts'],
+      langs,
+      engine: 'frames',
+      outDir: rawOpts.outDir,
+      dryRun: rawOpts.dryRun === true,
+      failFast: rawOpts.failFast === true,
+      baseOpts: rawOpts,
+    });
+    if (results.some((r) => !r.ok)) process.exitCode = 1;
+    return;
+  }
+
+  const resolved = resolveOptions(rawOpts);
+  if (rawOpts.dryRun === true) {
+    console.log('\n══════════════════════════════════════════');
+    console.log('  Animation Recorder (Playwright, frame-by-frame) — DRY RUN');
+    console.log('══════════════════════════════════════════');
+    if (resolved.video) console.log(`  Video   : ${resolved.video.id}  "${resolved.video.title}"`);
+    console.log(`  Format  : ${resolved.label}`);
+    console.log(`  FPS     : ${resolved.fps}`);
+    console.log(`  Slides  : ${resolved.slidesCount ?? `(fixed ${resolved.durationSec}s)`}`);
+    console.log(`  Output  : ${resolved.outputDst}`);
+    console.log('══════════════════════════════════════════\n');
+    return;
+  }
+
+  const renderScale = Math.min(1, Math.max(0.1, parseFloat(rawOpts.scale ?? '1')));
+  await recordFramesOne(resolved, {
+    renderScale,
+    usePng: rawOpts.png === true,
+    jpegQuality: parseInt(rawOpts.jpegQuality ?? '92', 10),
+    keepFrames: rawOpts.keepFrames === true,
+  });
 }
-if (binauralHz) {
-  console.log(`  Binaural: ${binauralHz} Hz beat  (${binauralCarrier} Hz / ${binauralCarrier + binauralHz} Hz)  ⚠ headphones required`);
-}
-console.log('══════════════════════════════════════════\n');
 
-// ── launch browser ────────────────────────────────────────────────────────────
+// ── realtime engine ───────────────────────────────────────────────────────────
 
-let playwrightMod;
-try {
-  playwrightMod = await import('playwright');
-} catch {
-  console.error(
-    'Playwright is not installed. Run:\n' +
-    '  npm install --save-dev playwright\n' +
-    '  npx playwright install chromium',
-  );
-  process.exit(1);
-}
-const { chromium } = playwrightMod;
+const FORMAT_CONFIGS = {
+  yt: { label: 'YouTube 1920x1080', width: 1920, height: 1080, vfilter: 'scale=1920:1080', bitrate: '12M' },
+  shorts: { label: 'YouTube Shorts 1080x1920', width: 1080, height: 1920, vfilter: 'scale=1080:1920', bitrate: '12M' },
+  'yt-4k': { label: 'YouTube 4K 3840x2160 (upscaled)', width: 1920, height: 1080, vfilter: 'scale=3840:2160:flags=lanczos', bitrate: '48M' },
+};
 
-const browser = await chromium.launch({
-  headless,
-  args: [
-    '--disable-infobars',
-    '--no-first-run',
-    '--disable-blink-features=AutomationControlled',
-    '--ignore-gpu-blocklist',
-  ],
-});
+async function mainRealtime() {
+  const args = parseFlags(createRecordPlaywrightProgram(), cliArgv());
 
-// ── frame-by-frame mode ───────────────────────────────────────────────────────
+  const format = args.format ?? 'yt';
+  const durationSec = parseInt(args.duration ?? '60', 10);
+  const tab = args.tab ?? 'preset/mcon/full-window';
+  const lang = args.lang ?? '';
+  const baseUrl = args.url ?? 'http://localhost:8081';
+  const renderScale = Math.min(1, Math.max(0.1, parseFloat(args.scale ?? '1')));
+  const noFfmpeg = args.ffmpeg === false;
+  const binauralHz = parseFloat(args.binauralHz ?? '6');
+  const binauralCarrier = parseFloat(args.binauralCarrier ?? '200');
+  const binauralVolume = parseFloat(args.binauralVolume ?? '0.35');
 
-if (frameMode) {
-  if (!noFfmpeg && !hasFFmpeg()) {
-    console.error('ffmpeg is required for frame-by-frame mode (winget install Gyan.FFmpeg)');
-    await browser.close();
+  const config = FORMAT_CONFIGS[format];
+  if (!config) {
+    console.error(`Unknown format: "${format}". Available: ${Object.keys(FORMAT_CONFIGS).join(', ')}`);
     process.exit(1);
   }
 
-  const framesDir = join(outputDir, `.frames-${ts}`);
-  mkdirSync(framesDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const rawOutput = args.output ?? `recordings/${ts}_animation_${format}.mp4`;
+  const outputMp4 = /\.(mp4|mov|mkv|webm)$/i.test(rawOutput) ? rawOutput : `${rawOutput}.mp4`;
+  const outputDir = dirname(outputMp4);
+  mkdirSync(outputDir, { recursive: true });
 
-  const renderWidth  = Math.round(config.width  * renderScale);
-  const renderHeight = Math.round(config.height * renderScale);
-  const context = await browser.newContext({
-    viewport: { width: renderWidth, height: renderHeight },
+  const fullUrl = `${baseUrl}/${tab}${lang ? `?lang=${lang}` : ''}`;
+
+  function ffmpegEncode(inputArg, extraInputArgs, outputPath, audioOpts) {
+    const bitrateNum = parseInt(config.bitrate.replace('M', ''), 10);
+    const audioInputArgs = audioOpts ? [
+      '-f', 'lavfi',
+      '-i', [
+        'aevalsrc=',
+        `${audioOpts.volume}*sin(2*PI*${audioOpts.carrier}*t)`,
+        '|',
+        `${audioOpts.volume}*sin(2*PI*${audioOpts.carrier + audioOpts.beatHz}*t)`,
+        ':c=stereo:s=44100',
+      ].join(''),
+    ] : [];
+    const audioOutputArgs = audioOpts
+      ? ['-c:a', 'aac', '-b:a', '192k', '-t', String(audioOpts.durationSec)]
+      : ['-an'];
+    const ffmpegArgs = [
+      '-y', ...extraInputArgs, '-i', inputArg, ...audioInputArgs,
+      '-vf', config.vfilter,
+      '-c:v', 'libx264', '-preset', 'slow', '-profile:v', 'high', '-level', '4.2',
+      '-crf', '18', '-maxrate', config.bitrate, '-bufsize', `${bitrateNum * 2}M`,
+      '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+      ...audioOutputArgs, outputPath,
+    ];
+    console.log(`\nffmpeg ${ffmpegArgs.join(' ')}\n`);
+    execFileSync('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
+  }
+
+  function binauralOpts() {
+    if (!binauralHz) return null;
+    return { beatHz: binauralHz, carrier: binauralCarrier, volume: binauralVolume, durationSec };
+  }
+
+  console.log('\n══════════════════════════════════════════');
+  console.log('  Animation Recorder (Playwright, realtime)');
+  console.log('══════════════════════════════════════════');
+  console.log(`  Format  : ${config.label}`);
+  console.log(`  Duration: ${durationSec}s`);
+  console.log(`  URL     : ${fullUrl}`);
+  console.log(`  Output  : ${outputMp4}`);
+  if (binauralHz) console.log(`  Binaural: ${binauralHz} Hz beat  (${binauralCarrier} Hz / ${binauralCarrier + binauralHz} Hz)  ⚠ headphones required`);
+  console.log('══════════════════════════════════════════\n');
+
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({
+    headless: false,
+    args: ['--disable-infobars', '--no-first-run', '--disable-blink-features=AutomationControlled', '--ignore-gpu-blocklist'],
   });
-  const page = await context.newPage();
 
-  // Install the fake clock BEFORE navigation so every timer (RAF, setTimeout,
-  // setInterval, performance.now, Date) is under our control from the start.
-  // setSystemTime sets the starting timestamp without firing any callbacks.
-  await page.clock.install();
-  await page.clock.setSystemTime(Date.now());
-
-  console.log(`Opening ${fullUrl} ...`);
-  await page.goto(fullUrl, { waitUntil: 'load', timeout: 30_000 });
-
-  // Jump the fake clock forward through the init period without firing any
-  // intermediate callbacks (no 180 THREE.js renders before recording starts).
-  // Slide timers registered during page load will still fire at the correct
-  // fake time during recording because their scheduled time is now in our past.
-  console.log(`Fast-forwarding ${waitMs}ms of fake time for initialization...`);
-  await page.clock.fastForward(waitMs);
-
-  const totalFrames = Math.ceil(durationSec * fps);
-  const frameDurationMs = 1000 / fps;
-
-  console.log(`\n● Recording ${totalFrames} frames @ ${fps} fps...\n`);
-  const startWall = Date.now();
-
-  for (let i = 0; i < totalFrames; i++) {
-    // Advance fake time by one frame.  Fires the pending RAF (THREE.js renders)
-    // and any setTimeout/setInterval callbacks due in this window (slide changes,
-    // sequence timers, etc.) — all perfectly in sync with the video clock.
-    await page.clock.runFor(frameDurationMs);
-
-    const ext = usePng ? 'png' : 'jpg';
-    const framePath = join(framesDir, `frame-${String(i).padStart(6, '0')}.${ext}`);
-    await page.screenshot({
-      path: framePath,
-      type: usePng ? 'png' : 'jpeg',
-      ...(usePng ? {} : { quality: jpegQuality }),
-    });
-
-    // Progress line every second of animation time
-    if (i % fps === fps - 1 || i === totalFrames - 1) {
-      const elapsed = ((Date.now() - startWall) / 1000).toFixed(0);
-      const animSec  = Math.floor((i + 1) / fps);
-      const eta      = i < totalFrames - 1
-        ? ` ETA ~${Math.ceil(((Date.now() - startWall) / (i + 1)) * (totalFrames - i - 1) / 1000)}s`
-        : '';
-      process.stdout.write(`\r  ${animSec}s / ${durationSec}s  (wall: ${elapsed}s${eta})   `);
-    }
-  }
-
-  console.log('\n');
-  await context.close();
-  await browser.close();
-
-  if (noFfmpeg) {
-    console.log(`Frames saved at: ${framesDir}`);
-    console.log('Skipping MP4 encoding because --no-ffmpeg was passed.');
-  } else {
-    console.log('Encoding MP4...');
-    const frameExt = usePng ? 'png' : 'jpg';
-    ffmpegEncode(
-      join(framesDir, `frame-%06d.${frameExt}`),
-      ['-framerate', String(fps)],
-      outputMp4,
-      binauralOpts(),
-      fps,
-    );
-
-    if (!keepFrames) {
-      rmSync(framesDir, { recursive: true, force: true });
-    } else {
-      console.log(`Frames kept at: ${framesDir}`);
-    }
-
-    console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
-  }
-
-// ── realtime mode ─────────────────────────────────────────────────────────────
-
-} else {
   const videoDir = join(__dirname, '../recordings/.playwright-tmp');
   mkdirSync(videoDir, { recursive: true });
 
-  const renderWidth  = Math.round(config.width  * renderScale);
+  const renderWidth = Math.round(config.width * renderScale);
   const renderHeight = Math.round(config.height * renderScale);
   const context = await browser.newContext({
     viewport: { width: renderWidth, height: renderHeight },
-    recordVideo: {
-      dir: videoDir,
-      size: { width: renderWidth, height: renderHeight },
-    },
+    recordVideo: { dir: videoDir, size: { width: renderWidth, height: renderHeight } },
   });
   const page = await context.newPage();
 
@@ -384,19 +443,9 @@ if (frameMode) {
   console.log(`Opening ${fullUrl} ...`);
   await page.goto(recordUrl.toString(), { waitUntil: 'load', timeout: 30_000 });
 
-  // This script only ever records this app's own routes (no third-party URL
-  // mode), so the page is guaranteed to ping eventually — wait for it rather
-  // than racing a guessed timeout that would just start recording too early.
   console.log('Waiting for page ready signal...');
-  let elapsedSec = 0;
-  const heartbeat = setInterval(() => {
-    elapsedSec += 5;
-    console.log(`  ...still waiting for page ready signal (${elapsedSec}s elapsed). Is the dev server running?`);
-  }, 5000);
-  await readyServer.ready;
-  clearInterval(heartbeat);
+  await waitForSignalAndLog(readyServer.waitForReady, 'page ready', undefined, readyServer);
   readyServer.close();
-  console.log('Page signalled ready.');
 
   console.log(`\n● REC  (${durationSec}s)\n`);
   await page.waitForTimeout(durationSec * 1000);
@@ -417,5 +466,4 @@ if (frameMode) {
     try { unlinkSync(videoPath); } catch { /* ignore */ }
     console.log(`\n✓ Saved: ${outputMp4}  (${fileSizeMb(outputMp4)} MB)`);
   }
-}
 }
