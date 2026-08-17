@@ -13,7 +13,7 @@
  * Filters  (comma-separated values or omit for all):
  *   --presets   <list>   mcon,motivation          (default: all registered presets)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok   (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...           (default: es,de)
+ *   --langs     <list>   es,de                     (default: es,de — the only supported values)
  *
  * Recorder control:
  *   --recorder  obs|playwright   Which recorder to use (default: obs)
@@ -58,9 +58,7 @@ const ALL_PRESETS = ['mcon', 'motivation', 'quotes', 'principles'];
 
 const ALL_FORMATS = ['shorts', 'yt', 'tiktok', 'yt-4k'];
 
-const ALL_LANGS = [
-  'en', 'pl', 'de', 'it', 'fr', 'ca', 'zh', 'pt', 'es', 'hi', 'ar',
-];
+const ALL_LANGS = ['es', 'de'];
 
 function splitList(value, allowed, defaultValue = allowed) {
   if (!value) return defaultValue;
@@ -102,7 +100,7 @@ async function main() {
     .allowUnknownOption(true)
     .option('--presets <list>', 'comma-separated presets (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt,tiktok,yt-4k)')
-    .option('--langs <list>', 'comma-separated language codes (default: es,de)')
+    .option('--langs <list>', 'comma-separated language codes: es, de (default: es,de)')
     .option('--recorder <name>', 'obs or playwright', 'obs')
     .option('--dry-run', 'print plan without recording')
     .option('--out-dir <path>', 'output directory')

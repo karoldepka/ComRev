@@ -17,7 +17,7 @@
  * Filters (comma-separated values or omit for all):
  *   --ids       <list>   smarter-7,habits-7        (default: all declared videos)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok    (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...            (default: es,de)
+ *   --langs     <list>   es,de                      (default: es,de — the only supported values)
  *   --variants  <list>   default,fast,slow           (default: default) — see utils/slides/ab-variants.ts
  *
  * Engine:
@@ -72,19 +72,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const ALL_FORMATS = ['shorts', 'yt', 'tiktok', 'yt-4k'];
 
-const ALL_LANGS = [
-  'en',
-  'pl',
-  'de',
-  'it',
-  'fr',
-  'ca',
-  'zh',
-  'pt',
-  'es',
-  'hi',
-  'ar',
-];
+const ALL_LANGS = ['es', 'de'];
 
 // Mirrors utils/slides/ab-variants.ts's AB_VARIANTS keys — duplicated rather
 // than transpiling that module for Node, same reasoning as MUSIC_FILES in
@@ -359,7 +347,7 @@ async function main() {
     .allowUnknownOption(true)
     .option('--ids <list>', 'comma-separated video ids (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt)')
-    .option('--langs <list>', 'comma-separated language codes (default: es,de)')
+    .option('--langs <list>', 'comma-separated language codes: es, de (default: es,de)')
     .option('--variants <list>', 'comma-separated A/B-test variant ids from ab-variants.ts (default: default)')
     .option('--engine <obs|frames>', 'recording engine: obs (default, real-time via OBS) or frames (fake-clock frame-by-frame, no OBS needed — NOT currently faster for these videos, see record-playwright.mjs header)', 'obs')
     .option('--dry-run', 'print plan without recording')
