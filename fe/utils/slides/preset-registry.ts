@@ -272,6 +272,10 @@ for (const category of VIDEO_CATEGORIES) {
         ? { complexity: MANDALA_COMPLEXITY_RANGE[mandalaIndex++ % MANDALA_COMPLEXITY_RANGE.length] }
         : undefined;
     videoIndex++;
+    const [sourceMantras, sourceKeys] =
+      video.source === 'quotes'
+        ? [QUOTES_MANTRAS, Object.keys(video.quotes)]
+        : [PRINCIPLES_MANTRAS, Object.keys(video.principles)];
     videoPresetEntries[presetId] = {
       label: `${category.label}: ${video.title}`,
       soundscape: principlesBase.soundscape,
@@ -279,7 +283,7 @@ for (const category of VIDEO_CATEGORIES) {
       backgroundPipe: { type: backgroundPipeType, params: backgroundPipeParams },
       generateSlides: (lang?: string) => [
         makeTitleSlide(`${presetId}-title`, video.title, lang),
-        ...makeSlidesFromKeys(presetId, PRINCIPLES_MANTRAS, Object.keys(video.principles), lang),
+        ...makeSlidesFromKeys(presetId, sourceMantras, sourceKeys, lang),
       ],
     };
   }

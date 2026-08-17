@@ -55,11 +55,12 @@ export function loadVideos() {
   }
 
   const videos = categories.flatMap((category) => category.videos ?? []).map((video) => {
-    const principleTitles = Object.keys(video.principles ?? {});
+    const source = video.source === 'quotes' ? 'quotes' : 'principles';
+    const principleTitles = Object.keys(source === 'quotes' ? (video.quotes ?? {}) : (video.principles ?? {}));
     if (!video.id || !video.title || principleTitles.length === 0) {
       throw new Error('Each video must have an id, title, and at least one principle.');
     }
-    return { id: video.id, title: video.title, principleCount: principleTitles.length, principleTitles };
+    return { id: video.id, title: video.title, source, principleCount: principleTitles.length, principleTitles };
   });
   if (new Set(videos.map((video) => video.id)).size !== videos.length) {
     throw new Error('Video ids in videos.data.tsx must be unique.');
@@ -75,6 +76,72 @@ function loadPrinciples() {
     principlesCache = loadTsDataModule('utils/slides/principles.data.tsx').MANTRAS ?? {};
   }
   return principlesCache;
+}
+
+let quotesCache = null;
+
+/** Loads MANTRAS from quotes.data.tsx — the canonical quote-text -> {author} map. */
+function loadQuotes() {
+  if (!quotesCache) {
+    quotesCache = loadTsDataModule('utils/slides/quotes.data.tsx').MANTRAS ?? {};
+  }
+  return quotesCache;
+}
+
+let mconCache = null;
+
+/** Loads MANTRAS from mcon.data.tsx — the canonical mantra-text -> {examples} map. */
+function loadMcon() {
+  if (!mconCache) {
+    mconCache = loadTsDataModule('utils/slides/mcon.data.tsx').MANTRAS ?? {};
+  }
+  return mconCache;
+}
+
+let motivationCache = null;
+
+/** Loads MANTRAS from motivation.data.tsx — the canonical mantra-text -> {examples} map. */
+function loadMotivation() {
+  if (!motivationCache) {
+    motivationCache = loadTsDataModule('utils/slides/motivation.data.tsx').MANTRAS ?? {};
+  }
+  return motivationCache;
+}
+
+/** Maps a whole-collection preset id (see utils/slides/preset-registry.ts's
+ * PRESET_REGISTRY) to its MANTRAS loader — used by record-all.mjs, which
+ * (unlike record-videos.mjs's curated video subsets) records every entry in
+ * the collection, so completeness has to be checked against the whole map. */
+const PRESET_MANTRA_LOADERS = {
+  mcon: loadMcon,
+  motivation: loadMotivation,
+  quotes: loadQuotes,
+  principles: loadPrinciples,
+  'principles-white': loadPrinciples,
+};
+
+/**
+ * Checks that every string a recording of `preset` in `lang` will actually
+ * display — every entry's title, and its examples caption when it has one —
+ * exists in locales/mantras.<lang>.json. 'en' is the source language and is
+ * always considered complete. Returns the list of missing translation keys
+ * (empty when fully covered, or when `preset` isn't a whole-collection
+ * preset this checker knows about).
+ */
+export function missingPresetTranslations(preset, lang) {
+  if (!lang || lang === 'en') return [];
+  const loader = PRESET_MANTRA_LOADERS[preset];
+  if (!loader) return [];
+  const mantras = loadMantras(lang);
+  const entries = loader();
+
+  const requiredKeys = [];
+  for (const [title, entry] of Object.entries(entries)) {
+    requiredKeys.push(title);
+    if (entry?.examples) requiredKeys.push(`${title}__examples`);
+  }
+
+  return requiredKeys.filter((key) => !(key in mantras));
 }
 
 /** Looks up a single declared video by id, throwing with the full valid-id list if not found. */
@@ -136,12 +203,12 @@ export function titleForLang(title, lang) {
 export function missingTranslations(video, lang) {
   if (!lang || lang === 'en') return [];
   const mantras = loadMantras(lang);
-  const principles = loadPrinciples();
+  const entries = video.source === 'quotes' ? loadQuotes() : loadPrinciples();
 
   const requiredKeys = [video.title];
   for (const title of video.principleTitles) {
     requiredKeys.push(title);
-    const examples = principles[title]?.examples;
+    const examples = entries[title]?.examples;
     if (examples) requiredKeys.push(`${title}__examples`);
   }
 

@@ -48,6 +48,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRecordObsProgram, createRecordPlaywrightProgram, parseFlags, cliArgv } from './lib/cli-args.mjs';
 import { connectObs, recordOne, resolveOptions } from './record-obs.mjs';
+import { missingPresetTranslations } from './lib/videos-data.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -161,6 +162,30 @@ async function main() {
   console.log(`  Out dir  : ${outDir}`);
   if (dryRun) console.log('\n  *** DRY RUN — no recordings will be made ***');
   console.log('══════════════════════════════════════════════════════════\n');
+
+  // Fail before recording anything if any preset/language combination in this
+  // batch isn't actually translated — otherwise recordings silently show
+  // English content in a preset meant for another language.
+  const translationIssues = [];
+  for (const lang of langs) {
+    for (const preset of presets) {
+      const missing = missingPresetTranslations(preset, lang);
+      if (missing.length > 0) translationIssues.push({ preset, lang, missing });
+    }
+  }
+  if (translationIssues.length > 0) {
+    console.error(
+      `✗ Missing translations — aborting before recording (${translationIssues.length} preset/language combination(s)):\n`,
+    );
+    for (const issue of translationIssues) {
+      console.error(`  ${issue.preset} (${issue.lang}): ${issue.missing.length} missing`);
+      issue.missing.slice(0, 15).forEach((key) => console.error(`    - ${key}`));
+      if (issue.missing.length > 15) console.error(`    ... and ${issue.missing.length - 15} more`);
+    }
+    throw new Error(
+      `${translationIssues.length} preset/language combination(s) have missing translations.`,
+    );
+  }
 
   if (dryRun) {
     console.log('Plan:\n');
