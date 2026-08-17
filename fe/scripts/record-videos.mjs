@@ -17,7 +17,7 @@
  * Filters (comma-separated values or omit for all):
  *   --ids       <list>   smarter-7,habits-7        (default: all declared videos)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok    (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...            (default: en)
+ *   --langs     <list>   en,pl,de,fr,...            (default: es,de)
  *   --variants  <list>   default,fast,slow           (default: default) — see utils/slides/ab-variants.ts
  *
  * Engine:
@@ -40,7 +40,7 @@
  * --ws-password, --no-resize, --scene, --source, ...
  *
  * Examples:
- *   # All videos × shorts+yt × English (default)
+ *   # All videos × shorts+yt × Spanish+German (default)
  *   node scripts/record-videos.mjs
  *
  *   # Just the "smarter" video, TikTok format, dry run
@@ -115,7 +115,7 @@ const pad = (s, n) => String(s).padEnd(n);
  * @param {object} options
  * @param {string[]} [options.ids] video ids to include (default: all declared videos)
  * @param {string[]} [options.formats] (default: ['shorts', 'yt'])
- * @param {string[]} [options.langs] (default: ['en'])
+ * @param {string[]} [options.langs] (default: ['es', 'de'])
  * @param {string[]} [options.variants] A/B-test variant ids from ab-variants.ts (default: ['default'])
  * @param {'obs'|'frames'} [options.engine] 'obs' (default, real-time via OBS
  *   Browser Source) or 'frames' (fake-clock frame-by-frame via Playwright —
@@ -136,7 +136,7 @@ export async function runBatch(options = {}) {
   const {
     ids,
     formats = ['shorts', 'yt'],
-    langs = ['en'],
+    langs = ['es', 'de'],
     variants = ['default'],
     engine = 'obs',
     dryRun = false,
@@ -359,7 +359,7 @@ async function main() {
     .allowUnknownOption(true)
     .option('--ids <list>', 'comma-separated video ids (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt)')
-    .option('--langs <list>', 'comma-separated language codes (default: en)')
+    .option('--langs <list>', 'comma-separated language codes (default: es,de)')
     .option('--variants <list>', 'comma-separated A/B-test variant ids from ab-variants.ts (default: default)')
     .option('--engine <obs|frames>', 'recording engine: obs (default, real-time via OBS) or frames (fake-clock frame-by-frame, no OBS needed — NOT currently faster for these videos, see record-playwright.mjs header)', 'obs')
     .option('--dry-run', 'print plan without recording')
@@ -385,7 +385,7 @@ async function main() {
   const allVideoIds = loadVideos().map((v) => v.id);
   const ids = splitList(batchOpts.ids, allVideoIds);
   const formats = splitList(batchOpts.formats, ALL_FORMATS, ['shorts', 'yt']);
-  const langs = splitList(batchOpts.langs, ALL_LANGS, ['en']);
+  const langs = splitList(batchOpts.langs, ALL_LANGS, ['es', 'de']);
   const variants = splitList(batchOpts.variants, ALL_VARIANTS, ['default']);
 
   const { results } = await runBatch({

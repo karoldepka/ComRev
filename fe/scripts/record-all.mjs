@@ -13,7 +13,7 @@
  * Filters  (comma-separated values or omit for all):
  *   --presets   <list>   mcon,motivation          (default: all registered presets)
  *   --formats   <list>   shorts,yt,yt-4k,tiktok   (default: shorts,yt)
- *   --langs     <list>   en,pl,de,fr,...           (default: all supported languages)
+ *   --langs     <list>   en,pl,de,fr,...           (default: es,de)
  *
  * Recorder control:
  *   --recorder  obs|playwright   Which recorder to use (default: obs)
@@ -31,7 +31,7 @@
  *   --frames, --headless, --headed, --scale, --jpeg-quality, ...
  *
  * Examples:
- *   # All presets × shorts+yt × all languages  (default)
+ *   # All presets × shorts+yt × Spanish+German (default)
  *   node scripts/record-all.mjs --duration 60
  *
  *   # Only mcon, shorts format, Polish + English, dry run
@@ -61,8 +61,8 @@ const ALL_LANGS = [
   'en', 'pl', 'de', 'it', 'fr', 'ca', 'zh', 'pt', 'es', 'hi', 'ar',
 ];
 
-function splitList(value, allowed) {
-  if (!value) return allowed;
+function splitList(value, allowed, defaultValue = allowed) {
+  if (!value) return defaultValue;
   const items = String(value).split(',').map((s) => s.trim()).filter(Boolean);
   const unknown = items.filter((v) => !allowed.includes(v));
   if (unknown.length) {
@@ -101,7 +101,7 @@ async function main() {
     .allowUnknownOption(true)
     .option('--presets <list>', 'comma-separated presets (default: all)')
     .option('--formats <list>', 'comma-separated formats (default: shorts,yt,tiktok,yt-4k)')
-    .option('--langs <list>', 'comma-separated language codes (default: all supported)')
+    .option('--langs <list>', 'comma-separated language codes (default: es,de)')
     .option('--recorder <name>', 'obs or playwright', 'obs')
     .option('--dry-run', 'print plan without recording')
     .option('--out-dir <path>', 'output directory')
@@ -113,7 +113,7 @@ async function main() {
 
   const presets = splitList(batch.presets, ALL_PRESETS);
   const formats = splitList(batch.formats, ALL_FORMATS);
-  const langs = splitList(batch.langs, ALL_LANGS);
+  const langs = splitList(batch.langs, ALL_LANGS, ['es', 'de']);
   const recorder = batch.recorder;
   const dryRun = batch.dryRun === true;
   const failFast = batch.failFast === true;
