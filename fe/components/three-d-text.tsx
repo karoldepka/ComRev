@@ -728,7 +728,7 @@ export const ThreeDText = React.forwardRef<ThreeDTextHandle, ThreeDTextProps>(
               // title's own local space so it inherits the title's rotation.
               const capBox = new THREE.Box3().setFromObject(capGroup);
               const capHeight = capBox.max.y - capBox.min.y;
-              const gap = capHeight * 0.3; // 1.5x the previous 0.2 baseline
+              const gap = capHeight * 0.6; // 2x the previous 0.3 — still too tight against the title
               capGroup.position.y += mainBox.min.y - gap - capBox.max.y;
               capGroup.visible = false;
               mesh.add(capGroup);
