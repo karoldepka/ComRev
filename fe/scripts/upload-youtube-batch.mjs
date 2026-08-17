@@ -17,7 +17,9 @@
  *
  * Resumable: records upload state in <dir>/.youtube-upload-state.json (one
  * entry per uploaded file), so re-running after an interruption skips
- * videos that already made it up.
+ * videos that already made it up. On success, each file is also moved from
+ * <dir>/<lang>/<format>/ into <dir>/uploaded/<lang>/<format>/, so the
+ * working folders only ever show what's left to upload.
  *
  * Usage:
  *   node scripts/upload-youtube-batch.mjs [options]
@@ -43,7 +45,7 @@
  * it to the description automatically.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import {
@@ -134,17 +136,26 @@ async function main() {
 
   const declaredVideos = loadVideos();
 
+  const uploadedDirFor = (lang, format) => join(batchDir, "uploaded", lang, format);
+
   // Build the job list from declared video data + what's actually on disk —
   // not from blindly globbing the folder, so titles/descriptions come from
-  // the same source of truth the recordings themselves were built from.
+  // the same source of truth the recordings themselves were built from. A
+  // file may be sitting in the pending <lang>/<format>/ folder or already
+  // moved into uploaded/<lang>/<format>/ (from a prior run) — either counts
+  // as a job, keyed by lang/format/fileName rather than an absolute path so
+  // state lookups survive the move.
   const jobs = [];
   for (const lang of langs) {
     for (const format of formats) {
       declaredVideos.forEach((video, videoIndex) => {
         const fileName = `${fileNameFromTitle(titleForLang(video.title, lang))}.mp4`;
-        const filePath = join(batchDir, lang, format, fileName);
-        if (existsSync(filePath)) {
-          jobs.push({ video, videoIndex, lang, format, filePath, title: titleForLang(video.title, lang) });
+        const pendingPath = join(batchDir, lang, format, fileName);
+        const uploadedPath = join(uploadedDirFor(lang, format), fileName);
+        const filePath = existsSync(pendingPath) ? pendingPath : existsSync(uploadedPath) ? uploadedPath : null;
+        if (filePath) {
+          const key = `${lang}/${format}/${fileName}`;
+          jobs.push({ video, videoIndex, lang, format, fileName, filePath, key, title: titleForLang(video.title, lang) });
         }
       });
     }
@@ -154,7 +165,7 @@ async function main() {
   const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
   const saveState = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
 
-  const pending = jobs.filter((j) => !state[j.filePath]?.videoId);
+  const pending = jobs.filter((j) => !state[j.key]?.videoId);
 
   console.log("\n══════════════════════════════════════════════════════════");
   console.log("  YouTube Batch Upload");
@@ -174,7 +185,7 @@ async function main() {
 
   if (dryRun) {
     jobs.forEach((j, i) => {
-      const done = state[j.filePath]?.videoId ? " (already uploaded)" : "";
+      const done = state[j.key]?.videoId ? " (already uploaded)" : "";
       console.log(`  ${String(i + 1).padStart(3)}. [${j.lang}/${j.format}] ${j.title}${done}`);
     });
     console.log("");
@@ -229,8 +240,17 @@ async function main() {
       await addVideoToPlaylist(youtube, videoId, playlistIdByLang[job.lang]);
       console.log(`  ✓ Added to "ComRev — ${LANG_NAMES[job.lang] ?? job.lang} Shorts"`);
 
-      state[job.filePath] = { videoId, url, lang: job.lang, format: job.format, uploadedAt: new Date().toISOString() };
+      state[job.key] = { videoId, url, lang: job.lang, format: job.format, uploadedAt: new Date().toISOString() };
       saveState();
+
+      const destDir = uploadedDirFor(job.lang, job.format);
+      const destPath = join(destDir, job.fileName);
+      if (job.filePath !== destPath) {
+        mkdirSync(destDir, { recursive: true });
+        renameSync(job.filePath, destPath);
+        console.log(`  ✓ Moved to ${destPath}`);
+      }
+
       uploaded++;
     } catch (err) {
       console.error(`  ✗ FAILED: ${err.message}`);
