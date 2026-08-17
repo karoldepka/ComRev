@@ -188,6 +188,14 @@ export function mixAudioIntoVideo(videoPath, soundLog, binaural) {
 
   const tempPath = videoPath.replace(/(\.[^.]+)$/, '.mixed$1');
 
+  // Record which track was used directly on the file, so it's recoverable
+  // from the video itself later (e.g. for crediting) without cross-referencing
+  // this recording run's logs.
+  const metadataArgs =
+    musicPath && existsSync(musicPath)
+      ? ['-metadata', `comment=Music: ${musicFile}`]
+      : [];
+
   const ffmpegArgs = [
     '-y',
     ...inputArgs,
@@ -199,6 +207,7 @@ export function mixAudioIntoVideo(videoPath, soundLog, binaural) {
     '-b:a', '192k',
     '-t', String(durationSec),
     '-movflags', '+faststart',
+    ...metadataArgs,
     tempPath,
   ];
 
