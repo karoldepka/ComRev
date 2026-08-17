@@ -195,6 +195,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     style: 'organic',
   },
   'micro-mindfulness': {},
+  'micro-visualizations': {},
   'micro-Visualizations & micro-planning': {},
   'micro-gratitudes': {},
   mantras: {
