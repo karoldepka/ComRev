@@ -36,7 +36,6 @@ import {
   SlideImageOverlay,
   SlideImagePosition,
 } from "@/components/SlideImageOverlay";
-import { QuoteAuthorOverlay } from "@/components/QuoteAuthorOverlay";
 import { createPipeFromInstance } from "@/utils/pipe-factory";
 import { SUPPORTED_LANGUAGES } from "@/utils/i18n";
 import {
@@ -157,6 +156,13 @@ const MAX_SEQUENCE_ITEM_DURATION_MS = Math.round(8500 * SEQUENCE_DURATION_SCALE)
 // The "examples" caption is rendered in the same 3D world-unit space as the title,
 // so it's sized as a direct fraction of the title's own size — no px conversion needed.
 const EXAMPLES_TO_TITLE_RATIO = 0.6;
+
+/** The caption shown under the title: the "examples" clarifier when present,
+ * otherwise the quote attribution — both render through the same 3D caption
+ * text, rather than attribution getting its own separate overlay treatment. */
+function getCaptionText(page: { examples?: string; author?: string }): string | undefined {
+  return page.examples ?? (page.author ? `— ${page.author}` : undefined);
+}
 
 
 type PrincipalTextSet = {
@@ -5786,6 +5792,7 @@ export function ThreeDTextScreen({
   const pendingScrollNewId = useRef<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const soundEnabled = !isMuted && sequenceMode;
+  const [slideDurationMultiplier, setSlideDurationMultiplier] = useState(1);
 
   const c = colors; // shorthand
   const controlsGutter = isSmallScreen ? 6 : 12;
@@ -6095,9 +6102,10 @@ export function ThreeDTextScreen({
     const requests: Promise<void>[] = [];
     for (const page of sequencePages) {
       requests.push(prefetchTextGeometry({ ...sharedOptions, text: applyCapitalize(page.text), size: titleSize }));
-      if (page.examples?.trim()) {
+      const captionText = getCaptionText(page)?.trim();
+      if (captionText) {
         const captionSize = (titleSize ?? 2.5) * EXAMPLES_TO_TITLE_RATIO;
-        requests.push(prefetchTextGeometry({ ...sharedOptions, text: page.examples.trim(), size: captionSize }));
+        requests.push(prefetchTextGeometry({ ...sharedOptions, text: captionText, size: captionSize }));
       }
     }
     // eslint-disable-next-line no-console
@@ -6166,7 +6174,7 @@ export function ThreeDTextScreen({
         onStopAfterSlideCount?.();
       }
       setSequenceLineIndex((index) => (index + 1) % sequencePages.length);
-    }, currentSequencePage.durationMs);
+    }, currentSequencePage.durationMs * slideDurationMultiplier);
     return () => clearTimeout(timer);
   }, [
     currentSequencePage.durationMs,
@@ -6177,6 +6185,7 @@ export function ThreeDTextScreen({
     sequenceLineIndex,
     sequenceMode,
     sequencePages.length,
+    slideDurationMultiplier,
     stopAfterSlideCount,
   ]);
 
@@ -6839,8 +6848,8 @@ export function ThreeDTextScreen({
                 // the new slide once its mesh finishes building and fires
                 // onMeshReady, which left the *previous* slide's caption showing
                 // alongside the *new* slide's title for one build cycle.
-                ? currentSequencePage.examples
-                : getActivePrincipalTextSet(mainTextParams).examples
+                ? getCaptionText(currentSequencePage)
+                : getCaptionText(getActivePrincipalTextSet(mainTextParams))
             }
             captionSize={
               ((mainTextParams.size as number | undefined) ?? 2.5) * EXAMPLES_TO_TITLE_RATIO
@@ -6898,21 +6907,6 @@ export function ThreeDTextScreen({
                 images={imgs}
               />
             ) : null;
-          })()}
-          {(() => {
-            const author = sequenceMode
-              ? visibleSequencePage.author
-              : getActivePrincipalTextSet(mainTextParams).author;
-            return (
-              <QuoteAuthorOverlay
-                key={
-                  sequenceMode
-                    ? `author-seq-${readySequenceTransition?.key ?? visibleSequencePage.id}`
-                    : "author-active"
-                }
-                author={author}
-              />
-            );
           })()}
           {sequenceMode && readySequenceTransition?.key === currentSequencePageKey && (
             <SequenceTransitionOverlay
@@ -7007,6 +7001,37 @@ export function ThreeDTextScreen({
                 {isMuted ? '🔇' : '🔊'}
               </Text>
             </TouchableOpacity>
+          )}
+          {/* Slide duration multiplier: scales how long each slide holds before auto-advancing. */}
+          {sequenceMode && !fullWindow && !isFullscreen && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 90,
+                height: 34,
+                paddingHorizontal: 8,
+                borderRadius: 8,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                zIndex: 10,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', minWidth: 28 }}>
+                {slideDurationMultiplier.toFixed(1)}x
+              </Text>
+              <input
+                type="range"
+                min={0.25}
+                max={3}
+                step={0.25}
+                value={slideDurationMultiplier}
+                onChange={(e: any) => setSlideDurationMultiplier(parseFloat(e.target.value))}
+                style={{ width: 70 }}
+              />
+            </View>
           )}
           {/* Fullscreen toggle button — hidden in full-window mode */}
           {!fullWindow && (
