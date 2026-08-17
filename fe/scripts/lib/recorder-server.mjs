@@ -30,7 +30,7 @@ export function armSignal(setResolver, timeoutMs, onHeartbeat) {
   if (typeof timeoutMs === 'number') {
     racers.push(sleep(timeoutMs).then(() => 'timeout'));
   }
-  const heartbeat = onHeartbeat ? setInterval(onHeartbeat, 5000) : null;
+  const heartbeat = onHeartbeat ? setInterval(onHeartbeat, 1000) : null;
   return Promise.race(racers).finally(() => {
     setResolver(null);
     if (heartbeat) clearInterval(heartbeat);
@@ -138,13 +138,24 @@ export async function waitForSignalAndLog(waitFn, label, timeoutMs, readyServer)
       : `Waiting for ${label} signal...`,
   );
   let elapsedSec = 0;
+  let dotsOnLine = 0;
   const outcome = await raceTranslationMissing(
+    // 1Hz beacon: a dot every second so the process visibly hasn't hung,
+    // with the fuller "is the dev server running?" reminder every 5s.
     waitFn(timeoutMs, () => {
-      elapsedSec += 5;
-      console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
+      elapsedSec += 1;
+      if (elapsedSec % 5 === 0) {
+        if (dotsOnLine > 0) process.stdout.write('\n');
+        dotsOnLine = 0;
+        console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
+      } else {
+        process.stdout.write('.');
+        dotsOnLine += 1;
+      }
     }),
     readyServer,
   );
+  if (dotsOnLine > 0) process.stdout.write('\n');
   console.log(
     outcome === 'ready'
       ? `${label[0].toUpperCase()}${label.slice(1)} signal received.`
