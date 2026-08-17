@@ -140,14 +140,15 @@ export async function waitForSignalAndLog(waitFn, label, timeoutMs, readyServer)
   let elapsedSec = 0;
   let dotsOnLine = 0;
   const outcome = await raceTranslationMissing(
-    // 1Hz beacon: a dot every second so the process visibly hasn't hung,
-    // with the fuller "is the dev server running?" reminder every 5s.
+    // 1Hz beacon: a dot every second so the process visibly hasn't hung —
+    // that already answers "is it alive?", so the periodic line below just
+    // reports elapsed time instead of second-guessing with a dev-server hint.
     waitFn(timeoutMs, () => {
       elapsedSec += 1;
       if (elapsedSec % 5 === 0) {
         if (dotsOnLine > 0) process.stdout.write('\n');
         dotsOnLine = 0;
-        console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed). Is the dev server running?`);
+        console.log(`  ...still waiting for ${label} signal (${elapsedSec}s elapsed)`);
       } else {
         process.stdout.write('.');
         dotsOnLine += 1;
