@@ -53,7 +53,12 @@ export function DuplicatePresetButton({ defaultName }: Props) {
             <Text style={styles.statusText}>{status}</Text>
           </View>
         ) : (
-          <TouchableOpacity style={styles.button} onPress={openModal}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={openModal}
+            accessibilityRole="button"
+            accessibilityLabel="Duplicate the current preset"
+          >
             <Text style={styles.buttonText}>⧉ Duplicate</Text>
           </TouchableOpacity>
         )}
@@ -71,13 +76,24 @@ export function DuplicatePresetButton({ defaultName }: Props) {
               selectTextOnFocus
               placeholder="Preset name"
               placeholderTextColor="#888"
+              accessibilityLabel="Name for the duplicated preset"
               onSubmitEditing={save}
             />
             <View style={styles.row}>
-              <TouchableOpacity style={styles.cancel} onPress={() => setShowModal(false)}>
+              <TouchableOpacity
+                style={styles.cancel}
+                onPress={() => setShowModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel preset duplication"
+              >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirm} onPress={save}>
+              <TouchableOpacity
+                style={styles.confirm}
+                onPress={save}
+                accessibilityRole="button"
+                accessibilityLabel="Save duplicated preset"
+              >
                 <Text style={styles.confirmText}>Save</Text>
               </TouchableOpacity>
             </View>

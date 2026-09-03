@@ -293,5 +293,6 @@
   "updateHighlightKeyboard": "Les diapositives prennent en charge Espace pour la pause et les flèches pour naviguer.",
   "updateHighlightLayout": "Les espacements et la navigation s'adaptent mieux au mobile et au bureau.",
   "updateHighlightI18n": "Cette page est localisée pour les langues prises en charge par l'app.",
-  "updateLanguageTitle": "Langue"
+  "updateLanguageTitle": "Langue",
+  "tabMore": "Plus"
 }

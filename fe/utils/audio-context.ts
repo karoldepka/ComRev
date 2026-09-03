@@ -35,7 +35,9 @@ export function getOrCreateAudioContext(): AudioContext | null {
     masterBus = null; // stale reference to the old context's node graph
   }
   if (globalAudioPaused && audioCtx.state === 'running') {
-    audioCtx.suspend().then(notifyState).catch(() => undefined);
+    audioCtx.suspend().then(notifyState).catch((error) => {
+      console.warn('Unable to suspend the shared audio context:', error);
+    });
   }
   return audioCtx;
 }
@@ -73,7 +75,9 @@ export function setGlobalAudioPaused(paused: boolean): AudioContext | null {
   }
 
   const transition = paused ? ctx.suspend() : ctx.resume();
-  transition.then(notifyState).catch(() => undefined);
+  transition.then(notifyState).catch((error) => {
+    console.warn('Unable to update shared audio playback state:', error);
+  });
   return ctx;
 }
 
@@ -85,6 +89,8 @@ export function resumeAudioContext(): AudioContext | null {
     notifyState();
     return ctx;
   }
-  ctx?.resume().then(notifyState).catch(() => undefined);
+  ctx?.resume().then(notifyState).catch((error) => {
+    console.warn('Unable to resume the shared audio context:', error);
+  });
   return ctx;
 }

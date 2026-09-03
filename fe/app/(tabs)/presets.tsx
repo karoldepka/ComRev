@@ -1,6 +1,6 @@
-import { SlideImage, SlideImageOverlay } from "@/components/SlideImageOverlay";
-import { ThreeDText } from "@/components/three-d-text";
-import { useConfirmDialog } from "@/components/confirm-dialog";
+import { SlideImage, SlideImageOverlay } from '@/components/SlideImageOverlay';
+import { ThreeDText } from '@/components/three-d-text';
+import { useConfirmDialog } from '@/components/confirm-dialog';
 import { useAppTheme } from '@/components/app-theme-provider';
 import {
   deletePreset,
@@ -10,10 +10,10 @@ import {
   PresetRecord,
   savePreset,
   setPendingPresetToLoad,
-} from "@/utils/config-store";
-import { createPipeFromInstance } from "@/utils/pipe-factory";
-import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+} from '@/utils/config-store';
+import { createPipeFromInstance } from '@/utils/pipe-factory';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Image,
   Modal,
@@ -25,16 +25,16 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
-} from "react-native";
+} from 'react-native';
 
 import { API_BASE } from '@/utils/api-config';
 
 function effectChips(effects: { type: string; enabled?: boolean }[]) {
-  return effects.filter((e) => e.enabled !== false && e.type !== "mainText");
+  return effects.filter((e) => e.enabled !== false && e.type !== 'mainText');
 }
 
 function presetMainParams(preset: PresetRecord): Record<string, unknown> {
-  const mainInst = preset.effects.find((e) => e.type === "mainText");
+  const mainInst = preset.effects.find((e) => e.type === 'mainText');
   return (mainInst?.params ?? {}) as Record<string, unknown>;
 }
 
@@ -43,10 +43,11 @@ function presetText(params: Record<string, unknown>): string {
   if (Array.isArray(params.textSets) && params.textSets.length > 0) {
     const sets = params.textSets as { id?: string; text?: string }[];
     const activeId = params.activeTextSetId;
-    const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
-    text = String((active ?? sets[0])?.text ?? "");
+    const active =
+      typeof activeId === 'string' ? sets.find((s) => s.id === activeId) : null;
+    text = String((active ?? sets[0])?.text ?? '');
   } else {
-    text = String(params.text ?? "");
+    text = String(params.text ?? '');
   }
   return params.capitalizeText !== false ? text.toUpperCase() : text;
 }
@@ -55,7 +56,8 @@ function presetImages(params: Record<string, unknown>): SlideImage[] {
   if (Array.isArray(params.textSets) && params.textSets.length > 0) {
     const sets = params.textSets as { id?: string; images?: SlideImage[] }[];
     const activeId = params.activeTextSetId;
-    const active = typeof activeId === "string" ? sets.find((s) => s.id === activeId) : null;
+    const active =
+      typeof activeId === 'string' ? sets.find((s) => s.id === activeId) : null;
     const imgs = (active ?? sets[0])?.images;
     return Array.isArray(imgs) ? imgs : [];
   }
@@ -71,11 +73,22 @@ function PresetLivePreview({ preset }: { preset: PresetRecord }) {
   const previewHeight = isSmall ? 220 : 300;
 
   const pipes = useMemo(
-    () => preset.effects.filter((e) => e.enabled !== false).map(createPipeFromInstance),
+    () =>
+      preset.effects
+        .filter((e) => e.enabled !== false)
+        .map(createPipeFromInstance),
     [preset.effects],
   );
   return (
-    <View style={{ width: "100%", height: previewHeight, borderRadius: isSmall ? 6 : 8, overflow: "hidden", position: "relative" }}>
+    <View
+      style={{
+        width: '100%',
+        height: previewHeight,
+        borderRadius: isSmall ? 6 : 8,
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
       <ThreeDText
         text={text}
         size={p.size as number | undefined}
@@ -91,7 +104,9 @@ function PresetLivePreview({ preset }: { preset: PresetRecord }) {
         bevelSegments={p.bevelSegments as number | undefined}
         envMapIntensity={p.envMapIntensity as number | undefined}
         equalizeLineWidths={p.equalizeLineWidths as boolean | undefined}
-        equalizationMethod={p.equalizationMethod as "spacing" | "fontSize" | undefined}
+        equalizationMethod={
+          p.equalizationMethod as 'spacing' | 'fontSize' | undefined
+        }
         targetWidth={p.targetWidth as number | undefined}
         lineSpacing={p.lineSpacing as number | undefined}
         perspective={p.perspective as number | undefined}
@@ -112,12 +127,12 @@ function ThumbnailZoomOverlay({
   const { width, height } = useWindowDimensions();
 
   React.useEffect(() => {
-    if (typeof document === "undefined") return;
+    if (typeof document === 'undefined') return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDismiss();
+      if (e.key === 'Escape') onDismiss();
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
   }, [onDismiss]);
 
   if (!url) return null;
@@ -130,15 +145,20 @@ function ThumbnailZoomOverlay({
       onPress={onDismiss}
       style={{
         flex: 1,
-        backgroundColor: "rgba(0,0,0,0.88)",
-        alignItems: "center",
-        justifyContent: "center",
+        backgroundColor: 'rgba(0,0,0,0.88)',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
       <Pressable onPress={(e) => e.stopPropagation?.()}>
         <Image
           source={{ uri: url }}
-          style={{ width: imgW, height: imgH, borderRadius: 10, resizeMode: "contain" }}
+          style={{
+            width: imgW,
+            height: imgH,
+            borderRadius: 10,
+            resizeMode: 'contain',
+          }}
         />
       </Pressable>
     </Pressable>
@@ -149,38 +169,53 @@ export default function PresetsScreen() {
   const { colorScheme, colors } = useAppTheme();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [presets, setPresets] = useState<PresetRecord[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [zoomedUrl, setZoomedUrl] = useState<string | null>(null);
   const [livePresetId, setLivePresetId] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       let loaded: PresetRecord[] = [];
       try {
         loaded = await loadPresetsFromBackend(API_BASE);
         for (const p of loaded) await savePreset(p);
       } catch (error) {
-        console.warn("Unable to load presets from backend; using local presets:", error);
+        console.warn(
+          'Unable to load presets from backend; using local presets:',
+          error,
+        );
         loaded = await getPresets();
       }
       setPresets(
-        loaded.sort((a, b) =>
+        [...loaded].sort((a, b) =>
           b.when_last_modified.localeCompare(a.when_last_modified),
         ),
       );
     } catch (error) {
-      console.warn("Unable to load presets:", error);
+      console.warn('Unable to load presets:', error);
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : 'Your saved presets could not be loaded.',
+      );
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { loadList(); }, [loadList]));
+  useFocusEffect(
+    useCallback(() => {
+      loadList();
+    }, [loadList]),
+  );
 
   const handleLoad = (preset: PresetRecord) => {
     setPendingPresetToLoad(preset);
-    router.push("/(tabs)/three-d");
+    router.push('/(tabs)/three-d');
   };
 
   const handleDelete = async (id: string) => {
@@ -189,36 +224,42 @@ export default function PresetsScreen() {
       try {
         await deletePresetFromBackend(API_BASE, id);
       } catch (error) {
-        console.warn("Preset deleted locally; backend delete failed:", error);
+        console.warn('Preset deleted locally; backend delete failed:', error);
       }
       setPresets((prev) => prev.filter((p) => p.id !== id));
     };
     const confirmed = await confirm({
-      title: "Delete preset",
-      message: "Delete this preset?",
-      confirmText: "Delete",
-      cancelText: "Cancel",
+      title: 'Delete preset',
+      message: 'Delete this preset?',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
       destructive: true,
     });
     if (confirmed) await doDelete();
   };
 
   const filtered = search.trim()
-    ? presets.filter((p) =>
-        p.name.toLowerCase().includes(search.toLowerCase()),
-      )
+    ? presets.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     : presets;
 
-  const dark = colorScheme === "dark";
+  const dark = colorScheme === 'dark';
   const { width } = useWindowDimensions();
   const isSmall = width < 480;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: isSmall ? 8 : 48 }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.background, paddingTop: isSmall ? 8 : 48 },
+      ]}
+    >
       <View style={[styles.header, isSmall && styles.headerSmall]}>
         <Text style={[styles.title, { color: colors.text }]}>Presets</Text>
         <TouchableOpacity
           onPress={loadList}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh saved presets"
+          disabled={loading}
           style={[styles.refreshBtn, { borderColor: colors.tint }]}
         >
           <Text style={{ color: colors.tint, fontSize: 13 }}>↺ Refresh</Text>
@@ -226,45 +267,74 @@ export default function PresetsScreen() {
       </View>
 
       <TextInput
-        style={[styles.search, isSmall && styles.searchSmall, { borderColor: colors.tint, color: colors.text }]}
+        style={[
+          styles.search,
+          isSmall && styles.searchSmall,
+          { borderColor: colors.tint, color: colors.text },
+        ]}
         placeholder="Search presets..."
-        placeholderTextColor={dark ? "#666" : "#999"}
+        placeholderTextColor={dark ? '#666' : '#999'}
         value={search}
         onChangeText={setSearch}
+        accessibilityLabel="Search saved presets"
       />
 
       {loading && (
-        <Text style={{ color: colors.text, opacity: 0.5, textAlign: "center", marginTop: 20 }}>
+        <Text
+          style={{
+            color: colors.text,
+            opacity: 0.5,
+            textAlign: 'center',
+            marginTop: 20,
+          }}
+        >
           Loading...
         </Text>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && loadError ? (
         <View style={styles.emptyState}>
-          <Text style={{ color: colors.text, opacity: 0.5, textAlign: "center" }}>
-            No presets yet.{"\n"}Save one from the 3D Text editor.
+          <Text style={[styles.errorText, { color: '#d14343' }]}>
+            Couldn’t load saved presets. {loadError}
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading saved presets"
+            onPress={loadList}
+            style={[styles.retryButton, { backgroundColor: colors.tint }]}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : !loading && filtered.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text
+            style={{ color: colors.text, opacity: 0.5, textAlign: 'center' }}
+          >
+            No presets yet.{'\n'}Save one from the 3D Text editor.
           </Text>
         </View>
-      )}
+      ) : null}
 
-      <ScrollView contentContainerStyle={[styles.list, isSmall && styles.listSmall]}>
+      <ScrollView
+        contentContainerStyle={[styles.list, isSmall && styles.listSmall]}
+      >
         {filtered.map((preset) => {
           const chips = effectChips(preset.effects);
           return (
-            <TouchableOpacity
+            <View
               key={preset.id}
-              onPress={() => handleLoad(preset)}
               style={[
                 styles.card,
                 isSmall && styles.cardSmall,
                 {
-                  backgroundColor: dark ? "#1f1f1f" : "#fafafa",
-                  borderColor: dark ? "#333" : "#ddd",
+                  backgroundColor: dark ? '#1f1f1f' : '#fafafa',
+                  borderColor: dark ? '#333' : '#ddd',
                 },
               ]}
             >
               {/* Live / static toggle */}
-              <View style={{ position: "relative" }}>
+              <View style={{ position: 'relative' }}>
                 {livePresetId === preset.id ? (
                   <PresetLivePreview preset={preset} />
                 ) : preset.thumbnail ? (
@@ -274,23 +344,48 @@ export default function PresetsScreen() {
                       setZoomedUrl(preset.thumbnail!);
                     }}
                     activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Preview image for ${preset.name}`}
                   >
-                    <Image source={{ uri: preset.thumbnail }} style={[styles.thumbnail, isSmall && styles.thumbnailSmall]} />
+                    <Image
+                      source={{ uri: preset.thumbnail }}
+                      style={[
+                        styles.thumbnail,
+                        isSmall && styles.thumbnailSmall,
+                      ]}
+                    />
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.chipRow}>
                     {chips.slice(0, 12).map((e, i) => (
-                      <View key={i} style={[styles.chip, { backgroundColor: colors.tint + "28" }]}>
-                        <Text style={{ color: colors.tint, fontSize: 10 }}>{e.type}</Text>
+                      <View
+                        key={i}
+                        style={[
+                          styles.chip,
+                          { backgroundColor: colors.tint + '28' },
+                        ]}
+                      >
+                        <Text style={{ color: colors.tint, fontSize: 10 }}>
+                          {e.type}
+                        </Text>
                       </View>
                     ))}
                     {chips.length > 12 && (
-                      <View style={[styles.chip, { backgroundColor: dark ? "#333" : "#eee" }]}>
-                        <Text style={{ color: colors.tint, fontSize: 10 }}>+{chips.length - 12}</Text>
+                      <View
+                        style={[
+                          styles.chip,
+                          { backgroundColor: dark ? '#333' : '#eee' },
+                        ]}
+                      >
+                        <Text style={{ color: colors.tint, fontSize: 10 }}>
+                          +{chips.length - 12}
+                        </Text>
                       </View>
                     )}
                     {chips.length === 0 && (
-                      <Text style={{ color: "#888", fontSize: 11 }}>No effects</Text>
+                      <Text style={{ color: '#888', fontSize: 11 }}>
+                        No effects
+                      </Text>
                     )}
                   </View>
                 )}
@@ -298,34 +393,58 @@ export default function PresetsScreen() {
                 <TouchableOpacity
                   onPress={(e) => {
                     e.stopPropagation?.();
-                    setLivePresetId((cur) => (cur === preset.id ? null : preset.id));
+                    setLivePresetId((cur) =>
+                      cur === preset.id ? null : preset.id,
+                    );
                   }}
                   style={[
                     styles.liveBtn,
                     isSmall && styles.liveBtnSmall,
-                    { backgroundColor: livePresetId === preset.id ? colors.tint : "rgba(0,0,0,0.45)" },
+                    {
+                      backgroundColor:
+                        livePresetId === preset.id
+                          ? colors.tint
+                          : 'rgba(0,0,0,0.45)',
+                    },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${livePresetId === preset.id ? 'Stop live preview for' : 'Start live preview for'} ${preset.name}`}
                 >
-                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>
-                    {livePresetId === preset.id ? "■ Static" : "▶ Live"}
+                  <Text
+                    style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}
+                  >
+                    {livePresetId === preset.id ? '■ Static' : '▶ Live'}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {/* Name + date + actions */}
-              <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={2}>
+              <Text
+                style={[styles.cardName, { color: colors.text }]}
+                numberOfLines={2}
+              >
                 {preset.name}
               </Text>
               <Text style={styles.cardDate}>
                 {new Date(preset.when_last_modified).toLocaleString()}
               </Text>
 
-              <View style={[styles.cardActions, isSmall && styles.cardActionsSmall]}>
+              <View
+                style={[styles.cardActions, isSmall && styles.cardActionsSmall]}
+              >
                 <TouchableOpacity
                   onPress={() => handleLoad(preset)}
-                  style={[styles.actionBtn, isSmall && styles.actionBtnSmall, { backgroundColor: colors.tint }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Load preset ${preset.name}`}
+                  style={[
+                    styles.actionBtn,
+                    isSmall && styles.actionBtnSmall,
+                    { backgroundColor: colors.tint },
+                  ]}
                 >
-                  <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
+                  <Text
+                    style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}
+                  >
                     Load
                   </Text>
                 </TouchableOpacity>
@@ -334,12 +453,18 @@ export default function PresetsScreen() {
                     e.stopPropagation?.();
                     handleDelete(preset.id);
                   }}
-                  style={[styles.actionBtn, isSmall && styles.actionBtnSmall, styles.deleteBtn]}
+                  style={[
+                    styles.actionBtn,
+                    isSmall && styles.actionBtnSmall,
+                    styles.deleteBtn,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete preset ${preset.name}`}
                 >
-                  <Text style={{ color: "#e55", fontSize: 13 }}>Delete</Text>
+                  <Text style={{ color: '#e55', fontSize: 13 }}>Delete</Text>
                 </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            </View>
           );
         })}
       </ScrollView>
@@ -351,7 +476,10 @@ export default function PresetsScreen() {
         onRequestClose={() => setZoomedUrl(null)}
         statusBarTranslucent
       >
-        <ThumbnailZoomOverlay url={zoomedUrl} onDismiss={() => setZoomedUrl(null)} />
+        <ThumbnailZoomOverlay
+          url={zoomedUrl}
+          onDismiss={() => setZoomedUrl(null)}
+        />
       </Modal>
       {confirmDialog}
     </View>
@@ -361,9 +489,9 @@ export default function PresetsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     marginBottom: 12,
   },
@@ -371,8 +499,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginBottom: 8,
   },
-  title: { fontSize: 22, fontWeight: "700" },
-  refreshBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  title: { fontSize: 22, fontWeight: '700' },
+  refreshBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
   search: {
     marginHorizontal: 16,
     marginBottom: 12,
@@ -388,11 +521,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 60 },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  errorText: {
+    fontSize: 13,
+    lineHeight: 20,
+    maxWidth: 360,
+    textAlign: 'center',
+  },
   list: { padding: 12, gap: 14 },
   listSmall: { padding: 8, gap: 8 },
   card: {
-    width: "100%",
+    width: '100%',
     borderWidth: 1,
     borderRadius: 12,
     padding: 12,
@@ -404,17 +548,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   thumbnail: {
-    width: "100%",
+    width: '100%',
     height: 300,
     borderRadius: 8,
-    resizeMode: "cover",
+    resizeMode: 'cover',
   },
   thumbnailSmall: {
     height: 220,
     borderRadius: 6,
   },
   liveBtn: {
-    position: "absolute",
+    position: 'absolute',
     bottom: 8,
     right: 8,
     paddingHorizontal: 10,
@@ -427,13 +571,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, minHeight: 40 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, minHeight: 40 },
   chip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  cardName: { fontSize: 14, fontWeight: "600", lineHeight: 20 },
-  cardDate: { fontSize: 11, color: "#888" },
-  cardActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  cardName: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  cardDate: { fontSize: 11, color: '#888' },
+  cardActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   cardActionsSmall: { gap: 6, marginTop: 2 },
-  actionBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
   actionBtnSmall: { paddingVertical: 6, borderRadius: 6 },
-  deleteBtn: { borderWidth: 1, borderColor: "#e55" },
+  deleteBtn: { borderWidth: 1, borderColor: '#e55' },
+  retryButton: {
+    borderRadius: 8,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  retryButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

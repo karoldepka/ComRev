@@ -6108,10 +6108,8 @@ export function ThreeDTextScreen({
         requests.push(prefetchTextGeometry({ ...sharedOptions, text: captionText, size: captionSize }));
       }
     }
-    // eslint-disable-next-line no-console
     console.log(`[text-geometry] precomputing ${requests.length} mesh(es) for ${sequencePages.length} slide(s)...`);
     void Promise.all(requests).then(() => {
-      // eslint-disable-next-line no-console
       console.log(`[text-geometry] precompute batch done: ${requests.length} mesh(es) in ${(performance.now() - batchStart).toFixed(0)}ms wall-clock`);
       onAllMeshesPrecomputed?.();
     });
@@ -6745,11 +6743,15 @@ export function ThreeDTextScreen({
   useEffect(() => {
     if (!fullWindow) return;
     if (typeof document !== 'undefined' && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch((error) => {
+        console.warn('Unable to enter fullscreen mode:', error);
+      });
     }
     return () => {
       if (typeof document !== 'undefined' && document.exitFullscreen && document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch((error) => {
+          console.warn('Unable to exit fullscreen mode:', error);
+        });
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

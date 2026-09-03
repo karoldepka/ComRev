@@ -11,8 +11,8 @@ export default function TabLayout() {
   const { t } = useTranslation();
   const { colors } = useAppTheme();
   const { width } = useWindowDimensions();
-  const isSmall = width < 480;
-  const iconSize = isSmall ? 24 : 26;
+  const compactNavigation = width < 720;
+  const iconSize = compactNavigation ? 24 : 26;
 
   return (
     <Tabs
@@ -20,15 +20,17 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarStyle: [
-          isSmall
-            ? { height: 52, paddingTop: 4, paddingBottom: 4 }
+          compactNavigation
+            ? { height: 54, paddingTop: 5, paddingBottom: 5 }
             : { height: 60, paddingTop: 4, paddingBottom: 6 },
           { backgroundColor: colors.surface, borderTopColor: colors.border },
         ],
         headerShown: false,
         tabBarButton: HapticTab,
-        tabBarShowLabel: !isSmall,
-        tabBarItemStyle: isSmall ? { paddingHorizontal: 0 } : undefined,
+        tabBarShowLabel: !compactNavigation,
+        tabBarItemStyle: compactNavigation
+          ? { minWidth: 48, paddingHorizontal: 0 }
+          : undefined,
         tabBarLabelStyle: { fontSize: 11, marginTop: -2 },
       }}
     >
@@ -44,6 +46,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="about"
         options={{
+          href: compactNavigation ? null : undefined,
           title: t('tabAbout'),
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="info.circle.fill" color={color} />
@@ -62,6 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="inspiration"
         options={{
+          href: compactNavigation ? null : undefined,
           title: t('tabInspire'),
           tabBarIcon: ({ color }) => (
             <IconSymbol
@@ -84,6 +88,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="slideshow"
         options={{
+          href: compactNavigation ? null : undefined,
           title: t('tabSlideshow'),
           tabBarIcon: ({ color }) => (
             <IconSymbol
@@ -115,6 +120,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="feature-flags"
         options={{
+          href: compactNavigation ? null : undefined,
           title: 'Flags',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={iconSize} name="flag.fill" color={color} />
@@ -124,6 +130,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="themes"
         options={{
+          href: compactNavigation ? null : undefined,
           title: 'Themes',
           tabBarIcon: ({ color }) => (
             <IconSymbol
@@ -131,6 +138,16 @@ export default function TabLayout() {
               name="paintpalette.fill"
               color={color}
             />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="more"
+        options={{
+          href: compactNavigation ? undefined : null,
+          title: t('tabMore'),
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={iconSize} name="ellipsis.circle" color={color} />
           ),
         }}
       />

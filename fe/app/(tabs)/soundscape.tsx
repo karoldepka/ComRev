@@ -1,6 +1,14 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useAppTheme } from '@/components/app-theme-provider';
 import { useConfirmDialog } from '@/components/confirm-dialog';
 import type { ThemeColors } from '@/constants/theme';
@@ -54,11 +62,21 @@ function Stepper({
     <View style={stepperStyles.row}>
       <Text style={[stepperStyles.label, { color: c.text }]}>{label}</Text>
       <View style={stepperStyles.controls}>
-        <Pressable onPress={onDec} style={[stepperStyles.btn, { borderColor: c.tint }]}>
+        <Pressable
+          onPress={onDec}
+          accessibilityRole="button"
+          accessibilityLabel={`Decrease ${label}`}
+          style={[stepperStyles.btn, { borderColor: c.tint }]}
+        >
           <Text style={[stepperStyles.btnText, { color: c.tint }]}>−</Text>
         </Pressable>
         <Text style={[stepperStyles.value, { color: c.tint }]}>{display}</Text>
-        <Pressable onPress={onInc} style={[stepperStyles.btn, { borderColor: c.tint }]}>
+        <Pressable
+          onPress={onInc}
+          accessibilityRole="button"
+          accessibilityLabel={`Increase ${label}`}
+          style={[stepperStyles.btn, { borderColor: c.tint }]}
+        >
           <Text style={[stepperStyles.btnText, { color: c.tint }]}>+</Text>
         </Pressable>
       </View>
@@ -67,10 +85,22 @@ function Stepper({
 }
 
 const stepperStyles = StyleSheet.create({
-  row: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
+  row: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
   label: { flex: 1, fontSize: 14, fontWeight: '600' },
   controls: { alignItems: 'center', flexDirection: 'row', gap: 12 },
-  btn: { alignItems: 'center', borderRadius: 8, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
+  btn: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
   btnText: { fontSize: 22, fontWeight: '700', lineHeight: 26 },
   value: { fontSize: 14, fontWeight: '700', minWidth: 70, textAlign: 'center' },
 });
@@ -84,6 +114,7 @@ function InlineSlider({
   value,
   onChange,
   tint,
+  accessibilityLabel,
 }: {
   min: number;
   max: number;
@@ -91,6 +122,7 @@ function InlineSlider({
   value: number;
   onChange: (v: number) => void;
   tint: string;
+  accessibilityLabel: string;
 }) {
   return (
     <input
@@ -100,6 +132,7 @@ function InlineSlider({
       step={step}
       value={value}
       onChange={(e: any) => onChange(parseFloat(e.target.value))}
+      aria-label={accessibilityLabel}
       style={{ flex: 1, accentColor: tint }}
     />
   );
@@ -135,11 +168,17 @@ function LayerRow({
     <View
       style={[
         layerStyles.card,
-        { borderColor: playing ? c.tint : (dark ? '#333' : '#e8e0d8') },
+        { borderColor: playing ? c.tint : dark ? '#333' : '#e8e0d8' },
         cardWidth ? { width: cardWidth } : undefined,
       ]}
     >
-      <Pressable onPress={onToggle} style={layerStyles.header}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityLabel={`${playing ? 'Pause' : 'Play'} ${label}`}
+        accessibilityState={{ selected: playing }}
+        style={layerStyles.header}
+      >
         <MaterialIcons
           name={playing ? 'pause-circle-filled' : 'play-circle-outline'}
           size={26}
@@ -147,13 +186,25 @@ function LayerRow({
         />
         <View style={layerStyles.headerText}>
           <Text style={[layerStyles.title, { color: c.text }]}>{label}</Text>
-          {sub ? <Text style={[layerStyles.sub, { color: c.icon }]}>{sub}</Text> : null}
+          {sub ? (
+            <Text style={[layerStyles.sub, { color: c.icon }]}>{sub}</Text>
+          ) : null}
         </View>
       </Pressable>
       <View style={layerStyles.sliderRow}>
         <Text style={[layerStyles.volLabel, { color: c.icon }]}>Vol</Text>
-        <InlineSlider min={0} max={1} step={0.01} value={volume} onChange={onVolumeChange} tint={c.tint} />
-        <Text style={[layerStyles.volValue, { color: c.icon }]}>{Math.round(volume * 100)}%</Text>
+        <InlineSlider
+          min={0}
+          max={1}
+          step={0.01}
+          value={volume}
+          onChange={onVolumeChange}
+          tint={c.tint}
+          accessibilityLabel={`Volume for ${label}`}
+        />
+        <Text style={[layerStyles.volValue, { color: c.icon }]}>
+          {Math.round(volume * 100)}%
+        </Text>
       </View>
       {children}
     </View>
@@ -166,7 +217,12 @@ const layerStyles = StyleSheet.create({
   headerText: { flex: 1 },
   title: { fontSize: 14, fontWeight: '700' },
   sub: { fontSize: 11, marginTop: 1 },
-  sliderRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 6 },
+  sliderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
   volLabel: { fontSize: 11, fontWeight: '600', width: 40 },
   volValue: { fontSize: 11, fontWeight: '600', textAlign: 'right', width: 36 },
 });
@@ -217,11 +273,17 @@ function AmbienceBrowser({
 
   return (
     <View>
-      <View style={[browserStyles.searchRow, { borderColor: dark ? '#333' : '#e8e0d8' }]}>
+      <View
+        style={[
+          browserStyles.searchRow,
+          { borderColor: dark ? '#333' : '#e8e0d8' },
+        ]}
+      >
         <MaterialIcons name="search" size={18} color={c.icon} />
         <TextInput
           value={search}
           onChangeText={setSearch}
+          accessibilityLabel="Search nature ambience sounds"
           placeholder="Search sounds (rain, cave, train, cafe...)"
           placeholderTextColor={c.icon}
           style={[browserStyles.searchInput, { color: c.text }]}
@@ -235,15 +297,25 @@ function AmbienceBrowser({
           <View key={cat} style={browserStyles.categoryBlock}>
             <Pressable
               onPress={() => toggleCategory(cat)}
-              style={[browserStyles.categoryHeader, { borderColor: dark ? '#333' : '#e8e0d8' }]}
+              accessibilityRole="button"
+              accessibilityLabel={`${isOpen ? 'Collapse' : 'Expand'} ${cat} sounds`}
+              accessibilityState={{ expanded: isOpen }}
+              style={[
+                browserStyles.categoryHeader,
+                { borderColor: dark ? '#333' : '#e8e0d8' },
+              ]}
             >
               <MaterialIcons
                 name={isOpen ? 'expand-less' : 'expand-more'}
                 size={20}
                 color={c.icon}
               />
-              <Text style={[browserStyles.categoryTitle, { color: c.text }]}>{cat}</Text>
-              <Text style={[browserStyles.categoryCount, { color: c.icon }]}>{items.length}</Text>
+              <Text style={[browserStyles.categoryTitle, { color: c.text }]}>
+                {cat}
+              </Text>
+              <Text style={[browserStyles.categoryCount, { color: c.icon }]}>
+                {items.length}
+              </Text>
             </Pressable>
             {isOpen && (
               <View style={browserStyles.categoryItems}>
@@ -363,26 +435,41 @@ export default function SoundscapeScreen() {
   const dark = cs === 'dark';
   const { width } = useWindowDimensions();
   const isSmall = width < 480;
-  const hp = isSmall ? 5 : 20;   // horizontal padding
-  const tp = isSmall ? 14 : 56;  // top padding
+  const hp = isSmall ? 5 : 20; // horizontal padding
+  const tp = isSmall ? 14 : 56; // top padding
 
   // Multi-column breakpoints for layer cards
   const numCols = width >= COL3_WIDTH ? 3 : width >= COL2_WIDTH ? 2 : 1;
   const contentWidth = width - hp * 2;
   const cardGap = 8;
-  const cardWidth = numCols > 1 ? (contentWidth - cardGap * (numCols - 1)) / numCols : undefined;
+  const cardWidth =
+    numCols > 1
+      ? (contentWidth - cardGap * (numCols - 1)) / numCols
+      : undefined;
 
   const masterVolume = useSoundscapeStore((s) => s.masterVolume);
   const masterPaused = useSoundscapeStore((s) => s.masterPaused);
   const setMasterVolume = useSoundscapeStore((s) => s.setMasterVolume);
-  const toggleMasterPlayback = useSoundscapeStore((s) => s.toggleMasterPlayback);
+  const toggleMasterPlayback = useSoundscapeStore(
+    (s) => s.toggleMasterPlayback,
+  );
 
-  const { beatHz, carrier, volume, playing, toggle, setBeatHz, setCarrier, setVolume } =
-    useSoundscapeStore();
+  const {
+    beatHz,
+    carrier,
+    volume,
+    playing,
+    toggle,
+    setBeatHz,
+    setCarrier,
+    setVolume,
+  } = useSoundscapeStore();
 
   const extraBinaural = useSoundscapeStore((s) => s.extraBinaural);
   const toggleExtraBinaural = useSoundscapeStore((s) => s.toggleExtraBinaural);
-  const setExtraBinauralVolume = useSoundscapeStore((s) => s.setExtraBinauralVolume);
+  const setExtraBinauralVolume = useSoundscapeStore(
+    (s) => s.setExtraBinauralVolume,
+  );
 
   const noise = useSoundscapeStore((s) => s.noise);
   const toggleNoise = useSoundscapeStore((s) => s.toggleNoise);
@@ -442,7 +529,9 @@ export default function SoundscapeScreen() {
       setPresetStatus(`Saved: ${name}`);
       setTimeout(() => setPresetStatus(null), 2500);
     } catch (err) {
-      setPresetStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      setPresetStatus(
+        `Save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
@@ -460,7 +549,8 @@ export default function SoundscapeScreen() {
   const [ctxState, setCtxState] = useState<string>(getCtxState());
   useEffect(() => onStateChange(setCtxState), []);
 
-  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+  const clamp = (v: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, v));
 
   // Collect recently used layers for the top summary. Paused entries remain here
   // so a just-paused item can be resumed without hunting through the long page.
@@ -543,10 +633,12 @@ export default function SoundscapeScreen() {
     });
   }
 
-  const visibleLayerKeys = Array.from(new Set([
-    ...recentLayerKeys,
-    ...activeLayerKeys.filter((key) => !recentLayerKeys.includes(key)),
-  ]));
+  const visibleLayerKeys = Array.from(
+    new Set([
+      ...recentLayerKeys,
+      ...activeLayerKeys.filter((key) => !recentLayerKeys.includes(key)),
+    ]),
+  );
   const recentLayers = visibleLayerKeys
     .map((key) => layerByKey.get(key))
     .filter((layer): layer is RecentLayer => Boolean(layer));
@@ -554,7 +646,13 @@ export default function SoundscapeScreen() {
   const anyPlaying = activeLayerCount > 0;
 
   useEffect(() => {
-    if (masterPaused || !anyPlaying || ctxState !== 'suspended' || typeof window === 'undefined') return;
+    if (
+      masterPaused ||
+      !anyPlaying ||
+      ctxState !== 'suspended' ||
+      typeof window === 'undefined'
+    )
+      return;
     const resumeRestoredAudio = () => {
       resumeAudioContext();
     };
@@ -567,10 +665,18 @@ export default function SoundscapeScreen() {
   }, [anyPlaying, ctxState, masterPaused]);
 
   const ctxOk = ctxState === 'running';
-  const ctxColor = ctxOk ? '#27ae60' : ctxState === 'suspended' ? '#e67e22' : '#888';
+  const ctxColor = ctxOk
+    ? '#27ae60'
+    : ctxState === 'suspended'
+      ? '#e67e22'
+      : '#888';
   const masterIsPlaying = anyPlaying && !masterPaused;
   const masterActionIsPlay = !masterIsPlaying;
-  const masterToggleText = masterIsPlaying ? 'Pause all' : anyPlaying ? 'Play all' : 'Play';
+  const masterToggleText = masterIsPlaying
+    ? 'Pause all'
+    : anyPlaying
+      ? 'Play all'
+      : 'Play';
   const masterToggleLabel = masterIsPlaying
     ? 'Pause all soundscape audio'
     : anyPlaying
@@ -590,15 +696,26 @@ export default function SoundscapeScreen() {
     >
       <Text style={[styles.title, { color: c.text }]}>Soundscape</Text>
       <Text style={[styles.subtitle, { color: c.icon }]}>
-        Mix binaural beats, noise and nature ambience — layer as many as you like at once.
+        Mix binaural beats, noise and nature ambience — layer as many as you
+        like at once.
       </Text>
 
       {/* ---------------- Master volume ---------------- */}
-      <View style={[styles.masterVolCard, { backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG, borderColor: c.tint }]}>
+      <View
+        style={[
+          styles.masterVolCard,
+          {
+            backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG,
+            borderColor: c.tint,
+          },
+        ]}
+      >
         <View style={styles.masterVolHeader}>
           <View style={styles.masterVolTitleGroup}>
             <MaterialIcons name="volume-up" size={22} color={c.tint} />
-            <Text style={[styles.masterVolLabel, { color: c.text }]}>Master Volume</Text>
+            <Text style={[styles.masterVolLabel, { color: c.text }]}>
+              Master Volume
+            </Text>
           </View>
           <Pressable
             onPress={toggleMasterPlayback}
@@ -614,18 +731,43 @@ export default function SoundscapeScreen() {
               },
             ]}
           >
-            <MaterialIcons name={masterActionIsPlay ? 'play-arrow' : 'pause'} size={20} color={masterActionIsPlay ? '#fff' : c.tint} />
-            <Text style={[styles.masterPauseText, { color: masterActionIsPlay ? '#fff' : c.tint }]}>
+            <MaterialIcons
+              name={masterActionIsPlay ? 'play-arrow' : 'pause'}
+              size={20}
+              color={masterActionIsPlay ? '#fff' : c.tint}
+            />
+            <Text
+              style={[
+                styles.masterPauseText,
+                { color: masterActionIsPlay ? '#fff' : c.tint },
+              ]}
+            >
               {masterToggleText}
             </Text>
           </Pressable>
-          <Text style={[styles.masterVolValue, { color: c.tint }]}>{Math.round(masterVolume * 100)}%</Text>
+          <Text style={[styles.masterVolValue, { color: c.tint }]}>
+            {Math.round(masterVolume * 100)}%
+          </Text>
         </View>
-        <InlineSlider min={0} max={1} step={0.01} value={masterVolume} onChange={setMasterVolume} tint={c.tint} />
+        <InlineSlider
+          min={0}
+          max={1}
+          step={0.01}
+          value={masterVolume}
+          onChange={setMasterVolume}
+          tint={c.tint}
+          accessibilityLabel="Master volume"
+        />
         {masterPaused ? (
           <View style={styles.masterPausedRow}>
-            <MaterialIcons name="pause-circle-filled" size={14} color={c.tint} />
-            <Text style={[styles.masterPausedText, { color: c.tint }]}>Master paused</Text>
+            <MaterialIcons
+              name="pause-circle-filled"
+              size={14}
+              color={c.tint}
+            />
+            <Text style={[styles.masterPausedText, { color: c.tint }]}>
+              Master paused
+            </Text>
           </View>
         ) : null}
       </View>
@@ -643,27 +785,57 @@ export default function SoundscapeScreen() {
                 style={[
                   styles.nowPlayingCard,
                   {
-                    borderColor: al.playing ? c.tint : (dark ? '#333' : '#e8e0d8'),
+                    borderColor: al.playing
+                      ? c.tint
+                      : dark
+                        ? '#333'
+                        : '#e8e0d8',
                     backgroundColor: dark ? WARM_DARK_BG : WARM_LIGHT_BG,
                   },
                   cardWidth ? { width: cardWidth } : undefined,
                 ]}
               >
-                <Pressable onPress={al.onToggle} style={layerStyles.header}>
+                <Pressable
+                  onPress={al.onToggle}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${al.playing ? 'Pause' : 'Play'} ${al.label}`}
+                  accessibilityState={{ selected: al.playing }}
+                  style={layerStyles.header}
+                >
                   <MaterialIcons
-                    name={al.playing ? 'pause-circle-filled' : 'play-circle-outline'}
+                    name={
+                      al.playing ? 'pause-circle-filled' : 'play-circle-outline'
+                    }
                     size={22}
                     color={al.playing ? c.tint : c.icon}
                   />
                   <View style={layerStyles.headerText}>
-                    <Text style={[layerStyles.title, { color: c.text }]}>{al.label}</Text>
-                    {al.sub ? <Text style={[layerStyles.sub, { color: c.icon }]}>{al.sub}</Text> : null}
+                    <Text style={[layerStyles.title, { color: c.text }]}>
+                      {al.label}
+                    </Text>
+                    {al.sub ? (
+                      <Text style={[layerStyles.sub, { color: c.icon }]}>
+                        {al.sub}
+                      </Text>
+                    ) : null}
                   </View>
                 </Pressable>
                 <View style={layerStyles.sliderRow}>
-                  <Text style={[layerStyles.volLabel, { color: c.icon }]}>Vol</Text>
-                  <InlineSlider min={0} max={1} step={0.01} value={al.volume} onChange={al.onVolumeChange} tint={c.tint} />
-                  <Text style={[layerStyles.volValue, { color: c.icon }]}>{Math.round(al.volume * 100)}%</Text>
+                  <Text style={[layerStyles.volLabel, { color: c.icon }]}>
+                    Vol
+                  </Text>
+                  <InlineSlider
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={al.volume}
+                    onChange={al.onVolumeChange}
+                    tint={c.tint}
+                    accessibilityLabel={`Volume for ${al.label}`}
+                  />
+                  <Text style={[layerStyles.volValue, { color: c.icon }]}>
+                    {Math.round(al.volume * 100)}%
+                  </Text>
                 </View>
               </View>
             ))}
@@ -673,42 +845,85 @@ export default function SoundscapeScreen() {
 
       {/* ---------------- Saved presets ---------------- */}
       <Text style={[styles.sectionLabel, { color: c.icon }]}>MY PRESETS</Text>
-      <View style={[styles.card, { borderColor: dark ? '#333' : '#e8e0d8', paddingVertical: 10 }]}>
+      <View
+        style={[
+          styles.card,
+          { borderColor: dark ? '#333' : '#e8e0d8', paddingVertical: 10 },
+        ]}
+      >
         <View style={presetStyles.saveRow}>
           <TextInput
             value={draftPresetName}
             onChangeText={setDraftPresetName}
             placeholder={defaultPresetName()}
             placeholderTextColor={c.icon}
-            style={[presetStyles.input, { color: c.text, borderColor: dark ? '#333' : '#e8e0d8' }]}
+            accessibilityLabel="Name for the soundscape preset"
+            style={[
+              presetStyles.input,
+              { color: c.text, borderColor: dark ? '#333' : '#e8e0d8' },
+            ]}
           />
-          <Pressable onPress={handleSavePreset} style={[presetStyles.saveBtn, { backgroundColor: c.tint }]}>
+          <Pressable
+            onPress={handleSavePreset}
+            accessibilityRole="button"
+            accessibilityLabel="Save soundscape preset"
+            style={[presetStyles.saveBtn, { backgroundColor: c.tint }]}
+          >
             <MaterialIcons name="save" size={16} color="#fff" />
             <Text style={presetStyles.saveBtnText}>Save preset</Text>
           </Pressable>
         </View>
-        {presetStatus ? <Text style={[presetStyles.status, { color: c.icon }]}>{presetStatus}</Text> : null}
+        {presetStatus ? (
+          <Text style={[presetStyles.status, { color: c.icon }]}>
+            {presetStatus}
+          </Text>
+        ) : null}
 
         {presets.length === 0 ? (
           <Text style={[presetStyles.empty, { color: c.icon }]}>
-            No saved presets yet — dial in a blend below, then save it here to recall it later.
+            No saved presets yet — dial in a blend below, then save it here to
+            recall it later.
           </Text>
         ) : (
           presets.map((p) => (
-            <View key={p.id} style={[presetStyles.row, { borderColor: dark ? '#333' : '#eee' }]}>
-              <Pressable onPress={() => loadPresetById(p.id)} style={presetStyles.rowMain}>
+            <View
+              key={p.id}
+              style={[
+                presetStyles.row,
+                { borderColor: dark ? '#333' : '#eee' },
+              ]}
+            >
+              <Pressable
+                onPress={() => loadPresetById(p.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Load soundscape preset ${p.name}`}
+                accessibilityState={{ selected: loadedPresetId === p.id }}
+                style={presetStyles.rowMain}
+              >
                 <View style={presetStyles.radioPad}>
                   <MaterialIcons
-                    name={loadedPresetId === p.id ? 'radio-button-checked' : 'radio-button-unchecked'}
+                    name={
+                      loadedPresetId === p.id
+                        ? 'radio-button-checked'
+                        : 'radio-button-unchecked'
+                    }
                     size={18}
                     color={loadedPresetId === p.id ? c.tint : c.icon}
                   />
                 </View>
-                <Text style={[presetStyles.rowLabel, { color: c.text }]} numberOfLines={1}>
+                <Text
+                  style={[presetStyles.rowLabel, { color: c.text }]}
+                  numberOfLines={1}
+                >
                   {p.name}
                 </Text>
               </Pressable>
-              <Pressable onPress={() => handleDeletePreset(p.id, p.name)} hitSlop={8}>
+              <Pressable
+                onPress={() => handleDeletePreset(p.id, p.name)}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete soundscape preset ${p.name}`}
+                hitSlop={8}
+              >
                 <MaterialIcons name="delete-outline" size={18} color={c.icon} />
               </Pressable>
             </View>
@@ -721,18 +936,34 @@ export default function SoundscapeScreen() {
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: ctxColor }]} />
           <Text style={[styles.statusText, { color: ctxColor }]}>
-            {ctxOk ? 'Audio running' : `Audio ${ctxState} - click/tap once to resume`}
+            {ctxOk
+              ? 'Audio running'
+              : `Audio ${ctxState} - click/tap once to resume`}
           </Text>
         </View>
       )}
 
       {/* ---------------- Custom binaural (single tunable layer) ---------------- */}
-      <Text style={[styles.sectionLabel, { color: c.icon }]}>CUSTOM BINAURAL · requires headphones</Text>
+      <Text style={[styles.sectionLabel, { color: c.icon }]}>
+        CUSTOM BINAURAL · requires headphones
+      </Text>
       <Pressable
         onPress={toggle}
-        style={[styles.playButton, { backgroundColor: playing ? '#c0392b' : c.tint }]}
+        accessibilityRole="button"
+        accessibilityLabel={
+          playing ? 'Stop custom binaural beat' : 'Play custom binaural beat'
+        }
+        accessibilityState={{ selected: playing }}
+        style={[
+          styles.playButton,
+          { backgroundColor: playing ? '#c0392b' : c.tint },
+        ]}
       >
-        <MaterialIcons name={playing ? 'stop' : 'play-arrow'} size={22} color="#fff" />
+        <MaterialIcons
+          name={playing ? 'stop' : 'play-arrow'}
+          size={22}
+          color="#fff"
+        />
         <Text style={styles.playLabel}>{playing ? 'Stop' : 'Play'}</Text>
       </Pressable>
 
@@ -741,11 +972,17 @@ export default function SoundscapeScreen() {
           label="Beat frequency"
           value={beatHz}
           display={`${beatHz.toFixed(1)} Hz`}
-          onDec={() => setBeatHz(clamp(parseFloat((beatHz - 0.5).toFixed(1)), 0.5, 100))}
-          onInc={() => setBeatHz(clamp(parseFloat((beatHz + 0.5).toFixed(1)), 0.5, 100))}
+          onDec={() =>
+            setBeatHz(clamp(parseFloat((beatHz - 0.5).toFixed(1)), 0.5, 100))
+          }
+          onInc={() =>
+            setBeatHz(clamp(parseFloat((beatHz + 0.5).toFixed(1)), 0.5, 100))
+          }
           c={c}
         />
-        <View style={[styles.divider, { borderColor: dark ? '#333' : '#eee' }]} />
+        <View
+          style={[styles.divider, { borderColor: dark ? '#333' : '#eee' }]}
+        />
         <Stepper
           label="Carrier"
           value={carrier}
@@ -754,13 +991,19 @@ export default function SoundscapeScreen() {
           onInc={() => setCarrier(clamp(carrier + 10, 80, 500))}
           c={c}
         />
-        <View style={[styles.divider, { borderColor: dark ? '#333' : '#eee' }]} />
+        <View
+          style={[styles.divider, { borderColor: dark ? '#333' : '#eee' }]}
+        />
         <Stepper
           label="Volume"
           value={volume}
           display={`${Math.round(volume * 100)}%`}
-          onDec={() => setVolume(clamp(Math.round((volume - 0.05) * 100) / 100, 0, 1))}
-          onInc={() => setVolume(clamp(Math.round((volume + 0.05) * 100) / 100, 0, 1))}
+          onDec={() =>
+            setVolume(clamp(Math.round((volume - 0.05) * 100) / 100, 0, 1))
+          }
+          onInc={() =>
+            setVolume(clamp(Math.round((volume + 0.05) * 100) / 100, 0, 1))
+          }
           c={c}
         />
       </View>
@@ -791,7 +1034,9 @@ export default function SoundscapeScreen() {
       </View>
 
       {/* ---------------- Noise ---------------- */}
-      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>NOISE</Text>
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
+        NOISE
+      </Text>
       <View style={styles.layerGrid}>
         {NOISE_COLORS.map((n) => {
           const layer = noise[n.key];
@@ -812,7 +1057,9 @@ export default function SoundscapeScreen() {
       </View>
 
       {/* ---------------- Music ---------------- */}
-      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>MUSIC</Text>
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
+        MUSIC
+      </Text>
       <View style={styles.layerGrid}>
         {MUSIC_KINDS.map((m) => {
           const layer = music[m.key];
@@ -834,36 +1081,70 @@ export default function SoundscapeScreen() {
       </View>
 
       {/* ---------------- Sound effects & modifiers ---------------- */}
-      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>SOUND EFFECTS</Text>
-      <View style={[styles.card, { borderColor: dark ? '#333' : '#e8e0d8', paddingVertical: 10 }]}>
+      <Text style={[styles.sectionLabel, { color: c.icon, marginTop: 20 }]}>
+        SOUND EFFECTS
+      </Text>
+      <View
+        style={[
+          styles.card,
+          { borderColor: dark ? '#333' : '#e8e0d8', paddingVertical: 10 },
+        ]}
+      >
         <View style={fxStyles.swipeRow}>
           <Pressable
             onPress={() => triggerBassSwipe('up')}
+            accessibilityRole="button"
+            accessibilityLabel="Play bass swipe up sound effect"
             style={[fxStyles.swipeBtn, { borderColor: c.tint }]}
           >
             <MaterialIcons name="trending-up" size={18} color={c.tint} />
-            <Text style={[fxStyles.swipeBtnText, { color: c.tint }]}>Bass swipe up</Text>
+            <Text style={[fxStyles.swipeBtnText, { color: c.tint }]}>
+              Bass swipe up
+            </Text>
           </Pressable>
           <Pressable
             onPress={() => triggerBassSwipe('down')}
+            accessibilityRole="button"
+            accessibilityLabel="Play bass swipe down sound effect"
             style={[fxStyles.swipeBtn, { borderColor: c.tint }]}
           >
             <MaterialIcons name="trending-down" size={18} color={c.tint} />
-            <Text style={[fxStyles.swipeBtnText, { color: c.tint }]}>Bass swipe down</Text>
+            <Text style={[fxStyles.swipeBtnText, { color: c.tint }]}>
+              Bass swipe down
+            </Text>
           </Pressable>
         </View>
 
-        <View style={[styles.divider, { borderColor: dark ? '#333' : '#eee', marginVertical: 10 }]} />
+        <View
+          style={[
+            styles.divider,
+            { borderColor: dark ? '#333' : '#eee', marginVertical: 10 },
+          ]}
+        />
 
-        <Pressable onPress={toggleStutterGate} style={fxStyles.gateHeader}>
+        <Pressable
+          onPress={toggleStutterGate}
+          accessibilityRole="button"
+          accessibilityLabel={`${stutterGate.enabled ? 'Disable' : 'Enable'} stutter gate`}
+          accessibilityState={{ selected: stutterGate.enabled }}
+          style={fxStyles.gateHeader}
+        >
           <MaterialIcons
-            name={stutterGate.enabled ? 'pause-circle-filled' : 'play-circle-outline'}
+            name={
+              stutterGate.enabled
+                ? 'pause-circle-filled'
+                : 'play-circle-outline'
+            }
             size={26}
             color={stutterGate.enabled ? c.tint : c.icon}
           />
           <View style={layerStyles.headerText}>
-            <Text style={[layerStyles.title, { color: c.text }]}>Stutter gate</Text>
-            <Text style={[layerStyles.sub, { color: c.icon }]}>chops the whole mix rhythmically</Text>
+            <Text style={[layerStyles.title, { color: c.text }]}>
+              Stutter gate
+            </Text>
+            <Text style={[layerStyles.sub, { color: c.icon }]}>
+              chops the whole mix rhythmically
+            </Text>
           </View>
         </Pressable>
         <View style={layerStyles.sliderRow}>
@@ -875,8 +1156,11 @@ export default function SoundscapeScreen() {
             value={stutterGate.bpm}
             onChange={setStutterGateBpm}
             tint={c.tint}
+            accessibilityLabel="Stutter gate tempo in beats per minute"
           />
-          <Text style={[layerStyles.volValue, { color: c.icon }]}>{stutterGate.bpm}</Text>
+          <Text style={[layerStyles.volValue, { color: c.icon }]}>
+            {stutterGate.bpm}
+          </Text>
         </View>
       </View>
 
@@ -896,13 +1180,33 @@ export default function SoundscapeScreen() {
       >
         <View style={layerStyles.sliderRow}>
           <Text style={[layerStyles.volLabel, { color: c.icon }]}>Pitch</Text>
-          <InlineSlider min={0.5} max={2} step={0.05} value={birds.pitch} onChange={setBirdsPitch} tint={c.tint} />
-          <Text style={[layerStyles.volValue, { color: c.icon }]}>{birds.pitch.toFixed(2)}x</Text>
+          <InlineSlider
+            min={0.5}
+            max={2}
+            step={0.05}
+            value={birds.pitch}
+            onChange={setBirdsPitch}
+            tint={c.tint}
+            accessibilityLabel="Birds pitch"
+          />
+          <Text style={[layerStyles.volValue, { color: c.icon }]}>
+            {birds.pitch.toFixed(2)}x
+          </Text>
         </View>
         <View style={layerStyles.sliderRow}>
           <Text style={[layerStyles.volLabel, { color: c.icon }]}>Speed</Text>
-          <InlineSlider min={0.25} max={3} step={0.05} value={birds.speed} onChange={setBirdsSpeed} tint={c.tint} />
-          <Text style={[layerStyles.volValue, { color: c.icon }]}>{birds.speed.toFixed(2)}x</Text>
+          <InlineSlider
+            min={0.25}
+            max={3}
+            step={0.05}
+            value={birds.speed}
+            onChange={setBirdsSpeed}
+            tint={c.tint}
+            accessibilityLabel="Birds speed"
+          />
+          <Text style={[layerStyles.volValue, { color: c.icon }]}>
+            {birds.speed.toFixed(2)}x
+          </Text>
         </View>
       </LayerRow>
 
@@ -916,10 +1220,11 @@ export default function SoundscapeScreen() {
       />
 
       <Text style={[styles.hint, { color: c.icon }]}>
-        Binaural beats work by playing two slightly different frequencies — one per ear — so
-        headphones are required. Noise is synthesized live; nature ambience plays real CC0/CC-BY
-        field recordings (credits for CC-BY ones are on the About tab). Every layer runs
-        independently and mixes freely with any other layer.
+        Binaural beats work by playing two slightly different frequencies — one
+        per ear — so headphones are required. Noise is synthesized live; nature
+        ambience plays real CC0/CC-BY field recordings (credits for CC-BY ones
+        are on the About tab). Every layer runs independently and mixes freely
+        with any other layer.
       </Text>
       {confirmDialog}
     </ScrollView>
@@ -939,7 +1244,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  masterVolHeader: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  masterVolHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
   masterVolTitleGroup: {
     alignItems: 'center',
     flex: 1,
@@ -960,11 +1271,26 @@ const styles = StyleSheet.create({
   },
   masterPauseText: { fontSize: 13, fontWeight: '800' },
   masterVolLabel: { flex: 1, fontSize: 16, fontWeight: '700' },
-  masterVolValue: { fontSize: 16, fontWeight: '800', minWidth: 44, textAlign: 'right' },
-  masterPausedRow: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 8 },
+  masterVolValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    minWidth: 44,
+    textAlign: 'right',
+  },
+  masterPausedRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+  },
   masterPausedText: { fontSize: 12, fontWeight: '700' },
 
-  nowPlayingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  nowPlayingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
   nowPlayingCard: {
     borderRadius: 10,
     borderWidth: 1.5,
@@ -985,9 +1311,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingVertical: 16,
   },
-  playLabel: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
+  playLabel: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
 
-  sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
 
   card: {
     borderRadius: 10,
@@ -1001,7 +1337,12 @@ const styles = StyleSheet.create({
   },
   divider: { borderTopWidth: StyleSheet.hairlineWidth },
 
-  statusRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 8 },
+  statusRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
   statusDot: { borderRadius: 99, height: 8, width: 8 },
   statusText: { fontSize: 12, fontWeight: '600' },
 

@@ -41,8 +41,14 @@ export function useConfirmDialog() {
       animationType="fade"
       onRequestClose={() => close(false)}
       statusBarTranslucent
+      accessibilityViewIsModal
     >
-      <Pressable style={styles.backdrop} onPress={() => close(false)}>
+      <Pressable
+        style={styles.backdrop}
+        onPress={() => close(false)}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss confirmation dialog"
+      >
         <Pressable
           style={[
             styles.box,
@@ -61,13 +67,20 @@ export function useConfirmDialog() {
               <Pressable
                 style={[styles.btn, { borderRightWidth: 1, borderRightColor: dark ? "#333" : "#eee" }]}
                 onPress={() => close(false)}
+                accessibilityRole="button"
+                accessibilityLabel={pending?.cancelText ?? "Cancel"}
               >
                 <Text style={[styles.btnText, { color: colors.tint }]}>
                   {pending?.cancelText ?? "Cancel"}
                 </Text>
               </Pressable>
             )}
-            <Pressable style={styles.btn} onPress={() => close(true)}>
+            <Pressable
+              style={styles.btn}
+              onPress={() => close(true)}
+              accessibilityRole="button"
+              accessibilityLabel={pending?.confirmText ?? "OK"}
+            >
               <Text
                 style={[
                   styles.btnText,

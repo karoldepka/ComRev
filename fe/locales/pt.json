@@ -293,5 +293,6 @@
   "updateHighlightKeyboard": "Os slides aceitam Espaço para pausar e setas para navegar.",
   "updateHighlightLayout": "Espaçamentos e navegação adaptam-se melhor a telemóvel e desktop.",
   "updateHighlightI18n": "Esta página está localizada para os idiomas suportados pela app.",
-  "updateLanguageTitle": "Idioma"
+  "updateLanguageTitle": "Idioma",
+  "tabMore": "Mais"
 }

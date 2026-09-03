@@ -1,59 +1,170 @@
 export type EnvMapStyle =
-  | "gradient"
-  | "studio"
-  | "starfield"
-  | "sunset"
-  | "neon"
-  | "custom";
+  'gradient' | 'studio' | 'starfield' | 'sunset' | 'neon' | 'custom';
 export type MetallicPreset =
-  | "gold"
-  | "chrome"
-  | "copper"
-  | "holographic"
-  | "obsidian";
+  'gold' | 'chrome' | 'copper' | 'holographic' | 'obsidian';
 
 export type EffectType =
   // post-process
-  | "bloom" | "depthOfField" | "chromatic" | "filmGrain" | "glitch"
-  | "vignette" | "scanlines" | "colorGrading" | "pixelate" | "radialBlur"
-  | "circularBlur" | "sepia" | "invert" | "sobelEdge" | "thermal"
-  | "nightVision" | "duotone" | "posterize" | "colorOverlay" | "halftone"
-  | "sharpen" | "animChromatic" | "blur" | "lensDistort" | "mosaic"
-  | "noisePost" | "crtCurvature" | "vhsTracking" | "glowEdge" | "acid"
-  | "kaleidoscopePost" | "oldFilm" | "zoomBlur" | "crosshatch" | "glitchBlock"
-  | "speedLines" | "rgbShift" | "frostedGlass" | "waterRipple" | "pixelShift"
-  | "retroTv" | "antialiasing"
+  | 'bloom'
+  | 'depthOfField'
+  | 'chromatic'
+  | 'filmGrain'
+  | 'glitch'
+  | 'vignette'
+  | 'scanlines'
+  | 'colorGrading'
+  | 'pixelate'
+  | 'radialBlur'
+  | 'circularBlur'
+  | 'sepia'
+  | 'invert'
+  | 'sobelEdge'
+  | 'thermal'
+  | 'nightVision'
+  | 'duotone'
+  | 'posterize'
+  | 'colorOverlay'
+  | 'halftone'
+  | 'sharpen'
+  | 'animChromatic'
+  | 'blur'
+  | 'lensDistort'
+  | 'mosaic'
+  | 'noisePost'
+  | 'crtCurvature'
+  | 'vhsTracking'
+  | 'glowEdge'
+  | 'acid'
+  | 'kaleidoscopePost'
+  | 'oldFilm'
+  | 'zoomBlur'
+  | 'crosshatch'
+  | 'glitchBlock'
+  | 'speedLines'
+  | 'rgbShift'
+  | 'frostedGlass'
+  | 'waterRipple'
+  | 'pixelShift'
+  | 'retroTv'
+  | 'antialiasing'
   // vertex deform
-  | "fishEye" | "bend" | "wave" | "twist" | "inflate" | "taper" | "shear"
-  | "spherify" | "ripple" | "melt" | "pinch" | "voxelize" | "crumple"
-  | "noiseWobble" | "spiralDeform" | "bulge" | "squish" | "zap" | "explode"
-  | "fold" | "spikes" | "cylindrize"
+  | 'fishEye'
+  | 'bend'
+  | 'wave'
+  | 'twist'
+  | 'inflate'
+  | 'taper'
+  | 'shear'
+  | 'spherify'
+  | 'ripple'
+  | 'melt'
+  | 'pinch'
+  | 'voxelize'
+  | 'crumple'
+  | 'noiseWobble'
+  | 'spiralDeform'
+  | 'bulge'
+  | 'squish'
+  | 'zap'
+  | 'explode'
+  | 'fold'
+  | 'spikes'
+  | 'cylindrize'
   // material
-  | "envMap" | "neonGlow" | "metallicPreset" | "xRay" | "toonShading"
-  | "hologram" | "gradientMesh" | "rainbowMesh" | "iridescent"
-  | "emissivePulse" | "dissolveAnim" | "glass" | "matcap"
+  | 'envMap'
+  | 'neonGlow'
+  | 'metallicPreset'
+  | 'xRay'
+  | 'toonShading'
+  | 'hologram'
+  | 'gradientMesh'
+  | 'rainbowMesh'
+  | 'iridescent'
+  | 'emissivePulse'
+  | 'dissolveAnim'
+  | 'glass'
+  | 'matcap'
   // lighting
-  | "spotlight" | "strobe" | "flicker" | "colorCycleLight" | "disco"
-  | "ambientPulse" | "rimLight" | "dramaticLight" | "lightningFlash" | "rainbowLights"
+  | 'spotlight'
+  | 'strobe'
+  | 'flicker'
+  | 'colorCycleLight'
+  | 'disco'
+  | 'ambientPulse'
+  | 'rimLight'
+  | 'dramaticLight'
+  | 'lightningFlash'
+  | 'rainbowLights'
   // scene objects
-  | "dust" | "wireframe" | "outline" | "echoCopies" | "rays"
-  | "floatingRings" | "starField3d" | "snow" | "rain" | "confetti"
-  | "sparkle" | "aura" | "gridFloor" | "orbiter" | "portalRing"
-  | "cometTrail" | "floatingCubes" | "mirrorPlane" | "mandala"
-  | "starburstRays" | "concentricRipples" | "auroraGlow"
+  | 'dust'
+  | 'wireframe'
+  | 'outline'
+  | 'echoCopies'
+  | 'rays'
+  | 'floatingRings'
+  | 'starField3d'
+  | 'snow'
+  | 'rain'
+  | 'confetti'
+  | 'sparkle'
+  | 'aura'
+  | 'gridFloor'
+  | 'orbiter'
+  | 'portalRing'
+  | 'cometTrail'
+  | 'floatingCubes'
+  | 'mirrorPlane'
+  | 'mandala'
+  | 'starburstRays'
+  | 'concentricRipples'
+  | 'auroraGlow'
   // animation
-  | "pulse" | "spin" | "bounce" | "levitation" | "swing" | "tremble"
-  | "breathe" | "wiggle" | "floatDrift" | "flipCoin" | "grow" | "shrink"
-  | "orbitAnim" | "rock" | "jitter" | "sway" | "figureEight" | "pendulum"
+  | 'pulse'
+  | 'spin'
+  | 'bounce'
+  | 'levitation'
+  | 'swing'
+  | 'tremble'
+  | 'breathe'
+  | 'wiggle'
+  | 'floatDrift'
+  | 'flipCoin'
+  | 'grow'
+  | 'shrink'
+  | 'orbitAnim'
+  | 'rock'
+  | 'jitter'
+  | 'sway'
+  | 'figureEight'
+  | 'pendulum'
   // ai-generated
-  | "customJs"
+  | 'customJs'
   // added effects
-  | "mainText" | "text3d" | "graphics" | "wings" | "fire" | "smoke" | "skySphere" | "tessellate" | "fractalBackground"
+  | 'mainText'
+  | 'text3d'
+  | 'graphics'
+  | 'wings'
+  | 'fire'
+  | 'smoke'
+  | 'skySphere'
+  | 'tessellate'
+  | 'fractalBackground'
   // static effects
-  | "flatShade" | "shadowFloor" | "backgroundPlane" | "fogEffect"
-  | "emboss" | "threshold" | "mirrorH" | "mirrorV" | "sketch"
-  | "sunsetLight" | "studioLight" | "moonLight" | "chromeEdge"
-  | "colorBurn" | "depthLines";
+  | 'flatShade'
+  | 'shadowFloor'
+  | 'backgroundPlane'
+  | 'fogEffect'
+  | 'emboss'
+  | 'threshold'
+  | 'mirrorH'
+  | 'mirrorV'
+  | 'sketch'
+  | 'sunsetLight'
+  | 'studioLight'
+  | 'moonLight'
+  | 'chromeEdge'
+  | 'colorBurn'
+  | 'depthLines';
 
 export interface EffectInstance {
   id: string;
@@ -74,7 +185,7 @@ export interface ThreeDConfig {
   /** @deprecated */
   equalizeLineWidths?: boolean;
   /** @deprecated */
-  equalizationMethod?: "spacing" | "fontSize";
+  equalizationMethod?: 'spacing' | 'fontSize';
   /** @deprecated */
   targetWidth?: number;
   /** @deprecated */
@@ -87,22 +198,17 @@ export interface ThreeDConfig {
   syncError?: string | null;
 }
 
-const DB_NAME = "ComRevConfigDB";
+const DB_NAME = 'ComRevConfigDB';
 const DB_VERSION = 6;
-const STORE_CONFIGS = "configs";
-const STORE_PENDING = "pendingSync";
-const STORE_PRESETS = "presets";
-const STORE_TRIED_EFFECTS = "triedEffects";
-const STORE_SOUNDSCAPE_PRESETS = "soundscapePresets";
-const STORE_LAST_SOUNDSCAPE_STATE = "lastSoundscapeState";
+const STORE_CONFIGS = 'configs';
+const STORE_PENDING = 'pendingSync';
+const STORE_PRESETS = 'presets';
+const STORE_TRIED_EFFECTS = 'triedEffects';
+const STORE_SOUNDSCAPE_PRESETS = 'soundscapePresets';
+const STORE_LAST_SOUNDSCAPE_STATE = 'lastSoundscapeState';
 
 export type ConfigSyncPhase =
-  | "idle"
-  | "saved-local"
-  | "syncing"
-  | "synced"
-  | "offline"
-  | "error";
+  'idle' | 'saved-local' | 'syncing' | 'synced' | 'offline' | 'error';
 
 export interface ConfigSyncStatus {
   phase: ConfigSyncPhase;
@@ -116,7 +222,7 @@ export interface ConfigSyncStatus {
 const configSyncStatusListeners = new Set<(status: ConfigSyncStatus) => void>();
 
 let configSyncStatus: ConfigSyncStatus = {
-  phase: "idle",
+  phase: 'idle',
   isOnline: true,
   pendingCount: 0,
   lastLocalSaveAt: null,
@@ -128,7 +234,9 @@ function copyConfigSyncStatus(): ConfigSyncStatus {
   return { ...configSyncStatus, isOnline: isOnline() };
 }
 
-function emitConfigSyncStatus(patch: Partial<ConfigSyncStatus>): ConfigSyncStatus {
+function emitConfigSyncStatus(
+  patch: Partial<ConfigSyncStatus>,
+): ConfigSyncStatus {
   configSyncStatus = {
     ...configSyncStatus,
     ...patch,
@@ -156,13 +264,13 @@ export function subscribeConfigSyncStatus(
 }
 
 function isIndexedDBAvailable(): boolean {
-  return typeof indexedDB !== "undefined" && indexedDB !== null;
+  return typeof indexedDB !== 'undefined' && indexedDB !== null;
 }
 
 function openDb(): Promise<IDBDatabase> {
   if (!isIndexedDBAvailable()) {
     return Promise.reject(
-      new Error("IndexedDB is not available in this environment."),
+      new Error('IndexedDB is not available in this environment.'),
     );
   }
 
@@ -181,7 +289,7 @@ function openDb(): Promise<IDBDatabase> {
       settled = true;
       reject(
         new Error(
-          "IndexedDB open timed out — likely blocked by another open tab/window of this app. Close other tabs of this app and retry.",
+          'IndexedDB open timed out — likely blocked by another open tab/window of this app. Close other tabs of this app and retry.',
         ),
       );
     }, 2000);
@@ -211,22 +319,22 @@ function openDb(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_CONFIGS)) {
-        db.createObjectStore(STORE_CONFIGS, { keyPath: "id" });
+        db.createObjectStore(STORE_CONFIGS, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_PENDING)) {
-        db.createObjectStore(STORE_PENDING, { keyPath: "id" });
+        db.createObjectStore(STORE_PENDING, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_PRESETS)) {
-        db.createObjectStore(STORE_PRESETS, { keyPath: "id" });
+        db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_TRIED_EFFECTS)) {
-        db.createObjectStore(STORE_TRIED_EFFECTS, { keyPath: "id" });
+        db.createObjectStore(STORE_TRIED_EFFECTS, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_SOUNDSCAPE_PRESETS)) {
-        db.createObjectStore(STORE_SOUNDSCAPE_PRESETS, { keyPath: "id" });
+        db.createObjectStore(STORE_SOUNDSCAPE_PRESETS, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_LAST_SOUNDSCAPE_STATE)) {
-        db.createObjectStore(STORE_LAST_SOUNDSCAPE_STATE, { keyPath: "id" });
+        db.createObjectStore(STORE_LAST_SOUNDSCAPE_STATE, { keyPath: 'id' });
       }
     };
   });
@@ -317,28 +425,28 @@ async function withStore<T>(
 }
 
 export function isOnline(): boolean {
-  if (typeof navigator === "undefined") {
+  if (typeof navigator === 'undefined') {
     return true;
   }
   return navigator.onLine;
 }
 
 export async function saveConfigLocally(config: ThreeDConfig): Promise<void> {
-  await withStore(STORE_CONFIGS, "readwrite", (store) => store.put(config));
+  await withStore(STORE_CONFIGS, 'readwrite', (store) => store.put(config));
 }
 
 export async function queuePendingSync(config: ThreeDConfig): Promise<void> {
-  await withStore(STORE_PENDING, "readwrite", (store) => store.put(config));
+  await withStore(STORE_PENDING, 'readwrite', (store) => store.put(config));
 }
 
 export async function getPendingConfigs(): Promise<ThreeDConfig[]> {
-  return await withStore(STORE_PENDING, "readonly", (store) => store.getAll());
+  return await withStore(STORE_PENDING, 'readonly', (store) => store.getAll());
 }
 
 export async function getConfigById(id: string): Promise<ThreeDConfig | null> {
   const config = await withStore<ThreeDConfig | undefined>(
     STORE_CONFIGS,
-    "readonly",
+    'readonly',
     (store) => store.get(id),
   );
   return config ?? null;
@@ -354,33 +462,33 @@ export async function refreshConfigSyncStatus(): Promise<ConfigSyncStatus> {
     const pendingCount = await getPendingSyncCount();
     const online = isOnline();
     const phase =
-      configSyncStatus.phase === "syncing"
-        ? "syncing"
+      configSyncStatus.phase === 'syncing'
+        ? 'syncing'
         : !online
-          ? "offline"
+          ? 'offline'
           : pendingCount > 0
             ? configSyncStatus.lastError
-              ? "error"
-              : "saved-local"
+              ? 'error'
+              : 'saved-local'
             : configSyncStatus.lastSyncAt
-              ? "synced"
-              : "idle";
+              ? 'synced'
+              : 'idle';
 
     return emitConfigSyncStatus({ phase, pendingCount, isOnline: online });
   } catch (error) {
     return emitConfigSyncStatus({
-      phase: "error",
+      phase: 'error',
       lastError: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
 export async function deletePendingSync(id: string): Promise<void> {
-  await withStore(STORE_PENDING, "readwrite", (store) => store.delete(id));
+  await withStore(STORE_PENDING, 'readwrite', (store) => store.delete(id));
 }
 
 export async function getLatestConfig(): Promise<ThreeDConfig | null> {
-  const configs = await withStore(STORE_CONFIGS, "readonly", (store) =>
+  const configs = await withStore(STORE_CONFIGS, 'readonly', (store) =>
     store.getAll(),
   );
   if (configs.length === 0) {
@@ -393,15 +501,15 @@ export async function getLatestConfig(): Promise<ThreeDConfig | null> {
 }
 
 export async function savePreset(preset: PresetRecord): Promise<void> {
-  await withStore(STORE_PRESETS, "readwrite", (store) => store.put(preset));
+  await withStore(STORE_PRESETS, 'readwrite', (store) => store.put(preset));
 }
 
 export async function getPresets(): Promise<PresetRecord[]> {
-  return await withStore(STORE_PRESETS, "readonly", (store) => store.getAll());
+  return await withStore(STORE_PRESETS, 'readonly', (store) => store.getAll());
 }
 
 export async function deletePreset(id: string): Promise<void> {
-  await withStore(STORE_PRESETS, "readwrite", (store) => store.delete(id));
+  await withStore(STORE_PRESETS, 'readwrite', (store) => store.delete(id));
 }
 
 export async function markConfigSynced(
@@ -410,7 +518,7 @@ export async function markConfigSynced(
 ): Promise<void> {
   const db = await openDb();
   try {
-    const tx = db.transaction(STORE_CONFIGS, "readwrite");
+    const tx = db.transaction(STORE_CONFIGS, 'readwrite');
     const store = tx.objectStore(STORE_CONFIGS);
     await runTransaction(tx, async () => {
       const request = store.get(id);
@@ -434,13 +542,13 @@ export async function syncConfigToBackend(
   config: ThreeDConfig,
 ): Promise<any> {
   if (!isOnline()) {
-    throw new Error("Offline. Cannot sync to backend right now.");
+    throw new Error('Offline. Cannot sync to backend right now.');
   }
 
-  const response = await fetch(`${apiBase.replace(/\/$/, "")}/config`, {
-    method: "POST",
+  const response = await fetch(`${apiBase.replace(/\/$/, '')}/config`, {
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify(config),
   });
@@ -474,14 +582,14 @@ export async function saveConfigOfflineFirst(
     await saveConfigLocally(record);
   } catch (error) {
     emitConfigSyncStatus({
-      phase: "error",
+      phase: 'error',
       lastError: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }
 
   emitConfigSyncStatus({
-    phase: isOnline() ? "syncing" : "offline",
+    phase: isOnline() ? 'syncing' : 'offline',
     lastLocalSaveAt: record.updatedAt,
     lastError: null,
   });
@@ -490,7 +598,7 @@ export async function saveConfigOfflineFirst(
     await syncConfigToBackend(apiBase, record);
     await refreshConfigSyncStatus();
     emitConfigSyncStatus({
-      phase: "synced",
+      phase: 'synced',
       lastSyncAt: new Date().toISOString(),
       lastError: null,
     });
@@ -506,7 +614,7 @@ export async function saveConfigOfflineFirst(
     await queuePendingSync(pendingRecord);
     await refreshConfigSyncStatus();
     emitConfigSyncStatus({
-      phase: isOnline() ? "error" : "offline",
+      phase: isOnline() ? 'error' : 'offline',
       lastLocalSaveAt: pendingRecord.updatedAt,
       lastError: message,
     });
@@ -523,18 +631,107 @@ export interface ConfigSyncSummary {
   pendingCount: number;
 }
 
+const CONFIG_SYNC_RETRY_INITIAL_DELAY_MS = 2_000;
+const CONFIG_SYNC_RETRY_MAX_DELAY_MS = 60_000;
+
+/**
+ * Keeps locally saved configurations moving toward the backend for as long as
+ * the app is open. The queue remains the source of truth, so stopping this
+ * loop never discards data; a future app session will resume it.
+ */
+export function startConfigSyncRetryLoop(apiBase: string): () => void {
+  let disposed = false;
+  let running = false;
+  let retryDelay = CONFIG_SYNC_RETRY_INITIAL_DELAY_MS;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearScheduledRetry = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = null;
+  };
+
+  const scheduleRetry = (delay: number) => {
+    if (disposed || timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void sync();
+    }, delay);
+  };
+
+  const sync = async () => {
+    if (disposed || running) return;
+    running = true;
+    try {
+      const pendingCount = await getPendingSyncCount();
+      if (pendingCount === 0) {
+        await refreshConfigSyncStatus();
+        retryDelay = CONFIG_SYNC_RETRY_INITIAL_DELAY_MS;
+        return;
+      }
+
+      if (!isOnline()) {
+        await refreshConfigSyncStatus();
+        scheduleRetry(CONFIG_SYNC_RETRY_MAX_DELAY_MS);
+        return;
+      }
+
+      const summary = await syncPendingConfigs(apiBase);
+      if (summary.pendingCount === 0) {
+        retryDelay = CONFIG_SYNC_RETRY_INITIAL_DELAY_MS;
+        return;
+      }
+
+      scheduleRetry(retryDelay);
+      retryDelay = Math.min(retryDelay * 2, CONFIG_SYNC_RETRY_MAX_DELAY_MS);
+    } catch (error) {
+      console.warn('Pending configuration sync retry failed:', error);
+      scheduleRetry(retryDelay);
+      retryDelay = Math.min(retryDelay * 2, CONFIG_SYNC_RETRY_MAX_DELAY_MS);
+    } finally {
+      running = false;
+    }
+  };
+
+  const unsubscribe = subscribeConfigSyncStatus((status) => {
+    if (status.pendingCount > 0) scheduleRetry(0);
+  });
+  void sync();
+
+  if (typeof window !== 'undefined') {
+    const resume = () => {
+      clearScheduledRetry();
+      retryDelay = CONFIG_SYNC_RETRY_INITIAL_DELAY_MS;
+      void sync();
+    };
+    window.addEventListener('online', resume);
+    return () => {
+      disposed = true;
+      clearScheduledRetry();
+      unsubscribe();
+      window.removeEventListener('online', resume);
+    };
+  }
+
+  return () => {
+    disposed = true;
+    clearScheduledRetry();
+    unsubscribe();
+  };
+}
+
 export async function syncPendingConfigs(
   apiBase: string,
 ): Promise<ConfigSyncSummary> {
   if (!isOnline()) {
     await refreshConfigSyncStatus();
-    emitConfigSyncStatus({ phase: "offline" });
-    throw new Error("Offline; cannot sync pending configs.");
+    emitConfigSyncStatus({ phase: 'offline' });
+    throw new Error('Offline; cannot sync pending configs.');
   }
 
   const pending = await getPendingConfigs();
   emitConfigSyncStatus({
-    phase: "syncing",
+    phase: 'syncing',
     pendingCount: pending.length,
     lastError: null,
   });
@@ -550,15 +747,16 @@ export async function syncPendingConfigs(
     } catch (error) {
       failed += 1;
       lastError = error instanceof Error ? error.message : String(error);
-      console.warn("Failed to sync pending config", config.id, error);
+      console.warn('Failed to sync pending config', config.id, error);
     }
   }
 
   const pendingCount = await getPendingSyncCount();
   emitConfigSyncStatus({
-    phase: pendingCount === 0 ? "synced" : failed > 0 ? "error" : "saved-local",
+    phase: pendingCount === 0 ? 'synced' : failed > 0 ? 'error' : 'saved-local',
     pendingCount,
-    lastSyncAt: synced > 0 ? new Date().toISOString() : configSyncStatus.lastSyncAt,
+    lastSyncAt:
+      synced > 0 ? new Date().toISOString() : configSyncStatus.lastSyncAt,
     lastError,
   });
 
@@ -570,10 +768,10 @@ export async function syncPresetToBackend(
   preset: PresetRecord,
 ): Promise<void> {
   if (!isOnline()) return;
-  const base = apiBase.replace(/\/$/, "");
+  const base = apiBase.replace(/\/$/, '');
   const response = await fetch(`${base}/presets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(preset),
   });
   if (!response.ok) {
@@ -585,7 +783,7 @@ export async function syncPresetToBackend(
 export async function loadPresetsFromBackend(
   apiBase: string,
 ): Promise<PresetRecord[]> {
-  const base = apiBase.replace(/\/$/, "");
+  const base = apiBase.replace(/\/$/, '');
   const response = await fetch(`${base}/presets`);
   if (!response.ok) throw new Error(`Load presets failed: ${response.status}`);
   return response.json();
@@ -596,8 +794,8 @@ export async function deletePresetFromBackend(
   id: string,
 ): Promise<void> {
   if (!isOnline()) return;
-  const base = apiBase.replace(/\/$/, "");
-  const response = await fetch(`${base}/presets/${id}`, { method: "DELETE" });
+  const base = apiBase.replace(/\/$/, '');
+  const response = await fetch(`${base}/presets/${id}`, { method: 'DELETE' });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Delete preset failed: ${response.status} ${text}`);
@@ -606,16 +804,24 @@ export async function deletePresetFromBackend(
 
 // ── Soundscape mixer presets ─────────────────────────────────────────────────
 
-export async function saveSoundscapePreset(preset: SoundscapePreset): Promise<void> {
-  await withStore(STORE_SOUNDSCAPE_PRESETS, "readwrite", (store) => store.put(preset));
+export async function saveSoundscapePreset(
+  preset: SoundscapePreset,
+): Promise<void> {
+  await withStore(STORE_SOUNDSCAPE_PRESETS, 'readwrite', (store) =>
+    store.put(preset),
+  );
 }
 
 export async function getSoundscapePresets(): Promise<SoundscapePreset[]> {
-  return await withStore(STORE_SOUNDSCAPE_PRESETS, "readonly", (store) => store.getAll());
+  return await withStore(STORE_SOUNDSCAPE_PRESETS, 'readonly', (store) =>
+    store.getAll(),
+  );
 }
 
 export async function deleteSoundscapePreset(id: string): Promise<void> {
-  await withStore(STORE_SOUNDSCAPE_PRESETS, "readwrite", (store) => store.delete(id));
+  await withStore(STORE_SOUNDSCAPE_PRESETS, 'readwrite', (store) =>
+    store.delete(id),
+  );
 }
 
 export async function syncSoundscapePresetToBackend(
@@ -623,24 +829,27 @@ export async function syncSoundscapePresetToBackend(
   preset: SoundscapePreset,
 ): Promise<void> {
   if (!isOnline()) return;
-  const base = apiBase.replace(/\/$/, "");
+  const base = apiBase.replace(/\/$/, '');
   const response = await fetch(`${base}/soundscape-presets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(preset),
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Soundscape preset sync failed: ${response.status} ${text}`);
+    throw new Error(
+      `Soundscape preset sync failed: ${response.status} ${text}`,
+    );
   }
 }
 
 export async function loadSoundscapePresetsFromBackend(
   apiBase: string,
 ): Promise<SoundscapePreset[]> {
-  const base = apiBase.replace(/\/$/, "");
+  const base = apiBase.replace(/\/$/, '');
   const response = await fetch(`${base}/soundscape-presets`);
-  if (!response.ok) throw new Error(`Load soundscape presets failed: ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Load soundscape presets failed: ${response.status}`);
   return response.json();
 }
 
@@ -649,11 +858,15 @@ export async function deleteSoundscapePresetFromBackend(
   id: string,
 ): Promise<void> {
   if (!isOnline()) return;
-  const base = apiBase.replace(/\/$/, "");
-  const response = await fetch(`${base}/soundscape-presets/${id}`, { method: "DELETE" });
+  const base = apiBase.replace(/\/$/, '');
+  const response = await fetch(`${base}/soundscape-presets/${id}`, {
+    method: 'DELETE',
+  });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Delete soundscape preset failed: ${response.status} ${text}`);
+    throw new Error(
+      `Delete soundscape preset failed: ${response.status} ${text}`,
+    );
   }
 }
 
@@ -662,7 +875,7 @@ export async function deleteSoundscapePresetFromBackend(
 // (volumes, layer params, which preset if any is loaded) so reloading the
 // soundscape tab restores what the user had rather than resetting to defaults.
 
-const LAST_SOUNDSCAPE_STATE_KEY = "singleton";
+const LAST_SOUNDSCAPE_STATE_KEY = 'singleton';
 const LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION = 1;
 const LAST_SOUNDSCAPE_STATE_STORAGE_KEY = `comrev:soundscape:last-state:v${LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION}`;
 const MAX_RECENT_SOUNDSCAPE_LAYERS = 16;
@@ -690,11 +903,11 @@ export interface LastSoundscapeState {
 
 function getLocalStorage(): Storage | null {
   try {
-    if (typeof window === "undefined") return null;
+    if (typeof window === 'undefined') return null;
     const storage = window.localStorage;
     if (!storage) return null;
-    const key = "__comrev_storage_probe__";
-    storage.setItem(key, "1");
+    const key = '__comrev_storage_probe__';
+    storage.setItem(key, '1');
     storage.removeItem(key);
     return storage;
   } catch {
@@ -702,23 +915,26 @@ function getLocalStorage(): Storage | null {
   }
 }
 
-function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | null {
-  if (!value || typeof value !== "object") return null;
+function normalizeLastSoundscapeState(
+  value: unknown,
+): LastSoundscapeState | null {
+  if (!value || typeof value !== 'object') return null;
   const record = value as Partial<LastSoundscapeState>;
   const recentLayerKeys = Array.isArray(record.recentLayerKeys)
     ? record.recentLayerKeys
-        .filter((key): key is string => typeof key === "string")
+        .filter((key): key is string => typeof key === 'string')
         .slice(0, MAX_RECENT_SOUNDSCAPE_LAYERS)
     : [];
   return {
     id: LAST_SOUNDSCAPE_STATE_KEY,
     schemaVersion: LAST_SOUNDSCAPE_STATE_SCHEMA_VERSION,
-    masterVolume: typeof record.masterVolume === "number" ? record.masterVolume : 1,
+    masterVolume:
+      typeof record.masterVolume === 'number' ? record.masterVolume : 1,
     masterPaused: record.masterPaused === true,
-    beatHz: typeof record.beatHz === "number" ? record.beatHz : 10,
-    carrier: typeof record.carrier === "number" ? record.carrier : 200,
-    volume: typeof record.volume === "number" ? record.volume : 0.35,
-    playing: typeof record.playing === "boolean" ? record.playing : false,
+    beatHz: typeof record.beatHz === 'number' ? record.beatHz : 10,
+    carrier: typeof record.carrier === 'number' ? record.carrier : 200,
+    volume: typeof record.volume === 'number' ? record.volume : 0.35,
+    playing: typeof record.playing === 'boolean' ? record.playing : false,
     extraBinaural: record.extraBinaural ?? {},
     noise: record.noise ?? {},
     ambience: record.ambience ?? {},
@@ -728,12 +944,15 @@ function normalizeLastSoundscapeState(value: unknown): LastSoundscapeState | nul
     recentLayerKeys,
     loadedPresetId: record.loadedPresetId ?? null,
     loadedPresetName: record.loadedPresetName ?? null,
-    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
+    updatedAt:
+      typeof record.updatedAt === 'string'
+        ? record.updatedAt
+        : new Date().toISOString(),
   };
 }
 
 export async function saveLastSoundscapeState(
-  state: Omit<LastSoundscapeState, "id" | "schemaVersion" | "updatedAt">,
+  state: Omit<LastSoundscapeState, 'id' | 'schemaVersion' | 'updatedAt'>,
 ): Promise<void> {
   const record: LastSoundscapeState = {
     id: LAST_SOUNDSCAPE_STATE_KEY,
@@ -745,14 +964,22 @@ export async function saveLastSoundscapeState(
   const storage = getLocalStorage();
   if (storage) {
     try {
-      storage.setItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY, JSON.stringify(record));
+      storage.setItem(
+        LAST_SOUNDSCAPE_STATE_STORAGE_KEY,
+        JSON.stringify(record),
+      );
       return;
     } catch (error) {
-      console.warn("Unable to persist last-used soundscape state to localStorage:", error);
+      console.warn(
+        'Unable to persist last-used soundscape state to localStorage:',
+        error,
+      );
     }
   }
 
-  await withStore(STORE_LAST_SOUNDSCAPE_STATE, "readwrite", (store) => store.put(record));
+  await withStore(STORE_LAST_SOUNDSCAPE_STATE, 'readwrite', (store) =>
+    store.put(record),
+  );
 }
 
 export async function getLastSoundscapeState(): Promise<LastSoundscapeState | null> {
@@ -764,7 +991,10 @@ export async function getLastSoundscapeState(): Promise<LastSoundscapeState | nu
         const parsed = normalizeLastSoundscapeState(JSON.parse(raw));
         if (parsed) return parsed;
       } catch (error) {
-        console.warn("Unable to parse last-used soundscape state from localStorage:", error);
+        console.warn(
+          'Unable to parse last-used soundscape state from localStorage:',
+          error,
+        );
         storage.removeItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY);
       }
     }
@@ -773,20 +1003,29 @@ export async function getLastSoundscapeState(): Promise<LastSoundscapeState | nu
   try {
     const record = await withStore<LastSoundscapeState | undefined>(
       STORE_LAST_SOUNDSCAPE_STATE,
-      "readonly",
+      'readonly',
       (store) => store.get(LAST_SOUNDSCAPE_STATE_KEY),
     );
     const normalized = normalizeLastSoundscapeState(record);
     if (normalized && storage) {
       try {
-        storage.setItem(LAST_SOUNDSCAPE_STATE_STORAGE_KEY, JSON.stringify(normalized));
+        storage.setItem(
+          LAST_SOUNDSCAPE_STATE_STORAGE_KEY,
+          JSON.stringify(normalized),
+        );
       } catch (error) {
-        console.warn("Unable to migrate last-used soundscape state to localStorage:", error);
+        console.warn(
+          'Unable to migrate last-used soundscape state to localStorage:',
+          error,
+        );
       }
     }
     return normalized;
   } catch (error) {
-    console.warn("Unable to load last-used soundscape state from IndexedDB:", error);
+    console.warn(
+      'Unable to load last-used soundscape state from IndexedDB:',
+      error,
+    );
     return null;
   }
 }
@@ -799,7 +1038,10 @@ export async function saveSoundscapePresetOfflineFirst(
   try {
     await syncSoundscapePresetToBackend(apiBase, preset);
   } catch (error) {
-    console.warn("Soundscape preset saved locally; backend sync failed:", error);
+    console.warn(
+      'Soundscape preset saved locally; backend sync failed:',
+      error,
+    );
   }
 }
 
@@ -807,7 +1049,7 @@ export async function saveSoundscapePresetOfflineFirst(
 // Records which EffectType values the user has ever added, locally + backend.
 // Used in future "gimme totally new" / novelty suggestions.
 
-const TRIED_EFFECTS_KEY = "singleton";
+const TRIED_EFFECTS_KEY = 'singleton';
 
 interface TriedEffectsRecord {
   id: typeof TRIED_EFFECTS_KEY;
@@ -819,12 +1061,12 @@ async function getTriedEffectsRecord(): Promise<TriedEffectsRecord> {
   try {
     const rec = await withStore<TriedEffectsRecord | undefined>(
       STORE_TRIED_EFFECTS,
-      "readonly",
+      'readonly',
       (store) => store.get(TRIED_EFFECTS_KEY),
     );
-    return rec ?? { id: TRIED_EFFECTS_KEY, tried: [], updatedAt: "" };
+    return rec ?? { id: TRIED_EFFECTS_KEY, tried: [], updatedAt: '' };
   } catch {
-    return { id: TRIED_EFFECTS_KEY, tried: [], updatedAt: "" };
+    return { id: TRIED_EFFECTS_KEY, tried: [], updatedAt: '' };
   }
 }
 
@@ -832,7 +1074,10 @@ export async function getTriedEffects(): Promise<string[]> {
   return (await getTriedEffectsRecord()).tried;
 }
 
-export async function recordTriedEffect(type: EffectType, apiBase: string): Promise<void> {
+export async function recordTriedEffect(
+  type: EffectType,
+  apiBase: string,
+): Promise<void> {
   try {
     const rec = await getTriedEffectsRecord();
     if (rec.tried.includes(type)) return; // already recorded — nothing to do
@@ -841,37 +1086,50 @@ export async function recordTriedEffect(type: EffectType, apiBase: string): Prom
       tried: [...rec.tried, type],
       updatedAt: new Date().toISOString(),
     };
-    await withStore(STORE_TRIED_EFFECTS, "readwrite", (store) => store.put(updated));
+    await withStore(STORE_TRIED_EFFECTS, 'readwrite', (store) =>
+      store.put(updated),
+    );
     syncTriedEffectsToBackend(apiBase, updated).catch((error) => {
-      console.warn("Tried effects saved locally; backend sync failed:", error);
+      console.warn('Tried effects saved locally; backend sync failed:', error);
     });
   } catch (error) {
-    console.warn("recordTriedEffect failed:", error);
+    console.warn('recordTriedEffect failed:', error);
   }
 }
 
-async function syncTriedEffectsToBackend(apiBase: string, rec: TriedEffectsRecord): Promise<void> {
+async function syncTriedEffectsToBackend(
+  apiBase: string,
+  rec: TriedEffectsRecord,
+): Promise<void> {
   if (!isOnline() || !apiBase) return;
-  await fetch(`${apiBase.replace(/\/$/, "")}/tried-effects`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+  await fetch(`${apiBase.replace(/\/$/, '')}/tried-effects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tried: rec.tried, updatedAt: rec.updatedAt }),
   });
 }
 
 // Cross-tab preset handoff (module-level, survives navigation)
 let _pendingPreset: PresetRecord | null = null;
-export function setPendingPresetToLoad(p: PresetRecord | null) { _pendingPreset = p; }
+export function setPendingPresetToLoad(p: PresetRecord | null) {
+  _pendingPreset = p;
+}
 export function consumePendingPresetToLoad(): PresetRecord | null {
-  const p = _pendingPreset; _pendingPreset = null; return p;
+  const p = _pendingPreset;
+  _pendingPreset = null;
+  return p;
 }
 
 // Cross-screen local config handoff, used by the global sync indicator to open
 // a specific pending save in the editor without relying on backend state.
 let _pendingConfig: ThreeDConfig | null = null;
-export function setPendingConfigToLoad(config: ThreeDConfig | null) { _pendingConfig = config; }
+export function setPendingConfigToLoad(config: ThreeDConfig | null) {
+  _pendingConfig = config;
+}
 export function consumePendingConfigToLoad(): ThreeDConfig | null {
-  const config = _pendingConfig; _pendingConfig = null; return config;
+  const config = _pendingConfig;
+  _pendingConfig = null;
+  return config;
 }
 
 export async function savePresetOfflineFirst(
@@ -882,6 +1140,6 @@ export async function savePresetOfflineFirst(
   try {
     await syncPresetToBackend(apiBase, preset);
   } catch (error) {
-    console.warn("Preset saved locally; backend sync failed:", error);
+    console.warn('Preset saved locally; backend sync failed:', error);
   }
 }

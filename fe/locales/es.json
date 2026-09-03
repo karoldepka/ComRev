@@ -293,5 +293,6 @@
   "updateHighlightKeyboard": "Las diapositivas admiten Espacio para pausar y flechas para cambiar.",
   "updateHighlightLayout": "Los espacios y la navegación se adaptan mejor a móvil y escritorio.",
   "updateHighlightI18n": "Esta página está localizada para los idiomas compatibles de la app.",
-  "updateLanguageTitle": "Idioma"
+  "updateLanguageTitle": "Idioma",
+  "tabMore": "Más"
 }

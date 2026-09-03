@@ -30,6 +30,7 @@ const MAPPING = {
   'star.fill': 'star',
   'paintpalette.fill': 'palette',
   waveform: 'graphic-eq',
+  'ellipsis.circle': 'more-horiz',
 } as IconMapping;
 
 /**

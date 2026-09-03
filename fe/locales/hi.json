@@ -328,5 +328,6 @@
   "updateHighlightKeyboard": "स्लाइड Space से रोकने और तीर कुंजियों से आगे बढ़ने का समर्थन करती हैं।",
   "updateHighlightLayout": "पैडिंग और नेविगेशन फोन और डेस्कटॉप चौड़ाइयों पर बेहतर अनुकूल होते हैं।",
   "updateHighlightI18n": "यह पृष्ठ ऐप की समर्थित भाषाओं के लिए स्थानीयकृत है।",
-  "updateLanguageTitle": "भाषा"
+  "updateLanguageTitle": "भाषा",
+  "tabMore": "अधिक"
 }

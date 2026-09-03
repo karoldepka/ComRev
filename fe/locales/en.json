@@ -350,5 +350,6 @@
   "updateHighlightKeyboard": "Slides support Space to pause and arrow keys to move.",
   "updateHighlightLayout": "Padding and navigation adapt better across phone and desktop widths.",
   "updateHighlightI18n": "This page is localized for the app's supported languages.",
-  "updateLanguageTitle": "Language"
+  "updateLanguageTitle": "Language",
+  "tabMore": "More"
 }

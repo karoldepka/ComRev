@@ -293,5 +293,6 @@
   "updateHighlightKeyboard": "Le slide supportano Spazio per mettere in pausa e le frecce per cambiare.",
   "updateHighlightLayout": "Spaziature e navigazione si adattano meglio a telefono e desktop.",
   "updateHighlightI18n": "Questa pagina è localizzata per le lingue supportate dall'app.",
-  "updateLanguageTitle": "Lingua"
+  "updateLanguageTitle": "Lingua",
+  "tabMore": "Altro"
 }

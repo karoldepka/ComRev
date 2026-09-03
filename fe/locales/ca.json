@@ -293,5 +293,6 @@
   "updateHighlightKeyboard": "Les diapositives admeten Espai per pausar i fletxes per navegar.",
   "updateHighlightLayout": "Els espais i la navegació s'adapten millor a mòbil i escriptori.",
   "updateHighlightI18n": "Aquesta pàgina està localitzada per als idiomes compatibles de l'app.",
-  "updateLanguageTitle": "Idioma"
+  "updateLanguageTitle": "Idioma",
+  "tabMore": "Més"
 }

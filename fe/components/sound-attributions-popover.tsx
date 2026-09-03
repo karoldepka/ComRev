@@ -17,6 +17,8 @@ export function SoundAttributionsPopover() {
       <Pressable
         onPress={() => setExpanded((v) => !v)}
         style={[styles.iconButton, { borderColor: c.tint + '55' }]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
         accessibilityLabel="Sound credits"
       >
         <MaterialIcons name="cloud" size={20} color={c.tint} />
@@ -26,23 +28,35 @@ export function SoundAttributionsPopover() {
         <View
           style={[
             styles.panel,
-            { backgroundColor: dark ? '#1c1c1e' : '#fff', borderColor: c.tint + '33' },
+            {
+              backgroundColor: dark ? '#1c1c1e' : '#fff',
+              borderColor: c.tint + '33',
+            },
           ]}
         >
           <View style={styles.panelHeader}>
-            <Text style={[styles.panelTitle, { color: c.text }]}>Sound credits</Text>
-            <Pressable onPress={() => setExpanded(false)}>
+            <Text style={[styles.panelTitle, { color: c.text }]}>
+              Sound credits
+            </Text>
+            <Pressable
+              onPress={() => setExpanded(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close sound credits"
+            >
               <MaterialIcons name="close" size={18} color={c.icon} />
             </Pressable>
           </View>
           <Text style={[styles.panelSub, { color: c.icon }]}>
-            Nature ambience in Soundscape uses field recordings from freesound.org.
-            These are shared under Creative Commons Attribution 4.0 and require credit:
+            Nature ambience in Soundscape uses field recordings from
+            freesound.org. These are shared under Creative Commons Attribution
+            4.0 and require credit:
           </Text>
           {ATTRIBUTION_REQUIRED_SOUNDS.map((s) => (
             <Pressable
               key={s.sourceUrl}
               onPress={() => Linking.openURL(s.sourceUrl)}
+              accessibilityRole="link"
+              accessibilityLabel={`Open the sound credit for ${s.title} by ${s.author}`}
               style={[styles.entry, { borderColor: dark ? '#333' : '#eee' }]}
             >
               <Text style={[styles.entryTitle, { color: c.text }]}>
@@ -86,7 +100,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  panelHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  panelHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   panelTitle: { fontSize: 14, fontWeight: '700' },
   panelSub: { fontSize: 11, lineHeight: 15 },
   entry: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8 },

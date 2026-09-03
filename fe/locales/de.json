@@ -292,5 +292,6 @@
   "updateHighlightKeyboard": "Folien unterstützen Leertaste zum Pausieren und Pfeiltasten zum Wechseln.",
   "updateHighlightLayout": "Abstände und Navigation passen sich besser an Telefon- und Desktopbreiten an.",
   "updateHighlightI18n": "Diese Seite ist für die unterstützten App-Sprachen lokalisiert.",
-  "updateLanguageTitle": "Sprache"
+  "updateLanguageTitle": "Sprache",
+  "tabMore": "Mehr"
 }

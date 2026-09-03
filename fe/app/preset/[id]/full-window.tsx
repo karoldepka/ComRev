@@ -23,7 +23,9 @@ function pingRecorder(port: number, path: string) {
   if (navigator.sendBeacon) {
     navigator.sendBeacon(url);
   } else {
-    fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+    fetch(url, { mode: 'no-cors', keepalive: true }).catch((error) => {
+      console.warn('Unable to notify the recorder:', error);
+    });
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -82,16 +82,36 @@ export default function ReposScreen() {
   const { width } = useWindowDimensions();
   const compact = width < 560;
 
-  useEffect(() => {
-    fetch(`${API_BASE}/repo/?limit=200`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(setItems)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+  const loadItems = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/repo/?limit=200`, { signal });
+      if (!response.ok)
+        throw new Error(`The server returned HTTP ${response.status}.`);
+      const result: unknown = await response.json();
+      if (!Array.isArray(result)) {
+        throw new Error('The server returned an invalid items response.');
+      }
+      setItems(result as ItemRecord[]);
+    } catch (reason) {
+      if (reason instanceof Error && reason.name === 'AbortError') return;
+      const message = reason instanceof Error ? reason.message : String(reason);
+      console.error('Unable to load items:', reason);
+      setError(message || 'Unable to load items.');
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadItems(controller.signal).catch((reason) => {
+      console.error('Unexpected items loading error:', reason);
+    });
+    return () => controller.abort();
+  }, [loadItems]);
 
   const data = useMemo(() => buildTree(items), [items]);
 
@@ -109,7 +129,13 @@ export default function ReposScreen() {
             }}
           >
             {row.getCanExpand() ? (
-              <Pressable onPress={row.getToggleExpandedHandler()} hitSlop={8}>
+              <Pressable
+                onPress={row.getToggleExpandedHandler()}
+                accessibilityRole="button"
+                accessibilityLabel={`${row.getIsExpanded() ? 'Collapse' : 'Expand'} ${String(getValue())}`}
+                accessibilityState={{ expanded: row.getIsExpanded() }}
+                hitSlop={8}
+              >
                 <ThemedText style={styles.expander}>
                   {row.getIsExpanded() ? '▼' : '▶'}
                 </ThemedText>
@@ -182,7 +208,20 @@ export default function ReposScreen() {
   if (error) {
     return (
       <ThemedView style={styles.center}>
-        <ThemedText>Error: {error}</ThemedText>
+        <ThemedText style={styles.errorTitle}>Couldn’t load items</ThemedText>
+        <ThemedText style={styles.errorMessage}>{error}</ThemedText>
+        <Pressable
+          accessibilityLabel="Retry loading items"
+          accessibilityRole="button"
+          onPress={() => loadItems()}
+          style={[styles.retryButton, { backgroundColor: colors.tint }]}
+        >
+          <ThemedText
+            style={[styles.retryButtonText, { color: colors.onTint }]}
+          >
+            Retry
+          </ThemedText>
+        </Pressable>
       </ThemedView>
     );
   }
@@ -266,7 +305,12 @@ function getColWidth(id: string): number {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
   title: { marginBottom: 4 },
   subtitle: { marginBottom: 16, opacity: 0.6 },
   headerRow: { flexDirection: 'row', borderBottomWidth: 1, paddingBottom: 8 },
@@ -285,4 +329,14 @@ const styles = StyleSheet.create({
   numCell: { textAlign: 'right' },
   descCell: { opacity: 0.7 },
   expander: { width: 18, fontSize: 10 },
+  errorMessage: { marginTop: 6, textAlign: 'center' },
+  errorTitle: { fontSize: 18, fontWeight: '700' },
+  retryButton: {
+    borderRadius: 6,
+    marginTop: 18,
+    minHeight: 40,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  retryButtonText: { fontWeight: '700' },
 });

@@ -57,6 +57,10 @@ export function normalizeLanguageCode(
     : null;
 }
 
+export function getLanguageDirection(language: string | null | undefined) {
+  return normalizeLanguageCode(language) === 'ar' ? 'rtl' : 'ltr';
+}
+
 function detectLocale(): string {
   try {
     return (

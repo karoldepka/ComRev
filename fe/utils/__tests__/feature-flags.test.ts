@@ -40,10 +40,10 @@ describe('feature flags', () => {
     expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
   });
 
-  it('hides the sync status indicator by default', async () => {
+  it('shows the sync status indicator by default', async () => {
     const flags = await loadFeatureFlags();
 
-    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(false);
+    expect(flags.isFeatureFlagEnabled('syncStatusIndicator')).toBe(true);
   });
 
   it('persists enabled flags locally', async () => {
@@ -70,6 +70,7 @@ describe('feature flags', () => {
   it('does not enable dependent flags when their requirement is off', async () => {
     const flags = await loadFeatureFlags();
 
+    flags.setFeatureFlag('syncStatusIndicator', false);
     flags.setFeatureFlag('syncAttentionIndicator', true);
 
     expect(flags.isFeatureFlagEnabled('syncAttentionIndicator')).toBe(false);
@@ -78,6 +79,7 @@ describe('feature flags', () => {
   it('explains why dependent flags are disabled', async () => {
     const flags = await loadFeatureFlags();
 
+    flags.setFeatureFlag('syncStatusIndicator', false);
     expect(flags.getFeatureFlagDisabledReason('syncAttentionIndicator')).toBe(
       'Requires Sync status indicator.',
     );
@@ -121,9 +123,9 @@ describe('feature flags', () => {
     const listener = vi.fn();
 
     const unsubscribe = flags.subscribeFeatureFlags(listener);
-    flags.setFeatureFlag('syncStatusIndicator', true);
-    unsubscribe();
     flags.setFeatureFlag('syncStatusIndicator', false);
+    unsubscribe();
+    flags.setFeatureFlag('syncStatusIndicator', true);
 
     expect(listener).toHaveBeenCalledTimes(1);
   });

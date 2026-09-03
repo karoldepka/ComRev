@@ -76,6 +76,8 @@ export default function UpdateScreen() {
             onPress={() =>
               router.canGoBack() ? router.back() : router.replace('/')
             }
+            accessibilityRole="button"
+            accessibilityLabel={t('updateBack')}
             style={({ pressed }) => [
               styles.backButton,
               {
@@ -156,6 +158,9 @@ export default function UpdateScreen() {
                 <Pressable
                   key={code}
                   onPress={() => i18n.changeLanguage(code)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`Use ${language.label}`}
+                  accessibilityState={{ selected }}
                   style={({ pressed }) => [
                     styles.languagePill,
                     {

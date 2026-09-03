@@ -328,5 +328,6 @@
   "updateHighlightKeyboard": "تدعم الشرائح مفتاح المسافة للإيقاف المؤقت ومفاتيح الأسهم للتنقل.",
   "updateHighlightLayout": "تتكيف المسافات والتنقل بشكل أفضل عبر عرض الهاتف وسطح المكتب.",
   "updateHighlightI18n": "هذه الصفحة مترجمة للغات التي يدعمها التطبيق.",
-  "updateLanguageTitle": "اللغة"
+  "updateLanguageTitle": "اللغة",
+  "tabMore": "المزيد"
 }

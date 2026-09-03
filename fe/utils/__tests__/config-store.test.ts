@@ -163,6 +163,38 @@ describe('config store offline-first sync', () => {
     });
   });
 
+  it('resumes pending configuration sync from the app-wide retry coordinator', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          responseStub(
+            { message: 'temporary outage' },
+            { ok: false, status: 503, statusText: 'Unavailable' },
+          ),
+        )
+        .mockResolvedValueOnce(responseStub({ id: 'backend-config-1' })),
+    );
+    const store = await loadStore();
+    await store.saveConfigOfflineFirst(makeConfig(), 'https://api.example.test');
+
+    const stopRetrying = store.startConfigSyncRetryLoop(
+      'https://api.example.test',
+    );
+
+    await vi.waitFor(async () => {
+      expect(await store.getPendingSyncCount()).toBe(0);
+    });
+    stopRetrying();
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(store.getConfigSyncStatusSnapshot()).toMatchObject({
+      pendingCount: 0,
+      phase: 'synced',
+    });
+  });
+
   it('hands off a selected pending config exactly once', async () => {
     const store = await loadStore();
     const config = makeConfig('pending-config-1');

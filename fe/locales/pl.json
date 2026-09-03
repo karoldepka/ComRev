@@ -294,5 +294,6 @@
   "updateHighlightKeyboard": "Slajdy obsługują Spację do pauzy oraz strzałki do przechodzenia.",
   "updateHighlightLayout": "Odstępy i nawigacja lepiej dopasowują się do telefonu i desktopu.",
   "updateHighlightI18n": "Ta strona jest lokalizowana dla języków obsługiwanych przez aplikację.",
-  "updateLanguageTitle": "Język"
+  "updateLanguageTitle": "Język",
+  "tabMore": "Więcej"
 }

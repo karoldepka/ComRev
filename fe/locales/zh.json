@@ -293,5 +293,6 @@
   "updateHighlightKeyboard": "幻灯片支持空格键暂停，方向键切换。",
   "updateHighlightLayout": "间距和导航在手机与桌面宽度下更自适应。",
   "updateHighlightI18n": "此页面已针对应用支持的语言本地化。",
-  "updateLanguageTitle": "语言"
+  "updateLanguageTitle": "语言",
+  "tabMore": "更多"
 }
