@@ -65,6 +65,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'believe in myself': {
     categories: { motivation: {} },
   },
+  'Confident body language': {},
   metaperfection: {
     categories: { motivation: {} },
   },
