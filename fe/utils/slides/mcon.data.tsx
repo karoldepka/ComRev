@@ -3,6 +3,8 @@ export { MCON_VISUAL_PARAMS } from '@/utils/mcon.config';
 export type { MantraEntry, MantraText } from '@/utils/mcon.config';
 
 export const MANTRAS: Record<string, MantraEntry> = {
+  'program my mind early, program often': {},
+
   'Be honest with myself, instead of in denial or ignorance': {
     examples:
       'Am I running like a headless chicken and constantly changing music, instead of steady focus?',
@@ -27,6 +29,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "Lose the inner heaviness. It's all a fancy game. Play the game.": {
     categories: { motivation: {} },
   },
+  'Internal locus of control': {},
   'breathe well, with diaphragm': {
     categories: { motivation: {} },
   },
@@ -37,10 +40,11 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'attract, do not chase': {},
+  'When a decision is not clear, choose randomly.': {},
   'visualize desired outcomes': {
     categories: { motivation: {} },
   },
-  'outcome independence, focus on the process and the journey, adventure': {
+  'outcome independence, focus on the process, effort and the journey, adventure, experiences': {
     categories: { motivation: {} },
   },
   'I apply Pareto principle (80/20, 90/10)': {},
@@ -324,7 +328,6 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'minimum effective dose': {},
   'minimum viable product': {},
   'release early, release often': {},
-  'program my mind early, program often': {},
   'unique value proposition': {},
   'have to -> want to': {},
   'towards-state': {},
