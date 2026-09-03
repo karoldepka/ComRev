@@ -1,5 +1,11 @@
-import * as THREE from "three";
-import { deserializeNode, type SerializedNode, type WorkerGeometryOptions, type WorkerResponse } from "./text-geometry-transfer";
+import * as THREE from 'three';
+import {
+  deserializeNode,
+  serializeNode,
+  type SerializedNode,
+  type WorkerGeometryOptions,
+  type WorkerResponse,
+} from './text-geometry-transfer';
 
 // Metro's dev server will bundle *any* entry point on demand via a `.bundle`
 // URL, not just the app's registered entry — this fetches a ready-made,
@@ -8,7 +14,14 @@ import { deserializeNode, type SerializedNode, type WorkerGeometryOptions, type 
 // (one level above this app) that Metro resolves module paths against.
 // Dev-server only: this doesn't work against a production static export.
 const WORKER_BUNDLE_URL =
-  "/fe/utils/text-geometry.worker.bundle?platform=web&dev=true&minify=false";
+  '/fe/utils/text-geometry.worker.bundle?platform=web&dev=true&minify=false';
+
+// A static export has no Metro endpoint to turn the TypeScript worker source
+// into JavaScript. Its SPA fallback returns index.html for the URL above;
+// starting a worker from that response produces `Unexpected token '<'`.
+// Keep the worker pool for development, but build on the main thread in a
+// production export until the worker has its own emitted static bundle.
+const USE_METRO_WORKER = typeof __DEV__ !== 'undefined' && __DEV__;
 
 interface PendingRequest {
   resolve: (node: SerializedNode) => void;
@@ -30,9 +43,10 @@ interface PendingRequest {
  * the main thread (there's nothing else CPU-heavy competing during that
  * wait, unlike during live interactive editing).
  */
-const POOL_SIZE = typeof navigator !== "undefined" && navigator.hardwareConcurrency
-  ? Math.max(2, navigator.hardwareConcurrency)
-  : 2;
+const POOL_SIZE =
+  typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+    ? Math.max(2, navigator.hardwareConcurrency)
+    : 2;
 
 interface PoolWorker {
   worker: Worker;
@@ -51,7 +65,10 @@ let nextRequestId = 1;
 // repositioned by its consumer, so two consumers can't safely share one.
 const geometryCache = new Map<string, Promise<SerializedNode>>();
 
-function cacheKey(options: WorkerGeometryOptions, customFontUrl?: string): string {
+function cacheKey(
+  options: WorkerGeometryOptions,
+  customFontUrl?: string,
+): string {
   return JSON.stringify([options, customFontUrl ?? null]);
 }
 
@@ -66,11 +83,11 @@ let buildCount = 0;
 function logBuildTiming(options: WorkerGeometryOptions, ms: number) {
   totalBuildTimeMs += ms;
   buildCount++;
-  const label = options.text.replace(/\n/g, " / ").slice(0, 40);
+  const label = options.text.replace(/\n/g, ' / ').slice(0, 40);
   // eslint-disable-next-line no-console
   console.log(
     `[text-geometry] built "${label}" in ${ms.toFixed(0)}ms` +
-    ` (total: ${totalBuildTimeMs.toFixed(0)}ms across ${buildCount} build${buildCount === 1 ? "" : "s"})`,
+      ` (total: ${totalBuildTimeMs.toFixed(0)}ms across ${buildCount} build${buildCount === 1 ? '' : 's'})`,
   );
 }
 
@@ -85,16 +102,39 @@ function getWorkerBlobUrl(): Promise<string> {
   if (!blobUrlPromise) {
     blobUrlPromise = fetch(WORKER_BUNDLE_URL).then(async (res) => {
       if (!res.ok) {
-        throw new Error(`Failed to fetch text-geometry worker bundle: HTTP ${res.status}`);
+        throw new Error(
+          `Failed to fetch text-geometry worker bundle: HTTP ${res.status}`,
+        );
+      }
+      const contentType = res.headers.get('content-type') ?? '';
+      if (contentType.includes('text/html')) {
+        throw new Error(
+          'Text-geometry worker endpoint returned HTML instead of JavaScript.',
+        );
       }
       const code = await res.text();
-      const blob = new Blob([code], { type: "application/javascript" });
+      const blob = new Blob([code], { type: 'application/javascript' });
       return URL.createObjectURL(blob);
     });
     // Don't let a failed fetch poison every future worker creation.
-    blobUrlPromise.catch(() => { blobUrlPromise = null; });
+    blobUrlPromise.catch(() => {
+      blobUrlPromise = null;
+    });
   }
   return blobUrlPromise;
+}
+
+async function buildNodeLocally(
+  options: WorkerGeometryOptions,
+  customFontUrl?: string,
+): Promise<SerializedNode> {
+  // This is deliberately dynamic: three-text-geometry imports this module,
+  // so a static import here would create an eager circular dependency.
+  const { buildTextGroup, registerCustomFontUrl } =
+    await import('./three-text-geometry');
+  if (customFontUrl) registerCustomFontUrl('Custom font', customFontUrl);
+  const group = await buildTextGroup(options);
+  return serializeNode(group, []);
 }
 
 async function createPoolWorker(): Promise<PoolWorker> {
@@ -115,7 +155,7 @@ async function createPoolWorker(): Promise<PoolWorker> {
     }
   };
   worker.onerror = (err: ErrorEvent) => {
-    console.error("[text-geometry worker] fatal error:", err.message || err);
+    console.error('[text-geometry worker] fatal error:', err.message || err);
     // A crashed worker's own in-flight requests will simply never resolve —
     // rare enough (and each request has no inherent timeout today) that
     // reconstructing the pool mid-flight isn't worth the complexity here.
@@ -137,12 +177,24 @@ async function getPool(): Promise<PoolWorker[]> {
  * simple least-loaded dispatch, good enough for a handful of workers. */
 async function pickWorker(): Promise<PoolWorker> {
   const pool = await getPool();
-  return pool.reduce((least, w) => (w.pending < least.pending ? w : least), pool[0]);
+  return pool.reduce(
+    (least, w) => (w.pending < least.pending ? w : least),
+    pool[0],
+  );
 }
 
 /** Sends one request to a pool worker and returns its raw (still-serialized)
  * response — shared by both the cache-miss path and prefetchTextGeometry. */
-async function requestNode(options: WorkerGeometryOptions, customFontUrl?: string): Promise<SerializedNode> {
+async function requestNode(
+  options: WorkerGeometryOptions,
+  customFontUrl?: string,
+): Promise<SerializedNode> {
+  if (!USE_METRO_WORKER) {
+    const startedAt = performance.now();
+    const node = await buildNodeLocally(options, customFontUrl);
+    logBuildTiming(options, performance.now() - startedAt);
+    return node;
+  }
   const entry = await pickWorker();
   const id = nextRequestId++;
   entry.pending++;
@@ -159,7 +211,10 @@ async function requestNode(options: WorkerGeometryOptions, customFontUrl?: strin
   });
 }
 
-function getOrCreateCached(options: WorkerGeometryOptions, customFontUrl?: string): Promise<SerializedNode> {
+function getOrCreateCached(
+  options: WorkerGeometryOptions,
+  customFontUrl?: string,
+): Promise<SerializedNode> {
   const key = cacheKey(options, customFontUrl);
   let nodePromise = geometryCache.get(key);
   if (!nodePromise) {
@@ -203,7 +258,10 @@ export async function runTextGeometryWorker(
  * prefetches (see precomputeAllSlideGeometry in app/(tabs)/three-d.tsx) can
  * await the whole batch; fire-and-forget callers can just ignore it.
  */
-export function prefetchTextGeometry(options: WorkerGeometryOptions, customFontUrl?: string): Promise<void> {
+export function prefetchTextGeometry(
+  options: WorkerGeometryOptions,
+  customFontUrl?: string,
+): Promise<void> {
   return getOrCreateCached(options, customFontUrl).then(
     () => undefined,
     () => undefined, // swallowed: see runTextGeometryWorker for the real error surface

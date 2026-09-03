@@ -11,19 +11,21 @@ import {
   type BufferGeometry,
   type Texture,
   Vector3,
-} from "three";
-import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
-import { Font } from "three/examples/jsm/loaders/FontLoader.js";
+} from 'three';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import { Font } from 'three/examples/jsm/loaders/FontLoader.js';
 import robotoRegularFont from '@/assets/fonts/Roboto_Regular.typeface.json';
 import interRegularFont from '@/assets/fonts/Inter_Regular.typeface.json';
 import droidSansRegularFont from '@/assets/fonts/Droid_Sans_Regular.typeface.json';
 import droidSansBoldFont from '@/assets/fonts/Droid_Sans_Bold.typeface.json';
 import vazirmatnRegularFont from '@/assets/fonts/Vazirmatn_Regular.typeface.json';
-import { parseBoldSegments, stripBoldTags } from "./rich-text";
-import { reshapeForRtlDisplay } from "./persian-text";
-import { runTextGeometryWorker, prefetchTextGeometry as prefetchGeometryInWorker } from "./text-geometry-worker-client";
-import type { WorkerGeometryOptions } from "./text-geometry-transfer";
-
+import { parseBoldSegments, stripBoldTags } from './rich-text';
+import { reshapeForRtlDisplay } from './persian-text';
+import {
+  runTextGeometryWorker,
+  prefetchTextGeometry as prefetchGeometryInWorker,
+} from './text-geometry-worker-client';
+import type { WorkerGeometryOptions } from './text-geometry-transfer';
 
 /** Per-zone material overrides. Properties not specified inherit from the base material. */
 export interface ZoneMaterialProps {
@@ -91,7 +93,9 @@ const RTL_SCRIPT_LANGS = new Set(['fa', 'ar']);
  * caller's own font choice alone. Only fa/ar need this — every other
  * supported language renders fine in the default Latin-ext fonts. */
 export function fontFamilyForLang(lang?: string): string | undefined {
-  return lang && RTL_SCRIPT_LANGS.has(lang) ? PERSIAN_ARABIC_3D_FONT_FAMILY : undefined;
+  return lang && RTL_SCRIPT_LANGS.has(lang)
+    ? PERSIAN_ARABIC_3D_FONT_FAMILY
+    : undefined;
 }
 
 export const AVAILABLE_FONTS: FontDef[] = [
@@ -192,7 +196,7 @@ export const AVAILABLE_FONTS: FontDef[] = [
  */
 export function registerCustomFontUrl(label: string, url: string): string {
   const id = 'custom_' + url.replace(/[^a-z0-9]/gi, '_').slice(-40);
-  const existing = AVAILABLE_FONTS.find(f => f.id === id);
+  const existing = AVAILABLE_FONTS.find((f) => f.id === id);
   if (!existing) {
     AVAILABLE_FONTS.push({ id, label, urls: [url], isCustom: true });
   }
@@ -233,18 +237,34 @@ const defaultOptions: Partial<TextGeometryOptions> = {
  *   materialIndex 1 = straight walls   (|faceNormalZ| < BEVEL_NZ_THRESHOLD)
  *   materialIndex 2 = bevel chamfer    (between the two thresholds)
  */
-const CAP_NZ_THRESHOLD   = 0.95; // faces nearly parallel to the XY plane
+const CAP_NZ_THRESHOLD = 0.95; // faces nearly parallel to the XY plane
 const BEVEL_NZ_THRESHOLD = 0.15; // faces nearly perpendicular to Z
 
-function faceNormalZ(pos: ArrayLike<number>, i0: number, i1: number, i2: number): number {
-  const ax = pos[i0*3], ay = pos[i0*3+1];
-  const bx = pos[i1*3], by = pos[i1*3+1], bz = pos[i1*3+2];
-  const cx = pos[i2*3], cy = pos[i2*3+1], cz = pos[i2*3+2];
-  const az = pos[i0*3+2];
-  const ex = bx-ax, ey = by-ay, ez = bz-az;
-  const fx = cx-ax, fy = cy-ay, fz = cz-az;
-  const nx = ey*fz - ez*fy, ny = ez*fx - ex*fz, nz = ex*fy - ey*fx;
-  const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+function faceNormalZ(
+  pos: ArrayLike<number>,
+  i0: number,
+  i1: number,
+  i2: number,
+): number {
+  const ax = pos[i0 * 3],
+    ay = pos[i0 * 3 + 1];
+  const bx = pos[i1 * 3],
+    by = pos[i1 * 3 + 1],
+    bz = pos[i1 * 3 + 2];
+  const cx = pos[i2 * 3],
+    cy = pos[i2 * 3 + 1],
+    cz = pos[i2 * 3 + 2];
+  const az = pos[i0 * 3 + 2];
+  const ex = bx - ax,
+    ey = by - ay,
+    ez = bz - az;
+  const fx = cx - ax,
+    fy = cy - ay,
+    fz = cz - az;
+  const nx = ey * fz - ez * fy,
+    ny = ez * fx - ex * fz,
+    nz = ex * fy - ey * fx;
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
   return len < 1e-10 ? 0 : nz / len;
 }
 
@@ -260,28 +280,33 @@ function reclassifyBevelGroups(geo: BufferGeometry): void {
 
   for (const g of geo.groups) {
     for (let i = g.start; i < g.start + g.count; i += 3) {
-      const i0 = src[i], i1 = src[i+1], i2 = src[i+2];
+      const i0 = src[i],
+        i1 = src[i + 1],
+        i2 = src[i + 2];
       const nz = Math.abs(faceNormalZ(pos, i0, i1, i2));
       if (nz >= CAP_NZ_THRESHOLD) {
-        capIdx.push(i0, i1, i2);   // front/back face caps
+        capIdx.push(i0, i1, i2); // front/back face caps
       } else if (nz >= BEVEL_NZ_THRESHOLD) {
         bevelIdx.push(i0, i1, i2); // bevel chamfer
       } else {
-        wallIdx.push(i0, i1, i2);  // straight extrusion walls
+        wallIdx.push(i0, i1, i2); // straight extrusion walls
       }
     }
   }
 
   const newIdx = new IndexCtor(src.length);
   let ptr = 0;
-  const capStart   = ptr; for (const v of capIdx)   newIdx[ptr++] = v;
-  const wallStart  = ptr; for (const v of wallIdx)  newIdx[ptr++] = v;
-  const bevelStart = ptr; for (const v of bevelIdx) newIdx[ptr++] = v;
+  const capStart = ptr;
+  for (const v of capIdx) newIdx[ptr++] = v;
+  const wallStart = ptr;
+  for (const v of wallIdx) newIdx[ptr++] = v;
+  const bevelStart = ptr;
+  for (const v of bevelIdx) newIdx[ptr++] = v;
 
   geo.setIndex(new BufferAttribute(newIdx, 1));
   geo.clearGroups();
-  if (capIdx.length > 0)   geo.addGroup(capStart,   capIdx.length,   0); // → zoneMaterials[0]
-  if (wallIdx.length > 0)  geo.addGroup(wallStart,  wallIdx.length,  1); // → zoneMaterials[1]
+  if (capIdx.length > 0) geo.addGroup(capStart, capIdx.length, 0); // → zoneMaterials[0]
+  if (wallIdx.length > 0) geo.addGroup(wallStart, wallIdx.length, 1); // → zoneMaterials[1]
   if (bevelIdx.length > 0) geo.addGroup(bevelStart, bevelIdx.length, 2); // → zoneMaterials[2]
 }
 
@@ -289,7 +314,8 @@ function makeZoneMaterial(
   base: MeshStandardMaterial,
   zone: ZoneMaterialProps,
 ): MeshStandardMaterial | MeshPhysicalMaterial {
-  const needsPhysical = zone.iridescence !== undefined || zone.clearcoat !== undefined;
+  const needsPhysical =
+    zone.iridescence !== undefined || zone.clearcoat !== undefined;
   const opts: any = {
     color: zone.color ?? base.color.clone(),
     metalness: zone.metalness ?? base.metalness,
@@ -342,7 +368,7 @@ function measureTextAdvance(text: string, font: Font, size: number): number {
   let width = 0;
 
   for (const char of text) {
-    const glyph = glyphs[char] ?? glyphs["?"];
+    const glyph = glyphs[char] ?? glyphs['?'];
     if (glyph?.ha !== undefined) {
       width += glyph.ha;
     }
@@ -394,7 +420,8 @@ const BUNDLED_FONT_DATA: Record<string, unknown> = {
 async function loadFont(fontId = DEFAULT_3D_FONT_FAMILY): Promise<Font> {
   if (fontCache.has(fontId)) return fontCache.get(fontId)!;
 
-  const def = AVAILABLE_FONTS.find(f => f.id === fontId) ?? AVAILABLE_FONTS[0];
+  const def =
+    AVAILABLE_FONTS.find((f) => f.id === fontId) ?? AVAILABLE_FONTS[0];
 
   const bundledData = BUNDLED_FONT_DATA[def.id];
   if (bundledData) {
@@ -435,7 +462,8 @@ export interface CreateTextGeometryResult {
   /** Base material (extrusion walls, materialIndex 0). */
   material: MeshStandardMaterial;
   /** Face-cap material (letter face + back cap, materialIndex 1). Undefined when no faceZone. */
-  faceMaterial?: MeshStandardMaterial | MeshPhysicalMaterial | MeshBasicMaterial;
+  faceMaterial?:
+    MeshStandardMaterial | MeshPhysicalMaterial | MeshBasicMaterial;
   /** Bevel material (chamfer, materialIndex 2). Undefined when no bevelZone. */
   bevelMaterial?: MeshStandardMaterial | MeshPhysicalMaterial;
 }
@@ -448,14 +476,21 @@ export interface CreateTextGeometryResult {
  * render loop, so it's the part that runs inside utils/text-geometry.worker.ts;
  * createTextGeometry below is the only intended caller of the worker.
  */
-export async function buildTextGroup(options: TextGeometryOptions): Promise<Group> {
-  const mergedOptions = { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) };
+export async function buildTextGroup(
+  options: TextGeometryOptions,
+): Promise<Group> {
+  const mergedOptions = {
+    ...defaultOptions,
+    ...Object.fromEntries(
+      Object.entries(options).filter(([_, v]) => v !== undefined),
+    ),
+  };
   // Always reclassify so each zone has its own materialIndex regardless of
   // whether the caller supplied explicit zone overrides.
   const needsReclassify = true;
   const fontIdToUse = mergedOptions.fontFamily ?? DEFAULT_3D_FONT_FAMILY;
   const rawLines = mergedOptions.text!.split('\n');
-  const hasBold = rawLines.some(l => /<b>/i.test(l));
+  const hasBold = rawLines.some((l) => /<b>/i.test(l));
   // Strip tags for measurement; raw lines used for bold-aware rendering below.
   // The Vazirmatn font id implies Persian/Arabic content (see fontFamilyForLang) —
   // reshape each line into the font's presentation-form glyphs and reverse it
@@ -464,13 +499,19 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
   // string, which would also reverse line order) — see utils/persian-text.ts.
   const lines = rawLines
     .map(stripBoldTags)
-    .map((line) => (fontIdToUse === PERSIAN_ARABIC_3D_FONT_FAMILY ? reshapeForRtlDisplay(line) : line));
+    .map((line) =>
+      fontIdToUse === PERSIAN_ARABIC_3D_FONT_FAMILY
+        ? reshapeForRtlDisplay(line)
+        : line,
+    );
 
   try {
     const boldFontId = getBoldFontId(fontIdToUse);
     const [font, boldFontOrNull] = await Promise.all([
       loadFont(fontIdToUse),
-      hasBold && boldFontId !== fontIdToUse ? loadFont(boldFontId).catch(() => null) : Promise.resolve(null),
+      hasBold && boldFontId !== fontIdToUse
+        ? loadFont(boldFontId).catch(() => null)
+        : Promise.resolve(null),
     ]);
     const boldFont = boldFontOrNull ?? font;
 
@@ -481,7 +522,10 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
     // First pass: calculate natural widths (bold-aware so equalization factors are accurate)
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
-      if (!line.trim()) { lineWidths.push(0); continue; }
+      if (!line.trim()) {
+        lineWidths.push(0);
+        continue;
+      }
       const rawLine = rawLines[lineIndex];
       if (/<b>/i.test(rawLine)) {
         // Measure each segment with its proper font so bold glyphs (wider) are accounted for
@@ -510,9 +554,8 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
             segFont,
             mergedOptions.size!,
           );
-          totalWidth += advanceWidth > 0 || !seg.text.trim()
-            ? advanceWidth
-            : visualWidth;
+          totalWidth +=
+            advanceWidth > 0 || !seg.text.trim() ? advanceWidth : visualWidth;
           geo.dispose();
         }
         lineWidths.push(totalWidth);
@@ -529,7 +572,9 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
           bevelSegments: mergedOptions.bevelSegments,
         } as any);
         geometry.computeBoundingBox();
-        const width = (geometry.boundingBox?.max.x ?? 0) - (geometry.boundingBox?.min.x ?? 0);
+        const width =
+          (geometry.boundingBox?.max.x ?? 0) -
+          (geometry.boundingBox?.min.x ?? 0);
         lineWidths.push(width);
         geometry.dispose();
       }
@@ -545,19 +590,30 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
 
     // Create the main group for all lines
     const mainGroup = new Group();
-    const lineGeometries: { geometry: TextGeometry | Group; minY: number; maxY: number }[] = [];
+    const lineGeometries: {
+      geometry: TextGeometry | Group;
+      minY: number;
+      maxY: number;
+    }[] = [];
 
     // Second pass: create geometries with equalization
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       const factor = equalizationFactors[lineIndex];
 
-      if (mergedOptions.equalizationMethod === 'fontSize' || !mergedOptions.equalizeLineWidths) {
+      if (
+        mergedOptions.equalizationMethod === 'fontSize' ||
+        !mergedOptions.equalizeLineWidths
+      ) {
         // Empty line → use a blank spacer (no visible geometry, but correct spacing)
         if (!line.trim()) {
           const spacerGroup = new Group();
           const emptySize = mergedOptions.size! * factor;
-          lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: emptySize * 0.8 });
+          lineGeometries.push({
+            geometry: spacerGroup,
+            minY: 0,
+            maxY: emptySize * 0.8,
+          });
           continue;
         }
 
@@ -575,17 +631,29 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
             bevelOffset: mergedOptions.bevelOffset,
             bevelSegments: mergedOptions.bevelSegments,
           };
-          const segInfos: { geo: TextGeometry; advanceWidth: number; minY: number; maxY: number }[] = [];
+          const segInfos: {
+            geo: TextGeometry;
+            advanceWidth: number;
+            minY: number;
+            maxY: number;
+          }[] = [];
           let totalAdvanceWidth = 0;
           for (const seg of segments) {
             const segFont = seg.bold ? boldFont : font;
-            const geo = new TextGeometry(seg.text, { font: segFont as any, ...geoParams } as any);
+            const geo = new TextGeometry(seg.text, {
+              font: segFont as any,
+              ...geoParams,
+            } as any);
             geo.computeBoundingBox();
             const { visualWidth, minY, maxY } = getTextGeometryBounds(
               geo,
               effectiveSize,
             );
-            const advanceWidth = measureTextAdvance(seg.text, segFont, effectiveSize);
+            const advanceWidth = measureTextAdvance(
+              seg.text,
+              segFont,
+              effectiveSize,
+            );
             const layoutWidth =
               advanceWidth > 0 || !seg.text.trim() ? advanceWidth : visualWidth;
             segInfos.push({ geo, advanceWidth: layoutWidth, minY, maxY });
@@ -603,16 +671,23 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
             lineMinY = Math.min(lineMinY, minY);
             lineMaxY = Math.max(lineMaxY, maxY);
           }
-          const renderedBox = lineGroup.children.length > 0
-            ? new Box3().setFromObject(lineGroup)
-            : new Box3(new Vector3(0, 0, 0), new Vector3(0, effectiveSize, 0));
+          const renderedBox =
+            lineGroup.children.length > 0
+              ? new Box3().setFromObject(lineGroup)
+              : new Box3(
+                  new Vector3(0, 0, 0),
+                  new Vector3(0, effectiveSize, 0),
+                );
           const hasRenderedBounds =
             Number.isFinite(renderedBox.min.x) &&
             Number.isFinite(renderedBox.max.x) &&
             Number.isFinite(renderedBox.min.y) &&
             Number.isFinite(renderedBox.max.y);
           if (hasRenderedBounds) {
-            lineGroup.position.x = -((renderedBox.min.x + renderedBox.max.x) / 2);
+            lineGroup.position.x = -(
+              (renderedBox.min.x + renderedBox.max.x) /
+              2
+            );
           }
           lineGeometries.push({
             geometry: lineGroup,
@@ -649,12 +724,18 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
         // Empty line in spacing mode → spacer
         if (!line.trim()) {
           const spacerGroup = new Group();
-          lineGeometries.push({ geometry: spacerGroup, minY: 0, maxY: mergedOptions.size! * 0.8 });
+          lineGeometries.push({
+            geometry: spacerGroup,
+            minY: 0,
+            maxY: mergedOptions.size! * 0.8,
+          });
           continue;
         }
         // Spacing mode: create per-character geometries with extra gaps
         const naturalWidth = lineWidths[lineIndex];
-        const extraSpace = (mergedOptions.targetWidth! - naturalWidth) / Math.max(1, line.length - 1);
+        const extraSpace =
+          (mergedOptions.targetWidth! - naturalWidth) /
+          Math.max(1, line.length - 1);
         const lineGroup = new Group();
         let cursorX = 0;
 
@@ -666,7 +747,10 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
               size: mergedOptions.size,
             } as any);
             spaceGeo.computeBoundingBox();
-            cursorX += (spaceGeo.boundingBox!.max.x - spaceGeo.boundingBox!.min.x) + extraSpace;
+            cursorX +=
+              spaceGeo.boundingBox!.max.x -
+              spaceGeo.boundingBox!.min.x +
+              extraSpace;
             spaceGeo.dispose();
             continue;
           }
@@ -684,7 +768,8 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
           } as any);
 
           charGeometry.computeBoundingBox();
-          const charWidth = charGeometry.boundingBox!.max.x - charGeometry.boundingBox!.min.x;
+          const charWidth =
+            charGeometry.boundingBox!.max.x - charGeometry.boundingBox!.min.x;
           charGeometry.translate(cursorX, 0, 0);
           if (needsReclassify) reclassifyBevelGroups(charGeometry);
           const charMesh = new Mesh(charGeometry);
@@ -693,24 +778,39 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
         }
 
         // Compute actual bbox of the assembled line
-        const box = lineGroup.children.length > 0
-          ? new Box3().setFromObject(lineGroup)
-          : new Box3(new Vector3(0, 0, 0), new Vector3(0, mergedOptions.size!, 0));
+        const box =
+          lineGroup.children.length > 0
+            ? new Box3().setFromObject(lineGroup)
+            : new Box3(
+                new Vector3(0, 0, 0),
+                new Vector3(0, mergedOptions.size!, 0),
+              );
         const centerX = (box.max.x + box.min.x) / 2;
         lineGroup.position.x = -centerX;
-        lineGeometries.push({ geometry: lineGroup, minY: box.min.y, maxY: box.max.y });
+        lineGeometries.push({
+          geometry: lineGroup,
+          minY: box.min.y,
+          maxY: box.max.y,
+        });
       }
     }
 
     // Stack lines so the visual gap between bottom of line[i] and top of line[i+1] = lineSpacing
     const origins = new Array<number>(lineGeometries.length).fill(0);
     for (let i = 1; i < lineGeometries.length; i++) {
-      origins[i] = origins[i - 1] + lineGeometries[i - 1].minY - mergedOptions.lineSpacing! - lineGeometries[i].maxY;
+      origins[i] =
+        origins[i - 1] +
+        lineGeometries[i - 1].minY -
+        mergedOptions.lineSpacing! -
+        lineGeometries[i].maxY;
     }
-    const totalTop = lineGeometries.length > 0 ? origins[0] + lineGeometries[0].maxY : 0;
-    const totalBottom = lineGeometries.length > 0
-      ? origins[lineGeometries.length - 1] + lineGeometries[lineGeometries.length - 1].minY
-      : 0;
+    const totalTop =
+      lineGeometries.length > 0 ? origins[0] + lineGeometries[0].maxY : 0;
+    const totalBottom =
+      lineGeometries.length > 0
+        ? origins[lineGeometries.length - 1] +
+          lineGeometries[lineGeometries.length - 1].minY
+        : 0;
     const centerY = (totalTop + totalBottom) / 2;
 
     for (let i = 0; i < lineGeometries.length; i++) {
@@ -727,10 +827,13 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
     }
 
     // Shift so letter face is at z=0 and extrusion goes into screen (-Z)
-    mainGroup.position.z = -(mergedOptions.height! + (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0));
+    mainGroup.position.z = -(
+      mergedOptions.height! +
+      (mergedOptions.bevelEnabled ? (mergedOptions.bevelThickness ?? 0) : 0)
+    );
     return mainGroup;
   } catch (error) {
-    console.error("Failed to load font, creating fallback geometry:", error);
+    console.error('Failed to load font, creating fallback geometry:', error);
 
     // Fallback: create simple extruded text using basic shapes
     const mainGroup = new Group();
@@ -772,17 +875,19 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
       const lineGroup = new Group();
 
       let currentX = 0;
-      const letterSpacing = mergedOptions.equalizationMethod === 'spacing'
-        ? baseLetterSpacing * factor
-        : baseLetterSpacing;
+      const letterSpacing =
+        mergedOptions.equalizationMethod === 'spacing'
+          ? baseLetterSpacing * factor
+          : baseLetterSpacing;
 
-      const charSize = mergedOptions.equalizationMethod === 'fontSize'
-        ? mergedOptions.size! * factor
-        : mergedOptions.size!;
+      const charSize =
+        mergedOptions.equalizationMethod === 'fontSize'
+          ? mergedOptions.size! * factor
+          : mergedOptions.size!;
 
       for (let i = 0; i < line.length; i++) {
         const char = line[i];
-        if (char === " ") {
+        if (char === ' ') {
           currentX += letterSpacing * 0.5;
           continue;
         }
@@ -807,7 +912,8 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
       lineGroup.position.x = -center.x;
 
       // Position vertically
-      const yOffset = (lines.length - 1) * lineSpacing / 2 - lineIndex * lineSpacing;
+      const yOffset =
+        ((lines.length - 1) * lineSpacing) / 2 - lineIndex * lineSpacing;
       lineGroup.position.y = yOffset;
 
       mainGroup.add(lineGroup);
@@ -826,8 +932,13 @@ export async function buildTextGroup(options: TextGeometryOptions): Promise<Grou
  * Shared by createTextGeometry and prefetchTextGeometry so the two can never
  * compute a different cache key for what's meant to be the same request.
  */
-function toWorkerRequest(mergedOptions: TextGeometryOptions): { geometryOptions: WorkerGeometryOptions; customFontUrl?: string } {
-  const fontDef = AVAILABLE_FONTS.find((f) => f.id === mergedOptions.fontFamily);
+function toWorkerRequest(mergedOptions: TextGeometryOptions): {
+  geometryOptions: WorkerGeometryOptions;
+  customFontUrl?: string;
+} {
+  const fontDef = AVAILABLE_FONTS.find(
+    (f) => f.id === mergedOptions.fontFamily,
+  );
   const customFontUrl = fontDef?.isCustom ? fontDef.urls[0] : undefined;
   return {
     geometryOptions: {
@@ -850,8 +961,15 @@ function toWorkerRequest(mergedOptions: TextGeometryOptions): { geometryOptions:
   };
 }
 
-function mergeTextGeometryOptions(options: TextGeometryOptions): TextGeometryOptions {
-  return { ...defaultOptions, ...Object.fromEntries(Object.entries(options).filter(([_, v]) => v !== undefined)) } as TextGeometryOptions;
+function mergeTextGeometryOptions(
+  options: TextGeometryOptions,
+): TextGeometryOptions {
+  return {
+    ...defaultOptions,
+    ...Object.fromEntries(
+      Object.entries(options).filter(([_, v]) => v !== undefined),
+    ),
+  } as TextGeometryOptions;
 }
 
 /**
@@ -862,7 +980,9 @@ function mergeTextGeometryOptions(options: TextGeometryOptions): TextGeometryOpt
  * settles once this one build is done, so a caller precomputing many slides
  * at once (see app/(tabs)/three-d.tsx) can await the whole batch.
  */
-export function prefetchTextGeometry(options: TextGeometryOptions): Promise<void> {
+export function prefetchTextGeometry(
+  options: TextGeometryOptions,
+): Promise<void> {
   const mergedOptions = mergeTextGeometryOptions(options);
   const { geometryOptions, customFontUrl } = toWorkerRequest(mergedOptions);
   return prefetchGeometryInWorker(geometryOptions, customFontUrl);
@@ -906,7 +1026,7 @@ export async function createTextGeometry(
   // Pass an explicit faceZone to override with a full PBR material.
   const faceMaterial = faceZone
     ? makeZoneMaterial(baseMaterial, faceZone)
-    : new MeshBasicMaterial({ color: new Color(0x000000) });
+    : new MeshBasicMaterial({ color: color.clone() });
   // No envMapImmune flag needed — MeshBasicMaterial is naturally immune.
   faceMaterial.userData.envMapImmune = true;
 
