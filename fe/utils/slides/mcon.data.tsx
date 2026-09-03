@@ -3,6 +3,11 @@ export { MCON_VISUAL_PARAMS } from '@/utils/mcon.config';
 export type { MantraEntry, MantraText } from '@/utils/mcon.config';
 
 export const MANTRAS: Record<string, MantraEntry> = {
+  'program my mind': {
+    sentiment: 'growth',
+    emotion: 'focus',
+    style: 'neon',
+  },
   'program my mind early, program often': {},
 
   'Be honest with myself, instead of in denial or ignorance': {
@@ -80,11 +85,6 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'be good at\nfigureouting': {},
   "9 women can't\n have a baby\n in 1 month": {},
   'accept or overcome or workarounds/hacks': {},
-  'program my mind': {
-    sentiment: 'growth',
-    emotion: 'focus',
-    style: 'neon',
-  },
   'mind like water': {
     sentiment: 'calm',
     emotion: 'peace',
@@ -326,6 +326,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   '840 productive\nminutes per day': {},
   'minimum effective dose': {},
+
   'minimum viable product': {},
   'release early, release often': {},
   'unique value proposition': {},
