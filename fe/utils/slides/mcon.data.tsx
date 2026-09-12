@@ -3,13 +3,18 @@ export { MCON_VISUAL_PARAMS } from '@/utils/mcon.config';
 export type { MantraEntry, MantraText } from '@/utils/mcon.config';
 
 export const MANTRAS: Record<string, MantraEntry> = {
-  'program my mind': {
+  'program my mind for success and to avoid unnecessary suffering': {
     sentiment: 'growth',
     emotion: 'focus',
     style: 'neon',
   },
   'program my mind early, program often': {},
-
+  '7 levels of Consciousness': {},
+  '<b>Creator</b> Consciousness': {},
+  'Non-attachment': {},
+  'Practice non-judgement': {},
+  'WTP Music': {},
+  'Pławię się w swojej świadomości': {},
   'Be honest with myself, instead of in denial or ignorance': {
     examples:
       'Am I running like a headless chicken and constantly changing music, instead of steady focus?',
@@ -18,6 +23,9 @@ export const MANTRAS: Record<string, MantraEntry> = {
     examples: 'Work and providing value in capitalism',
   },
   'Be in here and now': {},
+  'Get into the space between thoughts': {
+    // sourse: Deepak Chopra
+  },
   "Don't dramatize": {},
   'Smile :-)': {},
   'Agape - unconditional love': {},
@@ -45,15 +53,16 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'attract, do not chase': {},
-  'When a decision is not clear, choose randomly.': {},
+  'When a decision is not clear, choose randomly. Especially if I can change the choice.': {},
   'visualize desired outcomes': {
     categories: { motivation: {} },
   },
-  'outcome independence, focus on the process, effort and the journey, adventure, experiences': {
-    categories: { motivation: {} },
-  },
+  'outcome independence, focus on the process, effort and the journey, adventure, experiences':
+    {
+      categories: { motivation: {} },
+    },
   'I apply Pareto principle (80/20, 90/10)': {},
-  'use kanban': {
+  'Use Kanban': {
     categories: { motivation: { intensityPercent: 50 } },
   },
   'patience and patient progress': {
@@ -66,7 +75,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'Confident body language': {},
-  metaperfection: {
+  'Meta-meta-perfection': {
     categories: { motivation: {} },
   },
   'be flexible': {},
@@ -79,7 +88,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   "I'm just a glue code to run as part of the LLM loops": {},
   'think on paper': {},
   'have a «thinking rock»': {},
-  'plan time and time-track': {},
+  'plan time (but not over-plan) and time-track': {},
   'reduce context switching as much as possible': {},
   'batching but not over-batching': {},
   'trust the system': {},
@@ -91,17 +100,17 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'peace',
     style: 'organic',
   },
-  resilience: {
+  'Resilience (as part of the game)': {
     sentiment: 'hardcore',
     emotion: 'grit',
     style: 'metallic',
   },
-  strength: {
+  'Strength (as part of the game)': {
     sentiment: 'hardcore',
     emotion: 'grit',
     style: 'metallic',
   },
-  'push yourself': {
+  'Push yourself (as part of the game)': {
     sentiment: 'hardcore',
     emotion: 'grit',
     style: 'metallic',
@@ -143,7 +152,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   'Capitalism - provide value': {},
   'fire in the stomach': {},
-  'abundance mentality, instead of scarcity': {},
+  'Abundance mentality, instead of scarcity': {},
   'greed is good': {},
   'self-control': {},
   'self-mastery': {},
@@ -151,7 +160,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   /**/ 'swiss-cheese': {},
   /**/ 'divide and conquer': {},
   /**/ 'compulsion to closure': {},
-  'software&mind empire': {},
+  'software&mind&content empire': {},
   'MIND<b>OS</b>': {},
   'RIGHT MINDSET': {},
   'The journey is a reward': {},
@@ -160,7 +169,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'everything is part of the game': {},
   'obstacles is what you start to see when you take your mind off your goals':
     {},
-  'not time management\nbut manage\nyourself in time': {},
+  'not time management\nbut manage\nyourself&energy in time': {},
   'N-minute\nrule': {},
   '1% better a day\n= 37x a year': {},
   kaizens: {
@@ -169,19 +178,20 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Follow your ikigai': {
     categories: { motivation: {}, inspiration: {} },
   },
-  'pause and plan, not fight-or-flight-or freeze': {},
+  'pause and plan (but not over-plan), not fight-or-flight-or freeze': {},
   'turn anxieties\ninto motivators\nfor calm but decisive\naction': {},
   'surfing the anxieties': {},
   'surfing the urges': {},
   'Feeling of positive urgency': {},
-  'do mental katas (e.g. surfing)': {},
+  'do mental katas (e.g. surfing the x)': {},
   "work on myself\nit's work too": {},
   'the virtues of play': {},
   'watch out for premature/overkill optimizations, perfectionism': {},
   'anarcho-capitalism\nblack&yellow': {},
-  'visualize camper van and MacBook Pro and cool stuff': {
+  'visualize camper van and MacBook Pro and cool stuff, BD Parties': {
     categories: { motivation: {}, inspiration: {} },
   },
+  'find life bottlenecks (e.g. getting up - reflux?) and optimize': {},
   'praise the subconscious mind after even small successes': {},
   'micro-fun in your mind': {},
   'micro-celebrations': {},
@@ -290,6 +300,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Billy Carson Formula': {},
   reinterpretation: {},
   'Not problems, but <b>challenges</b>': {},
+  'Look at challenges as a beautiful intricate beings': {},
   'labelling of emotions and situations': {},
   'exponential improvements and growth': {},
   'I have known\nmany problems,\nmost of which\nnever happened': {
@@ -301,11 +312,11 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Positive Qualia Advantage': {},
   'Quick prototyping also has psychological value': {},
   'constant improvement and learning': {},
-  'to earn more i gotta learn more': {},
+  'To earn more I gotta learn more': {},
   'sharpen the saw': {},
-  'sampling of gratifications': {},
+  'sampling of gratifications (even as visualizations)': {},
   'self-discipline but not self-oppression': {},
-  'simplicity is the\nultimate sophistication.\nsimple but\nnot primitive.': {
+  'simplicity is the ultimate sophistication. simple but not primitive.': {
     sentiment: 'calm',
     emotion: 'sophistication',
     style: 'minimalist',
@@ -315,12 +326,13 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'optimism',
     style: 'organic',
   },
-  'self-love': {
+  'self-love (but malignant narcissism)': {
     sentiment: 'loving',
     emotion: 'compassion',
     style: 'warm',
   },
-  'flow state': {
+  'Focus on the what and why, let the Universe handle the "how".': {},
+  'Flow State - Discipline and Surrender': {
     sentiment: 'focus',
     emotion: 'immersion',
     style: 'neon',
@@ -329,11 +341,13 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'minimum effective dose': {},
 
   'minimum viable product': {},
+  "Put on different hats. Don't think only like a developer.": {},
+  'Use the best tool(s) for the job(s).': {},
   'release early, release often': {},
   'unique value proposition': {},
   'have to -> want to': {},
   'towards-state': {},
-  'Zapierdalac. Be like Elon and Martin and Tudor.': {},
+  'Zapierdalac. Be like Elon and Martin and RH and Tudor.': {},
   'Regrets minimization principle': {},
   'What gets measured, gets managed': { author: 'Peter Drucker' },
 };
