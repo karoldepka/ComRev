@@ -3,6 +3,7 @@ export { MCON_VISUAL_PARAMS } from '@/utils/mcon.config';
 export type { MantraEntry, MantraText } from '@/utils/mcon.config';
 
 export const MANTRAS: Record<string, MantraEntry> = {
+  "Work on myself - it's the most important work": {},
   'program my mind for success and to avoid unnecessary suffering': {
     sentiment: 'growth',
     emotion: 'focus',
@@ -24,7 +25,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   'Be in here and now': {},
   'Get into the space between thoughts': {
-    // sourse: Deepak Chopra
+    // source: Deepak Chopra
   },
   "Don't dramatize": {},
   'Smile :-)': {},
@@ -68,7 +69,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'patience and patient progress': {
     categories: { motivation: {} },
   },
-  'Perfect is the enemy of done': {
+  'Perfect is an enemy of done': {
     categories: { motivation: {} },
   },
   'believe in myself': {
@@ -79,12 +80,16 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'be flexible': {},
-  'delaying and dosage and right kind, not denying, of gratification': {},
+  'delaying and dosage and right kind, not denying, of gratification, and no self-oppression': {},
   'exploit parallelisms': {
-    categories: { motivation: {} },
+    categories: { efficiency: {} },
   },
-  'fake it till you make it': {},
-  'no headless chicken': {},
+  'fake it till you make it': {
+    categories: { confidence: {} },
+  },
+  'no headless chicken': {
+    categories: { effectiveness: {} },
+  },
   "I'm just a glue code to run as part of the LLM loops": {},
   'think on paper': {},
   'have a «thinking rock»': {},
@@ -125,6 +130,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'determination',
     style: 'metallic',
   },
+  'Work with Energies': {},
   persistence: {
     sentiment: 'hardcore',
     emotion: 'determination',
@@ -135,12 +141,12 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'alertness',
     style: 'bold',
   },
-  'invest in you inc.': {
+  'invest in Me Inc.': {
     sentiment: 'growth',
     emotion: 'ambition',
     style: 'clean',
   },
-  'be the best\nversion\nof yourself': {
+  'be the best\nversion\nof myself': {
     sentiment: 'growth',
     emotion: 'inspiration',
     style: 'warm',
@@ -160,7 +166,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   /**/ 'swiss-cheese': {},
   /**/ 'divide and conquer': {},
   /**/ 'compulsion to closure': {},
-  'software&mind&content empire': {},
+  'software & mind & content empire': {},
   'MIND<b>OS</b>': {},
   'RIGHT MINDSET': {},
   'The journey is a reward': {},
@@ -169,7 +175,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'everything is part of the game': {},
   'obstacles is what you start to see when you take your mind off your goals':
     {},
-  'not time management\nbut manage\nyourself&energy in time': {},
+  'not time management\nbut manage\nyourself & energy in time': {},
   'N-minute\nrule': {},
   '1% better a day\n= 37x a year': {},
   kaizens: {
@@ -178,13 +184,12 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Follow your ikigai': {
     categories: { motivation: {}, inspiration: {} },
   },
-  'pause and plan (but not over-plan), not fight-or-flight-or freeze': {},
+  'pause and plan (but not over-plan), not fight-or-flight-or-freeze': {},
   'turn anxieties\ninto motivators\nfor calm but decisive\naction': {},
   'surfing the anxieties': {},
   'surfing the urges': {},
   'Feeling of positive urgency': {},
   'do mental katas (e.g. surfing the x)': {},
-  "work on myself\nit's work too": {},
   'the virtues of play': {},
   'watch out for premature/overkill optimizations, perfectionism': {},
   'anarcho-capitalism\nblack&yellow': {},
@@ -300,6 +305,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Billy Carson Formula': {},
   reinterpretation: {},
   'Not problems, but <b>challenges</b>': {},
+  'Treat challenges as a beautiful piece of art. Look at it from every side.': {},
   'Look at challenges as a beautiful intricate beings': {},
   'labelling of emotions and situations': {},
   'exponential improvements and growth': {},
