@@ -185,7 +185,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {}, inspiration: {} },
   },
   'pause and plan (but not over-plan), not fight-or-flight-or-freeze': {},
-  'turn anxieties\ninto motivators\nfor calm but decisive\naction': {},
+  'turn anxieties into motivators for calm but decisive action': {},
   'surfing the anxieties': {},
   'surfing the urges': {},
   'Feeling of positive urgency': {},
@@ -238,7 +238,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'joy',
     style: 'disco',
   },
-  'will to psi power': {
+  'will to Psi power': {
     sentiment: 'hardcore',
     emotion: 'empowerment',
     style: 'neon',
@@ -305,8 +305,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Billy Carson Formula': {},
   reinterpretation: {},
   'Not problems, but <b>challenges</b>': {},
-  'Treat challenges as a beautiful piece of art. Look at it from every side.': {},
-  'Look at challenges as a beautiful intricate beings': {},
+  'Look at challenges as beautiful intricate beings, pieces of art. Look at it from every side.': {},
   'labelling of emotions and situations': {},
   'exponential improvements and growth': {},
   'I have known\nmany problems,\nmost of which\nnever happened': {
@@ -321,7 +320,9 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'To earn more I gotta learn more': {},
   'Master AI Content Generation.': {},
   'sharpen the saw': {},
-  'sampling of gratifications (even as visualizations)': {},
+  'sampling of gratifications (even as visualizations)': {
+    categories: { motivation: {} },
+  },
   'self-discipline but not self-oppression': {},
   'simplicity is the ultimate sophistication. simple but not primitive.': {
     sentiment: 'calm',
@@ -333,7 +334,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'optimism',
     style: 'organic',
   },
-  'self-love (but malignant narcissism)': {
+  'self-love (but not malignant narcissism)': {
     sentiment: 'loving',
     emotion: 'compassion',
     style: 'warm',
