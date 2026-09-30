@@ -81,7 +81,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'be flexible': {},
-  'delaying and dosage and right kind, not denying, of gratification, and no self-oppression': {},
+  'delaying and dosage and right kind, and deals, not denying, of gratification, and no self-oppression': {},
   'exploit parallelisms': {
     categories: { efficiency: {} },
   },
