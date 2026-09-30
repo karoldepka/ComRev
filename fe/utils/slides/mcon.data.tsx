@@ -27,6 +27,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Get into the space between thoughts': {
     // source: Deepak Chopra
   },
+  "Integration Phase": {},
   "Don't dramatize": {},
   'Smile :-)': {},
   'Agape - unconditional love': {},
@@ -105,6 +106,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'peace',
     style: 'organic',
   },
+  'No resistence to Existence': {},
   'Resilience (as part of the game)': {
     sentiment: 'hardcore',
     emotion: 'grit',
@@ -358,4 +360,6 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'Zapierdalac. Be like Elon and Martin and RH and Tudor.': {},
   'Regrets minimization principle': {},
   'What gets measured, gets managed': { author: 'Peter Drucker' },
+  'Mark where I finished reading / processing': {},
+  'I have enjoyed the war': {},
 };
