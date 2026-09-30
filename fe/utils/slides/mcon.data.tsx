@@ -12,6 +12,12 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'program my mind early, program often': {},
   '7 levels of Consciousness': {},
   '<b>Creator</b> Consciousness': {},
+  'Focus on the what and why, let the Universe handle the "how".': {},
+  'Flow State - Discipline and Surrender': {
+    sentiment: 'focus',
+    emotion: 'immersion',
+    style: 'neon',
+  },
   'Non-attachment': {},
   'Practice non-judgement': {},
   'WTP Music': {},
@@ -98,10 +104,18 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'have a «thinking rock»': {
     categories: { clarity: {} },
   },
-  'prioritize and plan time (but not over-plan) and time-track': {},
-  'reduce context switching as much as possible': {},
-  'batching but not over-batching': {},
-  'trust the system': {},
+  'prioritize and plan time (but not over-plan) and time-track': {
+    categories: { effectiveness: {} },
+  },
+  'reduce context switching as much as possible': {
+    categories: { efficiency: {} },
+  },
+  'batching but not over-batching': {
+    categories: { efficiency: {} },
+  },
+  'trust the system': {
+    categories: { confidence: {} },
+  },
   'be good at\nfigureouting': {},
   "9 women can't\n have a baby\n in 1 month": {},
   'accept or overcome or workarounds/hacks': {},
@@ -109,6 +123,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     sentiment: 'calm',
     emotion: 'peace',
     style: 'organic',
+    // categories: { clarity}
   },
   'No resistence to Existence': {},
   'Resilience (as part of the game)': {
@@ -162,9 +177,13 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'wonder',
     style: 'dreamy',
   },
-  'Capitalism - provide value': {},
-  'fire in the stomach': {},
-  'Abundance mentality, instead of scarcity': {},
+  'Capitalism - provide value (as part of The Game)': {},
+  'fire in the stomach': {
+    categories: { motivation: {}}
+  },
+  'Abundance mentality, instead of scarcity': {
+    categories: { motivation: {}}
+  },
   'greed is good (but things are ephemeral, so practice non-attachment)': {},
   'self-control': {},
   'self-mastery': {},
@@ -320,13 +339,13 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'dare to dream': {},
   'Do spine traction for back pain': {},
   'happiness advantage': {},
-  'Positive Qualia Advantage': {},
+  'Positive Qualia (/Dharma?) Advantage': {},
   'Quick prototyping also has psychological value': {},
   'constant improvement and learning': {},
   'To earn more I gotta learn more': {},
-  'Master AI Content Generation.': {},
+  'Master AI Contents Generation.': {},
   'sharpen the saw': {},
-  'sampling of gratifications (even as visualizations)': {
+  '<b>sampling</b> of gratifications (even as visualizations)': {
     categories: { motivation: {} },
   },
   'self-discipline but not self-oppression': {},
@@ -345,15 +364,8 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'compassion',
     style: 'warm',
   },
-  'Focus on the what and why, let the Universe handle the "how".': {},
-  'Flow State - Discipline and Surrender': {
-    sentiment: 'focus',
-    emotion: 'immersion',
-    style: 'neon',
-  },
   '840 productive\nminutes per day': {},
   'minimum effective dose': {},
-
   'minimum viable product': {},
   "Put on different hats. Don't think only like a developer.": {},
   'Use the best tool(s) for the job(s).': {},
