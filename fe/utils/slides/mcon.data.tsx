@@ -10,6 +10,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     style: 'neon',
   },
   'program my mind early, program often': {},
+  'Chodzi o to, żeby było miło': {},
   '7 levels of Consciousness': {},
   '<b>Creator</b> Consciousness': {},
   'Focus on the what and why, let the Universe handle the "how".': {},
