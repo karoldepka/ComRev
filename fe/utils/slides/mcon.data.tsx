@@ -74,7 +74,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'believe in myself': {
-    categories: { motivation: {} },
+    categories: { confidence: {} },
   },
   'Confident body language': {},
   'Meta-meta-perfection': {
@@ -92,9 +92,13 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { effectiveness: {} },
   },
   "I'm just a glue code to run as part of the LLM loops": {},
-  'think on paper': {},
-  'have a «thinking rock»': {},
-  'plan time (but not over-plan) and time-track': {},
+  'think on paper': {
+    categories: { clarity: {} },
+  },
+  'have a «thinking rock»': {
+    categories: { clarity: {} },
+  },
+  'prioritize and plan time (but not over-plan) and time-track': {},
   'reduce context switching as much as possible': {},
   'batching but not over-batching': {},
   'trust the system': {},
