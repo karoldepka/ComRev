@@ -235,6 +235,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   'find life bottlenecks (e.g. getting up - reflux?) and optimize': {},
   'praise the Subconscious Mind after even small successes': {},
+  'baby steps': {},
   'micro-fun in your mind': {},
   'micro-celebrations': {},
   'micro-gratifications': {},
@@ -293,7 +294,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     style: 'grid',
     categories: { efficiency: {} },
   },
-  '<b>Internalize</b> ideas, beliefs, values, qualities': {
+  '<b>Internalize</b> ideas, beliefs, values, qualities. Allocate time and energy and focus to let them sink in.': {
     sentiment: 'growth',
     emotion: 'wisdom',
     style: 'classic',
