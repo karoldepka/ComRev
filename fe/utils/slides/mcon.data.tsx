@@ -11,10 +11,12 @@ export const MANTRAS: Record<string, MantraEntry> = {
   },
   'program my mind early, program often': {},
   'Chodzi o to, żeby było miło': {},
+  'Chodzi o duszę': {},
   'Reduce friction for good habits, and increase friction for bad habits': {},
   '7 levels of Consciousness': {},
   '<b>Creator</b> Consciousness': {},
   'Focus on the what and why, let the Universe handle the "how".': {},
+  'Wu wei': {},
   'Flow State - Discipline and Surrender': {
     sentiment: 'focus',
     emotion: 'immersion',
@@ -53,10 +55,14 @@ export const MANTRAS: Record<string, MantraEntry> = {
     categories: { motivation: {} },
   },
   'Internal locus of control': {},
+  'Do not be afraid to ask for help when necessary (including prayer)': {},
   'breathe well, with diaphragm': {
     categories: { motivation: {} },
   },
   'unconditional good mood': {
+    categories: { motivation: {} },
+  },
+  'happiness is progress on a worthwhile goal': {
     categories: { motivation: {} },
   },
   'face my fears to flush them out': {
@@ -67,6 +73,10 @@ export const MANTRAS: Record<string, MantraEntry> = {
   'visualize desired outcomes': {
     categories: { motivation: {} },
   },
+  'watch out for "he who is good with a hammer, sees nails everywhere"':
+    {
+      categories: { motivation: {} },
+    },
   'outcome independence, focus on the process, effort and the journey, adventure, experiences':
     {
       categories: { motivation: {} },
@@ -356,7 +366,7 @@ export const MANTRAS: Record<string, MantraEntry> = {
     emotion: 'sophistication',
     style: 'minimalist',
   },
-  'glass is half full': {
+  'Glass is half full. Optimism.': {
     sentiment: 'loving',
     emotion: 'optimism',
     style: 'organic',
