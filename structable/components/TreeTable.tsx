@@ -17,7 +17,6 @@ import RowDeleteConfirmDialog from './RowDeleteConfirmDialog';
 import ColumnPropertiesDialog, { type ColumnPropertiesPayload } from './ColumnPropertiesDialog';
 import AiFillDialog from './AiFillDialog';
 import AiFillClassesDialog from './AiFillClassesDialog';
-import JobsIndicator from './JobsIndicator';
 import { useJobs } from '../hooks/useJobs';
 import CellContent from './CellContent';
 import RatingStars from './RatingStars';
@@ -25,6 +24,7 @@ import SyncIndicator from './SyncIndicator';
 import { rowVal } from '../utils/rowVal';
 import { useAllRowSearch } from '../hooks/useAllRowSearch';
 import GlobalSearchDialog from './tree-table/GlobalSearchDialog';
+import TableFooter from './tree-table/TableFooter';
 import RowClassEditor from './RowClassEditor';
 import type { PickerItem } from './ItemPicker';
 import { colFilterParam } from '../utils/columnFilters';
@@ -2253,69 +2253,25 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           </table>
         </div>
       </div>
-      <div className="table-note">
-        <span>{total.toLocaleString()} rows — page {page} of {totalPages}</span>
-        <button
-          type="button"
-          className="ai-fill-trigger-button"
-          onClick={() => setShowAiFill(true)}
-          title="Fill columns using AI"
-        >
-          ✦ AI Fill
-        </button>
-        <button
-          type="button"
-          className="ai-fill-trigger-button"
-          onClick={() => setShowAiFillClasses(true)}
-          title="Auto-assign Classes using local Ollama"
-        >
-          ✦ AI Fill Classes
-        </button>
-        <JobsIndicator jobs={jobs} actions={jobActions} />
-        <span style={{ marginLeft: '1rem' }}>
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>← Prev</button>
-          {' '}
-          <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next →</button>
-        </span>
-        <label style={{ marginLeft: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          Rows per page:
-          <select
-            value={perPage}
-            onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
-            style={{ fontSize: '0.82rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 4px', background: 'var(--surface)', color: 'var(--app-fg)', cursor: 'pointer' }}
-          >
-            {[25, 50, 100, 250, 500, 1000].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        {hiddenRowIds.size > 0 && (
-          <span style={{ marginLeft: '1rem', color: '#64748b', fontSize: '0.81rem' }}>
-            {hiddenRowIds.size} row{hiddenRowIds.size !== 1 ? 's' : ''} hidden
-          </span>
-        )}
-        {(!showRowNumbers || hiddenColumns.length > 0) && (
-          <span className="hidden-columns-controls">
-            Hidden:{' '}
-            {!showRowNumbers && (
-              <button key={ROW_NUM_COL_ID} type="button" className="show-column-button" onClick={() => setShowRowNumbers(true)}>
-                #
-              </button>
-            )}
-            {hiddenColumns.map((id: string) => {
-              const col = allLeafColumns.find((c: Column) => c.id === id);
-              return (
-                <button key={id} type="button" className="show-column-button" onClick={() => showColumn(id)}>
-                  {col?.label ?? id}
-                </button>
-              );
-            })}
-            {(hiddenColumns.length > 0 || !showRowNumbers) && (
-              <button type="button" className="show-all-button" onClick={() => { showAllColumns(); setShowRowNumbers(true); }}>Show all</button>
-            )}
-          </span>
-        )}
-      </div>
+      <TableFooter
+        total={total}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        perPage={perPage}
+        onPerPageChange={(n) => { setPerPage(n); setPage(1); }}
+        hiddenRowCount={hiddenRowIds.size}
+        hiddenColumnIds={hiddenColumns}
+        allLeafColumns={allLeafColumns}
+        showRowNumbers={showRowNumbers}
+        onShowRowNumbers={() => setShowRowNumbers(true)}
+        onShowColumn={showColumn}
+        onShowAll={() => { showAllColumns(); setShowRowNumbers(true); }}
+        onAiFill={() => setShowAiFill(true)}
+        onAiFillClasses={() => setShowAiFillClasses(true)}
+        jobs={jobs}
+        jobActions={jobActions}
+      />
       </>
       )}
       {cellMenu && (
