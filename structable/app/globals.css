@@ -1612,3 +1612,14 @@ tr.row-deleting {
 .cv-table tr:nth-child(even) td {
   background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 }
+
+/* CopilotSidebar wraps the page in block divs; keep the flex height chain intact
+   so the table scroller gets a bounded height (body is overflow-hidden).
+   Outside @layer on purpose: Tailwind purges layered classes not found in our sources. */
+.copilotKitSidebarContentWrapper,
+.copilotKitModalChildrenWrapper {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  min-height: 0;
+}
