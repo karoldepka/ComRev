@@ -4,6 +4,14 @@ import { isRatingColumnType } from '../RatingStars';
 import type { ColType } from '../../utils/columnFilters';
 import logger from '../../utils/logger';
 import type { ApiCustomColumn, DataRow } from '../../types/table';
+import type { StoredSort } from '../../services/localStore';
+
+/** `sort` query param for the rows API: `col:dir[:type]`. */
+export function sortParam(sort: StoredSort, customColumns: ApiCustomColumn[]): string {
+  const sortColumn = customColumns.find((cc) => cc.id === sort.col);
+  const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
+  return sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`;
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 

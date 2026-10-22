@@ -23,16 +23,8 @@ import CellContent from './CellContent';
 import RatingStars from './RatingStars';
 import SyncIndicator from './SyncIndicator';
 import { rowVal } from '../utils/rowVal';
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandShortcut,
-} from './ui/command';
+import { useAllRowSearch } from '../hooks/useAllRowSearch';
+import GlobalSearchDialog from './tree-table/GlobalSearchDialog';
 import RowClassEditor from './RowClassEditor';
 import type { PickerItem } from './ItemPicker';
 import { colFilterParam } from '../utils/columnFilters';
@@ -70,14 +62,9 @@ import {
   getColumnDepth,
   buildHeaderRows,
   applyColumnGroups,
+  sortParam,
 } from './tree-table/columns';
-import {
-  type GlobalSearchResult,
-  searchText,
-  rowTitle,
-  truncateText,
-  includesNeedle,
-} from './tree-table/search';
+import { type GlobalSearchResult, rowTitle, buildGlobalSearchResults } from './tree-table/search';
 import {
   errMsg,
   dragSelectKeyFromTarget,
@@ -115,13 +102,6 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   // ── Global search ──────────────────────────────────────────────────────────
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
-  const [allRowSearch, setAllRowSearch] = useState<{
-    query: string;
-    loading: boolean;
-    rows: DataRow[];
-    total: number;
-    error: string | null;
-  }>({ query: '', loading: false, rows: [], total: 0, error: null });
   const [pendingSearchTarget, setPendingSearchTarget] = useState<{ rowId: string; columnId: string | null } | null>(null);
   const [pendingSearchColumnId, setPendingSearchColumnId] = useState<string | null>(null);
 
@@ -140,16 +120,6 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  useEffect(() => {
-    if (!isGlobalSearchOpen) return;
-    const focusTimer = setTimeout(() => {
-      const input = document.querySelector<HTMLInputElement>('[cmdk-input]');
-      input?.focus();
-      input?.select();
-    }, 0);
-    return () => clearTimeout(focusTimer);
-  }, [isGlobalSearchOpen]);
 
   useEffect(() => {
     if (searchOpenRequest <= 0) return;
@@ -414,12 +384,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
 
     setLoading(true);
     setFetchError(null);
-    const sortColumn = customColumnsRef.current.find((cc) => cc.id === sort.col);
-    const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
     const params = new URLSearchParams({
       page: String(page),
       per_page: String(perPage),
-      sort: sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`,
+      sort: sortParam(sort, customColumnsRef.current),
     });
     Object.entries(filters).forEach(([k, v]) => params.set(k, v));
     api.fetchDataRows(tableId, params, aborter.signal)
@@ -693,7 +661,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       left += columnWidths[col.id] ?? col.width ?? 120;
     }
     return map;
-  }, [visibleLeafColumns, columnWidths, showRowNumbers]);
+  }, [visibleLeafColumns, columnWidths, showRowNumbers, rowNumColWidth]);
   const headerRows = useMemo(
     () => buildHeaderRows(columns, getColumnDepth(columns), hiddenSet),
     [columns, hiddenSet],
@@ -825,151 +793,21 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     return rowVal(row, col.id, col.sourcePath);
   }, [compiledExprs, rowClasses]);
 
-  useEffect(() => {
-    if (!api || !isGlobalSearchOpen || globalSearchTerm.length === 0) {
-      setAllRowSearch({ query: globalSearchTerm, loading: false, rows: [], total: 0, error: null });
-      return;
-    }
+  const allRowSearch = useAllRowSearch({
+    api, enabled: isGlobalSearchOpen, term: globalSearchTerm, tableId, filters, sort, customColumns,
+  });
 
-    let active = true;
-    setAllRowSearch((prev) => ({
-      query: globalSearchTerm,
-      loading: prev.query !== globalSearchTerm || prev.loading,
-      rows: prev.query === globalSearchTerm ? prev.rows : [],
-      total: prev.query === globalSearchTerm ? prev.total : 0,
-      error: null,
-    }));
-
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams({
-        page: '1',
-        per_page: '20',
-        q: globalSearchTerm,
-      });
-      Object.entries(filters).forEach(([key, value]) => {
-        if (key !== 'q') params.set(key, value);
-      });
-      const sortColumn = customColumns.find((cc) => cc.id === sort.col);
-      const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
-      params.set('sort', sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`);
-
-      api.fetchDataRows(tableId, params)
-        .then((payload) => {
-          if (!active) return;
-          setAllRowSearch({
-            query: globalSearchTerm,
-            loading: false,
-            rows: payload.data,
-            total: payload.total,
-            error: null,
-          });
-        })
-        .catch((err: unknown) => {
-          if (!active) return;
-          setAllRowSearch({
-            query: globalSearchTerm,
-            loading: false,
-            rows: [],
-            total: 0,
-            error: errMsg(err),
-          });
-        });
-    }, 180);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [api, isGlobalSearchOpen, globalSearchTerm, sort, tableId, customColumns, filters]);
-
-  const globalSearchResults = useMemo<GlobalSearchResult[]>(() => {
-    if (globalSearchNeedle.length === 0) return [];
-
-    const columnResults: GlobalSearchResult[] = allLeafColumns
-      .filter((col) => `${col.label} ${col.id}`.toLowerCase().includes(globalSearchNeedle))
-      .slice(0, 8)
-      .map((col) => ({
-        id: `column:${col.id}`,
-        kind: 'column' as const,
-        columnId: col.id,
-        title: col.label,
-        detail: hiddenSet.has(col.id) ? 'Column hidden' : 'Column',
-        hidden: hiddenSet.has(col.id),
-      }));
-
-    const displayedResults: GlobalSearchResult[] = [];
-    for (let rowIndex = 0; rowIndex < treeRows.length && displayedResults.length < 16; rowIndex++) {
-      const { row, rowId } = treeRows[rowIndex];
-      if (!rowId) continue;
-      for (const col of visibleLeafColumns) {
-        const value = cellSearchValue(row, col);
-        if (!includesNeedle(value, globalSearchNeedle)) continue;
-        displayedResults.push({
-          id: `displayed:${rowId}:${col.id}`,
-          kind: 'displayed-row',
-          rowIndex,
-          rowId,
-          columnId: col.id,
-          title: rowTitle(row),
-          detail: `${col.label}: ${truncateText(searchText(value))}`,
-        });
-        break;
-      }
-    }
-
-    const loadedRowIds = new Set(rows.map((row) => String(row['id'] ?? '')).filter(Boolean));
-    const allRowResults: GlobalSearchResult[] = [];
-    for (const row of allRowSearch.query === globalSearchTerm ? allRowSearch.rows : []) {
-      const rowId = String(row['id'] ?? '');
-      if (!rowId || loadedRowIds.has(rowId)) continue;
-      let matchedColumn: Column | undefined;
-      let matchedValue: unknown;
-      for (const col of allLeafColumns) {
-        const value = cellSearchValue(row, col);
-        if (includesNeedle(value, globalSearchNeedle)) {
-          matchedColumn = col;
-          matchedValue = value;
-          break;
-        }
-      }
-      allRowResults.push({
-        id: `all:${rowId}:${matchedColumn?.id ?? ''}`,
-        kind: 'all-row',
-        rowId,
-        columnId: matchedColumn?.id ?? null,
-        title: rowTitle(row),
-        detail: matchedColumn
-          ? `${matchedColumn.label}: ${truncateText(searchText(matchedValue))}`
-          : 'All rows',
-      });
-      if (allRowResults.length >= 16) break;
-    }
-
-    return [...columnResults, ...displayedResults, ...allRowResults];
-  }, [
+  const globalSearchResults = useMemo(() => buildGlobalSearchResults({
+    needle: globalSearchNeedle,
     allLeafColumns,
-    allRowSearch,
-    cellSearchValue,
-    globalSearchNeedle,
-    globalSearchTerm,
-    hiddenSet,
-    rows,
-    treeRows,
     visibleLeafColumns,
-  ]);
+    hiddenColumnIds: hiddenSet,
+    treeRows,
+    loadedRows: rows,
+    serverRows: allRowSearch.query === globalSearchTerm ? allRowSearch.rows : [],
+    cellSearchValue,
+  }), [allLeafColumns, allRowSearch, cellSearchValue, globalSearchNeedle, globalSearchTerm, hiddenSet, rows, treeRows, visibleLeafColumns]);
 
-  const columnSearchResults = useMemo(
-    () => globalSearchResults.filter((result) => result.kind === 'column'),
-    [globalSearchResults],
-  );
-  const displayedRowSearchResults = useMemo(
-    () => globalSearchResults.filter((result) => result.kind === 'displayed-row'),
-    [globalSearchResults],
-  );
-  const allRowSearchResults = useMemo(
-    () => globalSearchResults.filter((result) => result.kind === 'all-row'),
-    [globalSearchResults],
-  );
   const addRowParentRows = useMemo(() => {
     const parentIds = addRowRelation?.parentIds ?? [];
     if (parentIds.length === 0) return [];
@@ -1842,73 +1680,14 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     <>
       <SyncIndicator pendingUploads={pendingUploads} isDownloading={isDownloading} pendingChanges={displayChanges} />
       {isGlobalSearchOpen && (
-        <CommandDialog open={isGlobalSearchOpen} onOpenChange={(open) => (open ? setIsGlobalSearchOpen(true) : closeGlobalSearch())}>
-          <Command shouldFilter={false}>
-            <div className="flex items-center border-b border-app-border">
-              <CommandInput
-                value={globalSearchQuery}
-                onValueChange={setGlobalSearchQuery}
-                placeholder="Search columns and rows"
-              />
-              <CommandShortcut className="mr-3 hidden rounded-app border border-app-border bg-app-soft px-2 py-1 font-semibold tracking-normal sm:inline-block">
-                Ctrl Alt F
-              </CommandShortcut>
-            </div>
-            <CommandList>
-              {globalSearchTerm.length > 0 && columnSearchResults.length > 0 && (
-                <CommandGroup heading="Columns">
-                  {columnSearchResults.map((result) => (
-                    <CommandItem
-                      key={result.id}
-                      value={result.id}
-                      onSelect={() => activateGlobalSearchResult(result)}
-                    >
-                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold">{result.title}</span>
-                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-app-muted">{result.detail}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-              {globalSearchTerm.length > 0 && displayedRowSearchResults.length > 0 && (
-                <CommandGroup heading="Displayed Rows">
-                  {displayedRowSearchResults.map((result) => (
-                    <CommandItem
-                      key={result.id}
-                      value={result.id}
-                      onSelect={() => activateGlobalSearchResult(result)}
-                    >
-                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold">{result.title}</span>
-                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-app-muted">{result.detail}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-              {globalSearchTerm.length > 0 && allRowSearchResults.length > 0 && (
-                <CommandGroup heading="All Rows">
-                  {allRowSearchResults.map((result) => (
-                    <CommandItem
-                      key={result.id}
-                      value={result.id}
-                      onSelect={() => activateGlobalSearchResult(result)}
-                    >
-                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold">{result.title}</span>
-                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-app-muted">{result.detail}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-              {globalSearchTerm.length > 0 && globalSearchResults.length === 0 && !allRowSearch.loading && !allRowSearch.error && (
-                <CommandEmpty>No matches</CommandEmpty>
-              )}
-              {globalSearchTerm.length > 0 && allRowSearch.loading && (
-                <div className="px-3 py-4 text-sm text-app-muted">Searching all rows...</div>
-              )}
-              {globalSearchTerm.length > 0 && allRowSearch.error && (
-                <div className="px-3 py-4 text-sm text-app-danger">All-row search failed: {allRowSearch.error}</div>
-              )}
-            </CommandList>
-          </Command>
-        </CommandDialog>
+        <GlobalSearchDialog
+          query={globalSearchQuery}
+          onQueryChange={setGlobalSearchQuery}
+          results={globalSearchResults}
+          allRowSearch={allRowSearch}
+          onActivate={activateGlobalSearchResult}
+          onClose={closeGlobalSearch}
+        />
       )}
       {rows.length === 0 && columns.length === 0 ? (
         fetchError
@@ -2637,11 +2416,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           tableId={tableId}
           jobActions={jobActions}
           onClose={() => setShowAiFillClasses(false)}
-          sort={(() => {
-            const sortColumn = customColumns.find((cc) => cc.id === sort.col);
-            const sortType = sortColumn?.data_types?.[0] ?? sort.colType ?? sortColumn?.types?.[0];
-            return sortType ? `${sort.col}:${sort.dir}:${sortType}` : `${sort.col}:${sort.dir}`;
-          })()}
+          sort={sortParam(sort, customColumns)}
         />
       )}
       {classEditorState && (
