@@ -362,6 +362,14 @@ function includesNeedle(value: unknown, needle: string): boolean {
   return searchText(value).toLowerCase().includes(needle);
 }
 
+/** Body-cell key under a mouse target, or null when drag-select should not apply there. */
+function dragSelectKeyFromTarget(target: EventTarget): string | null {
+  if (!(target instanceof HTMLElement)) return null;
+  if (target.closest('input, textarea, select, button, a, [contenteditable], [role="textbox"], .resizer')) return null;
+  const key = target.closest<HTMLElement>('[data-key]')?.dataset.key;
+  return key?.startsWith('cell:') ? key : null;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -1052,6 +1060,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     selectedSet, selectedRows, selectedCols,
     addRowIsSelected,
     selectKey: selectKeyHook, moveCursor,
+    beginDrag, extendDrag, endDrag,
     cursorToKey: cursorToKeyFn,
   } = useTableSelection(allColumnsForSelection, leafHeaderKeyWithVirtual, treeRows.length);
 
@@ -1518,6 +1527,36 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
 
     e.preventDefault();
     window.getSelection()?.removeAllRanges();
+  }, []);
+
+  // Drag-select body cells; Ctrl/Cmd-drag adds the range to the current selection.
+  const suppressNextClickRef = useRef(false);
+
+  const handleTableMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.shiftKey || e.button !== 0) return;
+    const key = dragSelectKeyFromTarget(e.target);
+    if (!key) return;
+    beginDrag(key, e.ctrlKey || e.metaKey);
+    const onMouseUp = () => {
+      window.removeEventListener('mouseup', onMouseUp);
+      if (!endDrag()) return;
+      // A click may still fire on the start cell (mouse back where it began); don't let it toggle/reset.
+      suppressNextClickRef.current = true;
+      setTimeout(() => { suppressNextClickRef.current = false; }, 0);
+    };
+    window.addEventListener('mouseup', onMouseUp);
+  }, [beginDrag, endDrag]);
+
+  const handleTableMouseOver = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.buttons !== 1) return;
+    const key = dragSelectKeyFromTarget(e.target);
+    if (key && extendDrag(key)) window.getSelection()?.removeAllRanges();
+  }, [extendDrag]);
+
+  const handleTableClickCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClickRef.current) return;
+    suppressNextClickRef.current = false;
+    e.stopPropagation();
   }, []);
 
   const restoreEditCursor = useCallback((rowIndex: number, colId: string) => {
@@ -2178,6 +2217,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           tabIndex={0}
           onKeyDown={handleTableKeyDown}
           onMouseDownCapture={handleTableMouseDownCapture}
+          onMouseDown={handleTableMouseDown}
+          onMouseOver={handleTableMouseOver}
+          onClickCapture={handleTableClickCapture}
           style={{ outline: 'none' }}
         >
           <table className="tree-table">

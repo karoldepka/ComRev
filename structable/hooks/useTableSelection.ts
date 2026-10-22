@@ -78,6 +78,37 @@ export function useTableSelection(
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [cursorPos, setCursorPos] = useState<CursorPos | null>(null);
   const anchorPosRef = useRef<CursorPos | null>(null);
+  const selectedKeysRef = useRef(selectedKeys);
+  selectedKeysRef.current = selectedKeys;
+  // Mouse drag-select: `base` is kept (Ctrl/Cmd-drag adds the range to the existing selection).
+  const dragRef = useRef<{ anchorKey: string; anchor: CursorPos; base: string[]; lastKey: string } | null>(null);
+
+  const beginDrag = useCallback((key: string, additive: boolean) => {
+    const anchor = keyToCursor(key, visibleLeafColumns, numRows);
+    if (!anchor) return;
+    dragRef.current = { anchorKey: key, anchor, base: additive ? selectedKeysRef.current : [], lastKey: key };
+  }, [visibleLeafColumns, numRows]);
+
+  /** Returns true once the drag has left its starting cell (i.e. it is a range drag, not a click). */
+  const extendDrag = useCallback((key: string): boolean => {
+    const drag = dragRef.current;
+    if (!drag || key === drag.lastKey) return !!drag && drag.lastKey !== drag.anchorKey;
+    const pos = keyToCursor(key, visibleLeafColumns, numRows);
+    if (!pos) return drag.lastKey !== drag.anchorKey;
+    drag.lastKey = key;
+    const range = keysInRange(drag.anchor, pos, visibleLeafColumns, leafHeaderKey, numRows);
+    setSelectedKeys([...new Set([...drag.base, ...range])]);
+    anchorPosRef.current = drag.anchor;
+    setCursorPos(pos);
+    return true;
+  }, [visibleLeafColumns, leafHeaderKey, numRows]);
+
+  /** Returns true if the finished drag was a range drag (the following click should be ignored). */
+  const endDrag = useCallback((): boolean => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    return !!drag && drag.lastKey !== drag.anchorKey;
+  }, []);
 
   const selectKey = useCallback((key: string, multi: boolean, shift?: boolean) => {
     const pos = keyToCursor(key, visibleLeafColumns, numRows);
@@ -129,6 +160,7 @@ export function useTableSelection(
     addRowIsSelected,
     selectKey,
     moveCursor,
+    beginDrag, extendDrag, endDrag,
     cursorToKey: (pos: CursorPos) =>
       cursorToKey(pos, visibleLeafColumns, leafHeaderKey, numRows),
   };
