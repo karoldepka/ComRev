@@ -6,11 +6,10 @@ import { nanoid } from 'nanoid';
 import { ChevronDown, ChevronRight, CircleDot } from 'lucide-react';
 import { getSyncClient, SyncClient } from '../services/syncClient';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
-import type { ColumnGroup } from '../hooks/useColumnPrefs';
 import { localStore } from '../services/localStore';
 import { useTableSelection } from '../hooks/useTableSelection';
 import ContextMenu from './ContextMenu';
-import AddColumnDialog, { type AddColumnPayload, type ColumnDataType } from './AddColumnDialog';
+import AddColumnDialog, { type AddColumnPayload } from './AddColumnDialog';
 import AddRowDialog from './AddRowDialog';
 import type { AddRowPayload } from './AddRowDialog';
 import ColumnDeleteConfirmDialog from './ColumnDeleteConfirmDialog';
@@ -21,7 +20,7 @@ import AiFillClassesDialog from './AiFillClassesDialog';
 import JobsIndicator from './JobsIndicator';
 import { useJobs } from '../hooks/useJobs';
 import CellContent from './CellContent';
-import RatingStars, { isRatingColumnType } from './RatingStars';
+import RatingStars from './RatingStars';
 import SyncIndicator from './SyncIndicator';
 import { rowVal } from '../utils/rowVal';
 import {
@@ -36,339 +35,53 @@ import {
 } from './ui/command';
 import RowClassEditor from './RowClassEditor';
 import type { PickerItem } from './ItemPicker';
-import { colFilterParam, type ColType } from '../utils/columnFilters';
+import { colFilterParam } from '../utils/columnFilters';
 import logger from '../utils/logger';
 
 import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, DataRow, RowClass } from '../types/table';
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const ADD_COL_VIRTUAL_ID = '__add-col__';
-const ADD_COL_HEADER_KEY = `header:${ADD_COL_VIRTUAL_ID}:0`;
-const ADD_COL_VIRTUAL_COLUMN = { id: ADD_COL_VIRTUAL_ID, label: '+' };
-
-const ROW_NUM_COL_ID = '__row_num__';
-const ROW_NUM_COL_MIN_WIDTH = 40;
-
-const CLASSES_COL_ID = 'classes';
-const FULL_NAME_COL_ID = 'full_name';
-const ID_COL_ID = 'id';
-const PARENT_CHILD_FIELD_ID = 'parent_child';
-const TABLES_TABLE_ID = 'tables';
-const TABLES_TABLE_PATH = '/tables';
-const OPENABLE_TABLE_CELL_COLUMNS = new Set([ID_COL_ID, FULL_NAME_COL_ID]);
-
-// ── Local types ────────────────────────────────────────────────────────────────
-
-type Column = {
-  id: string;
-  label: string;
-  width?: number;
-  minWidth?: number;
-  customColumnId?: string;
-  readOnly?: boolean;
-  isFrozen?: boolean;
-  types?: string[];
-  filterType?: ColType | null;
-  sourcePath?: string[] | null;
-  subColumns?: Column[];
-};
-
-const CLASSES_COLUMN: Column = {
-  id: CLASSES_COL_ID,
-  label: 'Classes',
-  width: 160,
-  minWidth: 120,
-  readOnly: true,
-  types: ['jsonb'],
-};
-
-type HeaderCell = { column: Column; colSpan: number; rowSpan: number; depth: number };
-type TreeRow = {
-  row: DataRow;
-  rowId: string;
-  depth: number;
-  parentId: string | null;
-  childIds: string[];
-  hasChildren: boolean;
-  isExpanded: boolean;
-};
-
-// ── Utility functions ──────────────────────────────────────────────────────────
-
-function labelFor(key: string): string {
-  if (key === 'stars_diff') return 'Stars diff';
-  return key
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function columnLabel(cc: ApiCustomColumn): string {
-  const title = cc.title?.trim();
-  return title && title.length > 0 ? title : labelFor(cc.id);
-}
-
-function rowClassIds(row: DataRow | undefined): string[] {
-  const value = row?.[CLASSES_COL_ID];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-}
-
-function relationshipIds(row: DataRow | undefined, fieldId: string): string[] {
-  const value = row?.[fieldId];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-}
-
-function appendUniqueId(ids: string[], id: string): string[] {
-  return ids.includes(id) ? ids : [...ids, id];
-}
-
-function insertIdAfter(ids: string[], afterId: string | null | undefined, id: string): string[] {
-  const withoutId = ids.filter((candidate) => candidate !== id);
-  if (!afterId) return [...withoutId, id];
-  const idx = withoutId.indexOf(afterId);
-  if (idx < 0) return [...withoutId, id];
-  return [...withoutId.slice(0, idx + 1), id, ...withoutId.slice(idx + 1)];
-}
-
-function deriveColumns(row: DataRow): Column[] {
-  const keys = Object.keys(row);
-  const sorted = [
-    ...(keys.includes(FULL_NAME_COL_ID) ? [FULL_NAME_COL_ID] : []),
-    ...(keys.includes('name') ? ['name'] : []),
-    ...keys.filter((k) => k !== FULL_NAME_COL_ID && k !== 'name'),
-  ];
-  return sorted.map((key) => {
-    const val = row[key];
-    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
-      return {
-        id: key,
-        label: labelFor(key),
-        width: 80,
-        minWidth: 40,
-        subColumns: Object.keys(val as Record<string, unknown>).map((sub) => ({
-          id: `${key}__${sub}`,
-          label: sub,
-          width: 70,
-          minWidth: 40,
-          sourcePath: [key, sub],
-        })),
-      };
-    }
-    return { id: key, label: labelFor(key), width: 120, minWidth: 60, isFrozen: key === FULL_NAME_COL_ID };
-  });
-}
-
-function isColumnReadOnly(cc: ApiCustomColumn): boolean {
-  return cc.readOnly ?? cc.read_only ?? !(cc.is_editable ?? true);
-}
-
-function columnTypesForDataType(columnType: ColumnDataType): { types: string[]; data_types: string[] } {
-  if (columnType === 'rating') return { types: ['rating'], data_types: ['numeric'] };
-  return { types: ['text'], data_types: ['text'] };
-}
-
-function isRatingColumn(column: Column): boolean {
-  return isRatingColumnType(column.types);
-}
-
-function insertPositioned(
-  list: Column[],
-  col: Column,
-  positionBefore: string | null | undefined,
-  positionAfter: string | null | undefined,
-): void {
-  const afterIdx = positionAfter
-    ? list.findIndex((c) => c.id === positionAfter || c.customColumnId === positionAfter)
-    : -1;
-  if (afterIdx >= 0) {
-    list.splice(afterIdx + 1, 0, col);
-    return;
-  }
-  const beforeIdx = positionBefore
-    ? list.findIndex((c) => c.id === positionBefore || c.customColumnId === positionBefore)
-    : -1;
-  list.splice(beforeIdx >= 0 ? beforeIdx : list.length, 0, col);
-}
-
-function columnsFromMetadata(customColumns: ApiCustomColumn[], _rowSample?: DataRow): Column[] {
-  const colMap = new Map<string, Column>();
-  const syntheticRootIds = new Set<string>();
-  for (const cc of customColumns) {
-    if (!cc.id) {
-      logger.error({ column: cc }, 'custom column metadata missing id');
-      continue;
-    }
-    colMap.set(cc.id, {
-      id: cc.id,
-      customColumnId: cc.id,
-      label: columnLabel(cc),
-      width: 150,
-      minWidth: 60,
-      readOnly: isColumnReadOnly(cc),
-      isFrozen: cc.is_frozen ?? false,
-      types: cc.types ?? ['text'],
-      filterType: (cc.data_types?.[0] as ColType | undefined) ?? null,
-      sourcePath: cc.source_path ?? null,
-    });
-  }
-
-  const root: Column[] = [];
-  for (const cc of customColumns) {
-    const col = colMap.get(cc.id);
-    if (!col) continue;
-    const parentId = cc.parent_ids?.length ? cc.parent_ids[cc.parent_ids.length - 1] : null;
-    let parentCol = parentId ? colMap.get(parentId) : null;
-    if (parentId && !parentCol) {
-      parentCol = {
-        id: parentId,
-        customColumnId: parentId,
-        label: labelFor(parentId),
-        width: 150,
-        minWidth: 60,
-        readOnly: true,
-        subColumns: [],
-      };
-      colMap.set(parentId, parentCol);
-      syntheticRootIds.add(parentId);
-    }
-    if (parentCol) {
-      if (!parentCol.subColumns) parentCol.subColumns = [];
-      insertPositioned(parentCol.subColumns, col, cc.position_before, cc.position_after);
-    } else {
-      insertPositioned(root, col, cc.position_before, cc.position_after);
-    }
-  }
-  for (const id of syntheticRootIds) {
-    const col = colMap.get(id);
-    if (col) insertPositioned(root, col, null, null);
-  }
-  return root;
-}
-
-function getLeafColumns(cols: Column[]): Column[] {
-  return cols.flatMap((c) => (c.subColumns ? getLeafColumns(c.subColumns) : [c]));
-}
-
-function getVisibleLeafColumns(col: Column, hidden: Set<string>): Column[] {
-  if (!col.subColumns?.length) return hidden.has(col.id) ? [] : [col];
-  return col.subColumns.flatMap((ch) => getVisibleLeafColumns(ch, hidden));
-}
-
-function getColumnDepth(cols: Column[]): number {
-  return cols.reduce((d, c) => Math.max(d, c.subColumns ? 1 + getColumnDepth(c.subColumns) : 1), 0);
-}
-
-function buildHeaderRows(cols: Column[], maxDepth: number, hidden: Set<string>): HeaderCell[][] {
-  const rows: HeaderCell[][] = Array.from({ length: maxDepth }, () => []);
-
-  function traverse(col: Column, depth: number): { colSpan: number; visible: boolean } {
-    const isLeaf = !col.subColumns?.length;
-    if (isLeaf) {
-      if (hidden.has(col.id)) return { colSpan: 0, visible: false };
-      rows[depth - 1].push({ column: col, colSpan: 1, rowSpan: maxDepth - depth + 1, depth });
-      return { colSpan: 1, visible: true };
-    }
-    const childResults = col.subColumns!.map((ch) => traverse(ch, depth + 1));
-    const colSpan = childResults.reduce((s, r) => s + (r.visible ? r.colSpan : 0), 0);
-    if (colSpan === 0) return { colSpan: 0, visible: false };
-    rows[depth - 1].push({ column: col, colSpan, rowSpan: 1, depth });
-    return { colSpan, visible: true };
-  }
-
-  cols.forEach((c) => traverse(c, 1));
-  return rows.map((r) => r.filter((cell) => cell.colSpan > 0));
-}
-
-function applyColumnGroups(flatCols: Column[], groups: ColumnGroup[]): Column[] {
-  if (groups.length === 0) return flatCols;
-  const groupByChild = new Map<string, ColumnGroup>();
-  for (const g of groups) {
-    for (const cid of g.childIds) groupByChild.set(cid, g);
-  }
-  const result: Column[] = [];
-  const processedGroups = new Set<string>();
-  for (const col of flatCols) {
-    const group = groupByChild.get(col.id);
-    if (!group) { result.push(col); continue; }
-    if (processedGroups.has(group.id)) continue;
-    processedGroups.add(group.id);
-    const children = flatCols.filter((c) => group.childIds.includes(c.id));
-    result.push({ id: group.id, label: group.label, subColumns: children });
-  }
-  return result;
-}
-
-function errMsg(e: unknown): string {
-  const raw = e instanceof Error ? e.message : typeof e === 'string' ? e : String(e);
-  // Tonic gRPC-web errors: 'status: Unknown, message: "js api error: TypeError: Failed to fetch"'
-  if (raw.includes('js api error') && raw.includes('Failed to fetch')) return 'Cannot reach server';
-  return raw;
-}
-
-type GlobalSearchResult =
-  | {
-      id: string;
-      kind: 'column';
-      columnId: string;
-      title: string;
-      detail: string;
-      hidden: boolean;
-    }
-  | {
-      id: string;
-      kind: 'displayed-row';
-      rowIndex: number;
-      rowId: string;
-      columnId: string;
-      title: string;
-      detail: string;
-    }
-  | {
-      id: string;
-      kind: 'all-row';
-      rowId: string;
-      columnId: string | null;
-      title: string;
-      detail: string;
-    };
-
-function searchText(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  if (Array.isArray(value)) return value.map(searchText).filter(Boolean).join(' ');
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return '';
-    }
-  }
-  return String(value);
-}
-
-function rowTitle(row: DataRow): string {
-  const title = rowVal(row, FULL_NAME_COL_ID) ?? rowVal(row, 'fullName') ?? rowVal(row, 'name') ?? rowVal(row, 'title') ?? rowVal(row, 'id');
-  const text = searchText(title).trim();
-  return text || 'Untitled row';
-}
-
-function truncateText(text: string, max = 96): string {
-  const compact = text.replace(/\s+/g, ' ').trim();
-  return compact.length > max ? `${compact.slice(0, max - 1)}...` : compact;
-}
-
-function includesNeedle(value: unknown, needle: string): boolean {
-  return searchText(value).toLowerCase().includes(needle);
-}
-
-/** Body-cell key under a mouse target, or null when drag-select should not apply there. */
-function dragSelectKeyFromTarget(target: EventTarget): string | null {
-  if (!(target instanceof HTMLElement)) return null;
-  if (target.closest('input, textarea, select, button, a, [contenteditable], [role="textbox"], .resizer')) return null;
-  const key = target.closest<HTMLElement>('[data-key]')?.dataset.key;
-  return key?.startsWith('cell:') ? key : null;
-}
+import {
+  ADD_COL_VIRTUAL_ID,
+  ADD_COL_HEADER_KEY,
+  ADD_COL_VIRTUAL_COLUMN,
+  ROW_NUM_COL_ID,
+  ROW_NUM_COL_MIN_WIDTH,
+  CLASSES_COL_ID,
+  FULL_NAME_COL_ID,
+  PARENT_CHILD_FIELD_ID,
+  TABLES_TABLE_ID,
+  TABLES_TABLE_PATH,
+  OPENABLE_TABLE_CELL_COLUMNS,
+  type Column,
+  CLASSES_COLUMN,
+  type HeaderCell,
+  type TreeRow,
+  columnLabel,
+  rowClassIds,
+  relationshipIds,
+  appendUniqueId,
+  insertIdAfter,
+  deriveColumns,
+  isColumnReadOnly,
+  columnTypesForDataType,
+  isRatingColumn,
+  columnsFromMetadata,
+  getLeafColumns,
+  getVisibleLeafColumns,
+  getColumnDepth,
+  buildHeaderRows,
+  applyColumnGroups,
+} from './tree-table/columns';
+import {
+  type GlobalSearchResult,
+  searchText,
+  rowTitle,
+  truncateText,
+  includesNeedle,
+} from './tree-table/search';
+import {
+  errMsg,
+  dragSelectKeyFromTarget,
+} from './tree-table/dom';
 
 // ── Component ──────────────────────────────────────────────────────────────────
 

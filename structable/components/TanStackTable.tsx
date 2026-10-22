@@ -12,14 +12,11 @@ import {
 import type { DataRow } from '../types/table';
 import { formatCell } from '../utils/formatting';
 import TableToolbar from './TableToolbar';
+import { labelFor } from './tree-table/columns';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const helper = createColumnHelper<DataRow>();
-
-function labelFor(key: string): string {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export default function TanStackTable() {
   const [data, setData] = useState<DataRow[]>([]);
