@@ -292,6 +292,17 @@ impl PgStore {
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table full_name column({table_id}): {e}"))?;
 
+        // A never-edited row was last modified when it was created (not "unknown").
+        for sql in [
+            format!("ALTER TABLE {tname} ALTER COLUMN when_last_modified SET DEFAULT NOW()"),
+            format!("UPDATE {tname} SET when_last_modified = when_created WHERE when_last_modified IS NULL"),
+        ] {
+            sqlx::query(&sql)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("ensure_user_table when_last_modified({table_id}): {e}"))?;
+        }
+
         sqlx::query(&format!(
             "UPDATE {tname}
              SET full_name = COALESCE(
@@ -1368,6 +1379,8 @@ impl DataStore for PgStore {
         .await?
         .into_iter()
         .filter(|column| column.id != "full_name"));
+        // Audit fields last, after the user's own columns.
+        columns.extend(super::audit_columns());
         Ok(columns)
     }
 

@@ -24,12 +24,23 @@ type FormatCellOptions = {
   formatNumericStrings?: boolean;
 };
 
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+
+/** Date + time + the viewer's time zone, e.g. "25.10.2026, 16:18 CET". */
+const timestampFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit',
+  timeZoneName: 'short',
+});
+
+export function formatTimestamp(value: string): string {
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? value : timestampFormat.format(d);
+}
+
 export function formatCell(value: unknown, options: FormatCellOptions = {}): string {
   if (value === null || value === undefined) return '-';
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/.test(String(value))) {
-    const d = new Date(value as string);
-    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
-  }
+  if (ISO_TIMESTAMP.test(String(value))) return formatTimestamp(String(value));
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'number') return formatNumberWithSpaces(value);
   if (options.formatNumericStrings && typeof value === 'string') {

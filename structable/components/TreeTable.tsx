@@ -772,7 +772,9 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
         try {
           // eslint-disable-next-line no-new-func
           map.set(cc.id, new Function('row', `"use strict"; return (${cc.expression})`) as (row: DataRow) => unknown);
-        } catch { /* invalid expression */ }
+        } catch (err) {
+          logger.warn({ err, columnId: cc.id, expression: cc.expression }, 'invalid column expression; cells will show the raw value');
+        }
       }
     }
     return map;

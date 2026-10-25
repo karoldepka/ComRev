@@ -23,21 +23,19 @@ pub struct PendingOp {
     pub tx_id: Option<String>,
 }
 
-pub fn table_registry_columns() -> Vec<CustomColumn> {
-    [
-        ("id", "ID", "text"),
-        ("full_name", "Full Name", "text"),
-        ("description", "Description", "text"),
-        ("who_created", "Created by", "text"),
-        ("when_created", "Created", "timestamptz"),
-        ("who_last_modified", "Modified by", "text"),
-        ("when_last_modified", "Modified", "timestamptz"),
-        ("modify_count", "Modify count", "integer"),
-    ]
-    .into_iter()
-    .map(|(id, display, ty)| CustomColumn {
+/// Audit fields every object carries (physical columns on every row table and on `tables`).
+const AUDIT_COLUMNS: [(&str, &str, &str); 4] = [
+    ("when_created", "When Created", "timestamptz"),
+    ("when_last_modified", "When Last Modified", "timestamptz"),
+    ("who_created", "Who Created", "text"),
+    ("who_last_modified", "Who Last Modified", "text"),
+];
+
+/// A built-in (physical, non-custom) column definition; read-only unless changed by the caller.
+fn builtin_column(id: &str, title: &str, ty: &str) -> CustomColumn {
+    CustomColumn {
         id: id.to_string(),
-        title: Some(display.to_string()),
+        title: Some(title.to_string()),
         description: None,
         expression: None,
         position_before: None,
@@ -50,8 +48,23 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
         parent_ids: vec![],
         is_frozen: id == "full_name",
         ref_table_id: None,
-    })
-    .collect()
+    }
+}
+
+pub fn table_registry_columns() -> Vec<CustomColumn> {
+    let mut columns = vec![
+        builtin_column("id", "ID", "text"),
+        builtin_column("full_name", "Full Name", "text"),
+        builtin_column("description", "Description", "text"),
+    ];
+    columns.extend(audit_columns());
+    columns.push(builtin_column("modify_count", "Modify count", "integer"));
+    columns
+}
+
+/// Read-only audit columns (When Created, When Last Modified, Who Created, Who Last Modified).
+pub fn audit_columns() -> Vec<CustomColumn> {
+    AUDIT_COLUMNS.iter().map(|(id, title, ty)| builtin_column(id, title, ty)).collect()
 }
 
 /// Columns for the "tables" meta-table view.
@@ -73,20 +86,9 @@ pub fn table_view_columns() -> Vec<CustomColumn> {
 
 pub fn row_builtin_columns() -> Vec<CustomColumn> {
     vec![CustomColumn {
-        id: "full_name".to_string(),
-        title: Some("Full Name".to_string()),
         description: Some("Human-readable row name stored as a physical column.".to_string()),
-        expression: None,
-        position_before: None,
-        position_after: None,
         read_only: false,
-        types: vec!["text".to_string()],
-        source_path: None,
-        data_types: vec!["text".to_string()],
-        is_group: false,
-        parent_ids: vec![],
-        is_frozen: true,
-        ref_table_id: None,
+        ..builtin_column("full_name", "Full Name", "text")
     }]
 }
 
