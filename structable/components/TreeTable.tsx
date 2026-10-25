@@ -80,10 +80,12 @@ const GLOBAL_SEARCH_DEBOUNCE_MS = 250;
 type Props = {
   tableId: string;
   onRowClick?: (rowId: string) => void;
+  /** When set (e.g. on the Classes table), rows offer "Open as table". */
+  onOpenRowAsTable?: (rowId: string, title: string) => void;
   searchOpenRequest?: number;
 };
 
-export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }: Props) {
+export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searchOpenRequest = 0 }: Props) {
   const [api, setApi] = useState<SyncClient | null>(null);
   const [syncPending, setSyncPending] = useState(0);
   const [cellPending, setCellPending] = useState(0);
@@ -1410,6 +1412,12 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     onRowClick?.(target.rowId);
   }, [onRowClick, tableId]);
 
+  const openRowAsTable = useCallback((rowId: string) => {
+    if (!onOpenRowAsTable) return;
+    const row = rows.find((candidate) => String(candidate['id'] ?? '') === rowId);
+    onOpenRowAsTable(rowId, row ? rowTitle(row) : rowId);
+  }, [onOpenRowAsTable, rows]);
+
   const handleResizerPointerDown = (event: React.PointerEvent<HTMLDivElement>, columnId: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -2353,6 +2361,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           }
           onHideCols={hideColumns}
           onHideRows={hideRows}
+          onOpenRowAsTable={onOpenRowAsTable && cellMenu.targets.length === 1
+            ? () => openRowAsTable(cellMenu.targets[0].rowId)
+            : undefined}
           availableClasses={rowClasses}
           onClose={closeCellMenu}
         />
@@ -2362,6 +2373,11 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           className="row-object-menu"
           style={{ position: 'absolute', top: rowMenu.anchor.top, left: rowMenu.anchor.left }}
         >
+          {onOpenRowAsTable && (
+            <button type="button" onClick={() => { setRowMenu(null); openRowAsTable(rowMenu.rowId); }}>
+              Open as table
+            </button>
+          )}
           <button
             type="button"
             onClick={() => openAddChildDialog(rowMenu.rowId)}

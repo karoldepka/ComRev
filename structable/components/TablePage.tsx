@@ -37,6 +37,17 @@ export default function TablePage({ tableId }: Props) {
     router.push(`/t/${id}`);
   }, [router]);
 
+  /** A class's instances live in the table with the class's id; create it on first open. */
+  const openClassAsTable = useCallback((classId: string, className: string) => {
+    if (!tables.some((t) => t.id === classId)) {
+      getSyncClient()
+        .then((c) => c.createTable({ id: classId, title: className }))
+        .catch((err: unknown) => toast.error(`Failed to create table for class "${className}": ${err instanceof Error ? err.message : String(err)}`));
+      setTables((prev) => [...prev, { id: classId, title: className, tagline: null, description: null }]);
+    }
+    router.push(`/t/${classId}`);
+  }, [router, tables]);
+
   const handleRenameTable = useCallback((id: string, title: string) => {
     getSyncClient()
       .then((c) => c.patchTable(id, { title }))
@@ -87,6 +98,7 @@ export default function TablePage({ tableId }: Props) {
             tableId={tableId}
             searchOpenRequest={searchOpenRequest}
             onRowClick={tableId === 'tables' ? (id) => router.push(`/t/${id}`) : undefined}
+            onOpenRowAsTable={tableId === 'classes' ? openClassAsTable : undefined}
           />
         </div>
         {chatOpen && (

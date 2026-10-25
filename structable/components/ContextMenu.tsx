@@ -59,6 +59,8 @@ export type CellMenuProps = BaseProps & {
   setDraftText: (v: string) => void;
   onSetMode:    (m: 'menu' | 'note' | 'comment' | 'flag') => void;
   onOpenTarget?: (target: CellTarget) => void;
+  /** Open the target row as its own table (e.g. a class → table of its instances). */
+  onOpenRowAsTable?: () => void;
   onHideCols:   (colIds: string[]) => void;
   onHideRows:   (rowIds: string[]) => void;
 };
@@ -353,7 +355,7 @@ export default function ContextMenu(props: ContextMenuProps) {
     const {
       targets, mode, draftText,
       setDraftText, onSetMode,
-      onOpenTarget, onHideCols, onHideRows,
+      onOpenTarget, onOpenRowAsTable, onHideCols, onHideRows,
     } = props;
 
     const n = targets.length;
@@ -384,6 +386,18 @@ export default function ContextMenu(props: ContextMenuProps) {
                 }}
               >
                 Open
+              </button>
+            )}
+            {isSingle && onOpenRowAsTable && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenRowAsTable();
+                  onClose();
+                }}
+              >
+                Open as table
               </button>
             )}
             <button
