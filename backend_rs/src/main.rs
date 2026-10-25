@@ -17,6 +17,7 @@ mod sync_backend_impl;
 mod sync_service;
 mod table;
 mod types;
+mod voicebox;
 mod write_errors;
 
 use std::sync::{Arc, Mutex};
@@ -206,6 +207,7 @@ async fn main() -> anyhow::Result<()> {
                 .put(file::put)
                 .layer(axum::extract::DefaultBodyLimit::max(file::MAX_FILE_BYTES)),
         )
+        .route("/voicebox/render", axum::routing::post(voicebox::render))
         .route("/tables", get(table::list).post(table::create))
         .route(
             "/tables/:id",
