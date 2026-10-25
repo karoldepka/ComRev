@@ -175,6 +175,7 @@ dependencies = [
  "futures",
  "futures-core",
  "nanoid",
+ "percent-encoding",
  "prost",
  "protoc-bin-vendored",
  "reqwest",

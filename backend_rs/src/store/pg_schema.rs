@@ -556,6 +556,19 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     END $$;
     "#,
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS tagline TEXT;",
+    // Cell files (bytes referenced from cell values by id).
+    r#"
+    CREATE TABLE IF NOT EXISTS files (
+      id           TEXT        PRIMARY KEY,
+      name         TEXT        NOT NULL,
+      mime_type    TEXT        NOT NULL,
+      size_bytes   BIGINT      NOT NULL,
+      content      BYTEA       NOT NULL,
+      who_created  TEXT,
+      when_created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      when_deleted TIMESTAMPTZ
+    );
+    "#,
     // Reference columns: cell value is a row id of this table.
     "ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS ref_table_id TEXT;",
     // Statements are applied once by their text, so widening the types CHECK needs a new
@@ -565,6 +578,13 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     r#"-- types check v2: allow reference
     ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_types_check
       CHECK (types <@ ARRAY['text','integer','bigint','numeric','boolean','url','array','jsonb','timestamptz','rating','reference']::TEXT[] AND array_length(types, 1) > 0);
+    "#,
+    // Must stay after v2 (statements run in order on a fresh DB).
+    "-- types check v3: allow file
+     ALTER TABLE custom_columns DROP CONSTRAINT IF EXISTS custom_columns_types_check;",
+    r#"-- types check v3: allow file
+    ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_types_check
+      CHECK (types <@ ARRAY['text','integer','bigint','numeric','boolean','url','array','jsonb','timestamptz','rating','reference','file']::TEXT[] AND array_length(types, 1) > 0);
     "#,
     // Child tables: ordered child table ids, same shape as a row's parent_child.
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS parent_child JSONB NOT NULL DEFAULT '[]'::jsonb;",

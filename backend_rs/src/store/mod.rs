@@ -325,6 +325,16 @@ pub trait DataStore: Send + Sync {
     /// Used at startup to replay any ops that were logged before a crash.
     async fn pending_ops(&self) -> anyhow::Result<Vec<PendingOp>>;
 
+    /// Store a cell file. Idempotent per id (re-uploads of the same id are no-ops).
+    async fn put_file(&self, _file: &crate::file::StoredFile) -> Result<()> {
+        anyhow::bail!("this store does not support files")
+    }
+
+    /// Load a cell file, `None` if unknown or deleted.
+    async fn get_file(&self, _id: &str) -> Result<Option<crate::file::StoredFile>> {
+        anyhow::bail!("this store does not support files")
+    }
+
     /// Upsert a batch of rows into any table. Each element is a JSON object; the row id is taken
     /// from the "id" field (falling back to "github_id" as a string). Everything becomes custom_values.
     async fn upsert_rows_batch(&self, table_id: &str, rows: &[serde_json::Value]) -> Result<usize>;

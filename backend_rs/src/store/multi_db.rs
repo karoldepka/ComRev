@@ -1173,6 +1173,26 @@ impl DataStore for MultiStore {
 
         Ok(most_pending)
     }
+
+    /// Written to every store (not ops-logged: payloads are binary; uploads are idempotent per id
+    /// and the client retries until one succeeds).
+    async fn put_file(&self, file: &crate::file::StoredFile) -> Result<()> {
+        let results = join_all(self.stores.iter().map(|s| s.put_file(file))).await;
+        fan_write(results, "put_file")
+    }
+
+    /// First store that has the file wins.
+    async fn get_file(&self, id: &str) -> Result<Option<crate::file::StoredFile>> {
+        let mut last_err = None;
+        for store in &self.stores {
+            match store.get_file(id).await {
+                Ok(Some(file)) => return Ok(Some(file)),
+                Ok(None) => {}
+                Err(e) => last_err = Some(e),
+            }
+        }
+        last_err.map_or(Ok(None), Err)
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

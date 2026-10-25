@@ -5,6 +5,7 @@ mod custom_column;
 mod data_row;
 mod db_config;
 mod error;
+mod file;
 mod flag;
 mod hidden_column;
 mod hidden_row;
@@ -199,6 +200,12 @@ async fn main() -> anyhow::Result<()> {
             get(hidden_column::list).post(hidden_column::add),
         )
         .route("/hidden-columns/:column_id", delete(hidden_column::remove))
+        .route(
+            "/files/:id",
+            get(file::get)
+                .put(file::put)
+                .layer(axum::extract::DefaultBodyLimit::max(file::MAX_FILE_BYTES)),
+        )
         .route("/tables", get(table::list).post(table::create))
         .route(
             "/tables/:id",

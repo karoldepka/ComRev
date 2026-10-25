@@ -2073,6 +2073,32 @@ impl DataStore for PgStore {
     async fn pending_ops(&self) -> Result<Vec<crate::store::PendingOp>> {
         crate::ops_log::pending(&self.pool).await
     }
+
+    async fn put_file(&self, file: &crate::file::StoredFile) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO files (id, name, mime_type, size_bytes, content)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(&file.id)
+        .bind(&file.name)
+        .bind(&file.mime_type)
+        .bind(file.content.len() as i64)
+        .bind(&file.content)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_file(&self, id: &str) -> Result<Option<crate::file::StoredFile>> {
+        let row: Option<(String, String, Vec<u8>)> = sqlx::query_as(
+            "SELECT name, mime_type, content FROM files WHERE id = $1 AND when_deleted IS NULL",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(name, mime_type, content)| crate::file::StoredFile { id: id.to_string(), name, mime_type, content }))
+    }
 }
 
 // ── Query helpers (PG-specific) ───────────────────────────────────────────────

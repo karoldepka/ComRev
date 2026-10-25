@@ -27,6 +27,7 @@ structable_logger = { path = "../structable_logger" }
 sync_core         = { path = "../sync_core", features = ["server"] }
 reqwest    = { version = "0.12", features = ["json"] }
 toml       = "0.8"
+percent-encoding = "2"
 
 [build-dependencies]
 tonic-build          = "0.12"
