@@ -70,6 +70,7 @@ import {
   isFileColumn,
 } from './tree-table/columns';
 import FileCell from './FileCell';
+import { actionsForClass, type ObjectAction } from '../services/objectActions';
 import { fileRefsOf, resumePendingUploads, subscribePendingFiles } from '../services/fileStore';
 import { type GlobalSearchResult, rowTitle, buildGlobalSearchResults } from './tree-table/search';
 import {
@@ -1170,15 +1171,21 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     if (colIdx >= 0) setCursorPos({ row: rowIndex, col: colIdx });
   }, [setSelectedKeys, setCursorPos, visibleLeafColumns]);
 
-  const saveCellValue = useCallback((rowIndex: number, rowId: string, colId: string, value: unknown) => {
+  /** Write a cell through the sync queue (local first, counted in the sync indicator). */
+  const persistCellValue = useCallback((rowId: string, colId: string, value: unknown) => {
     if (!api) return;
-    restoreEditCursor(rowIndex, colId);
     setRows((prev) => prev.map((row) => String(row['id'] ?? '') === rowId ? { ...row, [colId]: value } : row));
     flashCell(rowId, colId);
     recordChange(`Edit cell [${colId}]`);
     api.upsertCellValue(rowId, colId, value, tableId)
       .catch((err: unknown) => toast.error(`Failed to queue cell edit: ${errMsg(err)}`));
-  }, [recordChange, api, tableId, restoreEditCursor, flashCell]);
+  }, [recordChange, api, tableId, flashCell]);
+
+  /** User edit: also keeps the cursor on the edited cell. */
+  const saveCellValue = useCallback((rowIndex: number, rowId: string, colId: string, value: unknown) => {
+    restoreEditCursor(rowIndex, colId);
+    persistCellValue(rowId, colId, value);
+  }, [restoreEditCursor, persistCellValue]);
 
   const commitEdit = useCallback(() => {
     if (!editingCell) return;
@@ -1461,6 +1468,27 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     applyMove(api, tableId, changes, newParentId)
       .catch((err: unknown) => toast.error(`Failed to move row: ${errMsg(err)}`));
   }, [api, recordChange, tableId]);
+
+  // This table's class (table id = class id) decides which object actions its rows offer.
+  const objectActions = useMemo(
+    () => actionsForClass(classDataRows.find((classRow) => String(classRow['id'] ?? '') === tableId)),
+    [classDataRows, tableId],
+  );
+
+  const runObjectAction = useCallback((action: ObjectAction, rowId: string) => {
+    const row = rows.find((candidate) => String(candidate['id'] ?? '') === rowId);
+    if (!row) return;
+    const title = rowTitle(row);
+    recordChange(`${action.label}: "${title}"`);
+    toast.promise(
+      action.run({ row, rowTitle: title, setCell: (columnId, value) => persistCellValue(rowId, columnId, value) }),
+      {
+        loading: `${action.runningLabel} "${title}"`,
+        success: (message) => message,
+        error: (err: unknown) => `${action.label} failed: ${errMsg(err)}`,
+      },
+    );
+  }, [persistCellValue, recordChange, rows]);
 
   const openRowAsTable = useCallback((rowId: string) => {
     if (!onOpenRowAsTable) return;
@@ -2434,6 +2462,11 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
               Open as table
             </button>
           )}
+          {objectActions.map((action) => (
+            <button key={action.id} type="button" onClick={() => { setRowMenu(null); runObjectAction(action, rowMenu.rowId); }}>
+              {action.label}
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => openAddChildDialog(rowMenu.rowId)}
