@@ -65,6 +65,32 @@ fn user_table_ident(table_id: &str) -> String {
     format!("\"t_{}\"", table_id.replace('"', ""))
 }
 
+/// Id of the meta-table whose rows are the user-visible tables (backed by `tables`, not `t_tables`).
+const TABLES_REGISTRY_ID: &str = "tables";
+
+/// Physical table holding the rows of `table_id` (the registry for the meta-table).
+fn row_table_ident(table_id: &str) -> String {
+    if table_id == TABLES_REGISTRY_ID {
+        TABLES_REGISTRY_ID.to_string()
+    } else {
+        user_table_ident(table_id)
+    }
+}
+
+/// Row JSON for a `tables` registry entry, shaped like a regular row.
+const TABLES_ROW_JSON: &str = "jsonb_build_object(
+   'id', id,
+   'full_name', title,
+   'title', title,
+   'description', description,
+   'who_created', who_created,
+   'when_created', when_created,
+   'who_last_modified', who_last_modified,
+   'when_last_modified', when_last_modified,
+   'modify_count', modify_count,
+   'parent_child', parent_child
+ )";
+
 #[derive(Default)]
 struct AutoCreateColumnsStats {
     rows_scanned: usize,
@@ -349,6 +375,11 @@ impl PgStore {
             return Ok(());
         }
         validate_field_id(field_id)?;
+        if table_id == TABLES_REGISTRY_ID {
+            // The registry's only relation is parent_child, created by ensure_schema.
+            anyhow::ensure!(field_id == "parent_child", "tables registry has no relation field '{field_id}'");
+            return Ok(());
+        }
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
         sqlx::query(&format!(
@@ -1713,6 +1744,14 @@ impl DataStore for PgStore {
         title: Option<&str>,
         who_created: Option<&str>,
     ) -> Result<serde_json::Value> {
+        if table_id == TABLES_REGISTRY_ID {
+            // A row of the tables meta-table is a table: register it and create its physical table.
+            self.create_table(row_id, title.unwrap_or(""), None, None, who_created).await?;
+            return Ok(sqlx::query_scalar(&format!("SELECT {TABLES_ROW_JSON} FROM tables WHERE id = $1"))
+                .bind(row_id)
+                .fetch_one(&self.pool)
+                .await?);
+        }
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
         let full_name = title.unwrap_or("");
@@ -1772,19 +1811,9 @@ impl DataStore for PgStore {
             let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tables")
                 .fetch_one(&self.pool)
                 .await?;
-            let rows = sqlx::query(
-                "SELECT jsonb_build_object(
-                   'id', id,
-                   'full_name', title,
-                   'title', title,
-                   'description', description,
-                   'who_created', who_created,
-                   'when_created', when_created,
-                   'who_last_modified', who_last_modified,
-                   'when_last_modified', when_last_modified,
-                   'modify_count', modify_count
-                 ) FROM tables ORDER BY when_created LIMIT $1 OFFSET $2",
-            )
+            let rows = sqlx::query(&format!(
+                "SELECT {TABLES_ROW_JSON} FROM tables ORDER BY when_created LIMIT $1 OFFSET $2"
+            ))
             .bind(per_page)
             .bind(offset)
             .fetch_all(&self.pool)
@@ -2239,6 +2268,16 @@ async fn validate_many_to_many_items(
             "one or more row classes do not exist in table '{table_id}'"
         );
     }
+    if table_id == TABLES_REGISTRY_ID {
+        let found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tables WHERE id = ANY($1)")
+            .bind(item_ids)
+            .fetch_one(&mut **transaction)
+            .await?;
+        anyhow::ensure!(
+            found as usize == item_ids.len(),
+            "one or more child tables do not exist"
+        );
+    }
     Ok(())
 }
 
@@ -2273,7 +2312,7 @@ async fn sync_many_to_many_jsonb(
         .execute(&mut **transaction)
         .await?
     } else {
-        let tname = user_table_ident(table_id);
+        let tname = row_table_ident(table_id);
         // field_id is validated before calling this function — safe to interpolate.
         sqlx::query(&format!(
             "UPDATE {tname}

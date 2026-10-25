@@ -556,6 +556,9 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     END $$;
     "#,
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS tagline TEXT;",
+    // Child tables: ordered child table ids, same shape as a row's parent_child.
+    "ALTER TABLE tables ADD COLUMN IF NOT EXISTS parent_child JSONB NOT NULL DEFAULT '[]'::jsonb;",
+    "CREATE INDEX IF NOT EXISTS idx_tables_parent_child ON tables USING GIN (parent_child);",
     // FK from table_custom_columns.table_id → tables(id) prevented crash-recovery replay
     // of custom_column.upsert ops when the parent tables row was already deleted.
     // The upsert_custom_column code already ensures the tables row exists manually, so
