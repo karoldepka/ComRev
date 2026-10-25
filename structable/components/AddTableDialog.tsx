@@ -31,10 +31,11 @@ export default function AddTableDialog({ onConfirm, onClose }: Props) {
     ? 'Only letters, numbers, _ and - allowed'
     : 'Only lowercase letters, numbers, _ and - allowed';
 
-  const derivedId = title.trim()
+  // Suggested human-readable id; lowercase before stripping, or capitals would be dropped.
+  const suggestedId = (ALLOW_TABLE_NAME_UPPERCASE ? title : title.toLowerCase())
+    .trim()
     .replace(/\s+/g, '_')
-    .replace(idClean, '')
-    .replace(ALLOW_TABLE_NAME_UPPERCASE ? /(?:)/ : /[A-Z]/g, c => c.toLowerCase());
+    .replace(idClean, '');
 
   const idError: string | null = (() => {
     if (!showAdvanced || !customId.trim()) return null;
@@ -125,13 +126,13 @@ export default function AddTableDialog({ onConfirm, onClose }: Props) {
           <label className="dialog-field">
             <span className="dialog-label">
               Table ID
-              <span className="dialog-hint"> — default: {derivedId || 'auto-generated'}</span>
+              <span className="dialog-hint"> — optional; empty = auto-generated id</span>
             </span>
             <input
               value={customId}
               onChange={(e) => setCustomId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
               onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) handleSubmit(); }}
-              placeholder={derivedId || 'auto-generated nanoid'}
+              placeholder={suggestedId ? `e.g. ${suggestedId}` : 'auto-generated nanoid'}
             />
             {idError && <span className="dialog-error">{idError}</span>}
           </label>
