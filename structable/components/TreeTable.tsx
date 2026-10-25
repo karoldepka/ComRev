@@ -2448,6 +2448,11 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
           onOpenRowAsTable={onOpenRowAsTable && cellMenu.targets.length === 1
             ? () => openRowAsTable(cellMenu.targets[0].rowId)
             : undefined}
+          rowActions={objectActions.map((action) => ({
+            id: action.id,
+            label: action.label,
+            run: () => runObjectAction(action, cellMenu.targets[0].rowId),
+          }))}
           availableClasses={rowClasses}
           onClose={closeCellMenu}
         />
