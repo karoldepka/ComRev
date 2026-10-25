@@ -180,9 +180,15 @@ impl PgStore {
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(5);
+        // Serverless Postgres (Neon) suspends idle compute and silently drops sockets; a pooled
+        // connection that outlived that hangs until acquire_timeout ("pool timed out ...") forever.
+        // Close idle connections before the ~5 min suspend and recycle all of them periodically.
         let pool = PgPoolOptions::new()
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(acquire_secs))
+            .idle_timeout(Some(Duration::from_secs(60)))
+            .max_lifetime(Some(Duration::from_secs(15 * 60)))
+            .test_before_acquire(true)
             .connect(url)
             .await
             .map_err(|e| anyhow::anyhow!("PgStore({db_id}): failed to connect to {short}: {e}"))?;
@@ -1400,7 +1406,9 @@ impl DataStore for PgStore {
                 .bind(ref_table_id)
                 .fetch_one(&self.pool)
                 .await?;
-            anyhow::ensure!(exists, "reference column {id}: table '{ref_table_id}' does not exist");
+            if !exists {
+                return Err(super::MissingReference(format!("reference column {id}: table '{ref_table_id}' does not exist")).into());
+            }
         }
         let col = sqlx::query_as::<_, CustomColumn>(&format!(
             "WITH upsert_col AS (
@@ -2266,22 +2274,24 @@ async fn validate_many_to_many_items(
         .bind(item_ids)
         .fetch_one(&mut **transaction)
         .await?;
-        anyhow::ensure!(
-            found as usize == item_ids.len(),
-            "one or more row classes do not exist in table '{table_id}'"
-        );
+        ensure_all_exist(found, item_ids, || format!("one or more row classes do not exist in table '{table_id}'"))?;
     }
     if table_id == TABLES_REGISTRY_ID {
         let found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tables WHERE id = ANY($1)")
             .bind(item_ids)
             .fetch_one(&mut **transaction)
             .await?;
-        anyhow::ensure!(
-            found as usize == item_ids.len(),
-            "one or more child tables do not exist"
-        );
+        ensure_all_exist(found, item_ids, || "one or more child tables do not exist".to_string())?;
     }
     Ok(())
+}
+
+fn ensure_all_exist(found: i64, item_ids: &[String], message: impl FnOnce() -> String) -> Result<()> {
+    if found as usize == item_ids.len() {
+        Ok(())
+    } else {
+        Err(super::MissingReference(format!("{}: {item_ids:?}", message())).into())
+    }
 }
 
 /// Recompute the current item_ids for (row_id, field_id) from many_to_many_assignments
@@ -2327,10 +2337,9 @@ async fn sync_many_to_many_jsonb(
         .execute(&mut **transaction)
         .await?
     };
-    anyhow::ensure!(
-        result.rows_affected() == 1,
-        "row '{row_id}' does not exist in table '{table_id}'"
-    );
+    if result.rows_affected() != 1 {
+        return Err(super::MissingReference(format!("row '{row_id}' does not exist in table '{table_id}'")).into());
+    }
 
     Ok(())
 }

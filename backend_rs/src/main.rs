@@ -112,9 +112,11 @@ async fn main() -> anyhow::Result<()> {
     structable_logger::info("backend_rs", "starting backend_rs");
 
     let event_tx = sync_service::make_channel();
-    let data_store = store::open_all(&db_entries, Some(event_tx.clone())).await?;
+    // Serverless DBs can take a while to wake (or be briefly unreachable): keep retrying rather
+    // than exiting, so the backend comes up on its own once a store is reachable.
+    let data_store = retry_forever("connect data stores", || store::open_all(&db_entries, Some(event_tx.clone()))).await;
     structable_logger::info("backend_rs", "data store connected");
-    data_store.ensure_schema().await?;
+    retry_forever("ensure schema", || data_store.ensure_schema()).await;
     structable_logger::info("backend_rs", "schema ready");
 
     // Replay any ops that were logged before a previous crash (applied_at IS NULL).
@@ -249,6 +251,25 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     Ok(())
+}
+
+/// Run `attempt` until it succeeds, with capped exponential backoff (1s → 30s), logging each failure.
+async fn retry_forever<T, F, Fut>(what: &str, mut attempt: F) -> T
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let mut delay = std::time::Duration::from_secs(1);
+    loop {
+        match attempt().await {
+            Ok(value) => return value,
+            Err(e) => {
+                tracing::error!("startup: {what} failed, retrying in {}s: {e:#}", delay.as_secs());
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(std::time::Duration::from_secs(30));
+            }
+        }
+    }
 }
 
 async fn health() -> axum::Json<serde_json::Value> {

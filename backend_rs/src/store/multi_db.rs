@@ -181,6 +181,8 @@ macro_rules! fan_out {
     ($self:ident, $op:literal, $payload:expr, $method:ident ( $($arg:expr),* ) ) => {{
         let op_id = nanoid::nanoid!();
         let payload = $payload;
+        // Crash-recovery replay already owns a logged op; don't log the replayed write again.
+        let log_op = !crate::ops_log::is_replaying();
         let results = join_all(
             $self.stores.iter().enumerate().map(|(store_idx, s)| {
                 let op_id = op_id.clone();
@@ -188,13 +190,17 @@ macro_rules! fan_out {
                 let store_name = $self.names.get(store_idx).cloned().unwrap_or_else(|| store_idx.to_string());
                 async move {
                     let t0 = Instant::now();
-                    s.begin_ops_log(&op_id, $op, payload, None).await;
+                    if log_op {
+                        s.begin_ops_log(&op_id, $op, payload, None).await;
+                    }
                     let result = s.$method($($arg),*).await;
                     let ms = t0.elapsed().as_millis();
                     match &result {
                         Ok(_) => {
                             tracing::info!("store[{store_name}] {} write OK in {ms}ms", stringify!($method));
-                            s.mark_op_applied(&op_id).await;
+                            if log_op {
+                                s.mark_op_applied(&op_id).await;
+                            }
                         }
                         Err(e) => tracing::warn!("store[{store_name}] {} write FAILED in {ms}ms: {e}", stringify!($method)),
                     }

@@ -90,6 +90,19 @@ pub fn row_builtin_columns() -> Vec<CustomColumn> {
     }]
 }
 
+/// A write referenced a row/table/class that does not exist. Retrying cannot succeed, so
+/// crash recovery treats such ops as stale instead of replaying them on every startup.
+#[derive(Debug)]
+pub struct MissingReference(pub String);
+
+impl std::fmt::Display for MissingReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for MissingReference {}
+
 pub mod pg;
 mod pg_schema;
 #[cfg(test)]

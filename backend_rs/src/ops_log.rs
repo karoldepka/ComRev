@@ -73,6 +73,22 @@ fn is_fk_violation(e: &anyhow::Error) -> bool {
     msg.contains("foreign key constraint") || msg.contains("violates foreign key")
 }
 
+/// A replay that can never succeed: its target or a referenced record is gone.
+fn is_stale(e: &anyhow::Error) -> bool {
+    is_fk_violation(e) || e.downcast_ref::<crate::store::MissingReference>().is_some()
+}
+
+tokio::task_local! {
+    /// Set while crash recovery replays ops: the writes it performs must not be logged as new
+    /// ops (a failing replay would otherwise add a pending op per restart, growing without bound).
+    static REPLAYING: bool;
+}
+
+/// True inside crash-recovery replay.
+pub fn is_replaying() -> bool {
+    REPLAYING.try_with(|replaying| *replaying).unwrap_or(false)
+}
+
 /// On startup: replay any ops that have applied_at = NULL (i.e. logged before a previous crash).
 /// All store write methods are idempotent so replaying is always safe.
 /// Blocks until all pending ops are replayed; the server must not serve reads until this returns.
@@ -97,22 +113,26 @@ pub async fn recover_pending(store: &Arc<dyn DataStore>) {
     let mut sorted = pending;
     sorted.sort_by_key(|op| (op.seq, op_priority(&op.op), op.id.clone()));
 
-    for op in &sorted {
-        match replay_op(store, op).await {
-            Ok(()) => {}
-            Err(e) if is_fk_violation(&e) => {
-                tracing::warn!(
-                    op_id = %op.id, op_name = %op.op,
-                    "crash recovery: stale op (parent record deleted), marking applied: {e}"
-                );
-                store.mark_op_applied(&op.id).await;
+    REPLAYING
+        .scope(true, async {
+            for op in &sorted {
+                match replay_op(store, op).await {
+                    Ok(()) => store.mark_op_applied(&op.id).await,
+                    Err(e) if is_stale(&e) => {
+                        tracing::warn!(
+                            op_id = %op.id, op_name = %op.op,
+                            "crash recovery: stale op (referenced record gone), marking applied: {e}"
+                        );
+                        store.mark_op_applied(&op.id).await;
+                    }
+                    Err(e) => {
+                        // Transient (e.g. DB unreachable): stays pending, retried next startup.
+                        tracing::error!(op_id = %op.id, op_name = %op.op, "crash recovery: replay failed: {e}");
+                    }
+                }
             }
-            Err(e) => {
-                tracing::error!(op_id = %op.id, op_name = %op.op, "crash recovery: replay failed: {e}");
-                // Continue with other ops — partial recovery is better than none.
-            }
-        }
-    }
+        })
+        .await;
 }
 
 async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result<()> {
