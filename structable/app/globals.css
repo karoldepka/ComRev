@@ -14,6 +14,8 @@
     --surface-soft: #f8fafc;
     --surface-chrome: rgba(248, 250, 252, 0.78);
     --surface-sticky: rgba(255, 255, 255, 0.74);
+    /* Opaque: sticky table header must not let scrolled rows show through. */
+    --surface-header: #f1f5f9;
     --text-muted: #475569;
     --text-subtle: #94a3b8;
     --border: #e2e8f0;
@@ -45,6 +47,7 @@
       --surface-soft: #1e293b;
       --surface-chrome: rgba(30, 41, 59, 0.78);
       --surface-sticky: rgba(15, 23, 42, 0.74);
+      --surface-header: #1e293b;
       --text-muted: #94a3b8;
       --text-subtle: #64748b;
       --border: #334155;
@@ -257,13 +260,13 @@
 
   .tree-table th,
   .tree-table td {
-    @apply relative min-w-0 break-words border-b border-app-border px-3.5 py-2.5 text-sm;
+    @apply relative min-w-0 break-words border-b border-app-border px-2.5 py-1.5 text-sm;
     overflow-wrap: break-word;
   }
 
   .tree-table th {
-    @apply overflow-visible font-bold text-app-fg backdrop-blur-sm;
-    background: var(--surface-chrome);
+    @apply overflow-visible font-bold text-app-fg;
+    background: var(--surface-header);
   }
 
   .tree-table td {
@@ -326,25 +329,29 @@
 
   .tree-table th.sticky-col,
   .tree-table td.sticky-col {
-    @apply sticky left-0 backdrop-blur-sm;
+    @apply sticky left-0;
     box-shadow: var(--shadow-sticky);
   }
 
   .tree-table th.sticky-col {
     @apply z-[2];
-    background: var(--surface-chrome);
+    background: var(--surface-header);
   }
 
+  /* Frozen cells are opaque so horizontally scrolled cells don't bleed through. */
   .tree-table td.sticky-col {
     @apply z-[1];
-    background: var(--surface-sticky) !important;
+    background: var(--surface) !important;
   }
 
-  .tree-table th.col-highlight,
+  .tree-table th.col-highlight {
+    background: linear-gradient(var(--highlight), var(--highlight)), var(--surface-header) !important;
+  }
+
   .tree-table td.sticky-col.col-highlight,
   .tree-table td.sticky-col.row-highlight,
   .tree-table td.sticky-col.row-highlight.col-highlight {
-    background: linear-gradient(var(--highlight), var(--highlight)), var(--surface-sticky) !important;
+    background: linear-gradient(var(--highlight), var(--highlight)), var(--surface) !important;
   }
 
   .tree-table td.sticky-col.row-highlight.col-highlight {
@@ -442,7 +449,6 @@
 
   .column-group,
   .header-actions,
-  .hidden-columns-controls,
   .rating-stars,
   .classes-cell-chips,
   .menu-flag-row,
@@ -493,8 +499,8 @@
   }
 
   .add-col-th {
-    @apply sticky top-0 z-[1] border-l border-app-border p-0 text-center align-middle backdrop-blur-sm;
-    background: var(--surface-chrome);
+    @apply sticky top-0 z-[1] border-l border-app-border p-0 text-center align-middle;
+    background: var(--surface-header);
   }
 
   .add-col-button {
@@ -529,8 +535,8 @@
     transition: background 0.12s, color 0.12s;
   }
 
-  .hidden-columns-controls {
-    @apply ml-4 flex-wrap gap-1.5;
+  .hidden-columns-popover {
+    @apply z-50 flex max-h-[50vh] max-w-[min(32rem,calc(100vw-2rem))] flex-wrap gap-1.5 overflow-auto rounded-app border border-app-border bg-app-raised p-2 shadow-popover;
   }
 
   .show-column-button,

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import JobsIndicator from '../JobsIndicator';
 import type { useJobs } from '../../hooks/useJobs';
 import type { Column } from './columns';
@@ -66,20 +67,32 @@ export default function TableFooter(props: Props) {
   );
 }
 
+/** One "N hidden" button; the chips to re-show columns live in a popover so they never eat table height. */
 function HiddenColumnsControls({ hiddenColumnIds, allLeafColumns, showRowNumbers, onShowRowNumbers, onShowColumn, onShowAll }: Props) {
-  if (showRowNumbers && hiddenColumnIds.length === 0) return null;
+  // Hidden-column prefs are not per table; only offer columns that exist in this one.
+  const hiddenColumns = allLeafColumns.filter((col) => hiddenColumnIds.includes(col.id));
+  const hiddenCount = hiddenColumns.length + (showRowNumbers ? 0 : 1);
+  if (hiddenCount === 0) return null;
   return (
-    <span className="hidden-columns-controls">
-      Hidden:{' '}
-      {!showRowNumbers && (
-        <button type="button" className="show-column-button" onClick={onShowRowNumbers}>#</button>
-      )}
-      {hiddenColumnIds.map((id) => (
-        <button key={id} type="button" className="show-column-button" onClick={() => onShowColumn(id)}>
-          {allLeafColumns.find((c) => c.id === id)?.label ?? id}
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button type="button" className="show-column-button">
+          {hiddenCount} hidden column{hiddenCount !== 1 ? 's' : ''} ▾
         </button>
-      ))}
-      <button type="button" className="show-all-button" onClick={onShowAll}>Show all</button>
-    </span>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content side="top" align="start" sideOffset={6} collisionPadding={16} className="hidden-columns-popover">
+          {!showRowNumbers && (
+            <button type="button" className="show-column-button" onClick={onShowRowNumbers}>#</button>
+          )}
+          {hiddenColumns.map((col) => (
+            <button key={col.id} type="button" className="show-column-button" onClick={() => onShowColumn(col.id)}>
+              {col.label}
+            </button>
+          ))}
+          <button type="button" className="show-all-button" onClick={onShowAll}>Show all</button>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

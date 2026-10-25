@@ -9,8 +9,9 @@ type Props = {
 };
 
 export default function CopilotProvider({ children }: Props) {
+  // enableInspector=false: its launcher pops a promo bubble over the sync indicator (top-right).
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit">
+    <CopilotKit runtimeUrl="/api/copilotkit" enableInspector={false}>
       <CopilotSidebar
         defaultOpen={false}
         labels={{
