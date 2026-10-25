@@ -16,21 +16,26 @@ export type AddColumnPayload = {
   customId: string | null;
   description: string | null;
   expression: string | null;
+  /** Target table when columnType is 'reference'. */
+  refTableId: string | null;
 };
 
-export type ColumnDataType = 'text' | 'rating';
+export type ColumnDataType = 'text' | 'rating' | 'reference';
 
 type Props = {
   afterColId: string;
   /** All stable column ids already in use. */
   existingNames: Set<string>;
+  /** Tables a reference column can point to. */
+  tables: { id: string; title: string }[];
   onConfirm: (afterColId: string, payload: AddColumnPayload) => void;
   onClose: () => void;
 };
 
-export default function AddColumnDialog({ afterColId, existingNames, onConfirm, onClose }: Props) {
+export default function AddColumnDialog({ afterColId, existingNames, tables, onConfirm, onClose }: Props) {
   const [label, setLabel]           = useState('');
   const [columnType, setColumnType] = useState<ColumnDataType>('text');
+  const [refTableId, setRefTableId] = useState('');
   const [description, setDescription] = useState('');
   const [expression, setExpression] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -47,7 +52,8 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
     return null;
   })();
 
-  const canSubmit = label.trim().length > 0 && candidateId.length > 0 && !idError;
+  const isReference = columnType === 'reference';
+  const canSubmit = label.trim().length > 0 && candidateId.length > 0 && !idError && (!isReference || !!refTableId);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -57,6 +63,7 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
       customId: customId.trim() || null,
       description: description.trim() || null,
       expression: expression.trim() || null,
+      refTableId: isReference ? refTableId : null,
     });
   };
 
@@ -98,8 +105,21 @@ export default function AddColumnDialog({ afterColId, existingNames, onConfirm, 
           >
             <option value="text">Text</option>
             <option value="rating">0..5 star rating</option>
+            <option value="reference">Reference to a row of a table (single choice)</option>
           </select>
         </label>
+
+        {isReference && (
+          <label className="dialog-field">
+            <span className="dialog-label">Choices from table</span>
+            <select value={refTableId} onChange={(e) => setRefTableId(e.target.value)}>
+              <option value="" disabled>Pick a table…</option>
+              {tables.map((table) => (
+                <option key={table.id} value={table.id}>{table.title || table.id}</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="dialog-field">
           <span className="dialog-label">

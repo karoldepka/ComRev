@@ -16,6 +16,8 @@ type Props = {
   compiledExpr?: (row: DataRow) => unknown;
   hasNote?: boolean;
   hasComment?: boolean;
+  /** Reference columns: label of the referenced row (null = empty cell). Undefined for other columns. */
+  referenceLabel?: string | null;
 };
 
 function BooleanCell({ value }: { value: boolean }) {
@@ -37,10 +39,12 @@ function renderCellValue(value: unknown, formatNumericStrings?: boolean): React.
   return formatCell(value, { formatNumericStrings });
 }
 
-export default function CellContent({ row, colId, sourcePath, types, formatNumericStrings, compiledExpr, hasNote, hasComment }: Props) {
+export default function CellContent({ row, colId, sourcePath, types, formatNumericStrings, compiledExpr, hasNote, hasComment, referenceLabel }: Props) {
   let content: React.ReactNode;
 
-  if (isRatingColumnType(types)) {
+  if (referenceLabel !== undefined) {
+    content = referenceLabel === null ? '-' : <span className="reference-chip">{referenceLabel}</span>;
+  } else if (isRatingColumnType(types)) {
     try {
       const value = compiledExpr ? compiledExpr(row) : rowVal(row, colId, sourcePath);
       content = <RatingStars value={value} readOnly />;

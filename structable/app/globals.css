@@ -535,6 +535,11 @@
     transition: background 0.12s, color 0.12s;
   }
 
+  .reference-chip {
+    @apply inline-block max-w-full truncate rounded-app px-1.5 py-px align-middle;
+    background: color-mix(in srgb, var(--color-secondary) 14%, transparent);
+  }
+
   .hidden-columns-popover {
     @apply z-50 flex max-h-[50vh] max-w-[min(32rem,calc(100vw-2rem))] flex-wrap gap-1.5 overflow-auto rounded-app border border-app-border bg-app-raised p-2 shadow-popover;
   }

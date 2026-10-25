@@ -27,6 +27,8 @@ type Props = {
   /** Create a locally usable item before it is persisted. */
   createItem?: (label: string, color?: string) => PickerItem;
   colorChoices?: string[];
+  /** Single choice: clicking an item confirms it immediately; footer offers Clear instead of Apply. */
+  single?: boolean;
 };
 
 const DEFAULT_COLORS = [
@@ -44,6 +46,7 @@ export default function ItemPicker({
   allowCreate = false,
   createItem,
   colorChoices = DEFAULT_COLORS,
+  single = false,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set(selectedIds));
   const [search, setSearch] = useState('');
@@ -56,6 +59,14 @@ export default function ItemPicker({
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { searchRef.current?.focus(); }, []);
+
+  // Items may arrive after the picker opened (async load); keep items created in this session.
+  useEffect(() => {
+    setLocalItems((prev) => {
+      const created = prev.filter((item) => pendingNew.some((p) => p.id === item.id) && !items.some((i) => i.id === item.id));
+      return [...items, ...created];
+    });
+  }, [items, pendingNew]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -107,6 +118,10 @@ export default function ItemPicker({
   }, [needle, localItems, childrenByParent, collapsedIds]);
 
   function toggle(id: string) {
+    if (single) {
+      onConfirm([id], pendingNew);
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -186,7 +201,8 @@ export default function ItemPicker({
                   {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 </button>
                 <input
-                  type="checkbox"
+                  type={single ? 'radio' : 'checkbox'}
+                  name={single ? 'item-picker-choice' : undefined}
                   id={`pick-${item.id}`}
                   checked={selected.has(item.id)}
                   onChange={() => toggle(item.id)}
@@ -242,13 +258,19 @@ export default function ItemPicker({
 
         <div className="item-picker-footer">
           <button type="button" className="row-class-editor-cancel" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="row-class-editor-confirm"
-            onClick={() => onConfirm(Array.from(selected), pendingNew)}
-          >
-            Apply
-          </button>
+          {single ? (
+            <button type="button" className="row-class-editor-cancel" onClick={() => onConfirm([], pendingNew)}>
+              Clear
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="row-class-editor-confirm"
+              onClick={() => onConfirm(Array.from(selected), pendingNew)}
+            >
+              Apply
+            </button>
+          )}
         </div>
       </div>
     </div>

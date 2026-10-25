@@ -43,6 +43,7 @@ export type Column = {
   types?: string[];
   filterType?: ColType | null;
   sourcePath?: string[] | null;
+  refTableId?: string | null;
   subColumns?: Column[];
 };
 
@@ -136,11 +137,20 @@ export function isColumnReadOnly(cc: ApiCustomColumn): boolean {
 
 export function columnTypesForDataType(columnType: ColumnDataType): { types: string[]; data_types: string[] } {
   if (columnType === 'rating') return { types: ['rating'], data_types: ['numeric'] };
+  // Reference cell value is the referenced row's id (text).
+  if (columnType === 'reference') return { types: [REFERENCE_TYPE], data_types: ['text'] };
   return { types: ['text'], data_types: ['text'] };
 }
 
 export function isRatingColumn(column: Column): boolean {
   return isRatingColumnType(column.types);
+}
+
+export const REFERENCE_TYPE = 'reference';
+
+/** Single-select reference to a row of `column.refTableId`. */
+export function isReferenceColumn(column: Column): column is Column & { refTableId: string } {
+  return !!column.refTableId && !!column.types?.includes(REFERENCE_TYPE);
 }
 
 export function insertPositioned(
@@ -181,6 +191,7 @@ export function columnsFromMetadata(customColumns: ApiCustomColumn[], _rowSample
       types: cc.types ?? ['text'],
       filterType: (cc.data_types?.[0] as ColType | undefined) ?? null,
       sourcePath: cc.source_path ?? null,
+      refTableId: cc.ref_table_id ?? null,
     });
   }
 

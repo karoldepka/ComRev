@@ -27,11 +27,12 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import GlobalSearchDialog from './tree-table/GlobalSearchDialog';
 import TableFooter from './tree-table/TableFooter';
 import RowClassEditor from './RowClassEditor';
-import type { PickerItem } from './ItemPicker';
+import ItemPicker, { type PickerItem } from './ItemPicker';
+import { useReferenceRows } from '../hooks/useReferenceRows';
 import { colFilterParam } from '../utils/columnFilters';
 import logger from '../utils/logger';
 
-import type { ApiCustomColumn, ApiRemark, CellTarget, PagedResponse, RemarkTarget, DataRow, RowClass } from '../types/table';
+import type { ApiCustomColumn, ApiRemark, ApiTable, CellTarget, PagedResponse, RemarkTarget, DataRow, RowClass } from '../types/table';
 import {
   ADD_COL_VIRTUAL_ID,
   ADD_COL_HEADER_KEY,
@@ -64,6 +65,7 @@ import {
   buildHeaderRows,
   applyColumnGroups,
   sortParam,
+  isReferenceColumn,
 } from './tree-table/columns';
 import { type GlobalSearchResult, rowTitle, buildGlobalSearchResults } from './tree-table/search';
 import {
@@ -278,6 +280,9 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const [classDataRows, setClassDataRows] = useState<DataRow[]>([]);
   type ClassEditorState = { rowId: string; anchor: { top: number; left: number } };
   const [classEditorState, setClassEditorState] = useState<ClassEditorState | null>(null);
+  type ReferenceEditorState = { rowIndex: number; rowId: string; colId: string; anchor: { top: number; left: number } };
+  const [referenceEditor, setReferenceEditor] = useState<ReferenceEditorState | null>(null);
+  const [referenceTargetTables, setReferenceTargetTables] = useState<ApiTable[]>([]);
   const [rowClassesRetryKey, setRowClassesRetryKey] = useState(0);
   const rowClassesRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -781,7 +786,26 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
   const globalSearchNeedle = globalSearchTerm.toLowerCase();
   const isGlobalSearchSettling = globalSearchQuery.trim() !== globalSearchTerm;
 
+  // ── Reference columns ──────────────────────────────────────────────────────
+  const referenceRows = useReferenceRows(
+    api,
+    useMemo(() => allLeafColumns.filter(isReferenceColumn).map((col) => col.refTableId), [allLeafColumns]),
+  );
+
+  /** Display label for a reference cell: the referenced row's name, or its raw id until rows load. */
+  const referenceLabel = useCallback((row: DataRow, col: Column & { refTableId: string }): string | null => {
+    const refId = rowVal(row, col.id, col.sourcePath);
+    if (refId == null || refId === '') return null;
+    const target = referenceRows.get(col.refTableId)?.find((candidate) => String(candidate['id'] ?? '') === String(refId));
+    return target ? rowTitle(target) : String(refId);
+  }, [referenceRows]);
+
+  const openReferenceEditor = useCallback((rowIndex: number, rowId: string, colId: string, anchor: { top: number; left: number }) => {
+    setReferenceEditor({ rowIndex, rowId, colId, anchor });
+  }, []);
+
   const cellSearchValue = useCallback((row: DataRow, col: Column): unknown => {
+    if (isReferenceColumn(col)) return referenceLabel(row, col) ?? '';
     if (col.id === CLASSES_COL_ID) {
       return rowClassIds(row)
         .map((classId) => rowClasses.find((candidate) => candidate.id === classId)?.name ?? classId)
@@ -796,7 +820,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       }
     }
     return rowVal(row, col.id, col.sourcePath);
-  }, [compiledExprs, rowClasses]);
+  }, [compiledExprs, rowClasses, referenceLabel]);
 
   const allRowSearch = useAllRowSearch({
     api, enabled: isGlobalSearchOpen, term: globalSearchTerm, tableId, filters, sort, customColumns,
@@ -1026,7 +1050,12 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       if (cursorPos && cursorPos.row >= 0) {
         const col = visibleLeafColumns[cursorPos.col];
         const row = treeRows[cursorPos.row]?.row;
-        if (col && row && isCellEditable(col.id) && !isRatingColumn(col)) {
+        if (col && row && isCellEditable(col.id) && isReferenceColumn(col)) {
+          e.preventDefault();
+          const key = `cell:${cursorPos.row}:${col.id}`;
+          const rect = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`)?.getBoundingClientRect();
+          openReferenceEditor(cursorPos.row, String(row['id'] ?? ''), col.id, { top: rect?.bottom ?? 0, left: rect?.left ?? 0 });
+        } else if (col && row && isCellEditable(col.id) && !isRatingColumn(col)) {
           e.preventDefault();
           const rowId = String(row['id'] ?? '');
           const rawVal = rowVal(row, col.id, col.sourcePath);
@@ -1438,6 +1467,14 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     ...customColumns.map((cc) => cc.id),
   ]), [allLeafColumns, customColumns]);
 
+  // Tables a new reference column can point to; refreshed each time the add-column dialog opens.
+  useEffect(() => {
+    if (addColAfter === null || !api) return;
+    api.fetchTables()
+      .then(setReferenceTargetTables)
+      .catch((err: unknown) => logger.error({ err }, 'add column: failed to load tables for reference picker'));
+  }, [addColAfter, api]);
+
   const handleDialogConfirm = useCallback((afterColId: string, payload: AddColumnPayload) => {
     if (!api) return;
     setAddColAfter(null);
@@ -1458,6 +1495,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       is_frozen: false,
       types: typeMetadata.types,
       data_types: typeMetadata.data_types,
+      ref_table_id: payload.refTableId,
     };
     setCustomColumns((prev) => [...prev, col]);
     insertColumnAfter(id, positionAfter);
@@ -1471,7 +1509,13 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
       position_after: col.position_after,
       types: col.types,
       data_types: col.data_types,
-    }, id);
+      ref_table_id: col.ref_table_id,
+    }, id).catch((err: unknown) => {
+      // Don't leave a column on screen that the server rejected.
+      logger.error({ err, columnId: id }, 'create column failed');
+      toast.error(`Failed to create column "${col.title ?? id}": ${errMsg(err)}`);
+      setCustomColumns((prev) => prev.filter((cc) => cc.id !== id));
+    });
   }, [api, recordChange, tableId, insertColumnAfter]);
 
   const toggleColumnFrozen = useCallback((colId: string, isFrozen: boolean) => {
@@ -2057,6 +2101,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                             if (isRatingColumn(col)) return;
                             if (!isCellEditable(col.id)) return;
                             e.stopPropagation();
+                            if (isReferenceColumn(col)) {
+                              openReferenceEditor(rowIndex, rowId, col.id, { top: e.clientY, left: e.clientX });
+                              return;
+                            }
                             const rawVal = rowVal(row, col.id, col.sourcePath);
                             const strVal = rawVal == null ? '' : String(rawVal);
                             setEditingCell({ rowIndex, rowId, colId: col.id, value: strVal });
@@ -2184,6 +2232,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
                                 compiledExpr={compiledExprs.get(col.id)}
                                 hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
                                 hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
+                                referenceLabel={isReferenceColumn(col) ? referenceLabel(row, col) : undefined}
                               />
                             )}
                           </span>
@@ -2331,6 +2380,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
         <AddColumnDialog
           afterColId={addColAfter}
           existingNames={existingColNames}
+          tables={referenceTargetTables}
           onConfirm={handleDialogConfirm}
           onClose={() => setAddColAfter(null)}
         />
@@ -2393,6 +2443,27 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           onClose={() => setClassEditorState(null)}
         />
       )}
+      {referenceEditor && (() => {
+        const col = allLeafColumns.find((candidate) => candidate.id === referenceEditor.colId);
+        if (!col || !isReferenceColumn(col)) return null;
+        const row = rows.find((candidate) => String(candidate['id'] ?? '') === referenceEditor.rowId);
+        const currentId = row ? rowVal(row, col.id, col.sourcePath) : null;
+        const close = () => { setReferenceEditor(null); wrapperRef.current?.focus(); };
+        return (
+          <ItemPicker
+            single
+            title={col.label}
+            items={(referenceRows.get(col.refTableId) ?? []).map((target) => ({ id: String(target['id'] ?? ''), label: rowTitle(target) }))}
+            selectedIds={currentId == null || currentId === '' ? [] : [String(currentId)]}
+            anchor={referenceEditor.anchor}
+            onConfirm={([pickedId]) => {
+              saveCellValue(referenceEditor.rowIndex, referenceEditor.rowId, col.id, pickedId ?? null);
+              close();
+            }}
+            onClose={close}
+          />
+        );
+      })()}
     </>
   );
 }

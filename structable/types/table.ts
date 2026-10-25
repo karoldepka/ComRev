@@ -52,6 +52,8 @@ export type ApiCustomColumn = {
   is_group?: boolean;
   is_frozen?: boolean;
   parent_ids?: string[];
+  /** Reference columns (`types: ['reference']`): table whose row ids the cells hold. */
+  ref_table_id?: string | null;
   /** Backward compatibility for older API responses. Prefer read_only. */
   is_editable?: boolean;
 };
