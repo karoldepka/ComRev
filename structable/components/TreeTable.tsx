@@ -23,6 +23,7 @@ import RatingStars from './RatingStars';
 import SyncIndicator from './SyncIndicator';
 import { rowVal } from '../utils/rowVal';
 import { useAllRowSearch } from '../hooks/useAllRowSearch';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import GlobalSearchDialog from './tree-table/GlobalSearchDialog';
 import TableFooter from './tree-table/TableFooter';
 import RowClassEditor from './RowClassEditor';
@@ -71,6 +72,8 @@ import {
 } from './tree-table/dom';
 
 // ── Component ──────────────────────────────────────────────────────────────────
+
+const GLOBAL_SEARCH_DEBOUNCE_MS = 250;
 
 type Props = {
   tableId: string;
@@ -773,8 +776,10 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
     return cc ? !isColumnReadOnly(cc) : true; // no metadata yet → fallback columns are editable
   }, [compiledExprs, customColByColumnId]);
 
-  const globalSearchTerm = globalSearchQuery.trim();
+  // Results (local scan + server query) follow the debounced term; the input itself stays instant.
+  const globalSearchTerm = useDebouncedValue(globalSearchQuery.trim(), GLOBAL_SEARCH_DEBOUNCE_MS);
   const globalSearchNeedle = globalSearchTerm.toLowerCase();
+  const isGlobalSearchSettling = globalSearchQuery.trim() !== globalSearchTerm;
 
   const cellSearchValue = useCallback((row: DataRow, col: Column): unknown => {
     if (col.id === CLASSES_COL_ID) {
@@ -1685,6 +1690,7 @@ export default function TreeTable({ tableId, onRowClick, searchOpenRequest = 0 }
           onQueryChange={setGlobalSearchQuery}
           results={globalSearchResults}
           allRowSearch={allRowSearch}
+          isSettling={isGlobalSearchSettling}
           onActivate={activateGlobalSearchResult}
           onClose={closeGlobalSearch}
         />

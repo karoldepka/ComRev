@@ -25,11 +25,13 @@ type Props = {
   onQueryChange: (query: string) => void;
   results: GlobalSearchResult[];
   allRowSearch: AllRowSearchState;
+  /** Query typed but not yet debounced into `results`; avoids flashing "No matches". */
+  isSettling: boolean;
   onActivate: (result: GlobalSearchResult) => void;
   onClose: () => void;
 };
 
-export default function GlobalSearchDialog({ query, onQueryChange, results, allRowSearch, onActivate, onClose }: Props) {
+export default function GlobalSearchDialog({ query, onQueryChange, results, allRowSearch, isSettling, onActivate, onClose }: Props) {
   const hasTerm = query.trim().length > 0;
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function GlobalSearchDialog({ query, onQueryChange, results, allR
               </CommandGroup>
             );
           })}
-          {hasTerm && results.length === 0 && !allRowSearch.loading && !allRowSearch.error && (
+          {hasTerm && results.length === 0 && !isSettling && !allRowSearch.loading && !allRowSearch.error && (
             <CommandEmpty>No matches</CommandEmpty>
           )}
           {hasTerm && allRowSearch.loading && (

@@ -5,7 +5,6 @@ import type { ApiCustomColumn, DataRow } from '../types/table';
 import { sortParam } from '../components/tree-table/columns';
 import { errMsg } from '../components/tree-table/dom';
 
-const DEBOUNCE_MS = 180;
 const MAX_ROWS = 20;
 
 export type AllRowSearchState = {
@@ -26,7 +25,7 @@ type Params = {
   customColumns: ApiCustomColumn[];
 };
 
-/** Debounced server-side search across all rows of the table (not just the loaded page). */
+/** Server-side search across all rows of the table (not just the loaded page). Pass an already-debounced `term`. */
 export function useAllRowSearch({ api, enabled, term, tableId, filters, sort, customColumns }: Params): AllRowSearchState {
   const [state, setState] = useState<AllRowSearchState>({ query: '', loading: false, rows: [], total: 0, error: null });
 
@@ -45,25 +44,22 @@ export function useAllRowSearch({ api, enabled, term, tableId, filters, sort, cu
       error: null,
     }));
 
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams({ page: '1', per_page: String(MAX_ROWS), q: term });
-      Object.entries(filters).forEach(([key, value]) => {
-        if (key !== 'q') params.set(key, value);
-      });
-      params.set('sort', sortParam(sort, customColumns));
+    const params = new URLSearchParams({ page: '1', per_page: String(MAX_ROWS), q: term });
+    Object.entries(filters).forEach(([key, value]) => {
+      if (key !== 'q') params.set(key, value);
+    });
+    params.set('sort', sortParam(sort, customColumns));
 
-      api.fetchDataRows(tableId, params)
-        .then((payload) => {
-          if (active) setState({ query: term, loading: false, rows: payload.data, total: payload.total, error: null });
-        })
-        .catch((err: unknown) => {
-          if (active) setState({ query: term, loading: false, rows: [], total: 0, error: errMsg(err) });
-        });
-    }, DEBOUNCE_MS);
+    api.fetchDataRows(tableId, params)
+      .then((payload) => {
+        if (active) setState({ query: term, loading: false, rows: payload.data, total: payload.total, error: null });
+      })
+      .catch((err: unknown) => {
+        if (active) setState({ query: term, loading: false, rows: [], total: 0, error: errMsg(err) });
+      });
 
     return () => {
       active = false;
-      clearTimeout(timer);
     };
   }, [api, enabled, term, sort, tableId, customColumns, filters]);
 
