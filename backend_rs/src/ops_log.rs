@@ -246,6 +246,7 @@ async fn replay_op(store: &Arc<dyn DataStore>, op: &PendingOp) -> anyhow::Result
                         source_path: to_str_vec(&p["source_path"]),
                         types: to_str_vec(&p["types"]),
                         data_types: to_str_vec(&p["data_types"]),
+                        ref_table_id: p["ref_table_id"].as_str().map(str::to_owned),
                     },
                 )
                 .await?;

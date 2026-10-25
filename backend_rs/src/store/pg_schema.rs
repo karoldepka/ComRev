@@ -556,6 +556,16 @@ pub const POSTGRES_SCHEMA: &[&str] = &[
     END $$;
     "#,
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS tagline TEXT;",
+    // Reference columns: cell value is a row id of this table.
+    "ALTER TABLE custom_columns ADD COLUMN IF NOT EXISTS ref_table_id TEXT;",
+    // Statements are applied once by their text, so widening the types CHECK needs a new
+    // DROP+ADD pair (the leading comment gives them distinct migration ids).
+    "-- types check v2: allow reference
+     ALTER TABLE custom_columns DROP CONSTRAINT IF EXISTS custom_columns_types_check;",
+    r#"-- types check v2: allow reference
+    ALTER TABLE custom_columns ADD CONSTRAINT custom_columns_types_check
+      CHECK (types <@ ARRAY['text','integer','bigint','numeric','boolean','url','array','jsonb','timestamptz','rating','reference']::TEXT[] AND array_length(types, 1) > 0);
+    "#,
     // Child tables: ordered child table ids, same shape as a row's parent_child.
     "ALTER TABLE tables ADD COLUMN IF NOT EXISTS parent_child JSONB NOT NULL DEFAULT '[]'::jsonb;",
     "CREATE INDEX IF NOT EXISTS idx_tables_parent_child ON tables USING GIN (parent_child);",

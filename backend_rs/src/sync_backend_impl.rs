@@ -161,6 +161,7 @@ impl SyncBackend for AppState {
             position_after: (!op.position_after.is_empty()).then(|| op.position_after),
             types: (!op.types.is_empty()).then(|| op.types),
             data_types: (!op.data_types.is_empty()).then(|| op.data_types),
+            ref_table_id: (!op.ref_table_id.is_empty()).then(|| op.ref_table_id),
             ..Default::default()
         };
         let col = self
@@ -247,6 +248,7 @@ fn custom_col_to_proto(c: &crate::custom_column::CustomColumn) -> CustomCol {
         data_types: c.data_types.clone(),
         parent_ids: c.parent_ids.clone(),
         is_group: c.is_group,
+        ref_table_id: c.ref_table_id.clone().unwrap_or_default(),
     }
 }
 

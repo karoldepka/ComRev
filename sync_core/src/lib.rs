@@ -107,6 +107,14 @@ fn describe_op(kind: &str, data: &serde_json::Value) -> String {
     }
 }
 
+/// `data[key]` as a list of strings (non-strings skipped; missing → empty).
+fn json_string_array(data: &serde_json::Value, key: &str) -> Vec<String> {
+    data.get(key)
+        .and_then(|value| value.as_array())
+        .map(|array| array.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+        .unwrap_or_default()
+}
+
 impl QueuedOp {
     fn record_id(&self) -> String {
         self.data["id"]
@@ -190,28 +198,9 @@ impl QueuedOp {
                     .as_str()
                     .unwrap_or("gh_repos")
                     .to_string(),
-                types: self
-                    .data
-                    .get("types")
-                    .and_then(|value| value.as_array())
-                    .map(|array| {
-                        array
-                            .iter()
-                            .filter_map(|item| item.as_str().map(str::to_string))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                data_types: self
-                    .data
-                    .get("data_types")
-                    .and_then(|value| value.as_array())
-                    .map(|array| {
-                        array
-                            .iter()
-                            .filter_map(|item| item.as_str().map(str::to_string))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
+                types: json_string_array(&self.data, "types"),
+                data_types: json_string_array(&self.data, "data_types"),
+                ref_table_id: self.data["ref_table_id"].as_str().unwrap_or("").to_string(),
             })),
             "delete_custom_col" => Some(OpPayload::DeleteCustomCol(DeleteCustomColOp {
                 id: self.data["id"].as_str().unwrap_or("").to_string(),
@@ -1358,7 +1347,7 @@ impl serde::Serialize for HiddenCol {
 impl serde::Serialize for CustomCol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("CustomCol", 14)?;
+        let mut st = s.serialize_struct("CustomCol", 15)?;
         st.serialize_field("id", &self.id)?;
         st.serialize_field("title", &self.title)?;
         st.serialize_field("expression", &self.expression)?;
@@ -1378,6 +1367,8 @@ impl serde::Serialize for CustomCol {
         st.serialize_field("data_types", &self.data_types)?;
         st.serialize_field("parent_ids", &self.parent_ids)?;
         st.serialize_field("is_group", &self.is_group)?;
+        let ref_table_id = (!self.ref_table_id.is_empty()).then_some(&self.ref_table_id);
+        st.serialize_field("ref_table_id", &ref_table_id)?;
         st.end()
     }
 }
@@ -1457,18 +1448,8 @@ impl serde::Serialize for ServerEvent {
                     "custom_col",
                     &serde_json::json!({
                         "kind": v.kind,
-                        "data": v.data.as_ref().map(|d| serde_json::json!({
-                            "id": d.id, "title": d.title,
-                            "expression": d.expression,
-                            "position_before": d.position_before, "position_after": d.position_after,
-                            "description": d.description, "read_only": d.read_only,
-                            "readOnly": d.read_only, "types": d.types,
-                            "is_frozen": d.is_frozen,
-                            "source_path": if d.source_path.is_empty() { serde_json::Value::Null } else { serde_json::json!(d.source_path) },
-                            "data_types": d.data_types,
-                            "parent_ids": d.parent_ids,
-                            "is_group": d.is_group,
-                        })),
+                        // Same shape as the CustomCol Serialize impl (single source of truth).
+                        "data": v.data.as_ref().map(serde_json::to_value).transpose().map_err(serde::ser::Error::custom)?,
                     }),
                 )?;
             }
@@ -1754,6 +1735,7 @@ mod tests {
             data_types: vec!["text".into()],
             parent_ids: vec![],
             is_group: true,
+            ref_table_id: String::new(),
         };
         let json = serde_json::to_value(&col).unwrap();
         assert_eq!(json["title"], serde_json::Value::Null);

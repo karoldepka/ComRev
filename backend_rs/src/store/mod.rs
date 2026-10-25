@@ -49,6 +49,7 @@ pub fn table_registry_columns() -> Vec<CustomColumn> {
         is_group: false,
         parent_ids: vec![],
         is_frozen: id == "full_name",
+        ref_table_id: None,
     })
     .collect()
 }
@@ -85,6 +86,7 @@ pub fn row_builtin_columns() -> Vec<CustomColumn> {
         is_group: false,
         parent_ids: vec![],
         is_frozen: true,
+        ref_table_id: None,
     }]
 }
 

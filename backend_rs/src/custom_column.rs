@@ -22,6 +22,8 @@ pub struct CustomColumn {
     pub is_group: bool,
     pub parent_ids: Vec<String>,
     pub is_frozen: bool,
+    /// For `types: ["reference"]`: the table whose row ids this column's cells hold.
+    pub ref_table_id: Option<String>,
 }
 
 /// Full mutable spec for a custom column. Used both in the store trait and as the HTTP wire type.
@@ -45,6 +47,9 @@ pub struct CustomColumnInput {
     pub types: Option<Vec<String>>,
     /// Underlying data type for queries. Defaults to same as `types`.
     pub data_types: Option<Vec<String>>,
+    /// Target table for reference columns (cell value = a row id of that table).
+    #[serde(default)]
+    pub ref_table_id: Option<String>,
 }
 
 impl Default for CustomColumnInput {
@@ -61,6 +66,7 @@ impl Default for CustomColumnInput {
             source_path: None,
             types: None,
             data_types: None,
+            ref_table_id: None,
         }
     }
 }

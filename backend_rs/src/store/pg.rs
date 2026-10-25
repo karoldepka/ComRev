@@ -77,6 +77,26 @@ fn row_table_ident(table_id: &str) -> String {
     }
 }
 
+/// SELECT list producing a `CustomColumn` from `custom_columns` aliased as `c`.
+/// `link` is an optional `table_custom_columns` alias whose per-table position/frozen state wins.
+fn custom_column_projection(c: &str, link: Option<&str>) -> String {
+    let per_table = |field: &str, fallback: &str| match link {
+        Some(l) => format!("COALESCE({l}.{field}, {c}.{field}) AS {field}"),
+        None => format!("COALESCE({c}.{field}, {fallback}) AS {field}"),
+    };
+    format!(
+        "{c}.id::text, NULLIF(BTRIM({c}.title), '') AS title, {c}.description, {c}.expression,
+         {}, {}, {c}.read_only, {c}.types, {c}.source_path,
+         COALESCE({c}.data_types, ARRAY[]::TEXT[]) AS data_types,
+         COALESCE({c}.is_group, false) AS is_group,
+         COALESCE({c}.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
+         {}, {c}.ref_table_id",
+        per_table("position_before", "NULL"),
+        per_table("position_after", "NULL"),
+        per_table("is_frozen", "false"),
+    )
+}
+
 /// Row JSON for a `tables` registry entry, shaped like a regular row.
 const TABLES_ROW_JSON: &str = "jsonb_build_object(
    'id', id,
@@ -1329,20 +1349,14 @@ impl DataStore for PgStore {
             .await?;
 
         let mut columns = super::row_builtin_columns();
-        columns.extend(sqlx::query_as::<_, CustomColumn>(
-            "SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
-               COALESCE(tcc.position_before, c.position_before) AS position_before,
-               COALESCE(tcc.position_after, c.position_after) AS position_after,
-               c.read_only, c.types, c.source_path,
-               COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
-               COALESCE(c.is_group, false) AS is_group,
-               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
-               COALESCE(tcc.is_frozen, c.is_frozen) AS is_frozen
+        columns.extend(sqlx::query_as::<_, CustomColumn>(&format!(
+            "SELECT {}
              FROM custom_columns c
              JOIN table_custom_columns tcc ON tcc.column_id = c.id
              WHERE tcc.table_id = $1
              ORDER BY tcc.when_created, c.when_created",
-        )
+            custom_column_projection("c", Some("tcc")),
+        ))
         .bind(table_id)
         .fetch_all(&self.pool)
         .await?
@@ -1380,12 +1394,20 @@ impl DataStore for PgStore {
         let title = input.title.as_deref().and_then(non_blank_text);
         let types = input.effective_types();
         let data_types = input.effective_data_types();
-        let col = sqlx::query_as::<_, CustomColumn>(
+        let ref_table_id = input.ref_table_id.as_deref().and_then(non_blank_text);
+        if let Some(ref_table_id) = ref_table_id {
+            let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM tables WHERE id = $1)")
+                .bind(ref_table_id)
+                .fetch_one(&self.pool)
+                .await?;
+            anyhow::ensure!(exists, "reference column {id}: table '{ref_table_id}' does not exist");
+        }
+        let col = sqlx::query_as::<_, CustomColumn>(&format!(
             "WITH upsert_col AS (
                INSERT INTO custom_columns
                  (id, title, description, expression, position_before, position_after,
-                  read_only, is_frozen, is_group, parent_ids, source_path, types, data_types)
-               VALUES ($1, $2, $3, $4, $5, $6, $13, false, $8, $9, $10, $11, $12)
+                  read_only, is_frozen, is_group, parent_ids, source_path, types, data_types, ref_table_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $13, false, $8, $9, $10, $11, $12, $14)
                ON CONFLICT (id) DO UPDATE
                  SET title = COALESCE(EXCLUDED.title, NULLIF(BTRIM(custom_columns.title), '')),
                      description = EXCLUDED.description,
@@ -1398,6 +1420,7 @@ impl DataStore for PgStore {
                      source_path = COALESCE(EXCLUDED.source_path, custom_columns.source_path),
                      types = EXCLUDED.types,
                      data_types = EXCLUDED.data_types,
+                     ref_table_id = EXCLUDED.ref_table_id,
                      when_last_modified = NOW(),
                      modify_count = custom_columns.modify_count + 1
                RETURNING *
@@ -1412,17 +1435,11 @@ impl DataStore for PgStore {
                      modify_count = table_custom_columns.modify_count + 1
                RETURNING *
              )
-             SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
-               COALESCE(a.position_before, c.position_before) AS position_before,
-               COALESCE(a.position_after, c.position_after) AS position_after,
-               c.read_only, c.types, c.source_path,
-               COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
-               COALESCE(c.is_group, false) AS is_group,
-               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
-               COALESCE(a.is_frozen, c.is_frozen) AS is_frozen
+             SELECT {}
              FROM upsert_col c
              JOIN attach a ON a.column_id = c.id",
-        )
+            custom_column_projection("c", Some("a")),
+        ))
         .bind(id)
         .bind(title)
         .bind(input.description.as_deref())
@@ -1436,6 +1453,7 @@ impl DataStore for PgStore {
         .bind(&types)
         .bind(&data_types)
         .bind(input.read_only)
+        .bind(ref_table_id)
         .fetch_one(&self.pool)
         .await?;
 
@@ -1502,7 +1520,7 @@ impl DataStore for PgStore {
         column_id: &str,
         is_frozen: bool,
     ) -> Result<CustomColumn> {
-        Ok(sqlx::query_as::<_, CustomColumn>(
+        Ok(sqlx::query_as::<_, CustomColumn>(&format!(
             "WITH updated AS (
                UPDATE table_custom_columns
                SET is_frozen = $3,
@@ -1511,17 +1529,11 @@ impl DataStore for PgStore {
                WHERE table_id = $1 AND column_id = $2
                RETURNING *
              )
-             SELECT c.id::text, NULLIF(BTRIM(c.title), '') AS title, c.description, c.expression,
-               COALESCE(u.position_before, c.position_before) AS position_before,
-               COALESCE(u.position_after, c.position_after) AS position_after,
-               c.read_only, c.types, c.source_path,
-               COALESCE(c.data_types, ARRAY[]::TEXT[]) AS data_types,
-               COALESCE(c.is_group, false) AS is_group,
-               COALESCE(c.parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
-               COALESCE(u.is_frozen, c.is_frozen) AS is_frozen
+             SELECT {}
              FROM updated u
              JOIN custom_columns c ON c.id = u.column_id",
-        )
+            custom_column_projection("c", Some("u")),
+        ))
         .bind(table_id)
         .bind(column_id)
         .bind(is_frozen)
@@ -1534,18 +1546,13 @@ impl DataStore for PgStore {
         column_id: &str,
         path: Option<&[String]>,
     ) -> Result<CustomColumn> {
-        Ok(sqlx::query_as::<_, CustomColumn>(
-            "UPDATE custom_columns SET source_path = $2, when_last_modified = NOW(),
-               modify_count = modify_count + 1
-             WHERE id = $1
-             RETURNING id::text, NULLIF(BTRIM(title), '') AS title, description, expression, position_before,
-               position_after,
-               read_only, types, source_path,
-               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types,
-               COALESCE(is_group, false) AS is_group,
-               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
-               COALESCE(is_frozen, false) AS is_frozen",
-        )
+        Ok(sqlx::query_as::<_, CustomColumn>(&format!(
+            "UPDATE custom_columns c SET source_path = $2, when_last_modified = NOW(),
+               modify_count = c.modify_count + 1
+             WHERE c.id = $1
+             RETURNING {}",
+            custom_column_projection("c", None),
+        ))
         .bind(column_id)
         .bind(path.map(|p| p.to_vec()))
         .fetch_one(&self.pool)
@@ -1554,17 +1561,13 @@ impl DataStore for PgStore {
 
     async fn set_column_title(&self, column_id: &str, title: Option<&str>) -> Result<CustomColumn> {
         let title = title.and_then(non_blank_text);
-        Ok(sqlx::query_as::<_, CustomColumn>(
-            "UPDATE custom_columns
-             SET title = $2, when_last_modified = NOW(), modify_count = modify_count + 1
-             WHERE id = $1
-             RETURNING id::text, NULLIF(BTRIM(title), '') AS title, description, expression,
-               position_before, position_after, read_only, types, source_path,
-               COALESCE(data_types, ARRAY[]::TEXT[]) AS data_types,
-               COALESCE(is_group, false) AS is_group,
-               COALESCE(parent_ids, ARRAY[]::TEXT[]) AS parent_ids,
-               COALESCE(is_frozen, false) AS is_frozen",
-        )
+        Ok(sqlx::query_as::<_, CustomColumn>(&format!(
+            "UPDATE custom_columns c
+             SET title = $2, when_last_modified = NOW(), modify_count = c.modify_count + 1
+             WHERE c.id = $1
+             RETURNING {}",
+            custom_column_projection("c", None),
+        ))
         .bind(column_id)
         .bind(title)
         .fetch_one(&self.pool)

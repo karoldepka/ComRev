@@ -938,6 +938,7 @@ impl DataStore for MultiStore {
                 "position_before": input.position_before, "position_after": input.position_after,
                 "is_group": input.is_group, "parent_ids": input.parent_ids,
                 "source_path": input.source_path, "types": input.types, "data_types": input.data_types,
+                "read_only": input.read_only, "ref_table_id": input.ref_table_id,
             }),
             upsert_custom_column(table_id, id, input)
         )
@@ -1272,6 +1273,7 @@ mod tests {
                 is_group: false,
                 parent_ids: vec![],
                 is_frozen: false,
+                ref_table_id: None,
             })
         }
 
@@ -1492,6 +1494,7 @@ mod tests {
                 is_group: input.is_group,
                 parent_ids: input.parent_ids.clone(),
                 is_frozen: false,
+                ref_table_id: None,
             })
         }
         async fn delete_custom_column(&self, _id: &str) -> Result<()> {
@@ -1520,6 +1523,7 @@ mod tests {
                 is_group: false,
                 parent_ids: vec![],
                 is_frozen,
+                ref_table_id: None,
             })
         }
 
