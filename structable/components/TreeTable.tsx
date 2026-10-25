@@ -29,6 +29,7 @@ import TableFooter from './tree-table/TableFooter';
 import RowClassEditor from './RowClassEditor';
 import ItemPicker, { type PickerItem } from './ItemPicker';
 import { useReferenceRows } from '../hooks/useReferenceRows';
+import { applyMove, descendantIds, fetchAllRows, planMove, treePickerItems as treePickerItemsFor } from '../services/rowTree';
 import { colFilterParam } from '../utils/columnFilters';
 import logger from '../utils/logger';
 
@@ -76,6 +77,8 @@ import {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const GLOBAL_SEARCH_DEBOUNCE_MS = 250;
+/** Picker choice for "Move under…" meaning no parent. */
+const MOVE_TO_TOP_LEVEL = '__top_level__';
 
 type Props = {
   tableId: string;
@@ -291,6 +294,8 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
   // ── Tree row state ─────────────────────────────────────────────────────────
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
   const [rowMenu, setRowMenu] = useState<{ rowId: string; anchor: { top: number; left: number } } | null>(null);
+  /** "Move under…" picker; allRows = every row of the table (null while loading). */
+  const [moveRowState, setMoveRowState] = useState<{ rowId: string; anchor: { top: number; left: number }; allRows: DataRow[] | null } | null>(null);
   const [addRowRelation, setAddRowRelation] = useState<{
     parentIds: string[];
     afterSiblingId?: string | null;
@@ -1412,6 +1417,39 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     onRowClick?.(target.rowId);
   }, [onRowClick, tableId]);
 
+  const openMoveRow = useCallback((rowId: string, anchor: { top: number; left: number }) => {
+    if (!api) return;
+    setMoveRowState({ rowId, anchor, allRows: null });
+    fetchAllRows(api, tableId)
+      .then((allRows) => setMoveRowState((prev) => (prev?.rowId === rowId ? { ...prev, allRows } : prev)))
+      .catch((err: unknown) => {
+        toast.error(`Failed to load rows for move: ${errMsg(err)}`);
+        setMoveRowState(null);
+      });
+  }, [api, tableId]);
+
+  const moveRowUnder = useCallback((rowId: string, newParentId: string | null, allRows: DataRow[]) => {
+    if (!api) return;
+    let changes: Map<string, string[]>;
+    try {
+      changes = planMove(allRows, rowId, newParentId);
+    } catch (err) {
+      toast.error(errMsg(err));
+      return;
+    }
+    if (changes.size === 0) return;
+    const moved = allRows.find((row) => String(row['id'] ?? '') === rowId);
+    const target = newParentId ? allRows.find((row) => String(row['id'] ?? '') === newParentId) : undefined;
+    recordChange(`Move "${moved ? rowTitle(moved) : rowId}" under ${target ? `"${rowTitle(target)}"` : 'top level'}`);
+    setRows((prev) => prev.map((row) => {
+      const id = String(row['id'] ?? '');
+      return changes.has(id) ? { ...row, [PARENT_CHILD_FIELD_ID]: changes.get(id) } : row;
+    }));
+    if (newParentId) setCollapsedRowIds((prev) => { const next = new Set(prev); next.delete(newParentId); return next; });
+    applyMove(api, tableId, changes, newParentId)
+      .catch((err: unknown) => toast.error(`Failed to move row: ${errMsg(err)}`));
+  }, [api, recordChange, tableId]);
+
   const openRowAsTable = useCallback((rowId: string) => {
     if (!onOpenRowAsTable) return;
     const row = rows.find((candidate) => String(candidate['id'] ?? '') === rowId);
@@ -2386,6 +2424,12 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
           </button>
           <button
             type="button"
+            onClick={() => { setRowMenu(null); openMoveRow(rowMenu.rowId, rowMenu.anchor); }}
+          >
+            Move under…
+          </button>
+          <button
+            type="button"
             onClick={() => deleteRow(rowMenu.rowId)}
           >
             Delete row
@@ -2459,6 +2503,25 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
           onClose={() => setClassEditorState(null)}
         />
       )}
+      {moveRowState && (() => {
+        const { rowId, allRows } = moveRowState;
+        const excluded = allRows ? new Set([rowId, ...descendantIds(allRows, rowId)]) : new Set<string>();
+        const close = () => { setMoveRowState(null); wrapperRef.current?.focus(); };
+        return (
+          <ItemPicker
+            single
+            title="Move under…"
+            items={allRows ? [{ id: MOVE_TO_TOP_LEVEL, label: '⤒ Top level' }, ...treePickerItemsFor(allRows, excluded, rowTitle)] : []}
+            selectedIds={[]}
+            anchor={moveRowState.anchor}
+            onConfirm={([targetId]) => {
+              if (targetId && allRows) moveRowUnder(rowId, targetId === MOVE_TO_TOP_LEVEL ? null : targetId, allRows);
+              close();
+            }}
+            onClose={close}
+          />
+        );
+      })()}
       {referenceEditor && (() => {
         const col = allLeafColumns.find((candidate) => candidate.id === referenceEditor.colId);
         if (!col || !isReferenceColumn(col)) return null;
