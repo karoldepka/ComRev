@@ -67,7 +67,10 @@ import {
   applyColumnGroups,
   sortParam,
   isReferenceColumn,
+  isFileColumn,
 } from './tree-table/columns';
+import FileCell from './FileCell';
+import { fileRefsOf, resumePendingUploads, subscribePendingFiles } from '../services/fileStore';
 import { type GlobalSearchResult, rowTitle, buildGlobalSearchResults } from './tree-table/search';
 import {
   errMsg,
@@ -92,7 +95,14 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
   const [api, setApi] = useState<SyncClient | null>(null);
   const [syncPending, setSyncPending] = useState(0);
   const [cellPending, setCellPending] = useState(0);
-  const pendingUploads = syncPending + cellPending;
+  const [filePending, setFilePending] = useState(0);
+  const pendingUploads = syncPending + cellPending + filePending;
+
+  // File uploads count toward the sync indicator; resume any left from a previous session.
+  useEffect(() => {
+    void resumePendingUploads();
+    return subscribePendingFiles(setFilePending);
+  }, []);
 
   type PendingChange = { id: string; description: string; timestamp: number };
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
@@ -1064,7 +1074,7 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
           const key = `cell:${cursorPos.row}:${col.id}`;
           const rect = wrapperRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`)?.getBoundingClientRect();
           openReferenceEditor(cursorPos.row, String(row['id'] ?? ''), col.id, { top: rect?.bottom ?? 0, left: rect?.left ?? 0 });
-        } else if (col && row && isCellEditable(col.id) && !isRatingColumn(col)) {
+        } else if (col && row && isCellEditable(col.id) && !isRatingColumn(col) && !isFileColumn(col)) {
           e.preventDefault();
           const rowId = String(row['id'] ?? '');
           const rawVal = rowVal(row, col.id, col.sourcePath);
@@ -2146,7 +2156,7 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
                               setClassEditorState({ rowId, anchor: { top: e.clientY, left: e.clientX } });
                               return;
                             }
-                            if (isRatingColumn(col)) return;
+                            if (isRatingColumn(col) || isFileColumn(col)) return;
                             if (!isCellEditable(col.id)) return;
                             e.stopPropagation();
                             if (isReferenceColumn(col)) {
@@ -2264,6 +2274,12 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
                                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); wrapperRef.current?.focus(); }
                                   if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); wrapperRef.current?.focus(); }
                                 }}
+                              />
+                            ) : isFileColumn(col) ? (
+                              <FileCell
+                                files={fileRefsOf(rowVal(row, col.id, col.sourcePath))}
+                                editable={isCellEditable(col.id)}
+                                onChange={(files) => saveCellValue(rowIndex, rowId, col.id, files)}
                               />
                             ) : isRatingColumn(col) && isCellEditable(col.id) ? (
                               <RatingStars

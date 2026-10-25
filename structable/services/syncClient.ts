@@ -11,6 +11,7 @@
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { share, takeUntil } from 'rxjs/operators';
 import logger from '../utils/logger';
+import { REST_BASE } from './apiBase';
 
 // ── Proto-aligned event types (mirrors structable.proto ServerEvent) ──────────
 
@@ -265,7 +266,6 @@ export class SyncClient {
     await this.inner.nuke_db();
   }
   async nukeUserData(): Promise<void> {
-    const REST_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
     const res = await fetch(`${REST_BASE}/NUKE__USER_DATA`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`NUKE__USER_DATA: HTTP ${res.status}`);
   }
@@ -289,7 +289,6 @@ export class SyncClient {
   }
 
   async patchColumn(tableId: string, columnId: string, patch: { title?: string | null; source_path?: string[] | null }): Promise<import('../types/table').ApiCustomColumn> {
-    const REST_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
     const res = await fetch(`${REST_BASE}/tables/${tableId}/custom-columns/${columnId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -302,7 +301,7 @@ export class SyncClient {
   // ── Row classes / generic many-to-many relationships ──────────────────────
 
   private get restBase(): string {
-    return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+    return REST_BASE;
   }
 
   async fetchRowClasses(tableId: string): Promise<import('../types/table').RowClass[]> {

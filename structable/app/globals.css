@@ -540,6 +540,82 @@
     background: color-mix(in srgb, var(--color-secondary) 14%, transparent);
   }
 
+  .file-cell {
+    @apply flex min-h-6 flex-col gap-1 rounded-app;
+  }
+
+  .file-cell-drag-over {
+    outline: 2px dashed var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .file-item {
+    @apply flex items-center gap-1;
+  }
+
+  .file-remove,
+  .file-add {
+    @apply inline-flex cursor-pointer items-center rounded-app border border-transparent bg-transparent text-xs text-app-muted;
+  }
+
+  .file-remove:hover,
+  .file-add:hover {
+    @apply border-app-border-strong text-app-fg;
+  }
+
+  .file-add {
+    @apply self-start px-1.5 py-px opacity-0;
+  }
+
+  td:hover .file-add,
+  td.cell-selected .file-add,
+  .file-cell:focus-within .file-add {
+    @apply opacity-100;
+  }
+
+  .file-chip {
+    @apply inline-flex min-w-0 max-w-full items-center gap-1 rounded-app border border-app-border px-1.5 py-px text-xs text-app-fg no-underline;
+  }
+
+  .file-chip-name {
+    @apply truncate;
+  }
+
+  .file-chip-size {
+    @apply shrink-0 text-app-subtle;
+  }
+
+  .file-thumb {
+    @apply max-h-16 max-w-full rounded-app object-contain;
+  }
+
+  .audio-player {
+    @apply flex min-w-0 flex-1 items-center gap-1.5 rounded-app border border-app-border px-1 py-0.5;
+    background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  }
+
+  .audio-play {
+    @apply inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-none text-white;
+    background: var(--color-primary);
+  }
+
+  .audio-play:hover {
+    background: var(--color-primary-hover);
+  }
+
+  .audio-wave {
+    @apply relative min-w-[60px] flex-1 cursor-pointer;
+    min-height: 26px;
+  }
+
+  .audio-name {
+    @apply absolute inset-0 truncate text-xs leading-[26px] text-app-muted;
+  }
+
+  .audio-time {
+    @apply shrink-0 text-[0.7rem] tabular-nums text-app-muted;
+  }
+
   .hidden-columns-popover {
     @apply z-50 flex max-h-[50vh] max-w-[min(32rem,calc(100vw-2rem))] flex-wrap gap-1.5 overflow-auto rounded-app border border-app-border bg-app-raised p-2 shadow-popover;
   }

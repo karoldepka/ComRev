@@ -20,7 +20,7 @@ export type AddColumnPayload = {
   refTableId: string | null;
 };
 
-export type ColumnDataType = 'text' | 'rating' | 'reference';
+export type ColumnDataType = 'text' | 'rating' | 'reference' | 'file';
 
 type Props = {
   afterColId: string;
@@ -106,6 +106,7 @@ export default function AddColumnDialog({ afterColId, existingNames, tables, onC
             <option value="text">Text</option>
             <option value="rating">0..5 star rating</option>
             <option value="reference">Reference to a row of a table (single choice)</option>
+            <option value="file">Files (upload; audio gets a player)</option>
           </select>
         </label>
 

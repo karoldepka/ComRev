@@ -139,6 +139,8 @@ export function columnTypesForDataType(columnType: ColumnDataType): { types: str
   if (columnType === 'rating') return { types: ['rating'], data_types: ['numeric'] };
   // Reference cell value is the referenced row's id (text).
   if (columnType === 'reference') return { types: [REFERENCE_TYPE], data_types: ['text'] };
+  // File cell value is a list of file refs; bytes live in the backend's file store.
+  if (columnType === 'file') return { types: [FILE_TYPE], data_types: ['text'] };
   return { types: ['text'], data_types: ['text'] };
 }
 
@@ -147,6 +149,11 @@ export function isRatingColumn(column: Column): boolean {
 }
 
 export const REFERENCE_TYPE = 'reference';
+export const FILE_TYPE = 'file';
+
+export function isFileColumn(column: Column): boolean {
+  return !!column.types?.includes(FILE_TYPE);
+}
 
 /** Single-select reference to a row of `column.refTableId`. */
 export function isReferenceColumn(column: Column): column is Column & { refTableId: string } {
