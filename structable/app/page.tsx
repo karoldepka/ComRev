@@ -1,4 +1,4 @@
-import TablePage from '../components/TablePage';
+import TablePage from '../components/ClientTablePage';
 
 export default function Home() {
   return (

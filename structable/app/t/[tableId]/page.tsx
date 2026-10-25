@@ -1,4 +1,4 @@
-import TablePage from '../../../components/TablePage';
+import TablePage from '../../../components/ClientTablePage';
 
 export default async function Page({ params }: { params: Promise<{ tableId: string }> }) {
   const { tableId } = await params;
