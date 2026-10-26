@@ -68,6 +68,9 @@ fn user_table_ident(table_id: &str) -> String {
 /// Id of the meta-table whose rows are the user-visible tables (backed by `tables`, not `t_tables`).
 const TABLES_REGISTRY_ID: &str = "tables";
 
+/// Built-in row column holding the manual order key (fractional index; NULL = not yet ordered).
+const ROW_POSITION_COL: &str = "position";
+
 /// Physical table holding the rows of `table_id` (the registry for the meta-table).
 fn row_table_ident(table_id: &str) -> String {
     if table_id == TABLES_REGISTRY_ID {
@@ -341,6 +344,23 @@ impl PgStore {
         .execute(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("ensure_user_table parent_child column({table_id}): {e}"))?;
+
+        // Manual row order: fractional-index keys, compared bytewise (COLLATE "C").
+        for (what, sql) in [
+            ("column", format!("ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS {ROW_POSITION_COL} TEXT COLLATE \"C\"")),
+            (
+                "index",
+                format!(
+                    "CREATE INDEX IF NOT EXISTS \"idx_{}_{ROW_POSITION_COL}\" ON {tname} ({ROW_POSITION_COL}, when_created)",
+                    table_id.replace('"', "")
+                ),
+            ),
+        ] {
+            sqlx::query(&sql)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("ensure_user_table position {what}({table_id}): {e}"))?;
+        }
 
         sqlx::query(&format!(
             "ALTER TABLE {tname} ADD COLUMN IF NOT EXISTS when_deleted TIMESTAMPTZ"
@@ -1726,6 +1746,20 @@ impl DataStore for PgStore {
                 .set_many_to_many_assignments(table_id, row_id, col_id, &item_ids)
                 .await;
         }
+        if col_id == ROW_POSITION_COL {
+            self.ensure_user_table(table_id).await?;
+            let tname = user_table_ident(table_id);
+            let result = sqlx::query(&format!(
+                "UPDATE {tname}
+                 SET {ROW_POSITION_COL} = $2, when_last_modified = NOW(), modify_count = modify_count + 1
+                 WHERE id = $1 AND when_deleted IS NULL"
+            ))
+            .bind(row_id)
+            .bind(value.as_str())
+            .execute(&self.pool)
+            .await?;
+            return ensure_row_written(result, table_id, row_id);
+        }
         if col_id == "full_name" {
             self.ensure_user_table(table_id).await?;
             let tname = user_table_ident(table_id);
@@ -1790,6 +1824,7 @@ impl DataStore for PgStore {
                'when_last_modified', when_last_modified, \
                'modify_count', modify_count, \
                'classes', COALESCE(classes, '[]'::jsonb), \
+               'position', position, \
                'parent_child', COALESCE(parent_child, '[]'::jsonb)) || (custom_vals - 'classes' - 'parent_child' - 'full_name')"
         );
         let inserted: Option<serde_json::Value> = sqlx::query_scalar(&format!(
@@ -1903,12 +1938,14 @@ impl DataStore for PgStore {
                        'when_last_modified', when_last_modified, \
                        'who_last_modified', who_last_modified, \
                        'classes', COALESCE(classes, '[]'::jsonb),\
+                       'position', position,\
                        'parent_child', COALESCE(parent_child, '[]'::jsonb)\
                      ) || (custom_vals - 'classes' - 'parent_child' - 'full_name')) AS row FROM {tname} WHERE ",
                 ));
                 qb.push("when_deleted IS NULL AND id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
-                qb.push(format!(" ORDER BY {order}"));
+                // Stable tiebreak: equal keys (e.g. not-yet-positioned rows) keep creation order across pages.
+                qb.push(format!(" ORDER BY {order}, when_created ASC, id"));
                 qb.push(" LIMIT ").push_bind(per_page);
                 qb.push(" OFFSET ").push_bind(offset);
                 qb.build().fetch_all(&self.pool).await?
@@ -2450,7 +2487,7 @@ fn col_to_sort_expr(col: &str, col_type: Option<&str>) -> Option<String> {
             return Some(col.to_string());
         }
         "full_name" => return Some("full_name".to_string()),
-        "classes" => return Some("classes".to_string()),
+        "classes" | ROW_POSITION_COL => return Some(col.to_string()),
         _ => path_to_jsonb_expr(col)?,
     };
     let cast = match col_type {

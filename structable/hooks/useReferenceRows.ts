@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { MANUAL_ORDER_SORT } from '../services/rowOrder';
 import type { SyncClient } from '../services/syncClient';
 import type { DataRow } from '../types/table';
 import logger from '../utils/logger';
@@ -8,7 +9,7 @@ const MAX_REFERENCE_ROWS = 200;
 const RETRY_MS = 5000;
 
 /**
- * Rows of every table referenced by a reference column, in creation order (the picker order).
+ * Rows of every table referenced by a reference column, in manual order (the picker order).
  * Retries failed loads; keeps the last good rows meanwhile.
  */
 export function useReferenceRows(api: SyncClient | null, refTableIds: string[]): Map<string, DataRow[]> {
@@ -20,7 +21,7 @@ export function useReferenceRows(api: SyncClient | null, refTableIds: string[]):
     let active = true;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const load = (tableId: string) => {
-      const params = new URLSearchParams({ page: '1', per_page: String(MAX_REFERENCE_ROWS), sort: 'when_created:asc' });
+      const params = new URLSearchParams({ page: '1', per_page: String(MAX_REFERENCE_ROWS), sort: `${MANUAL_ORDER_SORT.col}:${MANUAL_ORDER_SORT.dir}` });
       api.fetchDataRows(tableId, params)
         .then((payload) => {
           if (active) setRowsByTable((prev) => new Map(prev).set(tableId, payload.data));

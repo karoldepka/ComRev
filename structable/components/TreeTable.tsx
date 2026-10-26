@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { ChevronDown, ChevronRight, CircleDot } from 'lucide-react';
 import { getSyncClient, isRowDeletedError, SyncClient } from '../services/syncClient';
+import { MANUAL_ORDER_SORT, planChildMove, planSiblingMove, POSITION_FIELD, sortByPosition, type MoveDelta } from '../services/rowOrder';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import { localStore } from '../services/localStore';
 import { useTableSelection } from '../hooks/useTableSelection';
@@ -227,9 +228,10 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
       }
       if ('cell_value' in ev && ev.cell_value.table_id === tableId) {
         const { row_id, col_id, value } = ev.cell_value;
-        setRows((prev) => prev.map((row) =>
-          String(row['id'] ?? '') === row_id ? { ...row, [col_id]: value } : row,
-        ));
+        setRows((prev) => {
+          const next = prev.map((row) => String(row['id'] ?? '') === row_id ? { ...row, [col_id]: value } : row);
+          return col_id === POSITION_FIELD && isManualOrderRef.current ? sortByPosition(next) : next;
+        });
         flashCell(row_id, col_id);
       }
       if ('row_deleted' in ev && ev.row_deleted.table_id === tableId) {
@@ -364,6 +366,10 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
   const resizingRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
   const pendingFocusColRef = useRef<string | null>(null);
   const [perPage, setPerPage] = useState(() => localStore.getPerPage(tableId) ?? 50);
+
+  const isManualOrder = sort.col === MANUAL_ORDER_SORT.col && sort.dir === MANUAL_ORDER_SORT.dir;
+  const isManualOrderRef = useRef(isManualOrder);
+  isManualOrderRef.current = isManualOrder;
 
   // ── Persist view prefs (sort/filters/per-page/row-numbers) per table ──────
   useEffect(() => { localStore.setSort(tableId, sort); }, [tableId, sort]);
@@ -636,6 +642,9 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     rowsToRender.forEach((row) => pushRow(row, 0, null, new Set()));
     return result;
   }, [collapsedRowIds, hiddenRowIds, rows, treeChildIdsByParent]);
+  /** Latest tree rows for deferred callbacks (e.g. re-selecting a row after it moved). */
+  const treeRowsRef = useRef(treeRows);
+  treeRowsRef.current = treeRows;
 
   // ── Class picker items: tree-ordered PickerItem[] from /t/classes ──────────
   const treePickerItems = useMemo((): PickerItem[] => {
@@ -1110,6 +1119,12 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
       return;
     }
 
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const rowId = cursorPos ? treeRows[cursorPos.row]?.rowId : undefined;
+      if (rowId) moveRowBy(rowId, e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+
     if (e.ctrlKey && e.altKey && !e.shiftKey && cursorPos && cursorPos.row >= 0 && cursorPos.row < treeRows.length) {
       const treeRow = treeRows[cursorPos.row];
       if (e.key === 'ArrowRight' && treeRow.hasChildren && !treeRow.isExpanded) {
@@ -1187,21 +1202,23 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     if (colIdx >= 0) setCursorPos({ row: rowIndex, col: colIdx });
   }, [setSelectedKeys, setCursorPos, visibleLeafColumns]);
 
+  const handleCellWriteError = useCallback((rowId: string, err: unknown) => {
+    if (isRowDeletedError(err)) {
+      removeLocalRow(rowId);
+      toast.error('This row was deleted (maybe in another window); the edit was not saved.');
+      return;
+    }
+    toast.error(`Failed to save cell edit: ${errMsg(err)}`);
+  }, [removeLocalRow]);
+
   /** Write a cell through the sync queue (local first, counted in the sync indicator). */
   const persistCellValue = useCallback((rowId: string, colId: string, value: unknown) => {
     if (!api) return;
     setRows((prev) => prev.map((row) => String(row['id'] ?? '') === rowId ? { ...row, [colId]: value } : row));
     flashCell(rowId, colId);
     recordChange(`Edit cell [${colId}]`);
-    api.upsertCellValue(rowId, colId, value, tableId).catch((err: unknown) => {
-      if (isRowDeletedError(err)) {
-        removeLocalRow(rowId);
-        toast.error('This row was deleted (maybe in another window); the edit was not saved.');
-        return;
-      }
-      toast.error(`Failed to save cell edit: ${errMsg(err)}`);
-    });
-  }, [recordChange, api, tableId, flashCell, removeLocalRow]);
+    api.upsertCellValue(rowId, colId, value, tableId).catch((err: unknown) => handleCellWriteError(rowId, err));
+  }, [recordChange, api, tableId, flashCell, handleCellWriteError]);
 
   /** User edit: also keeps the cursor on the edited cell. */
   const saveCellValue = useCallback((rowIndex: number, rowId: string, colId: string, value: unknown) => {
@@ -1457,6 +1474,50 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     if (tableId !== TABLES_TABLE_ID || !OPENABLE_TABLE_CELL_COLUMNS.has(target.colId)) return;
     onRowClick?.(target.rowId);
   }, [onRowClick, tableId]);
+
+  /** Move a row one step up/down among its siblings (manual order). */
+  const moveRowBy = useCallback((rowId: string, delta: MoveDelta) => {
+    if (!api) return;
+    const treeRow = treeRows.find((candidate) => candidate.rowId === rowId);
+    if (!treeRow) return;
+    const siblings = treeRows.filter((candidate) => candidate.parentId === treeRow.parentId && candidate.depth === treeRow.depth);
+    const keepCursorOn = (id: string) => setTimeout(() => {
+      const index = treeRowsRef.current.findIndex((candidate) => candidate.rowId === id);
+      const colId = cursorPos ? allColumnsForSelection[cursorPos.col]?.id : undefined;
+      if (index >= 0 && colId) selectKey(`cell:${index}:${colId}`, false);
+    }, 0);
+
+    if (treeRow.parentId) {
+      const parent = treeRows.find((candidate) => candidate.rowId === treeRow.parentId);
+      const childIds = planChildMove(parent?.childIds ?? [], siblings.map((s) => s.rowId), rowId, delta);
+      if (!parent || !childIds) return;
+      setRows((prev) => prev.map((row) => String(row['id'] ?? '') === parent.rowId ? { ...row, [PARENT_CHILD_FIELD_ID]: childIds } : row));
+      recordChange('Reorder row');
+      api.setManyToMany(tableId, parent.rowId, PARENT_CHILD_FIELD_ID, childIds)
+        .catch((err: unknown) => toast.error(`Failed to reorder row: ${errMsg(err)}`));
+      keepCursorOn(rowId);
+      return;
+    }
+
+    // Top level: what is displayed becomes the manual order (also when another sort was active).
+    const changes = planSiblingMove(siblings.map((s) => s.row), rowId, delta, !isManualOrder);
+    if (changes.size === 0) return;
+    setRows((prev) => sortByPosition(prev.map((row) => {
+      const key = changes.get(String(row['id'] ?? ''));
+      return key ? { ...row, [POSITION_FIELD]: key } : row;
+    })));
+    recordChange('Reorder row');
+    const writes = [...changes].map(([id, key]) => api.upsertCellValue(id, POSITION_FIELD, key, tableId)
+      .catch((err: unknown) => handleCellWriteError(id, err)));
+    // Switch the view to manual order once the keys are saved (the switch refetches rows).
+    if (!isManualOrder) {
+      void Promise.all(writes).then(() => {
+        setSort({ ...MANUAL_ORDER_SORT });
+        toast.info('Sorted by manual order');
+      });
+    }
+    keepCursorOn(rowId);
+  }, [api, treeRows, isManualOrder, tableId, recordChange, cursorPos, allColumnsForSelection, selectKey, handleCellWriteError]);
 
   const openMoveRow = useCallback((rowId: string, anchor: { top: number; left: number }) => {
     if (!api) return;
@@ -2506,6 +2567,12 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
             onClick={() => openAddChildDialog(rowMenu.rowId)}
           >
             Add child
+          </button>
+          <button type="button" title="Alt+↑" onClick={() => { setRowMenu(null); moveRowBy(rowMenu.rowId, -1); }}>
+            Move up
+          </button>
+          <button type="button" title="Alt+↓" onClick={() => { setRowMenu(null); moveRowBy(rowMenu.rowId, 1); }}>
+            Move down
           </button>
           <button
             type="button"
