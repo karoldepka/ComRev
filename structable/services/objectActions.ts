@@ -30,7 +30,7 @@ const VOICE_COL = 'voice';
 const AUDIO_COL = 'audio';
 const TTS_DURATION_COL = 'tts_generation_duration';
 
-type VoiceboxRenderResponse = { file: FileRef; duration_seconds: number; audio_seconds: number; chunks: number };
+type VoiceboxRenderResponse = { file: FileRef; duration_seconds: number; audio_seconds: number; chunks: number; voice: string };
 
 const formatSeconds = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
 
@@ -50,7 +50,7 @@ const renderAudiobookWithVoicebox: ObjectAction = {
     const result = (await res.json()) as VoiceboxRenderResponse;
     setCell(AUDIO_COL, [...fileRefsOf(row[AUDIO_COL]), result.file]);
     setCell(TTS_DURATION_COL, result.duration_seconds);
-    return `Rendered ${formatSeconds(result.audio_seconds)} of audio in ${result.duration_seconds} s`;
+    return `Rendered ${formatSeconds(result.audio_seconds)} of audio (voice: ${result.voice}) in ${result.duration_seconds} s`;
   },
 };
 
