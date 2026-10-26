@@ -29,6 +29,10 @@ const SCRIPT_TEXT_COL = 'script_text';
 const VOICE_COL = 'voice';
 const AUDIO_COL = 'audio';
 const TTS_DURATION_COL = 'tts_generation_duration';
+const STATUS_COL = 'status';
+// Rows of the Audiobook Status table (audiobook_status).
+const STATUS_GENERATING_AUDIO = 'QivNurpp7_J4pxxWYoYxH';
+const STATUS_GENERATED_AUDIO = '-Fjv84OY7e3SatRp9U3g3';
 
 type VoiceboxRenderResponse = { file: FileRef; duration_seconds: number; audio_seconds: number; chunks: number; voice: string };
 
@@ -41,15 +45,24 @@ const renderAudiobookWithVoicebox: ObjectAction = {
   async run({ row, rowTitle, setCell }) {
     const text = String(row[SCRIPT_TEXT_COL] ?? '').trim();
     if (!text) throw new Error('Script Text is empty');
-    const res = await fetch(`${REST_BASE}/voicebox/render`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: row[VOICE_COL] ?? null, name: rowTitle }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    const result = (await res.json()) as VoiceboxRenderResponse;
+    const previousStatus = row[STATUS_COL] ?? null;
+    setCell(STATUS_COL, STATUS_GENERATING_AUDIO);
+    let result: VoiceboxRenderResponse;
+    try {
+      const res = await fetch(`${REST_BASE}/voicebox/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: row[VOICE_COL] ?? null, name: rowTitle }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      result = (await res.json()) as VoiceboxRenderResponse;
+    } catch (err) {
+      setCell(STATUS_COL, previousStatus);
+      throw err;
+    }
     setCell(AUDIO_COL, [...fileRefsOf(row[AUDIO_COL]), result.file]);
     setCell(TTS_DURATION_COL, result.duration_seconds);
+    setCell(STATUS_COL, STATUS_GENERATED_AUDIO);
     return `Rendered ${formatSeconds(result.audio_seconds)} of audio (voice: ${result.voice}) in ${result.duration_seconds} s`;
   },
 };

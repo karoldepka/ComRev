@@ -385,6 +385,15 @@
     @apply align-middle;
   }
 
+  /* Long values (e.g. scripts) don't blow up row height; the editor shows the full text. */
+  .cell-clamp {
+    display: inline-block;
+    max-width: 100%;
+    max-height: var(--cell-max-height, 10rem);
+    overflow: hidden;
+    vertical-align: middle;
+  }
+
   .row-object-menu {
     @apply z-[210] min-w-36 rounded-md border border-app-border bg-app-raised py-1 text-sm text-app-fg shadow-popover backdrop-blur-md;
   }

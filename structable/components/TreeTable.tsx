@@ -1565,8 +1565,18 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     const onDown = (e: PointerEvent) => {
       if (!(e.target as HTMLElement).closest('.row-object-menu')) setRowMenu(null);
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setRowMenu(null);
+      wrapperRef.current?.focus();
+    };
     window.addEventListener('pointerdown', onDown);
-    return () => window.removeEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
   }, [rowMenu]);
 
   // All stable column ids currently visible, used for duplicate-ID validation.
@@ -2332,17 +2342,19 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
                                 onChange={(value) => saveCellValue(rowIndex, rowId, col.id, value)}
                               />
                             ) : (
-                              <CellContent
-                                row={row}
-                                colId={col.id}
-                                sourcePath={col.sourcePath}
-                                types={col.types}
-                                formatNumericStrings={col.filterType === 'numeric' || col.types?.includes('numeric')}
-                                compiledExpr={compiledExprs.get(col.id)}
-                                hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
-                                hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
-                                referenceLabel={isReferenceColumn(col) ? referenceLabel(row, col) : undefined}
-                              />
+                              <span className="cell-clamp">
+                                <CellContent
+                                  row={row}
+                                  colId={col.id}
+                                  sourcePath={col.sourcePath}
+                                  types={col.types}
+                                  formatNumericStrings={col.filterType === 'numeric' || col.types?.includes('numeric')}
+                                  compiledExpr={compiledExprs.get(col.id)}
+                                  hasNote={cellRemarks[noteKey]?.some((r) => r.kind === 'note') ?? false}
+                                  hasComment={cellRemarks[noteKey]?.some((r) => r.kind === 'comment') ?? false}
+                                  referenceLabel={isReferenceColumn(col) ? referenceLabel(row, col) : undefined}
+                                />
+                              </span>
                             )}
                           </span>
                           <div

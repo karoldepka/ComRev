@@ -56,6 +56,16 @@ pub struct RowQuery {
 }
 
 impl RowQuery {
+    /// True when the query needs column types (to build filters or a non-default sort).
+    pub fn needs_column_types(&self) -> bool {
+        self.sort.is_some()
+            || self.q.is_some()
+            || !self.range_filters.is_empty()
+            || !self.date_filters.is_empty()
+            || !self.value_filters.is_empty()
+            || !self.like_filters.is_empty()
+    }
+
     pub fn from_map(map: &HashMap<String, String>) -> Self {
         const KNOWN: &[&str] = &["sort", "page", "per_page", "q"];
 

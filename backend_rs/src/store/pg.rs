@@ -1862,15 +1862,20 @@ impl DataStore for PgStore {
             // empty, not fail because their physical relation is not materialized.
             self.ensure_user_table(table_id).await?;
             let tname = user_table_ident(table_id);
-            let col_type_rows = sqlx::query_as::<_, (String, Vec<String>, Option<Vec<String>>)>(
-                "SELECT c.id, c.types, c.source_path
-                     FROM custom_columns c
-                     JOIN table_custom_columns tcc ON tcc.column_id = c.id
-                     WHERE tcc.table_id = $1",
-            )
-            .bind(table_id)
-            .fetch_all(&self.pool)
-            .await?;
+            // Each query is a round trip to a possibly distant DB, so skip this one when unused.
+            let col_type_rows = if params.needs_column_types() {
+                sqlx::query_as::<_, (String, Vec<String>, Option<Vec<String>>)>(
+                    "SELECT c.id, c.types, c.source_path
+                         FROM custom_columns c
+                         JOIN table_custom_columns tcc ON tcc.column_id = c.id
+                         WHERE tcc.table_id = $1",
+                )
+                .bind(table_id)
+                .fetch_all(&self.pool)
+                .await?
+            } else {
+                Vec::new()
+            };
             let mut col_types: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
             col_types.insert("full_name".to_string(), vec!["text".to_string()]);
@@ -1886,17 +1891,11 @@ impl DataStore for PgStore {
                 }
             }
 
-            let total: i64 = {
-                let mut qb = QueryBuilder::new(format!("SELECT COUNT(*) FROM {tname} WHERE "));
-                qb.push("when_deleted IS NULL AND id NOT IN (SELECT row_id FROM hidden_rows)");
-                push_table_row_filters(&mut qb, params, &col_types);
-                qb.build_query_scalar().fetch_one(&self.pool).await?
-            };
-
             let order = validated_sort_with_paths(params.sort.as_deref(), &col_types, &col_paths);
-            let data: Vec<serde_json::Value> = {
+            // The total rides along as a window count, saving a separate COUNT round trip.
+            let page_rows = {
                 let mut qb = QueryBuilder::new(format!(
-                    "SELECT (jsonb_build_object(\
+                    "SELECT COUNT(*) OVER () AS total, (jsonb_build_object(\
                        'id', id, \
                        'full_name', full_name, \
                        'when_created', when_created, \
@@ -1905,20 +1904,28 @@ impl DataStore for PgStore {
                        'who_last_modified', who_last_modified, \
                        'classes', COALESCE(classes, '[]'::jsonb),\
                        'parent_child', COALESCE(parent_child, '[]'::jsonb)\
-                     ) || (custom_vals - 'classes' - 'parent_child' - 'full_name')) FROM {tname} WHERE ",
+                     ) || (custom_vals - 'classes' - 'parent_child' - 'full_name')) AS row FROM {tname} WHERE ",
                 ));
                 qb.push("when_deleted IS NULL AND id NOT IN (SELECT row_id FROM hidden_rows)");
                 push_table_row_filters(&mut qb, params, &col_types);
                 qb.push(format!(" ORDER BY {order}"));
                 qb.push(" LIMIT ").push_bind(per_page);
                 qb.push(" OFFSET ").push_bind(offset);
-                qb.build()
-                    .fetch_all(&self.pool)
-                    .await?
-                    .iter()
-                    .map(|r| r.try_get::<serde_json::Value, _>(0))
-                    .collect::<Result<_, _>>()?
+                qb.build().fetch_all(&self.pool).await?
             };
+            let total: i64 = match page_rows.first() {
+                Some(first) => first.try_get("total")?,
+                // A page past the end has no rows to carry the count.
+                None if offset > 0 => {
+                    let mut qb = QueryBuilder::new(format!("SELECT COUNT(*) FROM {tname} WHERE "));
+                    qb.push("when_deleted IS NULL AND id NOT IN (SELECT row_id FROM hidden_rows)");
+                    push_table_row_filters(&mut qb, params, &col_types);
+                    qb.build_query_scalar().fetch_one(&self.pool).await?
+                }
+                None => 0,
+            };
+            let data: Vec<serde_json::Value> =
+                page_rows.iter().map(|r| r.try_get::<serde_json::Value, _>("row")).collect::<Result<_, _>>()?;
             return Ok(PagedResponse {
                 data,
                 total,
