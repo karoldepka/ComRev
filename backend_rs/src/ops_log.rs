@@ -75,7 +75,9 @@ fn is_fk_violation(e: &anyhow::Error) -> bool {
 
 /// A replay that can never succeed: its target or a referenced record is gone.
 fn is_stale(e: &anyhow::Error) -> bool {
-    is_fk_violation(e) || e.downcast_ref::<crate::store::MissingReference>().is_some()
+    is_fk_violation(e)
+        || e.downcast_ref::<crate::store::MissingReference>().is_some()
+        || e.downcast_ref::<crate::store::RowDeleted>().is_some()
 }
 
 tokio::task_local! {

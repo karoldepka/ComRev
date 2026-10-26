@@ -1729,36 +1729,38 @@ impl DataStore for PgStore {
         if col_id == "full_name" {
             self.ensure_user_table(table_id).await?;
             let tname = user_table_ident(table_id);
-            sqlx::query(&format!(
+            let result = sqlx::query(&format!(
                 "INSERT INTO {tname} (id, full_name)
                  VALUES ($1, $2)
                  ON CONFLICT (id) DO UPDATE
                    SET full_name = EXCLUDED.full_name,
                        when_last_modified = NOW(),
-                       modify_count = {tname}.modify_count + 1",
+                       modify_count = {tname}.modify_count + 1
+                 WHERE {tname}.when_deleted IS NULL",
             ))
             .bind(row_id)
             .bind(value.as_str().unwrap_or(""))
             .execute(&self.pool)
             .await?;
-            return Ok(());
+            return ensure_row_written(result, table_id, row_id);
         }
         self.ensure_user_table(table_id).await?;
         let tname = user_table_ident(table_id);
-        sqlx::query(&format!(
+        let result = sqlx::query(&format!(
             "INSERT INTO {tname} (id, custom_vals)
              VALUES ($1, jsonb_build_object($2::text, $3::jsonb))
              ON CONFLICT (id) DO UPDATE
                SET custom_vals = {tname}.custom_vals || jsonb_build_object($2::text, $3::jsonb),
                    when_last_modified = NOW(),
-                   modify_count = {tname}.modify_count + 1",
+                   modify_count = {tname}.modify_count + 1
+             WHERE {tname}.when_deleted IS NULL",
         ))
         .bind(row_id)
         .bind(col_id)
         .bind(value)
         .execute(&self.pool)
         .await?;
-        Ok(())
+        ensure_row_written(result, table_id, row_id)
     }
 
     async fn create_row(
@@ -2380,6 +2382,14 @@ async fn sync_many_to_many_jsonb(
         return Err(super::MissingReference(format!("row '{row_id}' does not exist in table '{table_id}'")).into());
     }
 
+    Ok(())
+}
+
+/// A cell upsert skips soft-deleted rows (`WHERE when_deleted IS NULL`), so no affected row means deleted.
+fn ensure_row_written(result: sqlx::postgres::PgQueryResult, table_id: &str, row_id: &str) -> Result<()> {
+    if result.rows_affected() == 0 {
+        return Err(super::RowDeleted { table_id: table_id.to_string(), row_id: row_id.to_string() }.into());
+    }
     Ok(())
 }
 

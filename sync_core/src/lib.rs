@@ -405,10 +405,9 @@ async fn http_patch_json(url: &str, body: &str) -> Result<JsValue, JsValue> {
         .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     if !resp.ok() {
-        return Err(JsValue::from_str(&format!(
-            "PATCH {url} — HTTP {}",
-            resp.status()
-        )));
+        let status = resp.status();
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(JsValue::from_str(&format!("PATCH {url} — HTTP {status}: {detail}")));
     }
     resp.text()
         .await
@@ -1491,6 +1490,12 @@ impl serde::Serialize for ServerEvent {
                         "value":    serde_json::from_str::<serde_json::Value>(&v.value_json)
                                         .unwrap_or(serde_json::Value::Null),
                     }),
+                )?;
+            }
+            Some(server_event::Payload::RowDeleted(v)) => {
+                map.serialize_entry(
+                    "row_deleted",
+                    &serde_json::json!({ "table_id": v.table_id, "row_id": v.row_id }),
                 )?;
             }
             Some(server_event::Payload::StoreError(e)) => {

@@ -318,6 +318,12 @@ pub fn cell_value_event(table_id: impl Into<String>, row_id: impl Into<String>, 
         value_json: value_json.into(),
     }))}
 }
+pub fn row_deleted_event(table_id: impl Into<String>, row_id: impl Into<String>) -> ServerEvent {
+    ServerEvent { payload: Some(server_event::Payload::RowDeleted(RowDeletedEvent {
+        table_id: table_id.into(),
+        row_id: row_id.into(),
+    }))}
+}
 pub fn store_error_event(method: impl Into<String>, message: impl Into<String>) -> ServerEvent {
     ServerEvent { payload: Some(server_event::Payload::StoreError(StoreErrorEvent { method: method.into(), message: message.into() })) }
 }

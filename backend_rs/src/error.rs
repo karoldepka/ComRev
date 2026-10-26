@@ -2,8 +2,13 @@ use axum::http::StatusCode;
 
 /// Convert a store error into an Axum error response.
 /// Unique-constraint violations (SQLSTATE 23505) become 400 Bad Request.
+/// Writes to soft-deleted rows become 410 Gone.
 /// Everything else becomes 500 Internal Server Error.
 pub fn db_err(op: &str, e: anyhow::Error) -> (StatusCode, String) {
+    if let Some(deleted) = e.downcast_ref::<crate::store::RowDeleted>() {
+        tracing::warn!("{op}: {deleted}");
+        return (StatusCode::GONE, deleted.to_string());
+    }
     if let Some(sqlx_err) = e.downcast_ref::<sqlx::Error>() {
         if let sqlx::Error::Database(ref db_err) = sqlx_err {
             if db_err.code().as_deref() == Some("23505") {
@@ -27,6 +32,14 @@ mod tests {
         let (status, body) = db_err("test_op", e);
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert!(body.contains("something went wrong"));
+    }
+
+    #[test]
+    fn row_deleted_returns_410() {
+        let e: anyhow::Error = crate::store::RowDeleted { table_id: "t".into(), row_id: "r".into() }.into();
+        let (status, body) = db_err("test_op", e);
+        assert_eq!(status, StatusCode::GONE);
+        assert!(body.contains("was deleted"));
     }
 
     #[test]

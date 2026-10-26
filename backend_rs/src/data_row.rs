@@ -143,6 +143,7 @@ pub async fn delete_row(
         .delete_row(&table_id, &row_id)
         .await
         .map_err(|e| db_err("row.delete", e))?;
+    let _ = state.event_tx.send(crate::sync_service::row_deleted_event(&table_id, &row_id));
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -157,7 +158,7 @@ pub async fn patch_cell_value(
         .store
         .patch_row_value(&table_id, &row_id, &body.col_id, body.value)
         .await
-        .map_err(|e| db_err("repo", e))?;
+        .map_err(|e| db_err("row.patch", e))?;
     let _ = state.event_tx.send(
         crate::sync_service::cell_value_event(&table_id, &row_id, &body.col_id, value_json),
     );

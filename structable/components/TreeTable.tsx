@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { ChevronDown, ChevronRight, CircleDot } from 'lucide-react';
-import { getSyncClient, SyncClient } from '../services/syncClient';
+import { getSyncClient, isRowDeletedError, SyncClient } from '../services/syncClient';
 import { useColumnPrefs } from '../hooks/useColumnPrefs';
 import { localStore } from '../services/localStore';
 import { useTableSelection } from '../hooks/useTableSelection';
@@ -173,6 +173,19 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     setTimeout(() => setFlashedCells((prev) => { const next = new Set(prev); next.delete(key); return next; }), 600);
   }, []);
 
+  /** Fade a deleted row out locally (own delete, another client's delete, or a 410 on edit). Idempotent. */
+  const removedRowIdsRef = useRef(new Set<string>());
+  const removeLocalRow = useCallback((rowId: string) => {
+    if (removedRowIdsRef.current.has(rowId)) return;
+    removedRowIdsRef.current.add(rowId);
+    setDeletingRows((prev) => new Set([...prev, rowId]));
+    setTimeout(() => {
+      setRows((prev) => prev.filter((r) => String(r['id'] ?? '') !== rowId));
+      setTotal((t) => Math.max(0, t - 1));
+      setDeletingRows((prev) => { const next = new Set(prev); next.delete(rowId); return next; });
+    }, 330);
+  }, []);
+
   useEffect(() => {
     if (!api) return;
     const sub = api.events$.subscribe((ev) => {
@@ -219,9 +232,12 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
         ));
         flashCell(row_id, col_id);
       }
+      if ('row_deleted' in ev && ev.row_deleted.table_id === tableId) {
+        removeLocalRow(ev.row_deleted.row_id);
+      }
     });
     return () => sub.unsubscribe();
-  }, [api, tableId, flashCell]);
+  }, [api, tableId, flashCell, removeLocalRow]);
 
   // Fetch queue summary outside the WASM callback to avoid RefCell reentrancy:
   // notify_queue_change() is called while borrow_mut() is held inside do_flush,
@@ -1177,9 +1193,15 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     setRows((prev) => prev.map((row) => String(row['id'] ?? '') === rowId ? { ...row, [colId]: value } : row));
     flashCell(rowId, colId);
     recordChange(`Edit cell [${colId}]`);
-    api.upsertCellValue(rowId, colId, value, tableId)
-      .catch((err: unknown) => toast.error(`Failed to queue cell edit: ${errMsg(err)}`));
-  }, [recordChange, api, tableId, flashCell]);
+    api.upsertCellValue(rowId, colId, value, tableId).catch((err: unknown) => {
+      if (isRowDeletedError(err)) {
+        removeLocalRow(rowId);
+        toast.error('This row was deleted (maybe in another window); the edit was not saved.');
+        return;
+      }
+      toast.error(`Failed to save cell edit: ${errMsg(err)}`);
+    });
+  }, [recordChange, api, tableId, flashCell, removeLocalRow]);
 
   /** User edit: also keeps the cursor on the edited cell. */
   const saveCellValue = useCallback((rowIndex: number, rowId: string, colId: string, value: unknown) => {
@@ -1678,16 +1700,11 @@ export default function TreeTable({ tableId, onRowClick, onOpenRowAsTable, searc
     if (!pendingDeleteRow || !api) return;
     const { rowId } = pendingDeleteRow;
     setPendingDeleteRow(null);
-    setDeletingRows((prev) => new Set([...prev, rowId]));
     recordChange(`Delete row`);
     api.deleteRow(tableId, rowId)
       .catch((err: unknown) => toast.error(`Failed to delete row: ${errMsg(err)}`));
-    setTimeout(() => {
-      setRows((prev) => prev.filter((r) => String(r['id'] ?? '') !== rowId));
-      setTotal((t) => Math.max(0, t - 1));
-      setDeletingRows((prev) => { const next = new Set(prev); next.delete(rowId); return next; });
-    }, 330);
-  }, [api, pendingDeleteRow, recordChange, tableId]);
+    removeLocalRow(rowId);
+  }, [api, pendingDeleteRow, recordChange, tableId, removeLocalRow]);
 
   const openAddChildDialog = useCallback((parentId: string) => {
     setAddRowRelation({ parentIds: [parentId] });

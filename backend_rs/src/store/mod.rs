@@ -105,6 +105,21 @@ impl std::fmt::Display for MissingReference {
 
 impl std::error::Error for MissingReference {}
 
+/// A write targeted a soft-deleted row. Like `MissingReference`, retrying cannot succeed.
+#[derive(Debug)]
+pub struct RowDeleted {
+    pub table_id: String,
+    pub row_id: String,
+}
+
+impl std::fmt::Display for RowDeleted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "row '{}' in table '{}' was deleted", self.row_id, self.table_id)
+    }
+}
+
+impl std::error::Error for RowDeleted {}
+
 pub mod pg;
 mod pg_schema;
 #[cfg(test)]
